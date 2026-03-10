@@ -36,7 +36,7 @@ def require_auth(f):
             token = auth_header[7:]  # Remove 'Bearer ' prefix
             
             # In test mode, accept test token
-            if token == 'unit-test-token':
+            if os.getenv('TESTING') == 'true' and token == 'unit-test-token':
                 return f(*args, **kwargs)
             
             # Check against configured token

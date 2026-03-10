@@ -36,7 +36,7 @@ if credentials['api_key']:
     os.environ['DELTA_API_KEY'] = credentials['api_key']
     os.environ['DELTA_API_SECRET'] = credentials['api_secret']
     print(f"✅ Trading mode: {cfg.trading_mode}")
-    print(f"✅ API credentials loaded from secrets/api_keys.env (Key: {credentials['api_key'][:8]}...)")
+    print("✅ API credentials loaded from secrets/api_keys.env (Key: [REDACTED])")
 else:
     print(f"⚠️  WARNING: API credentials not found in secrets/api_keys.env")
 
@@ -146,7 +146,12 @@ cfg = get_config()
 
 # Create Flask app
 app = Flask(__name__, static_folder='../frontend/build')
-app.config['SECRET_KEY'] = os.getenv('FLASK_SECRET_KEY', 'dev-secret-key')
+_flask_secret = os.getenv('FLASK_SECRET_KEY')
+if not _flask_secret:
+    import secrets as _secrets
+    _flask_secret = _secrets.token_hex(32)
+    print("⚠️  FLASK_SECRET_KEY not set — using ephemeral secret (sessions reset on restart)")
+app.config['SECRET_KEY'] = _flask_secret
 app.config['_start_time'] = time.time()
 
 # Enable compression (prefer Brotli over gzip — 20-30% smaller responses)
@@ -177,7 +182,7 @@ CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
 _ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
 socketio = SocketIO(
     app,
-    cors_allowed_origins="*",
+    cors_allowed_origins=["http://localhost:3000", "http://localhost:5555", "http://127.0.0.1:3000", "http://127.0.0.1:5555"],
     async_mode=_ASYNC_MODE,
     engineio_logger=False,  # DISABLED: Reduce log spam
     logger=False,  # DISABLED: Reduce log spam
@@ -196,11 +201,11 @@ socketio = SocketIO(
 try:
     from webui.backend.brain_analyzer import brain_analyzer_bp
     BRAIN_ANALYZER_AVAILABLE = True
-except:
+except Exception:
     try:
         from brain_analyzer import brain_analyzer_bp
         BRAIN_ANALYZER_AVAILABLE = True
-    except:
+    except Exception:
         BRAIN_ANALYZER_AVAILABLE = False
 
 blueprints = [
@@ -288,7 +293,7 @@ except ImportError:
     try:
         from .routes.tradingview_webhook import init_tradingview_socketio
         init_tradingview_socketio(socketio)
-    except:
+    except Exception:
         log.warning("Could not initialize TradingView SocketIO broadcasting")
 
 # Unified safety blueprint is now part of blueprints list (registered above)

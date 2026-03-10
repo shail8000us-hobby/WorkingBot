@@ -785,7 +785,7 @@ class FillProcessor:
                 # This is a fill from bot-placed order! Process it immediately
                 order_id = order_data.get("id") or order_data.get("order_id")
                 fill_price = float(order_data.get("average_fill_price") or order_data.get("price", 0))
-                fill_size = int(order_data.get("size") or order_data.get("unfilled_size", 0))
+                fill_size = int(order_data.get("size", 0))
                 side = order_data.get("side", "").lower()
 
                 # CRITICAL: Use exchange's fill_id for deduplication (not timestamp)

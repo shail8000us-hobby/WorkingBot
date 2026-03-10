@@ -173,8 +173,11 @@ class DeltaClient:
                     log.warning(f"   └─ Attempt: {retry_count + 1}/{max_retries}")
                     
                     if retry_count < max_retries - 1:
-                        log.info(f"   └─ Waiting {retry_after}s before retry...")
-                        time.sleep(retry_after)
+                        capped_sleep = min(retry_after, 10)
+                        if retry_after > 10:
+                            log.warning(f"   └─ retry_after={retry_after}s exceeds cap — sleeping 10s only")
+                        log.info(f"   └─ Waiting {capped_sleep}s before retry...")
+                        time.sleep(capped_sleep)
                         retry_count += 1
                         continue
                     else:
@@ -273,14 +276,42 @@ class DeltaClient:
         return arr[0] if arr else None
 
     # ---------- account snapshot for risk canary ----------
+    _account_snapshot_cache: Dict[str, Any] = {}
+    _account_snapshot_cached_at: float = 0.0
+
     def account_snapshot_inr(self) -> Dict[str, Any]:
-        # conservative defaults; replace with real endpoints if you have them
-        return {
-            "realized_pnl_inr": "0",
-            "balance_inr": "999999999",   # prod can be large; guards still applied
-            "open_notional_inr": "0",
-            "open_orders_count": 0,
-        }
+        now = time.time()
+        if now - self._account_snapshot_cached_at < 30 and self._account_snapshot_cache:
+            return self._account_snapshot_cache
+        try:
+            resp = self._req("GET", "/v2/wallet/balances")
+            usd_to_inr = float(os.getenv("USD_TO_INR", "85"))
+            results = resp.get("result", [])
+            balance_usd = 0.0
+            available_usd = 0.0
+            for asset in results:
+                # BTC options margin in USD
+                balance_usd += float(asset.get("balance", 0) or 0)
+                available_usd += float(asset.get("available_balance", 0) or 0)
+            snapshot = {
+                "realized_pnl_inr": "0",
+                "balance_inr": str(round(balance_usd * usd_to_inr, 2)),
+                "available_inr": str(round(available_usd * usd_to_inr, 2)),
+                "open_notional_inr": "0",
+                "open_orders_count": 0,
+            }
+            self._account_snapshot_cache = snapshot
+            self._account_snapshot_cached_at = now
+            return snapshot
+        except Exception as e:
+            log.error("account_snapshot_inr failed: %s", e)
+            return {
+                "realized_pnl_inr": "0",
+                "balance_inr": "0",
+                "available_inr": "0",
+                "open_notional_inr": "0",
+                "open_orders_count": 0,
+            }
 
     # ---------- orders ----------
     def place_order(
@@ -613,7 +644,7 @@ class DeltaClient:
             if product_id is None:
                 raise ValueError("product_id is required for order cancellation")
             
-            return self._req("DELETE", "/v2/orders", json={"id": int(order_id), "product_id": product_id})
+            return self._req("DELETE", "/v2/orders", json_body={"id": int(order_id), "product_id": product_id})
         except requests.exceptions.HTTPError as e:
             if e.response.status_code == 404:
                 log.info(f"✅ Order {order_id} not found (already cancelled/filled)")

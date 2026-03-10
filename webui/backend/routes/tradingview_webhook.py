@@ -79,8 +79,8 @@ TRADINGVIEW_IPS = {
 }
 
 # Set to True to ONLY accept webhooks from TradingView IPs (recommended for production)
-# Set to False to accept from any IP (useful for testing with curl/Postman)
-ENFORCE_IP_WHITELIST = False
+# Control via env var TRADINGVIEW_ENFORCE_IP_WHITELIST=false to disable for local testing
+ENFORCE_IP_WHITELIST = os.getenv('TRADINGVIEW_ENFORCE_IP_WHITELIST', 'true').lower() == 'true'
 
 # Deduplication: ignore identical signals within this many seconds
 DEDUP_WINDOW_SECONDS = 30
@@ -134,13 +134,19 @@ def _check_rate_limit(ip: str) -> bool:
     if len(_rate_limiter[ip]) >= RATE_LIMIT_PER_MINUTE:
         return False
     _rate_limiter[ip].append(now)
+    # Prevent unbounded growth under DDoS with many source IPs
+    if len(_rate_limiter) > 5000:
+        oldest_keys = list(_rate_limiter.keys())[:2500]
+        for k in oldest_keys:
+            del _rate_limiter[k]
     return True
 
 
 def _verify_signature(payload: str, signature: str) -> bool:
     """Verify TradingView webhook signature (if configured)."""
     if not WEBHOOK_SECRET:
-        return True
+        logger.warning("TRADINGVIEW_WEBHOOK_SECRET not set — rejecting request for safety")
+        return False
     computed = hmac.new(
         WEBHOOK_SECRET.encode(), payload.encode(), hashlib.sha256
     ).hexdigest()
@@ -321,9 +327,7 @@ def receive_webhook():
     Pipeline: receive → validate → parse → deduplicate → store → broadcast → respond
     """
     start_time = time.time()
-    source_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if source_ip and ',' in source_ip:
-        source_ip = source_ip.split(',')[0].strip()
+    source_ip = request.remote_addr  # Use actual remote address — X-Forwarded-For is spoofable
     content_type = request.content_type or 'unknown'
     raw_body = ''
     signal_id = None

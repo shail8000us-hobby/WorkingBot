@@ -514,7 +514,14 @@ class MMMMonitor:
             while self._running and not self._stop_event.is_set():
                 # RELOAD session from storage to pick up hot-reload params
                 storage = get_storage()
-                fresh_session = storage.get_session(self.session_id)
+                try:
+                    fresh_session = storage.get_session(self.session_id)
+                except Exception as e:
+                    log.critical("Storage read failed — aborting heartbeat: %s", e)
+                    self._interruptible_sleep(
+                        self.session.get('params', {}).get('adjustment_interval', 300)
+                    )
+                    continue
                 if fresh_session:
                     old_params = self.session.get('params', {})
                     new_params = fresh_session.get('params', {})
@@ -699,6 +706,7 @@ class MMMMonitor:
         """
         session = self.session
         sid = self.session_id
+        safety_events = []  # Initialize here so it's always defined even on early returns
 
         # H-10 fix: Reload params from storage at heartbeat start to pick up
         # hot-reload changes (max_loss_amount, gamma_cap_enabled, etc.)
@@ -994,6 +1002,8 @@ class MMMMonitor:
 
                     if _atm_wd_side:
                         _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
+                        # Save original wind_down_enabled so it can be restored when positions close
+                        session['_atm_prev_wind_down_enabled'] = params.get('wind_down_enabled', False)
                         # Set guard flag BEFORE any state changes to prevent re-entry
                         session['_atm_wind_down_triggered'] = True
                         # Auto-enable the wind_down_enabled master switch so is_wind_down_active()
@@ -1108,6 +1118,15 @@ class MMMMonitor:
 
         # Check if both sides fully closed
         if check_both_sides_closed(session):
+            # P1-C fix: clear ATM wind-down flag so a re-initialized round starts clean.
+            # When the ATM trigger fired it auto-set wind_down_enabled=True and stored
+            # the original value in _atm_prev_wind_down_enabled.  We pop the trigger
+            # flag here; the save path (below) uses _atm_prev_wind_down_enabled to
+            # restore wind_down_enabled to its original value before writing to DB.
+            if session.get('_atm_wind_down_triggered'):
+                session.pop('_atm_wind_down_triggered', None)
+                log.info(f"[{session.get('session_id')}] Cleared _atm_wind_down_triggered "
+                         f"on both-sides-closed — next round will start without ATM wind-down.")
             # §26.10: Close perp before stopping when options are fully closed
             if is_perp_hedge_enabled(session):
                 perp_lots = session.get('perp_hedge', {}).get('lots', 0)
@@ -1296,8 +1315,9 @@ class MMMMonitor:
                 regime_status['observation_mode'] = True
                 from .mmm_websocket import emit_regime
                 emit_regime(sid, regime_status)
-            except Exception:
-                pass  # non-fatal in observation mode
+            except Exception as e:
+                log.error("Regime engine error — failing closed: %s", e, exc_info=True)
+                session['_regime_action'] = ACTION_BLOCK_ALL_SELLS
             # Fall through to normal trigger evaluation
         else:
             # Regime is ENABLED — enforce regime actions
@@ -1599,7 +1619,9 @@ class MMMMonitor:
                 # Analytics: Track both_sides_up event (no trading logic impact)
                 analytics = session.setdefault('analytics', {})
                 analytics.setdefault('both_sides_up_timestamps', []).append(datetime.now(timezone.utc).isoformat())
-            
+                if len(analytics['both_sides_up_timestamps']) > 200:
+                    analytics['both_sides_up_timestamps'] = analytics['both_sides_up_timestamps'][-200:]
+
                 emit_both_sides_alert(
                     sid, ce_now, pe_now,
                     trigger_result['ce_trigger'],
@@ -1989,7 +2011,7 @@ class MMMMonitor:
                 'ce_frozen_lots': session.get('ce', {}).get('frozen_total_lots', 0),
                 'pe_frozen_lots': session.get('pe', {}).get('frozen_total_lots', 0),
                 'adjustment_count': session.get('adjustment_count', 0),
-                'safety_event_count': len(safety_events) if 'safety_events' in dir() else 0,
+                'safety_event_count': len(safety_events),
             })
         except Exception as e:
             log.warning(f"[{sid}] Heartbeat summary emit failed: {e}")
@@ -2229,6 +2251,8 @@ class MMMMonitor:
             'strikes_closed': list(by_strike.keys()),
             'any_failed': any_failed,
         })
+        if len(session['_wind_down_history']) > 200:
+            session['_wind_down_history'] = session['_wind_down_history'][-200:]
 
         remaining = session.get(aggressor, {}).get('active_lots', 0)
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
@@ -2317,6 +2341,8 @@ class MMMMonitor:
             'adjustment_number': session['adjustment_count'],
             'source': 'pending_order_recovery',
         })
+        if len(session['adjustment_history']) > 200:
+            session['adjustment_history'] = session['adjustment_history'][-200:]
 
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
@@ -2418,6 +2444,8 @@ class MMMMonitor:
             # Analytics: Track reversal event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
             analytics.setdefault('reversal_timestamps', []).append(datetime.now(timezone.utc).isoformat())
+            if len(analytics['reversal_timestamps']) > 200:
+                analytics['reversal_timestamps'] = analytics['reversal_timestamps'][-200:]
 
             # First reversal: use adjustment P&L formula
             loss, adj_pnl, _rev_incomplete = self._engine.calculate_reversal_loss(
@@ -2799,7 +2827,7 @@ class MMMMonitor:
         # Fold buyback cost so extra lots at new strike recover it
         total_loss_to_cover = loss + shift_recycle_buyback
 
-        lots, _ = self._engine.calculate_lots_to_sell(
+        lots, _, _ = self._engine.calculate_lots_to_sell(
             session, side, total_loss_to_cover, hedge_premium,
         )
 
@@ -2925,6 +2953,8 @@ class MMMMonitor:
                     'new_strike': new_strike,
                     'frozen_lots': freeze_result['frozen_lots'],
                 })
+                if len(analytics['shift_timestamps']) > 200:
+                    analytics['shift_timestamps'] = analytics['shift_timestamps'][-200:]
             except Exception as _e:
                 _shift_errors.append(f'analytics: {_e}')
                 log.warning(f"[{sid}] analytics tracking failed after strike shift: {_e}")
@@ -2943,6 +2973,8 @@ class MMMMonitor:
                     'premium_collected': premium_collected,
                     'adjustment_number': session.get('adjustment_count', 0),
                 })
+                if len(session['adjustment_history']) > 200:
+                    session['adjustment_history'] = session['adjustment_history'][-200:]
                 session['updated_at'] = datetime.now(timezone.utc).isoformat()
             except Exception as _e:
                 _shift_errors.append(f'adjustment_history: {_e}')
@@ -3049,7 +3081,7 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
 
-        lots, constraint_msg = self._engine.calculate_lots_to_sell(
+        lots, constraint_msg, _ = self._engine.calculate_lots_to_sell(
             session, side, loss, hedge_premium,
         )
 
@@ -5042,6 +5074,7 @@ class MMMMonitor:
         rest = getattr(self, '_heartbeat_rest', None) or self._create_heartbeat_rest_client()
         to_fetch = [(s, o) for s, o in strike_pairs if (s, o) not in cache]
 
+        bid_cache: Dict[tuple, float] = {}
         if to_fetch:
             async def _fetch_one(strike, opt):
                 try:
@@ -5078,10 +5111,7 @@ class MMMMonitor:
                 *[_fetch_one(s, o) for s, o in to_fetch],
                 return_exceptions=True,
             )
-            
-            # Create separate bid cache for close_at_5
-            bid_cache: Dict[tuple, float] = {}
-            
+
             for r in results:
                 if isinstance(r, Exception):
                     continue
@@ -5092,7 +5122,7 @@ class MMMMonitor:
 
         self._premium_cache = cache
         self._bid_cache = getattr(self, '_bid_cache', {})
-        self._bid_cache.update(bid_cache if 'bid_cache' in dir() else {})
+        self._bid_cache.update(bid_cache)
 
     async def _fetch_spot_price(self) -> float:
         """Fetch current BTC spot price."""
@@ -5605,6 +5635,12 @@ def _save_session(session: Dict, my_generation: int = 0):
                     # gets written to DB in this very save call.
                     if session.get('_atm_wind_down_triggered'):
                         session['params']['wind_down_enabled'] = True
+                    elif '_atm_prev_wind_down_enabled' in session:
+                        # P1-C fix: ATM flag was just cleared (both-sides-closed).
+                        # The stored params still have wind_down_enabled=True from when the
+                        # trigger originally persisted it.  Restore the original value so the
+                        # DB is left clean for the next session round.
+                        session['params']['wind_down_enabled'] = session.pop('_atm_prev_wind_down_enabled')
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")

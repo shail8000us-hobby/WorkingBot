@@ -4,12 +4,16 @@ Performance metrics API routes
 from flask import Blueprint, jsonify, request
 import sqlite3
 from datetime import datetime, timedelta
+from pathlib import Path
 
 performance_bp = Blueprint('performance', __name__)
 
+_DB_PATH = Path(__file__).parent.parent.parent.parent / 'data' / 'trading_bot.db'
+
 def get_db_connection():
     """Get database connection"""
-    conn = sqlite3.connect('trading_bot.db')
+    conn = sqlite3.connect(str(_DB_PATH))
+    conn.execute('PRAGMA journal_mode=WAL')
     conn.row_factory = sqlite3.Row
     return conn
 

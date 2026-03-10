@@ -343,7 +343,7 @@ def _generate_unsafe_volatility_sequence(grid_calc, config: Dict, market_price: 
     try:
         from bot.strategy.modules.volatility_handler import VolatilityHandler
         has_volatility_handler = True
-    except:
+    except Exception:
         has_volatility_handler = False
     
     # Simulate: Bot has pending BUY at $109k, volatility goes unsafe
@@ -766,7 +766,7 @@ def _get_market_data() -> Dict:
                             'current_price': float(price),
                             'source': 'positions_api'
                         }
-    except:
+    except Exception:
         pass
     
     # Fallback: Try trading status (old endpoint)
@@ -781,7 +781,7 @@ def _get_market_data() -> Dict:
                     'current_price': float(price),
                     'source': 'trading_status'
                 }
-    except:
+    except Exception:
         pass
     
     return {'current_price': None, 'source': 'unavailable'}
@@ -806,7 +806,7 @@ def _get_volatility_status() -> Dict:
                     'max_iv': vol_data.get('thresholds', {}).get('max_iv', 35),
                     'max_rv': vol_data.get('thresholds', {}).get('max_rv', 40)
                 }
-    except:
+    except Exception:
         pass
     
     return {'volatility': 'UNKNOWN', 'is_safe': True, 'iv': 0, 'rv': 0}

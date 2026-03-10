@@ -66,6 +66,7 @@ class HeartbeatMonitor:
         self.action = action
         self.running = True
         self.crash_detected = False
+        self._missing_heartbeat_count = 0
         
         # Will be initialized later
         self.exchange = None
@@ -92,7 +93,7 @@ class HeartbeatMonitor:
             from bot.api.delta_client import DeltaClient
             
             # Load API credentials from secrets
-            load_dotenv("secrets/api_keys.env", verbose=False)
+            load_dotenv(project_root / "secrets" / "api_keys.env", verbose=False)
             
             # Load and configure trading mode
             try:
@@ -177,12 +178,17 @@ class HeartbeatMonitor:
             if age > self.timeout:
                 log.warning(f"⚠️  Heartbeat timeout! Age: {age:.1f}s > {self.timeout}s")
                 return False
-            
+
+            self._missing_heartbeat_count = 0
             return True
             
         except FileNotFoundError:
-            log.warning("⚠️  Heartbeat file not found - bot may not be running")
-            return True  # Don't take action if file doesn't exist
+            self._missing_heartbeat_count += 1
+            if self._missing_heartbeat_count >= 3:
+                log.warning(f"⚠️  Heartbeat file missing for {self._missing_heartbeat_count} consecutive checks — treating as unhealthy")
+                return False
+            log.warning("⚠️  Heartbeat file not found - bot may not be running yet")
+            return True
         except Exception as e:
             log.error(f"Error reading heartbeat: {e}")
             return True  # Don't take action on read errors
@@ -333,11 +339,7 @@ class HeartbeatMonitor:
                     # First detection of crash
                     self.crash_detected = True
                     self._take_action()
-                    
-                    # Stop monitoring after taking action (one-time action)
-                    log.info("Action complete - stopping monitor")
-                    self.running = False
-                    break
+                    log.info("Action complete - continuing to monitor for further crashes")
                 
                 elif is_healthy and self.crash_detected:
                     # Bot recovered

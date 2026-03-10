@@ -20,9 +20,8 @@ from pathlib import Path
 from typing import Dict, Optional
 from datetime import datetime
 
-# FIX M8: Only increase recursion limit if needed, with a warning
-# This masks potential stack overflow bugs — investigate root cause if hit
-sys.setrecursionlimit(5000)
+# TODO: find and fix the recursive call chain that required this — temporarily kept at 2000
+sys.setrecursionlimit(2000)
 
 # Add project root to path
 project_root = Path(__file__).parent.parent.parent
@@ -442,8 +441,8 @@ class GuardianBot:
                             f"Emergency STOP signal published.",
                             self.config
                         )
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.error("Telegram alert failed in risk engine watchdog: %s", e)
                     
                     # Attempt restart if under limit
                     if self._risk_engine_restart_count < self._max_risk_engine_restarts:
@@ -466,12 +465,16 @@ class GuardianBot:
                         else:
                             logger.critical("❌ Risk engine restart failed immediately")
                     else:
-                        logger.critical(f"❌ Max risk engine restarts ({self._max_risk_engine_restarts}) exceeded. Guardian in STOP-only mode.")
-                        send_telegram_alert(
-                            f"🚨 CRITICAL: Guardian risk engine permanently dead after {self._max_risk_engine_restarts} restarts.\n"
-                            f"Bot is in permanent STOP mode. Manual intervention required!",
-                            self.config
-                        )
+                        logger.critical(f"❌ Max risk engine restarts ({self._max_risk_engine_restarts}) exceeded. Exiting guardian for clean restart.")
+                        try:
+                            send_telegram_alert(
+                                f"🚨 CRITICAL: Guardian risk engine permanently dead after {self._max_risk_engine_restarts} restarts.\n"
+                                f"Guardian process exiting for clean restart by process manager.",
+                                self.config
+                            )
+                        except Exception as e:
+                            logger.error("Telegram alert failed: %s", e)
+                        sys.exit(1)
                 
                 # Read latest signal from OUR OWN database
                 signal_data = self._read_latest_signal()

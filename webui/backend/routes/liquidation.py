@@ -104,7 +104,6 @@ def get_liquidation_debug():
             'delta_api_key_set': bool(os.getenv('DELTA_API_KEY') or os.getenv('LIVE_DELTA_API_KEY')),
             'wallet_api_success': wallet_response.get('success'),
             'wallet_count': len(wallet_response.get('result', [])),
-            'raw_response': wallet_response
         }), 200
     except Exception as e:
         return jsonify({

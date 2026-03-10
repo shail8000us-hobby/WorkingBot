@@ -393,6 +393,7 @@ async def execute_lot_recycling(
     phase_a_pnl = 0.0
     phase_a_lots = 0
     phase_a_fails = 0
+    bought_back_positions = []  # Track successfully closed positions for rollback
 
     for pos in selected:
         try:
@@ -400,6 +401,7 @@ async def execute_lot_recycling(
             if result.get('success'):
                 phase_a_pnl += result.get('realized_pnl', 0)
                 phase_a_lots += result.get('lots_closed', 0)
+                bought_back_positions.append(pos)
             else:
                 phase_a_fails += 1
                 log.warning(
@@ -461,6 +463,13 @@ async def execute_lot_recycling(
         )
     except Exception as e:
         log.exception(f"[{session_id}] Recycle Phase B execution exception: {e}")
+        # Compensating transaction: restore bought-back positions to active state
+        side_state = session.get(hedge_side, {})
+        for pos in bought_back_positions:
+            pos['status'] = 'active'
+            pos.pop('_being_closed', None)
+            side_state.setdefault('positions', []).append(pos)
+        log.error("Phase B exception — restored %d positions to active state", len(bought_back_positions))
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
         return {
@@ -477,6 +486,13 @@ async def execute_lot_recycling(
             f"[{session_id}] Recycle Phase B FAILED: {error_msg}. "
             f"Phase A lots were freed."
         )
+        # Compensating transaction: restore bought-back positions to active state
+        side_state = session.get(hedge_side, {})
+        for pos in bought_back_positions:
+            pos['status'] = 'active'
+            pos.pop('_being_closed', None)
+            side_state.setdefault('positions', []).append(pos)
+        log.error("Phase B failed — restored %d positions to active state", len(bought_back_positions))
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
         return {
@@ -490,7 +506,6 @@ async def execute_lot_recycling(
     # ── Success ────────────────────────────────────────────────────────────
     session['recycle_count'] = session.get('recycle_count', 0) + 1
     session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
-    session['adjustment_count'] = session.get('adjustment_count', 0) + 1
     session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     net_lot_gain = viability_details['net_lot_gain']

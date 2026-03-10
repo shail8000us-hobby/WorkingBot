@@ -5,6 +5,7 @@ from flask import Blueprint, jsonify, request
 import sqlite3
 from datetime import datetime, timedelta
 import random
+from pathlib import Path
 
 # Import cache
 try:
@@ -14,9 +15,17 @@ except ImportError:
 
 analytics_bp = Blueprint('analytics', __name__)
 
-def get_db_connection():
+_DB_PATH_DEFAULT = Path(__file__).parent.parent.parent.parent / 'data' / 'trading_bot.db'
+
+def get_db_connection(db_name: str = None):
     """Get database connection"""
-    conn = sqlite3.connect('trading_bot.db')
+    if db_name and db_name != 'trading_bot.db':
+        # Instance-specific DB — resolve relative to data dir
+        db_path = str(Path(__file__).parent.parent.parent.parent / 'data' / db_name)
+    else:
+        db_path = str(_DB_PATH_DEFAULT)
+    conn = sqlite3.connect(db_path)
+    conn.execute('PRAGMA journal_mode=WAL')
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -42,8 +51,7 @@ def get_analytics_summary():
         else:
             db_name = 'trading_bot.db'
         
-        conn = sqlite3.connect(db_name)
-        conn.row_factory = sqlite3.Row
+        conn = get_db_connection(db_name)
         cursor = conn.cursor()
         
         # Get trade stats

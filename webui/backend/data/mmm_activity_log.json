@@ -601,7 +601,1283 @@
       "session_id": "mmm10mar26-2",
       "severity": "error",
       "details": {}
+    },
+    {
+      "id": "act_20260310_050700_000001",
+      "timestamp": "2026-03-10T05:07:00.909761+00:00",
+      "type": "session_initialized",
+      "type_label": "Session Initialized",
+      "category": "system",
+      "message": "Fresh init: CE 71200.0@93.72 + PE 69400.0@84.80, 10 lots, expiry=10032026",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "ce_strike": 71200.0,
+        "ce_premium": 93.72,
+        "pe_strike": 69400.0,
+        "pe_premium": 84.8,
+        "lots": 10,
+        "expiry": "10032026",
+        "total_premium": 1.7852
+      }
+    },
+    {
+      "id": "act_20260310_050702_000006",
+      "timestamp": "2026-03-10T05:07:02.559352+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 C-BTC-71200-100326 @ $94.00 (bid=$93.00, ask=$95.00)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "order_id": "1217495751",
+        "mid_price": 94.0,
+        "bid": 93.0,
+        "ask": 95.0
+      }
+    },
+    {
+      "id": "act_20260310_050702_000007",
+      "timestamp": "2026-03-10T05:07:02.725402+00:00",
+      "type": "order_retrying",
+      "type_label": "Retrying Order",
+      "category": "orders",
+      "message": "SELL P-BTC-69400-100326: Placement failed (Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400), retrying (1/3)...",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "symbol": "P-BTC-69400-100326",
+        "error": "Client error '400 Bad Request' for url 'https://api.india.delta.exchange/v2/orders'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260310_050705_000008",
+      "timestamp": "2026-03-10T05:07:05.228608+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 10 P-BTC-69400-100326 @ $88.50 (bid=$87.00, ask=$90.00)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "order_id": "1217495818",
+        "mid_price": 88.5,
+        "bid": 87.0,
+        "ask": 90.0
+      }
+    },
+    {
+      "id": "act_20260310_050715_000009",
+      "timestamp": "2026-03-10T05:07:15.814556+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-69400-100326 FILLED @ $88.50 in 14.8s",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "order_id": "1217495818",
+        "fill_price": 88.5,
+        "elapsed": 14.8,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_050738_000010",
+      "timestamp": "2026-03-10T05:07:38.679835+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-71200-100326 FILLED @ $94.00 in 37.7s",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "order_id": "1217495751",
+        "fill_price": 94.0,
+        "elapsed": 37.7,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_050738_000011",
+      "timestamp": "2026-03-10T05:07:38.681259+00:00",
+      "type": "entry_complete",
+      "type_label": "Entry Complete",
+      "category": "orders",
+      "message": "\u2705 Entry filled: CE@$94.00 + PE@$88.50 = $1825.00 total premium",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "ce_fill": 94.0,
+        "pe_fill": 88.5,
+        "total_premium": 1825.0
+      }
+    },
+    {
+      "id": "act_20260310_050738_000012",
+      "timestamp": "2026-03-10T05:07:38.693690+00:00",
+      "type": "entry_complete",
+      "type_label": "Entry Complete",
+      "category": "orders",
+      "message": "Entry filled: CE@$94.00 + PE@$88.50 = $1.82 total",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "ce_fill": 94.0,
+        "pe_fill": 88.5,
+        "total_premium": 1.825
+      }
+    },
+    {
+      "id": "act_20260310_050738_000013",
+      "timestamp": "2026-03-10T05:07:38.706808+00:00",
+      "type": "session_started",
+      "type_label": "Session Started",
+      "category": "system",
+      "message": "Session mmm10mar26-3 is now RUNNING \u2014 heartbeat monitor active",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {}
+    },
+    {
+      "id": "act_20260310_051217_000014",
+      "timestamp": "2026-03-10T05:12:17.859519+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: shift_recycle_enabled updated False \u2192 True",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "shift_recycle_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260310_051217_000015",
+      "timestamp": "2026-03-10T05:12:17.863850+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: max_loss_amount updated 50000.0 \u2192 50.0",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "max_loss_amount",
+        "old_value": 50000.0,
+        "new_value": 50.0
+      }
+    },
+    {
+      "id": "act_20260310_051217_000016",
+      "timestamp": "2026-03-10T05:12:17.864441+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: whipsaw_limit updated 3 \u2192 4",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "whipsaw_limit",
+        "old_value": 3,
+        "new_value": 4
+      }
+    },
+    {
+      "id": "act_20260310_051217_000017",
+      "timestamp": "2026-03-10T05:12:17.869309+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: wind_down_on_atm updated False \u2192 True",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "wind_down_on_atm",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260310_051217_000018",
+      "timestamp": "2026-03-10T05:12:17.869891+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: margin_monitor_enabled updated False \u2192 True",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "margin_monitor_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260310_051217_000019",
+      "timestamp": "2026-03-10T05:12:17.872695+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: regime_enabled updated False \u2192 True",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "regime_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260310_051217_000020",
+      "timestamp": "2026-03-10T05:12:17.873001+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: vol_regime_action updated block_sells \u2192 wind_down",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "vol_regime_action",
+        "old_value": "block_sells",
+        "new_value": "wind_down"
+      }
+    },
+    {
+      "id": "act_20260310_051217_000021",
+      "timestamp": "2026-03-10T05:12:17.873323+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: harvest_pressure_threshold updated 0.5 \u2192 0.4",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "param": "harvest_pressure_threshold",
+        "old_value": 0.5,
+        "new_value": 0.4
+      }
+    },
+    {
+      "id": "act_20260310_051245_000001",
+      "timestamp": "2026-03-10T05:12:45.345550+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($105.64), hedging with PE ($69.66)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "aggressor_premium": 105.63663749,
+        "hedge": "PE",
+        "hedge_premium": 69.66098607
+      }
+    },
+    {
+      "id": "act_20260310_051245_000002",
+      "timestamp": "2026-03-10T05:12:45.356811+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 2 lot(s) P-BTC-69400-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-69400-100326",
+        "side": "sell",
+        "size": 2
+      }
+    },
+    {
+      "id": "act_20260310_051246_000003",
+      "timestamp": "2026-03-10T05:12:46.933892+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 2 P-BTC-69400-100326 @ $69.00 (bid=$68.00, ask=$70.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217501682",
+        "mid_price": 69.0,
+        "bid": 68.0,
+        "ask": 70.0
+      }
+    },
+    {
+      "id": "act_20260310_051349_000004",
+      "timestamp": "2026-03-10T05:13:49.307769+00:00",
+      "type": "order_repricing",
+      "type_label": "Repricing Order",
+      "category": "orders",
+      "message": "Order 1217501682 not filled after 60s, repricing (attempt 1/4)",
+      "session_id": null,
+      "severity": "warning",
+      "details": {
+        "order_id": "1217501682",
+        "attempt": 1
+      }
+    },
+    {
+      "id": "act_20260310_051354_000005",
+      "timestamp": "2026-03-10T05:13:54.361378+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL P-BTC-69400-100326 FILLED @ $67.50 in 69.0s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217501682",
+        "fill_price": 67.5,
+        "elapsed": 69.0,
+        "attempts": 2
+      }
+    },
+    {
+      "id": "act_20260310_051354_000006",
+      "timestamp": "2026-03-10T05:13:54.362051+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 2 lots PE @ 69400.0 for $67.50 (Type: standard)",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 69400.0,
+        "lots": 2,
+        "fill_price": 67.5,
+        "type": "standard",
+        "adjustment_number": 1
+      }
+    },
+    {
+      "id": "act_20260310_052405_000001",
+      "timestamp": "2026-03-10T05:24:05.443375+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($86.95), hedging with CE ($84.00)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 86.94746854,
+        "hedge": "CE",
+        "hedge_premium": 84.00145307
+      }
+    },
+    {
+      "id": "act_20260310_052405_000002",
+      "timestamp": "2026-03-10T05:24:05.462630+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 1 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "sell",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260310_052406_000003",
+      "timestamp": "2026-03-10T05:24:06.984068+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 1 C-BTC-71200-100326 @ $83.50 (bid=$82.00, ask=$85.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217515708",
+        "mid_price": 83.5,
+        "bid": 82.0,
+        "ask": 85.0
+      }
+    },
+    {
+      "id": "act_20260310_052434_000004",
+      "timestamp": "2026-03-10T05:24:34.138520+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-71200-100326 FILLED @ $83.50 in 28.7s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217515708",
+        "fill_price": 83.5,
+        "elapsed": 28.7,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_052434_000005",
+      "timestamp": "2026-03-10T05:24:34.139234+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 1 lots CE @ 71200.0 for $83.50 (Type: first_reversal)",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 71200.0,
+        "lots": 1,
+        "fill_price": 83.5,
+        "type": "first_reversal",
+        "adjustment_number": 2
+      }
+    },
+    {
+      "id": "act_20260310_053005_000006",
+      "timestamp": "2026-03-10T05:30:05.812819+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($99.42), hedging with CE ($71.37)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 99.41937822,
+        "hedge": "CE",
+        "hedge_premium": 71.37432539
+      }
+    },
+    {
+      "id": "act_20260310_053005_000007",
+      "timestamp": "2026-03-10T05:30:05.824929+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 3 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260310_053007_000008",
+      "timestamp": "2026-03-10T05:30:07.303883+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 3 C-BTC-71200-100326 @ $70.00 (bid=$69.00, ask=$71.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217522943",
+        "mid_price": 70.0,
+        "bid": 69.0,
+        "ask": 71.0
+      }
+    },
+    {
+      "id": "act_20260310_053017_000009",
+      "timestamp": "2026-03-10T05:30:17.590622+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-71200-100326 FILLED @ $70.00 in 11.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217522943",
+        "fill_price": 70.0,
+        "elapsed": 11.8,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_053017_000010",
+      "timestamp": "2026-03-10T05:30:17.597961+00:00",
+      "type": "adjustment_complete",
+      "type_label": "Adjustment Complete",
+      "category": "adjustments",
+      "message": "\u2713 Adjustment Complete: SELL 3 lots CE @ 71200.0 for $70.00 (Type: standard)",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "strike": 71200.0,
+        "lots": 3,
+        "fill_price": 70.0,
+        "type": "standard",
+        "adjustment_number": 3
+      }
+    },
+    {
+      "id": "act_20260310_053908_000011",
+      "timestamp": "2026-03-10T05:39:08.191229+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($111.33), hedging with CE ($59.61)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 111.32548649,
+        "hedge": "CE",
+        "hedge_premium": 59.61212393
+      }
+    },
+    {
+      "id": "act_20260310_053908_000012",
+      "timestamp": "2026-03-10T05:39:08.208698+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "SELL 3 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "sell",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260310_053909_000013",
+      "timestamp": "2026-03-10T05:39:09.716712+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "SELL 3 C-BTC-71200-100326 @ $60.50 (bid=$59.00, ask=$62.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217533338",
+        "mid_price": 60.5,
+        "bid": 59.0,
+        "ask": 62.0
+      }
+    },
+    {
+      "id": "act_20260310_053913_000014",
+      "timestamp": "2026-03-10T05:39:13.596965+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 SELL C-BTC-71200-100326 FILLED @ $60.50 in 5.4s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217533338",
+        "fill_price": 60.5,
+        "elapsed": 5.4,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_060858_000001",
+      "timestamp": "2026-03-10T06:08:58.486756+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": -0.31,
+          "rv_annualized": 24.5,
+          "vol_regime_score": 0.129,
+          "dollar_gamma": 387.66,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.519,
+          "ema_slope": -2.04,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": -0.083
+        }
+      }
+    },
+    {
+      "id": "act_20260310_060858_000002",
+      "timestamp": "2026-03-10T06:08:58.490456+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($124.36), hedging with CE ($38.02)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 124.35693686,
+        "hedge": "CE",
+        "hedge_premium": 38.02335098
+      }
+    },
+    {
+      "id": "act_20260310_060859_000003",
+      "timestamp": "2026-03-10T06:08:59.198932+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 10 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "buy",
+        "size": 10
+      }
+    },
+    {
+      "id": "act_20260310_060900_000004",
+      "timestamp": "2026-03-10T06:09:00.643862+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 10 C-BTC-71200-100326 @ $38.00 (bid=$37.00, ask=$39.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217562241",
+        "mid_price": 38.0,
+        "bid": 37.0,
+        "ask": 39.0
+      }
+    },
+    {
+      "id": "act_20260310_060922_000005",
+      "timestamp": "2026-03-10T06:09:22.266198+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-71200-100326 FILLED @ $38.00 in 23.1s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217562241",
+        "fill_price": 38.0,
+        "elapsed": 23.1,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_060922_000006",
+      "timestamp": "2026-03-10T06:09:22.270755+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 1 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "buy",
+        "size": 1
+      }
+    },
+    {
+      "id": "act_20260310_060923_000007",
+      "timestamp": "2026-03-10T06:09:23.728110+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 1 C-BTC-71200-100326 @ $38.00 (bid=$37.00, ask=$39.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217562638",
+        "mid_price": 38.0,
+        "bid": 37.0,
+        "ask": 39.0
+      }
+    },
+    {
+      "id": "act_20260310_060952_000008",
+      "timestamp": "2026-03-10T06:09:52.128775+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-71200-100326 FILLED @ $38.00 in 29.9s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217562638",
+        "fill_price": 38.0,
+        "elapsed": 29.9,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_060952_000009",
+      "timestamp": "2026-03-10T06:09:52.132582+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 3 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260310_060953_000010",
+      "timestamp": "2026-03-10T06:09:53.603464+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 3 C-BTC-71200-100326 @ $41.00 (bid=$40.00, ask=$42.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217563193",
+        "mid_price": 41.0,
+        "bid": 40.0,
+        "ask": 42.0
+      }
+    },
+    {
+      "id": "act_20260310_061039_000011",
+      "timestamp": "2026-03-10T06:10:39.014215+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-71200-100326 FILLED @ $41.00 in 46.9s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217563193",
+        "fill_price": 41.0,
+        "elapsed": 46.9,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_061039_000012",
+      "timestamp": "2026-03-10T06:10:39.023209+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 3 lot(s) C-BTC-71200-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "C-BTC-71200-100326",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260310_061040_000013",
+      "timestamp": "2026-03-10T06:10:40.502417+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 3 C-BTC-71200-100326 @ $41.00 (bid=$40.00, ask=$42.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217564029",
+        "mid_price": 41.0,
+        "bid": 40.0,
+        "ask": 42.0
+      }
+    },
+    {
+      "id": "act_20260310_061053_000014",
+      "timestamp": "2026-03-10T06:10:53.062703+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY C-BTC-71200-100326 FILLED @ $41.00 in 14.0s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217564029",
+        "fill_price": 41.0,
+        "elapsed": 14.0,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_061053_000015",
+      "timestamp": "2026-03-10T06:10:53.063666+00:00",
+      "type": "shift_recycle",
+      "type_label": "Shift-Time Recycle",
+      "category": "adjustments",
+      "message": "\u267b\ufe0f Shift-Time Recycle: closed 17 frozen CE lots, buyback $0.6464",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "CE",
+        "closed_lots": 17,
+        "buyback_cost": 0.6464,
+        "premium_floor": 60.0
+      }
+    },
+    {
+      "id": "act_20260310_061054_000016",
+      "timestamp": "2026-03-10T06:10:54.436885+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260310_061054_000017",
+      "timestamp": "2026-03-10T06:10:54.561407+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": 0.58,
+          "rv_annualized": 24.3,
+          "vol_regime_score": 0.133,
+          "dollar_gamma": 244.56,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.52,
+          "ema_slope": -1.68,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": -0.084
+        }
+      }
+    },
+    {
+      "id": "act_20260310_061054_000018",
+      "timestamp": "2026-03-10T06:10:54.568028+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($123.46), hedging with CE ($37.68)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 123.45693329,
+        "hedge": "CE",
+        "hedge_premium": 37.68441504
+      }
+    },
+    {
+      "id": "act_20260310_061652_000019",
+      "timestamp": "2026-03-10T06:16:52.901584+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260310_061653_000020",
+      "timestamp": "2026-03-10T06:16:53.127082+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": 0.86,
+          "rv_annualized": 24.3,
+          "vol_regime_score": 0.139,
+          "dollar_gamma": 263.97,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.61,
+          "ema_slope": -3.02,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": -0.091
+        }
+      }
+    },
+    {
+      "id": "act_20260310_061653_000021",
+      "timestamp": "2026-03-10T06:16:53.128215+00:00",
+      "type": "adjustment_triggered",
+      "type_label": "Adjustment Triggered",
+      "category": "adjustments",
+      "message": "\ud83c\udfaf Adjustment Triggered: PE side breached trigger ($141.41), hedging with CE ($31.23)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "aggressor_premium": 141.40831535,
+        "hedge": "CE",
+        "hedge_premium": 31.23096379
+      }
+    },
+    {
+      "id": "act_20260310_062124_000022",
+      "timestamp": "2026-03-10T06:21:24.519526+00:00",
+      "type": "atm_wind_down",
+      "type_label": "ATM Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 ATM WIND-DOWN: Spot $69749 reached PE ORIGINAL strike $69400 \u2014 activating wind-down mode (gradual buyback)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "spot": 69748.69404576,
+        "ce_original_strike": 71200.0,
+        "pe_original_strike": 69400.0,
+        "triggered_side": "PE",
+        "triggered_strike": 69400.0
+      }
+    },
+    {
+      "id": "act_20260310_062124_000023",
+      "timestamp": "2026-03-10T06:21:24.528930+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260310_062124_000024",
+      "timestamp": "2026-03-10T06:21:24.672151+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": 1.39,
+          "rv_annualized": 23.64,
+          "vol_regime_score": 0.146,
+          "dollar_gamma": 271.43,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.651,
+          "ema_slope": -3.22,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": -0.041
+        }
+      }
+    },
+    {
+      "id": "act_20260310_062124_000025",
+      "timestamp": "2026-03-10T06:21:24.673049+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down Active: PE triggered \u2014 reducing positions instead of hedging",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "PE",
+        "premium": 149.06842843
+      }
+    },
+    {
+      "id": "act_20260310_062124_000026",
+      "timestamp": "2026-03-10T06:21:24.681912+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down: Placing BUY 3 PE @ 69400.0",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "side": "PE",
+        "strike": 69400.0,
+        "lots": 3
+      }
+    },
+    {
+      "id": "act_20260310_062124_000027",
+      "timestamp": "2026-03-10T06:21:24.683507+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 3 lot(s) P-BTC-69400-100326 \u2014 fetching prices...",
+      "session_id": null,
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-69400-100326",
+        "side": "buy",
+        "size": 3
+      }
+    },
+    {
+      "id": "act_20260310_062126_000028",
+      "timestamp": "2026-03-10T06:21:26.149036+00:00",
+      "type": "order_placed",
+      "type_label": "Order Placed",
+      "category": "orders",
+      "message": "BUY 3 P-BTC-69400-100326 @ $151.50 (bid=$150.00, ask=$153.00)",
+      "session_id": null,
+      "severity": "info",
+      "details": {
+        "order_id": "1217576022",
+        "mid_price": 151.5,
+        "bid": 150.0,
+        "ask": 153.0
+      }
+    },
+    {
+      "id": "act_20260310_062133_000029",
+      "timestamp": "2026-03-10T06:21:33.437332+00:00",
+      "type": "order_filled",
+      "type_label": "Order Filled",
+      "category": "orders",
+      "message": "\u2705 BUY P-BTC-69400-100326 FILLED @ $151.50 in 8.8s",
+      "session_id": null,
+      "severity": "success",
+      "details": {
+        "order_id": "1217576022",
+        "fill_price": 151.5,
+        "elapsed": 8.8,
+        "attempts": 1
+      }
+    },
+    {
+      "id": "act_20260310_062133_000030",
+      "timestamp": "2026-03-10T06:21:33.445181+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down leg: Bought back 3 PE @ 69400.0 fill $151.50 (avg entry $73.27, P&L $-0.23)",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "strike": 69400.0,
+        "lots": 3,
+        "close_price": 151.5,
+        "avg_entry": 73.27,
+        "realized_pnl": -0.23
+      }
+    },
+    {
+      "id": "act_20260310_062133_000031",
+      "timestamp": "2026-03-10T06:21:33.445920+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down Complete: PE closed 3 lots across 1 strike(s), P&L $-0.23. Remaining: 9 lots.",
+      "session_id": "mmm10mar26-3",
+      "severity": "success",
+      "details": {
+        "side": "PE",
+        "lots_closed": 3,
+        "total_realized_pnl": -0.23,
+        "remaining_lots": 9,
+        "strikes": [
+          69400.0
+        ],
+        "any_failed": false
+      }
+    },
+    {
+      "id": "act_20260310_062253_000032",
+      "timestamp": "2026-03-10T06:22:53.775862+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260310_062253_000033",
+      "timestamp": "2026-03-10T06:22:53.957612+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": 1.23,
+          "rv_annualized": 22.9,
+          "vol_regime_score": 0.139,
+          "dollar_gamma": 201.54,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.631,
+          "ema_slope": -2.27,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": -0.021
+        }
+      }
+    },
+    {
+      "id": "act_20260310_062854_000034",
+      "timestamp": "2026-03-10T06:28:54.389110+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (alert)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260310_062854_000035",
+      "timestamp": "2026-03-10T06:28:54.680283+00:00",
+      "type": "regime_control",
+      "type_label": "Regime Control",
+      "category": "safety",
+      "message": "Regime: WARN (vol=NORMAL, gamma=NORMAL, trend=TREND_DOWN, trend_tier=ALERT)",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "vol_regime": "NORMAL",
+        "gamma_regime": "NORMAL",
+        "trend_regime": "TREND_DOWN",
+        "trend_tier": 1,
+        "trend_direction": "down",
+        "regime_action": "WARN",
+        "details": {
+          "iv_change_pct": -0.77,
+          "rv_annualized": 54.23,
+          "vol_regime_score": 0.287,
+          "dollar_gamma": 143.21,
+          "gamma_soft_limit": 2500.0,
+          "gamma_hard_limit": 5000.0,
+          "spot_move_pct": -0.136,
+          "ema_slope": 7.17,
+          "trend_anchor": 70205.5094083,
+          "trend_tier": 1,
+          "trend_direction": "down",
+          "trend_acceleration_move_pct": 0.518
+        }
+      }
+    },
+    {
+      "id": "act_20260310_062854_000036",
+      "timestamp": "2026-03-10T06:28:54.686554+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down Active: CE triggered \u2014 reducing positions instead of hedging",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "aggressor": "CE",
+        "premium": 60.37880672
+      }
+    },
+    {
+      "id": "act_20260310_062854_000037",
+      "timestamp": "2026-03-10T06:28:54.687034+00:00",
+      "type": "wind_down",
+      "type_label": "Wind-Down",
+      "category": "adjustments",
+      "message": "\ud83c\udf19 Wind-Down: CE at minimum lots (0/0) \u2014 skipping (let theta work)",
+      "session_id": "mmm10mar26-3",
+      "severity": "info",
+      "details": {
+        "action": "skip",
+        "side": "CE"
+      }
+    },
+    {
+      "id": "act_20260310_063207_000038",
+      "timestamp": "2026-03-10T06:32:07.465575+00:00",
+      "type": "session_stopped",
+      "type_label": "Session Stopped",
+      "category": "system",
+      "message": "\u23f9 Session stopped: ",
+      "session_id": "mmm10mar26-3",
+      "severity": "warning",
+      "details": {
+        "reason": "",
+        "old_status": "RUNNING"
+      }
     }
   ],
-  "updated_at": "2026-03-09T18:37:47.703621+00:00"
+  "updated_at": "2026-03-10T06:32:07.466718+00:00"
 }

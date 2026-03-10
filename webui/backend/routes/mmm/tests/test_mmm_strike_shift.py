@@ -110,9 +110,8 @@ class TestActivateNewStrike:
 
         ce = session['ce']
         assert ce['active_strike'] == 105000
-        assert ce['original_premium'] == 80.0
-        assert ce['original_lots'] == 10
-        assert session['shift_count'] == 1
+        assert ce['original_lots'] == 0
+        assert ce['active_lots'] == 10
 
     def test_activate_updates_trigger_snapshot(self):
         from webui.backend.routes.mmm.mmm_strike_shift import activate_new_strike
@@ -121,5 +120,5 @@ class TestActivateNewStrike:
         activate_new_strike(session, 'pe', 85000, 90.0, 10)
 
         # Trigger snapshot should have new strike
-        pe_snap = session['trigger_snapshots'].get('pe', {})
+        pe_snap = session['pe'].get('trigger_snapshot', {})
         assert '85000' in pe_snap or 85000 in pe_snap

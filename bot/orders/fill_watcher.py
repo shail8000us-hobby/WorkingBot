@@ -14,7 +14,7 @@ def wait_until_filled_or_timeout(c: DeltaClient, order_id: str, timeout_s: int =
     last_status = "unknown"
     while time.time() < deadline:
         s = c.order_status(order_id)
-        status = (s.get("status") or s.get("body", {}).get("status") or s.get("body", {}).get("data", {}).get("status") or "").lower()
+        status = s.get("result", {}).get("state", s.get("status", "")).lower()
         last_status = status or last_status
         log.info(f"Poll {order_id} -> {status or 'unknown'}")
         if status in ("filled", "closed", "completed"):

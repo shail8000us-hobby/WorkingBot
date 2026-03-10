@@ -54,7 +54,10 @@ def get_effective_harvest_params(session: Dict, side: str) -> Dict:
     my_lots = ce_lots if side == 'ce' else pe_lots
     other_lots = pe_lots if side == 'ce' else ce_lots
 
-    asymmetry = my_lots / max(other_lots, 1)
+    if other_lots == 0:
+        return {}  # No asymmetry when other side has no positions
+
+    asymmetry = my_lots / other_lots
     pressure = my_lots / max_lots
 
     asym_threshold = params.get('rebalance_asymmetry_threshold', 5.0)

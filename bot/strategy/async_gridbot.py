@@ -91,7 +91,7 @@ def _configure_logging():
             level="INFO",  # Default level INFO to reduce verbosity
             colorize=True,
             backtrace=True,
-            diagnose=True,
+            diagnose=False,  # SECURITY: diagnose=True dumps local variables in tracebacks — exposes API keys
         )
         log.info(f"✅ Logging configured for PM2 (no timestamps in output)")
     else:
@@ -102,7 +102,7 @@ def _configure_logging():
             level="DEBUG",  # More verbose when running standalone
             colorize=True,
             backtrace=True,
-            diagnose=True,
+            diagnose=False,  # SECURITY: diagnose=True dumps local variables in tracebacks — exposes API keys
         )
         log.info(f"✅ Logging configured for standalone (with timestamps)")
     
@@ -1101,8 +1101,10 @@ class AsyncGridBot:
                             exception = task.exception()
                             if exception:
                                 log.error(f"   Task '{task_name}' failed with exception: {exception}")
-                        except:
-                            pass
+                        except asyncio.CancelledError:
+                            pass  # Task was cancelled — normal during shutdown
+                        except asyncio.InvalidStateError:
+                            pass  # Task not yet done — safe to ignore
                     
                     # Only stop if we have critical failures (not websocket)
                     if critical_failures:
@@ -1825,7 +1827,7 @@ class AsyncGridBot:
                         product_id=self.product_id,
                         size=self.lot_size,
                         side=side,
-                        order_type="market"
+                        order_type="market_order"
                     )
                     
                     if order_result and order_result.get("id"):

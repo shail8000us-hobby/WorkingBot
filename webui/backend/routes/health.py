@@ -32,7 +32,7 @@ def get_uptime():
             'seconds': int(uptime.total_seconds()),
             'formatted': str(uptime).split('.')[0]
         }
-    except:
+    except Exception:
         return {'seconds': 0, 'formatted': 'unknown'}
 
 
@@ -77,7 +77,7 @@ def check_disk_space():
             'percent_used': usage.percent,
             'healthy': usage.percent < 90
         }
-    except:
+    except Exception:
         return {'healthy': True, 'error': 'Unable to check disk space'}
 
 
@@ -92,7 +92,7 @@ def check_memory():
             'percent_used': memory.percent,
             'healthy': memory.percent < 90
         }
-    except:
+    except Exception:
         return {'healthy': True, 'error': 'Unable to check memory'}
 
 
@@ -105,7 +105,7 @@ def check_cpu():
             'cores': psutil.cpu_count(),
             'healthy': cpu_percent < 90
         }
-    except:
+    except Exception:
         return {'healthy': True, 'error': 'Unable to check CPU'}
 
 
@@ -121,7 +121,7 @@ def check_config_file():
             'size_kb': round(config_file.stat().st_size / 1024, 2) if config_file.exists() else 0,
             'healthy': config_file.exists() and os.access(config_file, os.R_OK)
         }
-    except:
+    except Exception:
         return {'healthy': False, 'error': 'Unable to check config file'}
 
 
@@ -143,7 +143,7 @@ def check_log_directory():
             'writable': True,
             'healthy': True
         }
-    except:
+    except Exception:
         return {
             'exists': log_dir.exists() if 'log_dir' in locals() else False,
             'writable': False,

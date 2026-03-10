@@ -258,6 +258,35 @@ async def close_position(
                     if pos.get('id') == pos_id:
                         pos.pop('_being_closed', None)
                         break
+            # On order failure, check if position was already closed externally
+            try:
+                rest = executor._create_rest_client()
+                pos_resp = await rest._request_with_retry(
+                    method="GET", path="/v2/positions/margined"
+                )
+                open_positions = pos_resp.get('result', [])
+                position_still_open = any(
+                    (p.get('product', {}).get('symbol', '') or p.get('symbol', '')) == symbol
+                    and abs(float(p.get('size', 0))) > 0
+                    for p in open_positions
+                )
+                if not position_still_open:
+                    log.warning(
+                        "Position %s already closed externally, marking as closed in session",
+                        symbol,
+                    )
+                    _remove_closed_position(session, side, position, pos_type)
+                    return {
+                        'success': True,
+                        'realized_pnl': 0.0,
+                        'close_premium': 0.0,
+                        'lots_closed': lots,
+                        'side': side,
+                        'strike': strike,
+                        'externally_closed': True,
+                    }
+            except Exception as check_err:
+                log.warning("Could not verify position existence: %s", check_err)
             return {
                 'success': False,
                 'error': result.get('error', 'Buy-back not filled'),
@@ -287,6 +316,8 @@ async def close_position(
             'reason': 'close_at_threshold',
             'realized_pnl': realized_pnl,
         })
+        if len(analytics['auto_close_events']) > 200:
+            analytics['auto_close_events'] = analytics['auto_close_events'][-200:]
         analytics['auto_close_total_lots'] = analytics.get('auto_close_total_lots', 0) + lots
 
         log.info(
