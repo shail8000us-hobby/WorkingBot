@@ -121,15 +121,21 @@ def activate_cooldown(session: Dict):
         return
 
     params = session.get('params', {})
-    interval = params.get('adjustment_interval', 300)
+    # P1-B: configurable cooldown — if reversal_cooldown_seconds > 0 use it,
+    # otherwise fall back to legacy formula: 1 × adjustment_interval.
+    cooldown_secs = params.get('reversal_cooldown_seconds', 0)
+    if cooldown_secs and cooldown_secs > 0:
+        duration = cooldown_secs
+    else:
+        duration = params.get('adjustment_interval', 300)
 
     session['cooldown_active'] = True
     # Fix #14: use timezone-aware UTC
     session['cooldown_until'] = (
-        datetime.now(timezone.utc) + timedelta(seconds=interval)
+        datetime.now(timezone.utc) + timedelta(seconds=duration)
     ).isoformat()
 
-    log.info(f"Cooldown activated for {interval}s")
+    log.info(f"Cooldown activated for {duration}s (reversal_cooldown_seconds={cooldown_secs})")
 
 
 def should_skip_reversal_adjustment(

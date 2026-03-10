@@ -413,6 +413,47 @@ DEFAULT_PARAMS = {
     'rebalance_asymmetry_threshold': 5.0,  # lots ratio threshold for extreme asymmetry boost
     'rebalance_pressure_threshold': 0.7,   # capacity pressure threshold for asymmetry boost
 
+    # Lot Velocity Limiter (T2-4) — cap lot growth rate to prevent runaway accumulation
+    'lot_velocity_enabled': True,           # master switch
+    'lot_velocity_limit': 10,               # max lots added per velocity window
+    'lot_velocity_window_mins': 30,         # rolling window in minutes
+
+    # Gamma-Aware Lot Multiplier (T3-2) — extra lots when premium has spiked aggressively
+    'gamma_aware_enabled': True,            # master switch
+    'gamma_aware_max_multiplier': 1.3,      # cap on multiplier (1.3 = 30% more lots max)
+
+    # Proactive Shift Scanner (T3-1)
+    'proactive_shift_enabled': True,        # master switch
+
+    # Consecutive CRITICAL margin escalation (T1-3)
+    'consecutive_critical_threshold': 3,    # beats at CRITICAL tier before force-stop
+
+    # Pre-Adjustment Delta Projection for Perp Hedge (T4-3)
+    'perp_hedge_project_adjustment': True,  # pass projected lots/side to perp hedge
+    'perp_hedge_approx_option_delta': 0.5,  # approximate delta per lot for projection
+
+    # P1-B: Reversal cooldown configurable
+    'reversal_cooldown_seconds': 0,       # 0 = use adjustment_interval × 1 (legacy), >0 = fixed seconds
+
+    # IMP-3: Asymmetry 3-tier hard block
+    'asymmetry_5to1_lot_reduction': 0.5,  # lot multiplier at 5:1 ratio (0.5 = 50% reduction)
+    'asymmetry_7to1_hard_block': True,    # hard-block all sells at 7:1 ratio
+
+    # IMP-5: Consecutive same-direction adjustment limiter
+    'consecutive_dir_limit': 3,           # after N consecutive same-dir adjustments, apply lot cap
+    'consecutive_dir_lot_cap_pct': 0.25,  # lot cap = initial_lots × this fraction
+    'consecutive_dir_block_after': 5,     # after N adjustments, block until force-heartbeat
+
+    # IMP-4: Strike shift OTM lot scaling
+    'strike_shift_use_lot_scaling': False, # master switch (default off for backward compat)
+    'strike_shift_otm_tier1': 1.0,         # below this % OTM → multiplier 0.25
+    'strike_shift_otm_tier2': 2.0,         # below this % OTM → multiplier 0.50
+    'strike_shift_otm_tier3': 3.0,         # below this % OTM → multiplier 0.75
+
+    # IMP-9: Full delta perp mode when position cap hit
+    'perp_full_delta_on_cap': True,       # switch perp to full delta mode when cap hit
+    'perp_full_delta_max_lots': 0,        # 0 = auto: min(perp_hedge_max_lots, 3 × initial_lots)
+
     # Perpetual Futures Delta Hedge (Fix #26)
     'perp_hedge_enabled': False,           # master switch — disabled until user opts in
     'perp_hedge_mode': 'atm_only',         # 'full' = always hedge, 'atm_only' = hedge only when original strike ≈ ATM
@@ -470,6 +511,27 @@ HOT_RELOAD_PARAMS = {
     'recycle_max_pct', 'recycle_cooldown_sec', 'recycle_min_lot_gain',
     'recycle_free_lot_buffer', 'recycle_protect_original',
     'rebalance_enabled', 'rebalance_asymmetry_threshold', 'rebalance_pressure_threshold',
+    # Lot Velocity Limiter (T2-4)
+    'lot_velocity_enabled', 'lot_velocity_limit', 'lot_velocity_window_mins',
+    # Gamma-Aware Lot Multiplier (T3-2)
+    'gamma_aware_enabled', 'gamma_aware_max_multiplier',
+    # Proactive Shift (T3-1)
+    'proactive_shift_enabled',
+    # Consecutive CRITICAL margin escalation (T1-3)
+    'consecutive_critical_threshold',
+    # Perp projection (T4-3)
+    'perp_hedge_project_adjustment', 'perp_hedge_approx_option_delta',
+    # P1-B: Reversal cooldown
+    'reversal_cooldown_seconds',
+    # IMP-3: Asymmetry tiers
+    'asymmetry_5to1_lot_reduction', 'asymmetry_7to1_hard_block',
+    # IMP-5: Consecutive direction limiter
+    'consecutive_dir_limit', 'consecutive_dir_lot_cap_pct', 'consecutive_dir_block_after',
+    # IMP-4: Strike shift OTM scaling
+    'strike_shift_use_lot_scaling', 'strike_shift_otm_tier1', 'strike_shift_otm_tier2',
+    'strike_shift_otm_tier3',
+    # IMP-9: Full delta perp on cap
+    'perp_full_delta_on_cap', 'perp_full_delta_max_lots',
 }
 
 
@@ -586,6 +648,13 @@ def create_session(
         # P&L tracking
         'unrealized_pnl': 0.0,
         'peak_pnl': 0.0,
+
+        # P&L Attribution (T2-5) — breakdown by source
+        'pnl_initial': 0.0,       # P&L from closing original entry positions
+        'pnl_adjustment': 0.0,    # P&L from closing adjustment-filled positions
+        'pnl_harvest': 0.0,       # P&L from M1 harvesting
+        'pnl_recycle': 0.0,       # P&L from M2 Phase A buybacks (net: success only)
+        'pnl_perp': 0.0,          # Mirror of perp_hedge.realized_pnl
 
         # Reversal tracking
         'reversal_count': 0,

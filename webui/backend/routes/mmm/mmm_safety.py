@@ -71,6 +71,8 @@ class MMMSafety:
         events.extend(self.check_pnl_guardrail(session))
         events.extend(self.check_trailing_stop(session))
         events.extend(self.check_margin(session))
+        events.extend(self.check_lot_velocity(session))
+        events.extend(self.check_max_loss_sizing(session))
 
         return events
 
@@ -233,6 +235,58 @@ class MMMSafety:
 
         return events
 
+    def check_max_loss_sizing(self, session: Dict) -> List[Dict]:
+        """
+        IMP-6: Warn once per session if max_loss_amount is below the suggested
+        minimum for the current position size.
+
+        suggested_min = initial_lots × total_net_premium_per_lot × 0.50
+
+        This fires at most once per session (flag _max_loss_sizing_warned).
+        Action is 'warn' — never blocks trading.
+        """
+        events = []
+        if session.get('_max_loss_sizing_warned'):
+            return events
+
+        params = session.get('params', {})
+        max_loss = params.get('max_loss_amount', 5000.0)
+        initial_lots = session.get('lots', 0) or params.get('initial_lots', 0)
+        if initial_lots <= 0:
+            return events
+
+        # Compute average premium per lot across both sides at entry
+        ce_entry = session.get('ce', {}).get('entry_fill_price', 0.0) or 0.0
+        pe_entry = session.get('pe', {}).get('entry_fill_price', 0.0) or 0.0
+        if ce_entry <= 0 or pe_entry <= 0:
+            return events
+
+        from .mmm_constants import LOT_SIZE_BTC
+        total_net_premium_per_lot = (ce_entry + pe_entry) * LOT_SIZE_BTC
+        suggested_min = initial_lots * total_net_premium_per_lot * 0.50
+
+        if suggested_min > 0 and max_loss < suggested_min:
+            session['_max_loss_sizing_warned'] = True
+            events.append({
+                'type': 'max_loss_sizing',
+                'level': 'warning',
+                'message': (
+                    f"max_loss_amount (${max_loss:,.0f}) is below suggested minimum "
+                    f"(${suggested_min:,.0f}) for {initial_lots} lots × "
+                    f"${total_net_premium_per_lot:.2f}/lot premium. "
+                    f"Consider raising max_loss_amount."
+                ),
+                'action': 'warn',
+                'details': {
+                    'max_loss': max_loss,
+                    'suggested_min': round(suggested_min, 2),
+                    'initial_lots': initial_lots,
+                    'premium_per_lot': round(total_net_premium_per_lot, 4),
+                },
+            })
+
+        return events
+
     # =========================================================================
     # §13.4: Whipsaw Detection
     # =========================================================================
@@ -385,35 +439,73 @@ class MMMSafety:
 
     def check_asymmetry(self, session: Dict) -> List[Dict]:
         """
-        Detect asymmetric position sizes (ratio 3:1 = warning, 5:1 = alert).
+        IMP-3: Three-tier asymmetry protection.
+          3:1 warning  — log and continue
+          5:1 alert    — reduce next lot size by 50% (sets session flag)
+          7:1 critical — hard-block ALL new sells (stop_adjustments)
         """
         events = []
+        params = session.get('params', {})
         ce_lots = session.get('ce', {}).get('total_lots', 0)
         pe_lots = session.get('pe', {}).get('total_lots', 0)
 
         if ce_lots == 0 and pe_lots == 0:
+            session.pop('_asymmetry_lot_reduction_pct', None)
+            session.pop('_asymmetry_heavy_side', None)
             return events
 
         max_lots = max(ce_lots, pe_lots)
         min_lots = max(min(ce_lots, pe_lots), 1)  # avoid /0
         ratio = max_lots / min_lots
+        heavy_side = 'ce' if ce_lots >= pe_lots else 'pe'
 
-        if ratio >= 5:
+        hard_block_enabled = params.get('asymmetry_7to1_hard_block', True)
+        lot_reduction = params.get('asymmetry_5to1_lot_reduction', 0.5)
+
+        if ratio >= 7 and hard_block_enabled:
+            # Tier 3: hard block all new sells
+            session.pop('_asymmetry_lot_reduction_pct', None)
+            session.pop('_asymmetry_heavy_side', None)
+            events.append({
+                'type': 'asymmetry',
+                'level': 'critical',
+                'message': (
+                    f"ASYMMETRY HARD BLOCK: CE={ce_lots}, PE={pe_lots} "
+                    f"(ratio: {ratio:.1f}:1 ≥ 7:1) — all new sells blocked"
+                ),
+                'action': 'stop_adjustments',
+                'details': {
+                    'ce_lots': ce_lots,
+                    'pe_lots': pe_lots,
+                    'ratio': round(ratio, 1),
+                    'heavy_side': heavy_side,
+                },
+            })
+        elif ratio >= 5:
+            # Tier 2: reduce heavy-side lot size by 50%
+            session['_asymmetry_lot_reduction_pct'] = lot_reduction
+            session['_asymmetry_heavy_side'] = heavy_side
             events.append({
                 'type': 'asymmetry',
                 'level': 'alert',
                 'message': (
-                    f"HIGH position asymmetry: CE={ce_lots}, PE={pe_lots} "
-                    f"(ratio: {ratio:.1f}:1)"
+                    f"HIGH asymmetry: CE={ce_lots}, PE={pe_lots} "
+                    f"(ratio: {ratio:.1f}:1) — {heavy_side.upper()} lots reduced "
+                    f"by {int((1 - lot_reduction) * 100)}%"
                 ),
                 'action': 'warn',
                 'details': {
                     'ce_lots': ce_lots,
                     'pe_lots': pe_lots,
                     'ratio': round(ratio, 1),
+                    'heavy_side': heavy_side,
+                    'lot_reduction_pct': lot_reduction,
                 },
             })
         elif ratio >= 3:
+            # Tier 1: warning only
+            session.pop('_asymmetry_lot_reduction_pct', None)
+            session.pop('_asymmetry_heavy_side', None)
             events.append({
                 'type': 'asymmetry',
                 'level': 'warning',
@@ -428,6 +520,10 @@ class MMMSafety:
                     'ratio': round(ratio, 1),
                 },
             })
+        else:
+            # Below 3:1 — clear any prior flags
+            session.pop('_asymmetry_lot_reduction_pct', None)
+            session.pop('_asymmetry_heavy_side', None)
 
         return events
 
@@ -586,6 +682,71 @@ class MMMSafety:
                     'ce_lots': total_ce,
                     'pe_lots': total_pe,
                     'combined_cap': combined_cap,
+                },
+            })
+
+        return events
+
+    # =========================================================================
+    # T2-4: Lot Velocity Limiter
+    # =========================================================================
+
+    def check_lot_velocity(self, session: Dict) -> List[Dict]:
+        """T2-4: Cap lot growth rate to prevent exponential accumulation.
+
+        Counts lots sold across both sides in a rolling window.
+        If velocity exceeds `lot_velocity_limit` in `lot_velocity_window_mins`,
+        blocks further adjustments until the window rolls forward.
+        """
+        events = []
+        params = session.get('params', {})
+        if not params.get('lot_velocity_enabled', True):
+            return events
+
+        limit = params.get('lot_velocity_limit', 10)
+        window_mins = params.get('lot_velocity_window_mins', 30)
+        cutoff = datetime.now(timezone.utc) - timedelta(minutes=window_mins)
+
+        history = session.get('adjustment_history', [])
+        lots_in_window = 0
+        for adj in history:
+            try:
+                ts = datetime.fromisoformat(adj.get('timestamp', ''))
+                if ts.tzinfo is None:
+                    ts = ts.replace(tzinfo=timezone.utc)
+                if ts >= cutoff:
+                    lots_in_window += adj.get('lots_sold', 0)
+            except (ValueError, TypeError):
+                continue
+
+        if lots_in_window >= limit:
+            events.append({
+                'type': 'lot_velocity',
+                'level': 'alert',
+                'message': (
+                    f'LOT VELOCITY LIMIT: {lots_in_window} lots sold in last '
+                    f'{window_mins}min (limit: {limit}) — adjustments blocked'
+                ),
+                'action': 'stop_adjustments',
+                'details': {
+                    'lots_in_window': lots_in_window,
+                    'limit': limit,
+                    'window_mins': window_mins,
+                },
+            })
+        elif lots_in_window >= limit * 0.8:
+            events.append({
+                'type': 'lot_velocity',
+                'level': 'warning',
+                'message': (
+                    f'Lot velocity warning: {lots_in_window}/{limit} lots '
+                    f'in last {window_mins}min'
+                ),
+                'action': 'continue',
+                'details': {
+                    'lots_in_window': lots_in_window,
+                    'limit': limit,
+                    'window_mins': window_mins,
                 },
             })
 

@@ -139,6 +139,7 @@ def compute_required_hedge(
     # spread drag from unnecessary rebalances.
     _cap_pct_threshold = 0.80  # 80% of cap utilization
     _max_lots_per_side = params.get('max_lots_per_side', 300)
+    _position_cap_hit = False
     for _s in ('ce', 'pe'):
         _side_lots = session.get(_s, {}).get('total_lots', 0)
         if _max_lots_per_side > 0 and _side_lots >= _max_lots_per_side * _cap_pct_threshold:
@@ -149,7 +150,26 @@ def compute_required_hedge(
                 f"Band: {rebalance_band:.4f} → {_widened:.4f}"
             )
             rebalance_band = _widened
+            _position_cap_hit = True
             break  # Only need to widen once
+
+    # IMP-9: Full portfolio delta mode when position cap is hit AND perp_full_delta_on_cap=True.
+    # Switch from incremental rebalancing to full delta neutralization to provide
+    # meaningful protection during the most dangerous phase of a session.
+    if _position_cap_hit and params.get('perp_full_delta_on_cap', True):
+        initial_lots = session.get('lots', 1) or 1
+        configured_max = params.get('perp_hedge_max_lots', 50)
+        full_delta_max_cfg = params.get('perp_full_delta_max_lots', 0)
+        if full_delta_max_cfg and full_delta_max_cfg > 0:
+            max_lots = full_delta_max_cfg
+        else:
+            max_lots = min(configured_max, 3 * initial_lots)
+        # Override rebalance band: in full delta mode, rebalance on any non-trivial drift
+        rebalance_band = delta_threshold  # use delta_threshold as the band
+        log.debug(
+            f"IMP-9 Perp FULL DELTA mode (cap hit): max_lots={max_lots}, "
+            f"band={rebalance_band:.4f}, portfolio_Δ={portfolio_delta:+.4f}"
+        )
 
     perp = get_perp_state(session)
     current_lots = perp.get('lots', 0)

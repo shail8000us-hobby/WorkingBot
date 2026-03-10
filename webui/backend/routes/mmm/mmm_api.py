@@ -403,6 +403,10 @@ def start_session(session_id: str):
                 'error': f"Cannot start session in {status} state. Must be IDLE or PAUSED.",
             }), 400
 
+        # IMP-8: Pre-entry regime checks — warnings only, do not block start
+        pre_entry_warnings = _check_pre_entry_conditions(session)
+
+
         # Check if session has been initialized (both sides have positions)
         ce_lots = session.get('ce', {}).get('original_lots', 0)
         pe_lots = session.get('pe', {}).get('original_lots', 0)
@@ -457,6 +461,7 @@ def start_session(session_id: str):
                 'status': 'STARTING',
                 'entry_executed': False,
                 'async': True,
+                'pre_entry_warnings': pre_entry_warnings,
             })
 
         # =====================================================================
@@ -488,11 +493,84 @@ def start_session(session_id: str):
             'message': f'Session {session_id} started',
             'status': new_status,
             'entry_executed': False,
+            'pre_entry_warnings': pre_entry_warnings,
         })
 
     except Exception as e:
         log.exception(f"Failed to start MMM session {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _check_pre_entry_conditions(session: dict) -> list:
+    """
+    IMP-8: Run pre-entry regime checks before starting a session.
+    Returns a list of warning strings. Never blocks the start — warnings only.
+    """
+    from datetime import datetime, timezone, timedelta
+    warnings = []
+    params = session.get('params', {})
+
+    # Check 1: Momentum — BTC moved > 0.5% in last 10 min
+    # We approximate using the session's current spot vs the last known price.
+    # If no recent price info available, skip this check.
+    price_history = session.get('analytics', {}).get('spot_price_history', [])
+    if len(price_history) >= 2:
+        recent = price_history[-1]
+        old_ts = recent.get('ts', '')
+        old_price = recent.get('price', 0)
+        current_price = session.get('analytics', {}).get('last_spot_price', 0)
+        if old_price > 0 and current_price > 0:
+            move_pct = abs(current_price - old_price) / old_price * 100
+            if move_pct > 0.5:
+                warnings.append(
+                    f"Momentum: BTC moved {move_pct:.1f}% recently. "
+                    f"Market has momentum — consider waiting for calmer conditions."
+                )
+
+    # Check 2: Strike width — CE and PE not equidistant from spot
+    spot_price = session.get('analytics', {}).get('last_spot_price', 0)
+    ce_strike = session.get('ce', {}).get('active_strike', 0) or session.get('ce', {}).get('original_strike', 0)
+    pe_strike = session.get('pe', {}).get('active_strike', 0) or session.get('pe', {}).get('original_strike', 0)
+    if spot_price > 0 and ce_strike > 0 and pe_strike > 0:
+        ce_otm_pct = (ce_strike - spot_price) / spot_price * 100
+        pe_otm_pct = (spot_price - pe_strike) / spot_price * 100
+        asymmetry = abs(ce_otm_pct - pe_otm_pct)
+        if asymmetry > 0.5:
+            warnings.append(
+                f"Strike width: CE is {ce_otm_pct:.1f}% OTM but PE is {pe_otm_pct:.1f}% OTM. "
+                f"Consider symmetric strikes for delta neutrality."
+            )
+
+    # Check 3: Session time — entry within 30 min of market open (09:30 IST)
+    now_utc = datetime.now(timezone.utc)
+    now_ist = now_utc + timedelta(hours=5, minutes=30)
+    market_open_ist = now_ist.replace(hour=9, minute=30, second=0, microsecond=0)
+    mins_since_open = (now_ist - market_open_ist).total_seconds() / 60
+    if 0 <= mins_since_open < 30:
+        warnings.append(
+            f"Early entry: {mins_since_open:.0f} minutes since market open (09:30 IST). "
+            f"Price discovery may cause early adjustments."
+        )
+
+    # Check 4: Remaining expiry — entry < 2 hours to expiry
+    expiry_str = params.get('expiry', '')
+    if expiry_str:
+        try:
+            from .mmm_initializer import expiry_to_utc_datetime
+            expiry_dt_str = expiry_to_utc_datetime(expiry_str, params)
+            expiry_dt = datetime.fromisoformat(expiry_dt_str.replace('Z', '+00:00'))
+            if expiry_dt.tzinfo is None:
+                expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
+            mins_to_expiry = (expiry_dt - now_utc).total_seconds() / 60
+            if 0 < mins_to_expiry < 120:
+                warnings.append(
+                    f"Low time to expiry: {mins_to_expiry:.0f} minutes remain. "
+                    f"Wind-down will activate almost immediately."
+                )
+        except Exception:
+            pass
+
+    return warnings
 
 
 def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, lots: int):
@@ -1559,6 +1637,40 @@ def update_session_params(session_id: str):
                 'changed': [],
             })
 
+        # IMP-10: Cap raise impact preview — compute warning before applying
+        cap_raise_warning = None
+        if 'max_lots_per_side' in changed_keys and is_running:
+            old_cap = session.get('params', {}).get('max_lots_per_side', 100)
+            new_cap = validated['max_lots_per_side']
+            if new_cap > old_cap:
+                ce_lots = session.get('ce', {}).get('total_lots', 0)
+                pe_lots = session.get('pe', {}).get('total_lots', 0)
+                ce_unrealized = session.get('ce', {}).get('unrealized_pnl', 0) or 0
+                pe_unrealized = session.get('pe', {}).get('unrealized_pnl', 0) or 0
+                total_unrealized = ce_unrealized + pe_unrealized
+                heavy_lots = max(ce_lots, pe_lots)
+                light_lots = max(min(ce_lots, pe_lots), 1)
+                ratio_now = heavy_lots / light_lots if light_lots > 0 else 0
+                cap_raise_warning = {
+                    'old_cap': old_cap,
+                    'new_cap': new_cap,
+                    'current_ce_lots': ce_lots,
+                    'current_pe_lots': pe_lots,
+                    'current_unrealized_loss': round(total_unrealized, 2),
+                    'asymmetry_ratio': round(ratio_now, 1),
+                    'message': (
+                        f"Cap raise {old_cap} → {new_cap}: "
+                        f"CE={ce_lots} lots, PE={pe_lots} lots, "
+                        f"unrealized ${total_unrealized:+,.0f}. "
+                        f"Raising PE cap does NOT reduce CE exposure. "
+                        f"Current asymmetry ratio: {ratio_now:.1f}:1."
+                    ),
+                }
+                log.warning(
+                    f"[{session_id}] IMP-10 Cap raise: {old_cap} → {new_cap}. "
+                    f"CE={ce_lots}, PE={pe_lots}, uPnL=${total_unrealized:+.0f}"
+                )
+
         # Persist
         storage.update_session(session_id, {'params': current_params})
 
@@ -1567,12 +1679,15 @@ def update_session_params(session_id: str):
 
         log.info(f"MMM session {session_id} params updated: {changed_keys}")
 
-        return jsonify({
+        response = {
             'success': True,
             'message': f'Updated {len(changed_keys)} parameter(s)',
             'params': current_params,
             'changed': changed_keys,
-        })
+        }
+        if cap_raise_warning:
+            response['cap_raise_warning'] = cap_raise_warning
+        return jsonify(response)
 
     except Exception as e:
         log.exception(f"Failed to update params for session {session_id}")

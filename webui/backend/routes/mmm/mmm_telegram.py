@@ -220,3 +220,28 @@ async def alert_max_loss_breach(
 ⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"max_loss_{session_id}")
+
+
+async def alert_both_sides_up(
+    session_id: str,
+    ce_now: float,
+    pe_now: float,
+    ce_trigger: float,
+    pe_trigger: float,
+) -> bool:
+    """IMP-12: Alert when both CE and PE are above their triggers simultaneously."""
+    msg = f"""🚨 *MMM BOTH SIDES UP — MANUAL DECISION REQUIRED*
+
+📈 CE Premium: *${ce_now:,.2f}* (trigger: ${ce_trigger:,.2f})
+📉 PE Premium: *${pe_now:,.2f}* (trigger: ${pe_trigger:,.2f})
+
+⏸️ *Session paused. Both sides triggered simultaneously.*
+This requires human judgement. Log in and decide:
+• Continue by deciding which side to hedge
+• Close all positions
+• Wait for one side to drop below trigger
+
+🤖 Session: `{session_id}`
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    return await _send_async(msg, f"both_sides_up_{session_id}")

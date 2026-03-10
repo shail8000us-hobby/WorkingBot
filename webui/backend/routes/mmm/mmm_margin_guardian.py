@@ -438,6 +438,16 @@ class MarginGuardian:
         else:
             self._consecutive_critical = 0
 
+        # T1-3: After N consecutive CRITICAL beats, escalate to force_stop_session
+        consecutive_critical_threshold = params.get('consecutive_critical_threshold', 3)
+        force_stop = False
+        if self._consecutive_critical >= consecutive_critical_threshold:
+            force_stop = True
+            log.error(
+                f"[{self._sid}] MARGIN CONSECUTIVE CRITICAL: {self._consecutive_critical} beats "
+                f"at CRITICAL tier — escalating to force_stop_session"
+            )
+
         # Compute lots to close if in reduction tiers
         lots_to_close = {'ce': 0, 'pe': 0}
         target_pct = params.get('margin_target_pct', MARGIN_PARAM_DEFAULTS['margin_target_pct'])
@@ -455,6 +465,10 @@ class MarginGuardian:
                 f"pos_margin: ${margin_data['position_margin']:.2f})"
             )
 
+        actions = list(tier_result['actions'])
+        if force_stop and 'force_stop_session' not in actions:
+            actions.append('force_stop_session')
+
         return {
             'checked': True,
             'require_action': require_action,
@@ -462,10 +476,11 @@ class MarginGuardian:
             'prev_tier': prev_tier,
             'tier_changed': tier_changed,
             'utilization_pct': util_pct,
-            'actions': tier_result['actions'],
+            'actions': actions,
             'margin_data': margin_data,
             'lots_to_close': lots_to_close,
             'headroom_pct': tier_result['headroom_pct'],
+            'consecutive_critical': self._consecutive_critical,
             'error': None,
         }
 

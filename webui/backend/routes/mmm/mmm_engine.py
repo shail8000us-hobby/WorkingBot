@@ -375,6 +375,38 @@ class MMMEngine:
             constraint_msg = f"{constraint_msg}; {exp_msg}" if constraint_msg else exp_msg
         # ── END Split Ledger ──────────────────────────────────────────────────
 
+        # ── IMP-3: Asymmetry 5:1 lot reduction ───────────────────────────────
+        # When ratio >= 5:1, check_asymmetry sets _asymmetry_lot_reduction_pct
+        # on the session. Apply it only when selling the heavy side.
+        asym_reduction = session.get('_asymmetry_lot_reduction_pct', 1.0)
+        asym_heavy_side = session.get('_asymmetry_heavy_side', '')
+        if asym_reduction < 1.0 and hedge_side == asym_heavy_side:
+            original_lots = lots_to_sell
+            lots_to_sell = max(math.ceil(lots_to_sell * asym_reduction), 1)
+            if lots_to_sell < original_lots:
+                asym_msg = (
+                    f"Asymmetry 5:1 reduction: {original_lots} → "
+                    f"{lots_to_sell} ({int((1 - asym_reduction) * 100)}% reduction on heavy side)"
+                )
+                constraint_msg = f"{constraint_msg}; {asym_msg}" if constraint_msg else asym_msg
+        # ── END IMP-3 ─────────────────────────────────────────────────────
+
+        # ── IMP-4: Strike-shift OTM lot scaling ──────────────────────────
+        # When selling after a strike shift, scale lots based on how close the
+        # new strike is to spot. Stored in _strike_shift_otm_multiplier by the
+        # monitor before calling calculate_lots_to_sell.
+        otm_multiplier = session.get('_strike_shift_otm_multiplier', 1.0)
+        if params.get('strike_shift_use_lot_scaling', False) and otm_multiplier < 1.0:
+            original_lots = lots_to_sell
+            lots_to_sell = max(math.ceil(lots_to_sell * otm_multiplier), 1)
+            if lots_to_sell < original_lots:
+                otm_msg = (
+                    f"Strike-shift OTM scaling: {original_lots} → "
+                    f"{lots_to_sell} (multiplier {otm_multiplier:.2f})"
+                )
+                constraint_msg = f"{constraint_msg}; {otm_msg}" if constraint_msg else otm_msg
+        # ── END IMP-4 ─────────────────────────────────────────────────────
+
         return lots_to_sell, constraint_msg, False  # No cap hit if we got here
 
     # =========================================================================
@@ -491,7 +523,16 @@ class MMMEngine:
                 }
 
             fill_price = result.get('fill_price', 0)
-            premium_collected = fill_price * lots_to_sell * LOT_SIZE_BTC
+            # P1-D: use actual filled size, not requested size (partial fill handling)
+            filled_lots = result.get('filled_size', lots_to_sell)
+            if filled_lots <= 0:
+                filled_lots = lots_to_sell  # fallback if executor didn't report it
+            if filled_lots < lots_to_sell:
+                log.warning(
+                    f"PARTIAL FILL: requested {lots_to_sell} {hedge_side.upper()} lots, "
+                    f"only {filled_lots} filled. Ledger updated with actual fill."
+                )
+            premium_collected = fill_price * filled_lots * LOT_SIZE_BTC
 
             # §6: Update state
             self._update_state_after_adjustment(
@@ -499,7 +540,7 @@ class MMMEngine:
                 hedge_side=hedge_side,
                 aggressor_side=aggressor_side,
                 strike=hedge_strike,
-                lots=lots_to_sell,
+                lots=filled_lots,
                 fill_price=fill_price,
                 ce_now=ce_now,
                 pe_now=pe_now,
@@ -522,7 +563,9 @@ class MMMEngine:
                 'success': True,
                 'fill_price': fill_price,
                 'premium_collected': premium_collected,
-                'lots_sold': lots_to_sell,
+                'lots_sold': filled_lots,
+                'lots_requested': lots_to_sell,
+                'partial_fill': filled_lots < lots_to_sell,
                 'symbol': symbol,
                 'adj_type': adj_type,
             }

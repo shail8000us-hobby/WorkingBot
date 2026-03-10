@@ -80,7 +80,7 @@ from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOC
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
     alert_session_stopped, alert_rapid_check_activated,
-    alert_max_loss_breach,
+    alert_max_loss_breach, alert_both_sides_up,
 )
 
 # L-2 fix: module-level import removes per-call import-lock overhead on every heartbeat.
@@ -493,6 +493,17 @@ class MMMMonitor:
         if not self._running:
             return False
         self._force_event.set()
+        # IMP-5: A force-heartbeat from the operator confirms they want to
+        # continue despite the consecutive same-direction block — clear it
+        # and reset the counter so it doesn't immediately re-block.
+        if self.session and self.session.get('_consecutive_dir_blocked'):
+            self.session.pop('_consecutive_dir_blocked', None)
+            self.session['_consecutive_same_dir_count'] = 0
+            self.session['_consecutive_same_dir_side'] = ''
+            log.info(
+                f"[{self.session_id}] IMP-5: consecutive direction block and counter "
+                f"cleared by force-heartbeat"
+            )
         log.info(f"[{self.session_id}] ⚡ Force heartbeat requested")
         return True
 
@@ -800,6 +811,17 @@ class MMMMonitor:
             self._last_margin_snapshot = None
 
         if margin_result and margin_result.get('checked'):
+            # T1-3: consecutive CRITICAL escalation — stop session before any action
+            if 'force_stop_session' in margin_result.get('actions', []):
+                log.error(
+                    f"[{sid}] MARGIN FORCE STOP: {margin_result.get('consecutive_critical', 0)} "
+                    f"consecutive CRITICAL beats — stopping session now"
+                )
+                session['stop_reason'] = (
+                    f"Margin consecutive CRITICAL x{margin_result.get('consecutive_critical', 0)}"
+                )
+                self.stop()
+                return
             if margin_result['tier'] in (TIER_RED, TIER_CRITICAL):
                 # RED/CRITICAL: emergency close already handled inside _check_margin_guardian
                 # C-1 fix: run cleanup before returning so peak P&L, session save,
@@ -827,6 +849,8 @@ class MMMMonitor:
 
         # Step 1: Fetch current premiums — with circuit breaker + fallback
         ce_now, pe_now, fetch_ok = await self._fetch_premiums_with_fallback()
+
+        _partial_safety_checked = False  # P1-A: dedup flag — prevents double safety run
 
         if not fetch_ok:
             # ----------------------------------------------------------------
@@ -895,6 +919,7 @@ class MMMMonitor:
                     'partial', latency_ms=latency_ms,
                     ce_premium=cached_ce, pe_premium=cached_pe,
                 )
+                _partial_safety_checked = True  # P1-A: safety already ran above
             else:
                 log.warning(f"[{sid}] MISS BEAT: no cached prices available, skipping entirely")
                 log_activity('heartbeat_miss',
@@ -910,8 +935,13 @@ class MMMMonitor:
             # events).  Without this, sessions paused by whipsaw can never
             # auto-resume when exchange is unreachable.
             try:
-                minutes_to_expiry = self._get_minutes_to_expiry()
-                safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
+                # P1-A: Skip if already ran during partial beat to avoid double-fire.
+                if _partial_safety_checked:
+                    _miss_safety_events: list = []
+                else:
+                    minutes_to_expiry = self._get_minutes_to_expiry()
+                    _miss_safety_events = self._safety.run_all_checks(session, minutes_to_expiry)
+                safety_events = _miss_safety_events
                 # Process all critical safety events on miss beat — auto_close
                 # and stop must fire even when exchange is unreachable.
                 for event in safety_events:
@@ -1118,6 +1148,13 @@ class MMMMonitor:
                         except Exception as _cleanup_err:
                             log.error(f"[{sid}] Cleanup after ATM auto-close failed: {_cleanup_err}")
                         return
+
+        # Step 1.5: Proactive Shift Scanner (T3-1)
+        # Before close-at-5, check if either side's premium has decayed below
+        # shift_threshold while still having active lots. If so, trigger a shift
+        # proactively rather than waiting for the opposite side to trigger.
+        if session.get('params', {}).get('proactive_shift_enabled', True):
+            await self._proactive_shift_scan(ce_now, pe_now)
 
         # Step 2: Close-at-5 scan (§11)
         # Fix #11: capture which sides had positions closed so we can re-evaluate
@@ -1685,12 +1722,24 @@ class MMMMonitor:
                 self.pause('Both sides triggered')
                 session['strategy_status'] = 'BOTH_SIDES_UP'
                 session['both_sides_up_at'] = datetime.now(timezone.utc).isoformat()
-            
+
                 # Analytics: Track both_sides_up event (no trading logic impact)
                 analytics = session.setdefault('analytics', {})
                 analytics.setdefault('both_sides_up_timestamps', []).append(datetime.now(timezone.utc).isoformat())
                 if len(analytics['both_sides_up_timestamps']) > 200:
                     analytics['both_sides_up_timestamps'] = analytics['both_sides_up_timestamps'][-200:]
+
+                # IMP-12: Telegram push notification — only fires on first entry to BOTH_SIDES_UP
+                # (subsequent beats with status already BOTH_SIDES_UP skip this block via
+                # the OUTCOME_BOTH / _BOTH_SIDES_UP state logic, so re-fire guard not needed)
+                try:
+                    await alert_both_sides_up(
+                        sid, ce_now, pe_now,
+                        trigger_result['ce_trigger'],
+                        trigger_result['pe_trigger'],
+                    )
+                except Exception as _tg_err:
+                    log.warning(f"[{sid}] Both-sides-up Telegram alert failed: {_tg_err}")
 
                 emit_both_sides_alert(
                     sid, ce_now, pe_now,
@@ -2726,6 +2775,23 @@ class MMMMonitor:
             session, hedge, loss, hedge_premium,
         )
 
+        # ── IMP-5: Consecutive same-direction adjustment limiter ──────────
+        lots, constraint_msg = self._apply_consecutive_dir_limit(
+            session, aggressor, lots, constraint_msg
+        )
+        # After applying the limit, check if we should block entirely
+        if lots <= 0 and session.get('_consecutive_dir_blocked'):
+            log_activity('consecutive_dir_blocked',
+                        f'🚫 CONSECUTIVE {aggressor.upper()} BLOCKED: '
+                        f'{session.get("_consecutive_same_dir_count", 0)} consecutive adjustments '
+                        f'in same direction — force-heartbeat required to continue',
+                        sid, 'warning',
+                        {'side': aggressor, 'count': session.get('_consecutive_same_dir_count', 0)})
+            emit_safety(sid, 'consecutive_dir_block', 'alert',
+                       f'Consecutive {aggressor.upper()} direction limit reached')
+            return
+        # ── END IMP-5 ─────────────────────────────────────────────────────
+
         if lots <= 0:
             # BUG-2 FIX: Always log when trigger fires but lots=0
             skip_reason = constraint_msg or 'lot_calculation_zero'
@@ -2811,6 +2877,8 @@ class MMMMonitor:
                 loss, adj_type,
                 session.get('adjustment_count', 0),
             )
+            # IMP-5: Update consecutive same-direction counter after successful sell
+            self._update_consecutive_dir_counter(session, aggressor)
         else:
             # BUG-2 FIX: Log when adjustment execution fails
             error_msg = result.get('error', 'unknown') if result else 'no result'
@@ -2831,6 +2899,122 @@ class MMMMonitor:
                             'adj_type': adj_type,
                             'error': error_msg,
                         })
+
+    # =========================================================================
+    # IMP-5: Consecutive Same-Direction Adjustment Limiter
+    # =========================================================================
+
+    def _apply_consecutive_dir_limit(
+        self,
+        session: Dict,
+        aggressor: str,
+        lots: int,
+        constraint_msg: str,
+    ):
+        """
+        IMP-5: After N consecutive same-direction adjustments, cap lot size.
+        After M consecutive, block entirely until force-heartbeat resets the counter.
+
+        Returns (adjusted_lots, updated_constraint_msg).
+        """
+        params = session.get('params', {})
+        limit = params.get('consecutive_dir_limit', 3)
+        block_after = params.get('consecutive_dir_block_after', 5)
+        lot_cap_pct = params.get('consecutive_dir_lot_cap_pct', 0.25)
+
+        count = session.get('_consecutive_same_dir_count', 0)
+        last_dir = session.get('_consecutive_same_dir_side', '')
+
+        # If direction changed, reset counter (counter updated on success in _update_)
+        if last_dir and last_dir.lower() != aggressor.lower():
+            return lots, constraint_msg
+
+        # Block entirely after block_after consecutive adjustments
+        if count >= block_after:
+            session['_consecutive_dir_blocked'] = True
+            return 0, f'Consecutive {aggressor.upper()} block: {count} adjustments'
+
+        # Cap lot size after limit consecutive adjustments
+        if count >= limit:
+            initial_lots = session.get('lots', 1) or 1
+            max_allowed = max(1, int(initial_lots * lot_cap_pct))
+            if lots > max_allowed:
+                msg = (
+                    f'Consecutive {aggressor.upper()} cap (#{count}): '
+                    f'{lots} → {max_allowed} lots '
+                    f'({int(lot_cap_pct * 100)}% of {initial_lots} initial)'
+                )
+                constraint_msg = f"{constraint_msg}; {msg}" if constraint_msg else msg
+                lots = max_allowed
+
+        return lots, constraint_msg
+
+    def _update_consecutive_dir_counter(self, session: Dict, aggressor: str):
+        """IMP-5: Update consecutive same-direction counter after successful adjustment."""
+        last_dir = session.get('_consecutive_same_dir_side', '')
+        if last_dir and last_dir.lower() == aggressor.lower():
+            session['_consecutive_same_dir_count'] = session.get('_consecutive_same_dir_count', 0) + 1
+        else:
+            # Direction changed — reset
+            session['_consecutive_same_dir_count'] = 1
+            session['_consecutive_same_dir_side'] = aggressor.lower()
+            session.pop('_consecutive_dir_blocked', None)
+
+        log.debug(
+            f"[{self.session_id}] Consecutive {aggressor.upper()} count: "
+            f"{session['_consecutive_same_dir_count']}"
+        )
+
+    # =========================================================================
+    # T3-1: Proactive Shift Scanner
+    # =========================================================================
+
+    async def _proactive_shift_scan(self, ce_now: float, pe_now: float):
+        """T3-1: Proactively shift a side when its premium decays below shift_threshold.
+
+        Checks each side: if premium < shift_threshold AND the side has active lots,
+        trigger a shift NOW rather than waiting for the opposite side trigger to fire.
+        This prevents the scenario where one side decays to close-at-5 territory
+        before a shift occurs, wasting premium.
+        """
+        session = self.session
+        sid = self.session_id
+        params = session.get('params', {})
+        shift_threshold = params.get('shift_threshold', 50.0)
+
+        for side, premium in [('ce', ce_now), ('pe', pe_now)]:
+            side_state = session.get(side, {})
+            active_lots = side_state.get('active_lots', 0)
+            if active_lots <= 0:
+                continue
+            # Only shift if premium is below threshold but above close-at-5
+            close_threshold = params.get('close_at_threshold', 5.0)
+            if premium >= shift_threshold or premium <= close_threshold:
+                continue
+            # Check the side hasn't already been shifted this beat
+            if session.get(f'_proactive_shifted_{side}'):
+                continue
+
+            log.info(
+                f"[{sid}] T3-1 PROACTIVE SHIFT: {side.upper()} premium "
+                f"${premium:.2f} < shift_threshold ${shift_threshold:.0f} "
+                f"with {active_lots} active lots — triggering shift"
+            )
+            log_activity(
+                'proactive_shift',
+                f'🔄 Proactive Shift: {side.upper()} premium ${premium:.2f} '
+                f'< ${shift_threshold:.0f} — shifting to better strike',
+                sid, 'info',
+                {'side': side, 'premium': premium, 'shift_threshold': shift_threshold,
+                 'active_lots': active_lots},
+            )
+            # Use 0 for loss since we're not reacting to a trigger
+            await self._process_strike_shift(
+                side, 0.0, ce_now, pe_now,
+            )
+            session[f'_proactive_shifted_{side}'] = True
+            # Only shift one side per beat to avoid race conditions
+            break
 
     # =========================================================================
     # §10: Strike Shift
@@ -2912,9 +3096,30 @@ class MMMMonitor:
         # Fold buyback cost so extra lots at new strike recover it
         total_loss_to_cover = loss + shift_recycle_buyback
 
+        # IMP-4: Set OTM multiplier on session before calling calculate_lots_to_sell.
+        # The engine reads session['_strike_shift_otm_multiplier'] to scale lots.
+        params = session.get('params', {})
+        if params.get('strike_shift_use_lot_scaling', False) and spot_price > 0:
+            otm_pct = abs(new_strike - spot_price) / spot_price * 100.0
+            tier1 = params.get('strike_shift_otm_tier1', 1.0)
+            tier2 = params.get('strike_shift_otm_tier2', 2.0)
+            tier3 = params.get('strike_shift_otm_tier3', 3.0)
+            if otm_pct < tier1:
+                session['_strike_shift_otm_multiplier'] = 0.25
+            elif otm_pct < tier2:
+                session['_strike_shift_otm_multiplier'] = 0.50
+            elif otm_pct < tier3:
+                session['_strike_shift_otm_multiplier'] = 0.75
+            else:
+                session['_strike_shift_otm_multiplier'] = 1.0
+        else:
+            session.pop('_strike_shift_otm_multiplier', None)
+
         lots, _, _ = self._engine.calculate_lots_to_sell(
             session, side, total_loss_to_cover, hedge_premium,
         )
+        # Clear after use — don't affect non-shift lot calculations
+        session.pop('_strike_shift_otm_multiplier', None)
 
         if lots <= 0:
             return
