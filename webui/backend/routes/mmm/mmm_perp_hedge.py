@@ -75,13 +75,24 @@ def is_perp_hedge_enabled(session: Dict) -> bool:
 def compute_required_hedge(
     session: Dict,
     portfolio_delta: float,
+    projected_lots: int = 0,
+    projected_side: str = '',
 ) -> Dict[str, Any]:
     """
     Compute the perp hedge action required to neutralize portfolio delta.
 
+    T4-3: Accepts optional projected_lots + projected_side to add the expected
+    delta impact of a just-executed adjustment before computing the hedge.
+    This lets the perp hedge account for combined (current + projected) delta
+    rather than relying on a stale Step 3.5 portfolio_delta that doesn't yet
+    reflect the adjustment's delta contribution.
+
     Args:
         session: Full session dict
         portfolio_delta: Net delta of all options positions (from Step 3.5)
+        projected_lots: Optional — lots traded in the just-completed adjustment
+        projected_side: Optional — 'ce' (call written = negative delta) or
+                        'pe' (put written = positive delta) of the adjustment
 
     Returns:
         {
@@ -90,9 +101,32 @@ def compute_required_hedge(
             target_lots: int,      # signed target position
             effective_delta: float, # residual delta before proposed hedge
             reason: str,
+            projected_delta_added: float,  # T4-3: delta added from projection
         }
     """
     params = session.get('params', {})
+    # T4-3: Compute and add the projected adjustment delta.
+    # Options delta approximation: sell call → negative delta (~-0.5 * lots * LOT_SIZE_BTC)
+    # sell put → positive delta (~+0.5 * lots * LOT_SIZE_BTC).
+    # We use approx_delta (defaulting 0.5) to avoid a live greeks API call
+    # during the hedge computation. The hedge ratio applies on top.
+    projected_delta_added = 0.0
+    if projected_lots > 0 and projected_side in ('ce', 'pe'):
+        approx_delta = params.get('perp_hedge_approx_option_delta', 0.5)
+        if projected_side == 'ce':
+            # Selling calls → short delta per lot (negative contribution)
+            projected_delta_added = -approx_delta * projected_lots * LOT_SIZE_BTC
+        else:
+            # Selling puts → long delta per lot (positive contribution)
+            projected_delta_added = approx_delta * projected_lots * LOT_SIZE_BTC
+        portfolio_delta = portfolio_delta + projected_delta_added
+        log.debug(
+            f"T4-3 Perp projection: {projected_side.upper()} +{projected_lots} lots → "
+            f"Δ_proj={projected_delta_added:+.4f}, "
+            f"adjusted portfolio_Δ={portfolio_delta:+.4f}"
+        )
+
+
     delta_threshold = params.get('perp_hedge_delta_threshold', 0.02)
     rebalance_band = params.get('perp_hedge_rebalance_band', 0.005)
     hedge_ratio = params.get('perp_hedge_ratio', 1.0)
@@ -512,6 +546,8 @@ async def run_perp_hedge(
     executor,
     portfolio_delta: float,
     btc_mark_price: float,
+    projected_lots: int = 0,
+    projected_side: str = '',
 ) -> Dict[str, Any]:
     """
     Main perp hedge entry point — called each heartbeat (Step 7.5).
@@ -529,6 +565,8 @@ async def run_perp_hedge(
         executor: MMMExecutor instance
         portfolio_delta: Net portfolio delta (from Step 3.5, cached)
         btc_mark_price: Current BTC mark price (session['_regime_spot_price'])
+        projected_lots: T4-3 — lots traded in the just-completed adjustment (0 = disabled)
+        projected_side: T4-3 — 'ce' or 'pe' of the adjustment ('' = disabled)
 
     Returns:
         {action, lots_traded, fill_price, realized_pnl, reason}
@@ -557,8 +595,12 @@ async def run_perp_hedge(
             'reason': 'P&L calculation incomplete — delta unreliable',
         }
 
-    # 4. Compute required hedge
-    required = compute_required_hedge(session, portfolio_delta)
+    # 4. Compute required hedge (T4-3: pass projected delta from last adjustment)
+    required = compute_required_hedge(
+        session, portfolio_delta,
+        projected_lots=projected_lots,
+        projected_side=projected_side,
+    )
     if required['action'] == 'none':
         log.debug(f"[{sid}] Perp hedge: {required['reason']}")
         return {

@@ -437,7 +437,13 @@ class TakeProfitMonitor:
         self._cache_time = 0
         self._cache_ttl = self.config.get('cache_ttl', 3.0)  # 3-second cache
         self._cache_lock = threading.Lock()  # Thread-safe cache access
-        
+
+        # Dedicated event loop for this monitor's async calls.
+        # Using a per-instance loop (instead of asyncio.get_event_loop()) avoids
+        # the "This event loop is already running" error under eventlet, and ensures
+        # the httpx.AsyncClient stays bound to a single consistent loop.
+        self._loop = asyncio.new_event_loop()
+
         logger.info("✅ Take Profit Monitor initialized")
     
     def start(self):
@@ -548,48 +554,33 @@ class TakeProfitMonitor:
                         else:
                             positions_data = None
                     
-                    # Fetch from API if cache miss or expired
+                    # Fetch via internal HTTP endpoint (avoids asyncio+eventlet event loop conflicts).
+                    # Mirrors max_loss_manager's proven pattern.
                     if positions_data is None:
-                        print(f"🎯 DEBUG: Cache miss/expired, fetching from API...", flush=True)
-                        
-                        # Proper async event loop management — keep loop open
-                        # to avoid "Event loop is closed" for httpx clients
-                        try:
-                            loop = asyncio.get_event_loop()
-                            if loop.is_closed():
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                            print(f"🎯 DEBUG: Using event loop (closed={loop.is_closed()})", flush=True)
-                        except RuntimeError:
-                            # No loop for this thread yet
-                            loop = asyncio.new_event_loop()
-                            asyncio.set_event_loop(loop)
-                            print(f"🎯 DEBUG: Created new event loop", flush=True)
-                        
-                        try:
-                            print(f"🎯 DEBUG: Calling loop.run_until_complete()...", flush=True)
-                            positions_data = loop.run_until_complete(
-                                self.api_client.get_all_positions_with_options()
-                            )
-                            print(f"🎯 DEBUG: API returned {type(positions_data)}", flush=True)
-                            
-                            # Update cache (thread-safe)
+                        print(f"🎯 DEBUG: Cache miss/expired, fetching via HTTP...", flush=True)
+                        import requests as _requests
+                        resp = _requests.get(
+                            "http://localhost:5555/api/options/positions",
+                            timeout=10
+                        )
+                        if resp.status_code == 200:
+                            http_data = resp.json()
+                            positions_data = http_data.get('positions', [])
+                            print(f"🎯 DEBUG: HTTP returned {len(positions_data)} positions", flush=True)
                             with self._cache_lock:
                                 self._positions_cache = positions_data
                                 self._cache_time = now
-                                print(f"🎯 DEBUG: Updated cache at {now}", flush=True)
-                        finally:
-                            # Do NOT close the loop — the httpx AsyncClient is
-                            # bound to it and will fail on the next call.
-                            pass
+                        else:
+                            logger.error(f"HTTP fetch failed: {resp.status_code}")
+                            print(f"🎯 DEBUG: HTTP fetch failed: {resp.status_code}", flush=True)
+                            return
                     
-                    # Extract positions from response (handle both dict and list formats)
-                    # Match max_loss_manager implementation for consistency
+                    # Normalise to list
                     if isinstance(positions_data, dict):
                         futures_list = positions_data.get('futures', [])
                         options_list = positions_data.get('options', [])
                         positions = futures_list + options_list
-                        print(f"🎯 DEBUG: Dict response, extracted {len(positions)} positions ({len(futures_list)} futures, {len(options_list)} options)", flush=True)
+                        print(f"🎯 DEBUG: Dict response, extracted {len(positions)} positions", flush=True)
                     elif isinstance(positions_data, list):
                         positions = positions_data
                         print(f"🎯 DEBUG: List response with {len(positions)} positions", flush=True)

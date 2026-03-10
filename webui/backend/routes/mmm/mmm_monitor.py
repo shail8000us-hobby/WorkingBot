@@ -210,6 +210,20 @@ class MMMMonitor:
             analytics['total_pe_lots_traded'] = analytics['initial_pe_lots']
             analytics['total_combined_lots_traded'] = analytics['initial_ce_lots'] + analytics['initial_pe_lots']
 
+        # T4-2: Clear any stale in-memory pending order registry entries from a
+        # previous monitor run on this same session_id (within the same process).
+        # The in-memory _registry in mmm_pending_orders survives process-internal
+        # restarts (e.g., watchdog re-instantiating a MMMMonitor without a full
+        # process restart).  Without this, an in-flight order registered by the
+        # previous monitor instance could block the new monitor's first adjustment
+        # cycle indefinitely.  Clearing at start() gives every new monitor instance
+        # a clean slate while preserving the registry for all other sessions.
+        try:
+            clear_all_pending(self.session_id)
+            log.debug(f"[{self.session_id}] Pending order registry cleared at start")
+        except Exception as _pend_e:
+            log.warning(f"[{self.session_id}] Failed to clear pending order registry at start: {_pend_e}")
+
         self._thread = threading.Thread(
             target=self._run_loop,
             name=f"mmm-monitor-{self.session_id}",
@@ -1148,6 +1162,62 @@ class MMMMonitor:
                 log.error(f"[{sid}] Cleanup after both-sides-closed failed: {_cleanup_err}")
             return
 
+        # ── ONE-SIDE CLOSE GUARD ──────────────────────────────────────────────
+        # If one side is fully closed while the other still has open positions,
+        # the strategy is imbalanced — one side has no hedge for the other.
+        # This violates the core MMM strategy (both sides must be able to offset
+        # each other).  PAUSE immediately and alert the user.
+        #
+        # Use a session flag (_one_side_closed_<side>) to avoid re-pausing on
+        # every heartbeat once the session is already in this state.  The flag is
+        # cleared as soon as the closed side regains any lots (via adjustment or
+        # strike shift on the next trigger cycle).
+        for _cs in ['ce', 'pe']:
+            _os = 'pe' if _cs == 'ce' else 'ce'
+            _ocs_flag = f'_one_side_closed_{_cs}'
+            if check_side_fully_closed(session, _cs) and not check_side_fully_closed(session, _os):
+                _os_lots = session.get(_os, {}).get('total_lots', 0)
+                if not session.get(_ocs_flag):
+                    session[_ocs_flag] = True
+                    _ocs_msg = (
+                        f'{_cs.upper()} fully closed (all positions at or below threshold) '
+                        f'but {_os.upper()} has {_os_lots} lot(s) still open — '
+                        f'one-sided exposure detected. Session PAUSED. '
+                        f'Action required: close {_os.upper()} positions or '
+                        f're-enter {_cs.upper()} at a new strike.'
+                    )
+                    log.error(f"[{sid}] ONE-SIDE CLOSE: {_ocs_msg}")
+                    log_activity(
+                        'safety_block',
+                        f'⛔ ONE-SIDE CLOSE: {_cs.upper()}=0 lots, '
+                        f'{_os.upper()}={_os_lots} lots open — unhedged. PAUSED.',
+                        sid, 'error',
+                        {'closed_side': _cs, 'open_side': _os, 'open_lots': _os_lots},
+                    )
+                    emit_safety(
+                        sid, 'one_side_closed', 'critical', _ocs_msg,
+                        {'closed_side': _cs, 'open_side': _os, 'open_lots': _os_lots},
+                    )
+                    self.pause(f'{_cs.upper()} fully closed — {_os.upper()} unhedged')
+                    try:
+                        _ocs_pnl = (session.get('unrealized_pnl', 0)
+                                    + session.get('realized_pnl', 0)
+                                    - session.get('total_fees', 0))
+                        update_peak_pnl(session, _ocs_pnl)
+                        self._emit_heartbeat_data(ce_now, pe_now)
+                        self._save_my_session(session)
+                        latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                        self._health.record_beat('ok', latency_ms=latency_ms)
+                    except Exception as _ocs_err:
+                        log.error(f"[{sid}] Cleanup after one-side-close pause failed: {_ocs_err}")
+                    return
+                # Flag already set (user resumed or subsequent heartbeat) — let run continue
+                break
+            else:
+                # Clear flag when the closed side has regained lots
+                session.pop(_ocs_flag, None)
+        # ── END ONE-SIDE CLOSE GUARD ──────────────────────────────────────────
+
         # NOTE: Proactive wind-down (buying back on every heartbeat) was removed.
         # Wind-down now only acts when triggers fire (trigger-based path in the
         # adjustment section below handles this correctly — see OUTCOME_CE/PE branch).
@@ -1798,8 +1868,23 @@ class MMMMonitor:
                         )
 
                 if atm_gate_passed:
+                    # T4-3: Pass projected delta from the just-executed adjustment.
+                    # The cached portfolio_delta is from Step 3.5 and doesn't yet
+                    # reflect any adjustment that ran this heartbeat.
+                    # If an adjustment ran, project its delta impact so the hedge
+                    # accounts for combined (current + just-traded) exposure.
+                    _proj_lots = 0
+                    _proj_side = ''
+                    if params.get('perp_hedge_project_adjustment', True):
+                        _adj_info = self._hb_wt.get('adjustment', {})
+                        if _adj_info and _adj_info.get('lots', 0) > 0:
+                            _proj_lots = _adj_info['lots']
+                            _proj_side = _adj_info.get('side', '')  # 'ce' or 'pe'
+
                     perp_result = await run_perp_hedge(
-                        session, self.executor, perp_delta, perp_btc_mark
+                        session, self.executor, perp_delta, perp_btc_mark,
+                        projected_lots=_proj_lots,
+                        projected_side=_proj_side,
                     )
                     if perp_result.get('action') not in ('none', 'skipped'):
                         log_activity(
@@ -3653,6 +3738,56 @@ class MMMMonitor:
                 log.info(f"[{sid}] Close-at-5: stop requested, aborting remaining closes")
                 break
 
+            # ── SHIFT-BEFORE-CLOSE GUARD ──────────────────────────────────────
+            # In normal (non-wind-down) mode, do NOT close an ACTIVE position
+            # whose mark premium is below shift_threshold while the other side
+            # still has open lots.
+            #
+            # Rationale: when a position's mark premium is below shift_threshold,
+            # it means that if the other side triggers an adjustment, a strike
+            # SHIFT will fire — moving this side to a fresh OTM strike with
+            # better premium and restoring full hedge coverage.  Closing the
+            # position first eliminates that hedge opportunity and leaves the
+            # other side exposed.
+            #
+            # Using MARK price (ce_now/pe_now) is intentional — it is also what
+            # check_shift_needed uses inside _process_adjustment, so the guard
+            # fires under exactly the same conditions as a real shift would.
+            #
+            # Does NOT apply to:
+            #   - frozen positions (already shifted away; not the active hedge)
+            #   - wind-down mode (using_elevated = True) — wind-down has its own
+            #     close/buyback logic; the one-side guard handles asymmetry there
+            if not using_elevated and pos.get('type') in ('original', 'adjustment', 'strike_shift'):
+                _sbc_pos_side = pos['side']
+                _sbc_other_side = 'pe' if _sbc_pos_side == 'ce' else 'ce'
+                _sbc_other_lots = session.get(_sbc_other_side, {}).get('total_lots', 0)
+                _sbc_mark = ce_now if _sbc_pos_side == 'ce' else pe_now
+                if _sbc_other_lots > 0 and check_shift_needed(session, _sbc_pos_side, _sbc_mark):
+                    log.info(
+                        f"[{sid}] SHIFT-GUARD: Holding {_sbc_pos_side.upper()} "
+                        f"@ {pos['strike']} (mark ${_sbc_mark:.2f} < shift_threshold — "
+                        f"{_sbc_other_side.upper()} has {_sbc_other_lots} lots open). "
+                        f"Preserving for trigger-based shift."
+                    )
+                    log_activity(
+                        'close_skipped',
+                        f'⏸️ SHIFT-GUARD: Held {_sbc_pos_side.upper()} @ {pos["strike"]} '
+                        f'— mark ${_sbc_mark:.2f} < shift_threshold. '
+                        f'{_sbc_other_side.upper()} has {_sbc_other_lots} lots: '
+                        f'preserving for strike shift.',
+                        sid, 'info',
+                        {
+                            'side': _sbc_pos_side,
+                            'strike': pos['strike'],
+                            'mark_premium': _sbc_mark,
+                            'other_side': _sbc_other_side,
+                            'other_lots': _sbc_other_lots,
+                        },
+                    )
+                    continue
+            # ── END SHIFT-BEFORE-CLOSE GUARD ─────────────────────────────────
+
             result = await close_position(
                 self.executor, self.initializer, session, pos,
             )
@@ -3676,14 +3811,13 @@ class MMMMonitor:
                     'threshold_used': pos.get('threshold_used', 5.0),  # actual threshold
                 })
 
-                # Check if side fully closed → auto-find new strike
+                # Check if side fully closed — heartbeat will detect and PAUSE
+                # (one-side close guard runs after _process_close_at_5 returns)
                 if check_side_fully_closed(session, pos['side']):
                     log.info(
-                        f"[{sid}] {pos['side'].upper()} fully closed, "
-                        f"seeking new strike..."
+                        f"[{sid}] {pos['side'].upper()} fully closed — "
+                        f"one-side guard in heartbeat will evaluate."
                     )
-                    # This is a special case — we don't shift, we re-enter
-                    # For now, just log. Full auto-re-entry needs user config.
 
         return sides_closed  # Fix #11
 
@@ -4803,6 +4937,16 @@ class MMMMonitor:
         Fetch current CE and PE premiums at active strikes.
         Uses mark price for monitoring (§15.5).
         Creates a FRESH REST client per heartbeat to avoid event loop binding issues.
+
+        T4-4 PRICE BASIS AUDIT: mark price is intentional here.
+        - Trigger detection uses mark price (conservative: fires only when market consensus moves)
+        - P&L computation uses mark price (matches exchange settlement value)
+        - close-at-5 uses BID price (see _make_bid_fetch_fn) — more accurate for
+          determining what the market will actually pay for a buyback at near-zero premium
+        - Shift detection uses the ce_now/pe_now values from this function (i.e. mark price)
+          which is correct: we want to shift when mark price drops below threshold, not just
+          when bid drops (bid can temporarily lag mark in illiquid options)
+        This separation (mark for signaling, bid for close execution) is intentional and correct.
         """
         try:
             ce_state = self.session.get('ce', {})

@@ -119,7 +119,13 @@ def _deferred_monitor_init():
         print("🛑 Starting Max Loss Monitor...")
         from webui.backend.options_strategy.max_loss_manager import init_max_loss_monitoring, get_max_loss_manager
         max_loss_manager = get_max_loss_manager()
-        init_max_loss_monitoring(api_client, max_loss_manager, auto_start=True)
+        # Each monitor needs its own UnifiedAPIClient so their httpx.AsyncClient
+        # instances are each bound to their own event loop (no "attached to different loop" errors)
+        max_loss_api_client = UnifiedAPIClient(
+            api_key=creds['api_key'], api_secret=creds['api_secret'],
+            symbol='BTCUSD', enable_websocket=False
+        )
+        init_max_loss_monitoring(max_loss_api_client, max_loss_manager, auto_start=True)
         print("✅ Max Loss Monitor started")
     except Exception as e:
         print(f"⚠️  Max Loss Monitor failed: {e}")
@@ -143,7 +149,12 @@ def _deferred_monitor_init():
         )
         init_tp_socketio(socketio)
         take_profit_manager = get_take_profit_manager()
-        init_take_profit_monitoring(api_client, take_profit_manager, auto_start=True)
+        # Each monitor gets its own client to avoid event loop binding conflicts
+        tp_api_client = UnifiedAPIClient(
+            api_key=creds['api_key'], api_secret=creds['api_secret'],
+            symbol='BTCUSD', enable_websocket=False
+        )
+        init_take_profit_monitoring(tp_api_client, take_profit_manager, auto_start=True)
         print("✅ Take Profit Monitor started")
     except Exception as e:
         print(f"⚠️  Take Profit Monitor failed: {e}")

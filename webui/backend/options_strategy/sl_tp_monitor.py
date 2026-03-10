@@ -26,6 +26,11 @@ class SLTPMonitor:
         self.api_client = None
         self.sl_tp_manager = None
         self._triggers_fired = set()  # Track fired triggers to avoid duplicates
+        # Dedicated event loop for this monitor's async calls.
+        # Using a per-instance loop (instead of asyncio.get_event_loop()) avoids
+        # the "This event loop is already running" error under eventlet, and ensures
+        # the httpx.AsyncClient stays bound to a single consistent loop.
+        self._loop = asyncio.new_event_loop()
     
     def set_dependencies(self, api_client, sl_tp_manager):
         """Set dependencies (called after initialization)"""
@@ -143,29 +148,18 @@ class SLTPMonitor:
             logger.error(f"Error checking positions: {e}", exc_info=True)
     
     def _get_positions(self) -> List[Dict]:
-        """Get current options positions"""
+        """Get current options positions via internal HTTP endpoint (avoids asyncio+eventlet conflicts)."""
         try:
-            # Use unified API client to get positions - must use asyncio
-            import asyncio
-            
-            # Create async function to fetch positions
-            async def fetch_positions():
-                response = await self.api_client.get_all_positions_with_options()
-                return response.get('options', []) if response else []
-            
-            # Run async function in event loop — avoid asyncio.run() which
-            # closes the loop and breaks httpx clients bound to it.
-            try:
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-            positions = loop.run_until_complete(fetch_positions())
-            return positions
-            
+            import requests
+            response = requests.get(
+                "http://localhost:5555/api/options/positions",
+                timeout=10
+            )
+            if response.status_code == 200:
+                data = response.json()
+                return data.get('positions', [])
+            logger.error(f"HTTP fetch failed: {response.status_code}")
+            return []
         except Exception as e:
             logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []
