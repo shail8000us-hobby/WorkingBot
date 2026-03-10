@@ -9,7 +9,7 @@
  * - WebSocket/mutations: No caching
  */
 
-const CACHE_VERSION = 'gridbot-v1';
+const CACHE_VERSION = 'gridbot-v2';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const API_CACHE = `${CACHE_VERSION}-api`;
 
@@ -56,6 +56,12 @@ self.addEventListener('fetch', (event) => {
             caches.open(STATIC_CACHE).then((cache) => cache.put(event.request, clone));
           }
           return response;
+        }).catch(() => {
+          // Fetch failed (e.g. old hashed chunk no longer exists after rebuild).
+          // Return an empty 404 so event.respondWith() gets a valid Response
+          // instead of a rejected promise, which would throw
+          // "TypeError: Failed to convert value to 'Response'".
+          return new Response('', { status: 404 });
         });
       })
     );
@@ -123,7 +129,11 @@ self.addEventListener('fetch', (event) => {
         }
         return response;
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request);
+        // caches.match returns undefined on miss — must return a valid Response.
+        return cached || new Response('', { status: 503 });
+      })
   );
 });
 

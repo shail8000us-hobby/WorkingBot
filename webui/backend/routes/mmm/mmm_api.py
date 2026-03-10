@@ -28,20 +28,32 @@ except ImportError:
 
 
 def _run_async(coro):
-    """Run async coroutine without closing the event loop.
+    """Run async coroutine in a real native OS thread via eventlet.tpool.
 
-    Replaces ``asyncio.run()`` in Flask route handlers to prevent
-    "Event loop is closed" errors for httpx / asyncio resources.
+    eventlet.monkey_patch() converts threading.Thread AND
+    concurrent.futures.ThreadPoolExecutor into eventlet green threads that all
+    share the same eventlet hub. asyncio.run() inside any green thread fails:
+        "asyncio.run() cannot be called from a running event loop"
+    because asyncio._get_running_loop() returns the shared eventlet hub.
+
+    eventlet.tpool.execute() dispatches to a REAL native OS thread pool that
+    is NOT monkey-patched. In a real OS thread, no event loop is running, so
+    a fresh asyncio SelectorEventLoop can be created and used normally.
+    asyncio.DefaultEventLoopPolicy() bypasses eventlet's custom asyncio policy
+    to ensure a real SelectorEventLoop (not eventlet's hub wrapper).
     """
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
+    import eventlet.tpool
+
+    def _worker():
+        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    return eventlet.tpool.execute(_worker)
 
 from .mmm_storage import get_storage
 from .mmm_state import (
@@ -310,10 +322,14 @@ def delete_session(session_id: str):
         session = storage.get_session(session_id)
 
         if not session:
+            # Idempotent delete: if already gone, return success.
+            # Returning 404 here would trip the frontend circuit breaker and
+            # break all subsequent API calls (orders, positions, sessions).
+            log.info(f"DELETE {session_id}: already absent, returning success (idempotent)")
             return jsonify({
-                'success': False,
-                'error': f'Session not found: {session_id}',
-            }), 404
+                'success': True,
+                'message': f'Session {session_id} not found (already deleted)',
+            })
 
         status = session.get('strategy_status', 'IDLE')
         if status not in ('IDLE', 'STOPPED'):

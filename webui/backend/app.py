@@ -174,10 +174,11 @@ ALLOWED_ORIGINS = cfg.webui.allowed_origins
 CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
 
 # SocketIO (configured for socket.io-client v4.x compatibility)
+_ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
 socketio = SocketIO(
     app,
     cors_allowed_origins="*",
-    async_mode='threading',
+    async_mode=_ASYNC_MODE,
     engineio_logger=False,  # DISABLED: Reduce log spam
     logger=False,  # DISABLED: Reduce log spam
     ping_timeout=60,  # REDUCED: 120 -> 60 to cleanup stale connections faster
@@ -1338,231 +1339,210 @@ if __name__ == '__main__':
     print("=" * 80)
     
     # ============================================================================
-    # Initialize Health Checker with Process Callbacks
+    # DEFERRED MONITOR INITIALIZATION
+    # All monitors start in a background thread AFTER the server is listening.
+    # This ensures: (1) server responds immediately, (2) no blocking on startup,
+    # (3) a hung monitor cannot prevent the server from accepting connections.
     # ============================================================================
-    try:
-        print("\n💊 Starting Health Checker...")
-        from webui.backend.utils.lightweight_health import start_health_checker
-        from webui.backend.utils.process_helpers import (
-            check_bot_running,
-            check_guardian_running
-        )
-        
-        # Helper functions for safe health checks
-        def safe_check_bot():
-            try:
-                return check_bot_running()
-            except Exception:
-                return False
-        
-        def safe_check_guardian():
-            try:
-                return check_guardian_running()
-            except Exception:
-                return False
-        
-        def safe_check_telegram():
-            try:
-                # Check if telegram is configured using YAML config
-                from config.loader import get_config
-                cfg = get_config()
-                
-                # Determine which token to check based on trading mode
-                if cfg.trading_mode == 'live':
-                    bot_token = cfg.telegram.live_bot_token
-                else:
-                    bot_token = cfg.telegram.demo_bot_token
-                
-                # Fallback to generic token if mode-specific not set
-                if not bot_token:
-                    bot_token = cfg.telegram.bot_token
-                
-                return bool(bot_token and bot_token != '***REDACTED***')
-            except Exception:
-                return False
-        
-        # Start health checker with callbacks
-        start_health_checker(
-            bot_check=safe_check_bot,
-            monitor_check=lambda: False,  # Monitor deprecated, always False
-            guardian_check=safe_check_guardian,
-            telegram_check=safe_check_telegram
-        )
-        print("✅ Health checker started (background updates every 5s)\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start health checker: {e}")
-        print("   Health dashboard will show 'unknown' status\n")
-    
-    # ============================================================================
-    # Initialize and Start Delta Volatility Collector
-    # ============================================================================
-    try:
-        print("\n📊 Starting Delta Volatility Collector...")
-        from bot.volatility.delta_volatility_collector import get_collector
-        
-        collector = get_collector()
-        
-        # Check if we need to backfill historical data (SIMPLE SEEDING)
-        import sqlite3
-        conn = sqlite3.connect(collector.db_path)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM rv_calculations WHERE timeframe = '1d'")
-        daily_rv_count = cursor.fetchone()[0]
-        conn.close()
-        
-        # If we have less than 30 days of data, run backfill
-        if daily_rv_count < 30:
-            print(f"📊 Detected only {daily_rv_count} days of RV data - running backfill...")
-            try:
-                from bot.volatility.backfill_historical_data import backfill_rv_data
-                backfill_rv_data(days_back=90)
-                print("✅ Historical data backfill complete\n")
-            except Exception as backfill_error:
-                print(f"⚠️  Backfill warning: {backfill_error}")
-                print("   Collector will still work, but charts may have limited history\n")
-        
-        # Start background collection
-        collector.start()
-        print("✅ Delta Volatility Collector started (polling every 30s)\n")
-    except Exception as e:
-        print(f"❌ Failed to start Volatility Collector: {e}")
-        import traceback
-        traceback.print_exc()
-        print("⚠️  Continuing without volatility collector...\n")
-    
-    # ============================================================================
-    # Initialize and Start SL/TP Monitor (Options Trading)
-    # ============================================================================
-    try:
-        print("\n🎯 Starting SL/TP Monitor...")
-        from webui.backend.options_strategy.sl_tp_monitor import init_sl_tp_monitoring
-        from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
-        from bot.api.unified_api_client import UnifiedAPIClient
-        
-        # Create API client for options monitoring
-        creds = get_api_credentials()
-        api_client = UnifiedAPIClient(
-            api_key=creds['api_key'],
-            api_secret=creds['api_secret'],
-            symbol='BTCUSD',
-            enable_websocket=False
-        )
-        
-        # Get manager and initialize monitor
-        sl_tp_manager = get_sl_tp_manager()
-        monitor = init_sl_tp_monitoring(api_client, sl_tp_manager, auto_start=True)
-        
-        if monitor.is_running():
-            print("✅ SL/TP Monitor started (checking positions every 5s)\n")
-        else:
-            print("⚠️  SL/TP Monitor failed to start\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start SL/TP Monitor: {e}")
-        import traceback
-        traceback.print_exc()
-        print("   Options SL/TP will not auto-trigger (manual mode only)\n")
+    import threading as _threading
 
-    # ============================================================================
-    # Initialize and Start Max Loss Monitor (Options Trading)
-    # ============================================================================
-    try:
-        print("\n🛑 Starting Max Loss Monitor...")
-        from webui.backend.options_strategy.max_loss_manager import init_max_loss_monitoring, get_max_loss_manager
-        # Use the same api_client as above
-        max_loss_manager = get_max_loss_manager()
-        max_loss_monitor = init_max_loss_monitoring(api_client, max_loss_manager, auto_start=True)
-        if max_loss_monitor and getattr(max_loss_monitor, 'start', None):
-            print("✅ Max Loss Monitor started (per-strike/expiry loss limits enforced)\n")
-        else:
-            print("⚠️  Max Loss Monitor failed to start\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start Max Loss Monitor: {e}")
-        import traceback
-        traceback.print_exc()
-        print("   Per-strike/expiry max loss will NOT be enforced!\n")
-    
-    # ============================================================================
-    # IMPORTANT: Stagger monitor startups to prevent API conflicts
-    # ============================================================================
-    print("⏱️  Staggering monitor startup (2s delay to prevent API conflicts)...")
-    time.sleep(2)
-
-    # ============================================================================
-    # Start IV Background Recorder (Feature 2 — records IV snapshots every 5 min)
-    # ============================================================================
-    try:
-        from webui.backend.db.iv_history_db import start_iv_background_recorder
-        start_iv_background_recorder(interval=300)
-        print("✅ IV Background Recorder started (every 5 min)\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start IV Background Recorder: {e}\n")
-    
-    # ============================================================================
-    # Initialize and Start Take Profit Monitor (Options Trading)
-    # ============================================================================
-    try:
-        print("\n🎯 Starting Take Profit Monitor...")
-        from webui.backend.options_strategy.take_profit_manager import init_take_profit_monitoring, get_take_profit_manager, init_socketio as init_tp_socketio
-        # MISSING-3 FIX: give take-profit manager a socketio reference so it can push
-        # 'options_settings_updated' events to the frontend when TP/max-loss auto-triggers
-        init_tp_socketio(socketio)
-        # Use the same api_client as above
-        take_profit_manager = get_take_profit_manager()
-        take_profit_monitor = init_take_profit_monitoring(api_client, take_profit_manager, auto_start=True)
-        if take_profit_monitor and getattr(take_profit_monitor, 'start', None):
-            print("✅ Take Profit Monitor started (per-strike profit targets enforced)\n")
-        else:
-            print("⚠️  Take Profit Monitor failed to start\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start Take Profit Monitor: {e}")
-        import traceback
-        traceback.print_exc()
-        print("   Per-strike take profit will NOT be enforced!\n")
-    
-    # ============================================================================
-    # Initialize Delta Exchange Price WebSocket
-    # ============================================================================
-    try:
-        print("\n💹 Starting Delta Price WebSocket...")
-        from webui.backend.services import start_price_service
-        
-        price_ws = start_price_service(socketio)
-        print("✅ Delta Price WebSocket started (BTC & ETH real-time feeds)\n")
-        print("   📡 Connected to wss://socket.india.delta.exchange")
-        print("   📊 Broadcasting prices via Socket.IO on 'market_price_update' event\n")
-    except Exception as e:
-        print(f"⚠️  Failed to start Price WebSocket: {e}")
-        import traceback
-        traceback.print_exc()
-        print("   Will fall back to REST API for price fetching\n")
-    
-    # IMPORTANT: Disable reloader to work with instance lock
-    # Reloader spawns child process which conflicts with lock
-    
-    # ============================================================================
-    # Pre-warm critical API caches on startup
-    # ============================================================================
-    def _prewarm_caches():
-        """Pre-warm dashboard + bot/status caches so first user gets instant response."""
+    def _deferred_monitor_init(sio_ref, port):
+        """Start all monitors after server is listening. Runs in daemon thread."""
         import urllib.request
-        time.sleep(2)  # Wait for server to be ready
-        endpoints = [
-            ('bot/status', f'http://127.0.0.1:{WEBUI_PORT}/api/bot/status'),
-            ('options/dashboard', f'http://127.0.0.1:{WEBUI_PORT}/api/options/dashboard'),
-            ('mmm/sessions', f'http://127.0.0.1:{WEBUI_PORT}/api/mmm/sessions?summary=true'),
-            ('positions', f'http://127.0.0.1:{WEBUI_PORT}/api/positions'),
-            ('config/flat', f'http://127.0.0.1:{WEBUI_PORT}/api/config/flat'),
-        ]
-        for name, url in endpoints:
+
+        # Wait until the server is actually accepting connections
+        print("\n⏳ Waiting for server to accept connections before starting monitors...")
+        for _attempt in range(60):
             try:
-                urllib.request.urlopen(url, timeout=30).read()
-                print(f"  🔥 Cache warmed: {name}")
-            except Exception as e:
-                print(f"  ⚠️ Failed to warm {name}: {e}")
-    
-    import threading as _t
-    _t.Thread(target=_prewarm_caches, daemon=True, name='cache-warmer').start()
-    
+                urllib.request.urlopen(f'http://127.0.0.1:{port}/api/health', timeout=2)
+                break
+            except Exception:
+                time.sleep(0.5)
+        else:
+            print("⚠️  Server did not become ready in 30s — starting monitors anyway")
+
+        # Create a fresh event loop for this thread to avoid asyncio conflicts
+        # with Flask-SocketIO's main event loop
+        import asyncio
+        _loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(_loop)
+
+        print("\n" + "=" * 60)
+        print("📡 Starting background monitors...")
+        print("=" * 60)
+
+        # --- Health Checker ---
+        try:
+            print("\n💊 Starting Health Checker...")
+            from webui.backend.utils.lightweight_health import start_health_checker
+            from webui.backend.utils.process_helpers import (
+                check_bot_running,
+                check_guardian_running
+            )
+
+            def safe_check_bot():
+                try:
+                    return check_bot_running()
+                except Exception:
+                    return False
+
+            def safe_check_guardian():
+                try:
+                    return check_guardian_running()
+                except Exception:
+                    return False
+
+            def safe_check_telegram():
+                try:
+                    from config.loader import get_config
+                    _cfg = get_config()
+                    if _cfg.trading_mode == 'live':
+                        bot_token = _cfg.telegram.live_bot_token
+                    else:
+                        bot_token = _cfg.telegram.demo_bot_token
+                    if not bot_token:
+                        bot_token = _cfg.telegram.bot_token
+                    return bool(bot_token and bot_token != '***REDACTED***')
+                except Exception:
+                    return False
+
+            start_health_checker(
+                bot_check=safe_check_bot,
+                monitor_check=lambda: False,
+                guardian_check=safe_check_guardian,
+                telegram_check=safe_check_telegram
+            )
+            print("✅ Health checker started\n")
+        except Exception as e:
+            print(f"⚠️  Failed to start health checker: {e}\n")
+
+        # --- Delta Volatility Collector ---
+        try:
+            print("📊 Starting Delta Volatility Collector...")
+            from bot.volatility.delta_volatility_collector import get_collector
+            collector = get_collector()
+
+            import sqlite3
+            conn = sqlite3.connect(collector.db_path)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM rv_calculations WHERE timeframe = '1d'")
+            daily_rv_count = cursor.fetchone()[0]
+            conn.close()
+
+            if daily_rv_count < 30:
+                print(f"   Only {daily_rv_count} days of RV data — running backfill...")
+                try:
+                    from bot.volatility.backfill_historical_data import backfill_rv_data
+                    backfill_rv_data(days_back=90)
+                    print("   ✅ Historical data backfill complete")
+                except Exception as backfill_error:
+                    print(f"   ⚠️  Backfill warning: {backfill_error}")
+
+            collector.start()
+            print("✅ Delta Volatility Collector started (polling every 30s)\n")
+        except Exception as e:
+            print(f"⚠️  Volatility Collector failed: {e}\n")
+
+        # --- SL/TP Monitor ---
+        api_client = None
+        try:
+            print("🎯 Starting SL/TP Monitor...")
+            from webui.backend.options_strategy.sl_tp_monitor import init_sl_tp_monitoring
+            from webui.backend.options_strategy.sl_tp_manager import get_sl_tp_manager
+            from bot.api.unified_api_client import UnifiedAPIClient
+
+            creds = get_api_credentials()
+            api_client = UnifiedAPIClient(
+                api_key=creds['api_key'],
+                api_secret=creds['api_secret'],
+                symbol='BTCUSD',
+                enable_websocket=False
+            )
+
+            sl_tp_manager = get_sl_tp_manager()
+            _monitor = init_sl_tp_monitoring(api_client, sl_tp_manager, auto_start=True)
+            if _monitor.is_running():
+                print("✅ SL/TP Monitor started\n")
+            else:
+                print("⚠️  SL/TP Monitor failed to start\n")
+        except Exception as e:
+            print(f"⚠️  SL/TP Monitor failed: {e}\n")
+
+        # --- Max Loss Monitor ---
+        try:
+            print("🛑 Starting Max Loss Monitor...")
+            from webui.backend.options_strategy.max_loss_manager import init_max_loss_monitoring, get_max_loss_manager
+            max_loss_manager = get_max_loss_manager()
+            max_loss_monitor = init_max_loss_monitoring(api_client, max_loss_manager, auto_start=True)
+            if max_loss_monitor and getattr(max_loss_monitor, 'start', None):
+                print("✅ Max Loss Monitor started\n")
+            else:
+                print("⚠️  Max Loss Monitor failed to start\n")
+        except Exception as e:
+            print(f"⚠️  Max Loss Monitor failed: {e}\n")
+
+        # Stagger to prevent API rate limit conflicts
+        time.sleep(2)
+
+        # --- IV Background Recorder ---
+        try:
+            from webui.backend.db.iv_history_db import start_iv_background_recorder
+            start_iv_background_recorder(interval=300)
+            print("✅ IV Background Recorder started (every 5 min)\n")
+        except Exception as e:
+            print(f"⚠️  IV Background Recorder failed: {e}\n")
+
+        # --- Take Profit Monitor ---
+        try:
+            print("🎯 Starting Take Profit Monitor...")
+            from webui.backend.options_strategy.take_profit_manager import init_take_profit_monitoring, get_take_profit_manager, init_socketio as init_tp_socketio
+            init_tp_socketio(sio_ref)
+            take_profit_manager = get_take_profit_manager()
+            take_profit_monitor = init_take_profit_monitoring(api_client, take_profit_manager, auto_start=True)
+            if take_profit_monitor and getattr(take_profit_monitor, 'start', None):
+                print("✅ Take Profit Monitor started\n")
+            else:
+                print("⚠️  Take Profit Monitor failed to start\n")
+        except Exception as e:
+            print(f"⚠️  Take Profit Monitor failed: {e}\n")
+
+        # --- Delta Exchange Price WebSocket ---
+        try:
+            print("💹 Starting Delta Price WebSocket...")
+            from webui.backend.services import start_price_service
+            price_ws = start_price_service(sio_ref)
+            print("✅ Delta Price WebSocket started (BTC & ETH real-time feeds)")
+            print("   📡 Connected to wss://socket.india.delta.exchange\n")
+        except Exception as e:
+            print(f"⚠️  Price WebSocket failed: {e}\n")
+
+        # --- Pre-warm API caches ---
+        try:
+            for name, url in [
+                ('bot/status', f'http://127.0.0.1:{port}/api/bot/status'),
+                ('options/dashboard', f'http://127.0.0.1:{port}/api/options/dashboard'),
+                ('positions', f'http://127.0.0.1:{port}/api/positions'),
+            ]:
+                try:
+                    urllib.request.urlopen(url, timeout=15).read()
+                    print(f"  🔥 Cache warmed: {name}")
+                except Exception:
+                    print(f"  ⚠️ Failed to warm: {name}")
+        except Exception:
+            pass
+
+        print("\n" + "=" * 60)
+        print("✅ All monitors initialized")
+        print("=" * 60 + "\n")
+
+    # Launch deferred init as a daemon thread — does NOT block socketio.run()
+    _threading.Thread(
+        target=_deferred_monitor_init,
+        args=(socketio, WEBUI_PORT),
+        daemon=True,
+        name='deferred-monitor-init'
+    ).start()
+
     socketio.run(
         app,
         host='0.0.0.0',

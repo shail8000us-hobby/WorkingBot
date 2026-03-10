@@ -43,34 +43,55 @@ from config.loader import get_config
 
 log = logging.getLogger(__name__)
 
-# Detect if PM2 is available
+# Detect if PM2 is available — lazy to avoid blocking Gunicorn worker boot
 def is_pm2_available() -> bool:
-    """Check if PM2 is installed and available"""
+    """Check if PM2 is installed and available.
+    Uses shutil.which() first to avoid subprocess calls entirely when pm2 is not installed.
+    """
+    try:
+        import shutil
+        if not shutil.which('pm2'):
+            return False
+    except Exception:
+        return False
     try:
         result = subprocess.run(
             ['pm2', '--version'],
             capture_output=True,
             text=True,
-            timeout=5
+            timeout=2
         )
         return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired):
+    except Exception:
         return False
 
-PM2_AVAILABLE = is_pm2_available()
-
-# Check if PM2 is enabled via YAML config
-cfg = get_config()
-# The PM2 config is at cfg.pm2.enabled (Pydantic model maps use_pm2 -> enabled)
+# Lazy initialization — these are computed on first access, not at import time
+_pm2_initialized = False
+PM2_AVAILABLE = False
 USE_PM2 = False
-if hasattr(cfg, 'pm2') and hasattr(cfg.pm2, 'enabled'):
-    USE_PM2 = cfg.pm2.enabled
-    log.info(f"✅ PM2 enabled via cfg.pm2.enabled = {USE_PM2}")
-elif hasattr(cfg, 'webui') and hasattr(cfg.webui, 'pm2') and hasattr(cfg.webui.pm2, 'enabled'):
-    USE_PM2 = cfg.webui.pm2.enabled
-    log.info(f"✅ PM2 enabled via cfg.webui.pm2.enabled = {USE_PM2}")
 
-log.info(f"🔧 PM2 Initialization: PM2_AVAILABLE={PM2_AVAILABLE}, USE_PM2={USE_PM2}")
+def _ensure_pm2_initialized():
+    """Initialize PM2 detection lazily on first use, not at import time."""
+    global _pm2_initialized, PM2_AVAILABLE, USE_PM2
+    if _pm2_initialized:
+        return
+    _pm2_initialized = True
+
+    PM2_AVAILABLE = is_pm2_available()
+
+    # Check if PM2 is enabled via YAML config
+    try:
+        cfg = get_config()
+        if hasattr(cfg, 'pm2') and hasattr(cfg.pm2, 'enabled'):
+            USE_PM2 = cfg.pm2.enabled
+            log.info(f"✅ PM2 enabled via cfg.pm2.enabled = {USE_PM2}")
+        elif hasattr(cfg, 'webui') and hasattr(cfg.webui, 'pm2') and hasattr(cfg.webui.pm2, 'enabled'):
+            USE_PM2 = cfg.webui.pm2.enabled
+            log.info(f"✅ PM2 enabled via cfg.webui.pm2.enabled = {USE_PM2}")
+    except Exception as e:
+        log.warning(f"Could not load PM2 config: {e}")
+
+    log.info(f"🔧 PM2 Initialization: PM2_AVAILABLE={PM2_AVAILABLE}, USE_PM2={USE_PM2}")
 
 class PM2Adapter:
     """
@@ -83,10 +104,11 @@ class PM2Adapter:
     def __init__(self, config_file: str = 'ecosystem.gridbot.config.js'):
         """
         Initialize PM2 adapter
-        
+
         Args:
             config_file: Path to PM2 ecosystem config file
         """
+        _ensure_pm2_initialized()
         self.config_file = Path(__file__).parent.parent.parent.parent / config_file
         self.available = PM2_AVAILABLE
         self.enabled = USE_PM2 and PM2_AVAILABLE
@@ -785,6 +807,7 @@ def get_pm2_adapter() -> PM2Adapter:
 # Convenience functions
 def is_pm2_enabled() -> bool:
     """Check if PM2 integration is enabled"""
+    _ensure_pm2_initialized()
     return USE_PM2 and PM2_AVAILABLE
 
 

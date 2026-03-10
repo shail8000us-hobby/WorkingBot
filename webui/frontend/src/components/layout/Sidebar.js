@@ -18,6 +18,13 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
     prefetchPage(sectionId);
   }, []);
 
+  // First 9 sections get Ctrl+N shortcuts
+  const shortcutMap = React.useMemo(() => {
+    const map = {};
+    sections.slice(0, 9).forEach((s, i) => { map[s.id] = i + 1; });
+    return map;
+  }, [sections]);
+
   // Build grouped structure: [{ group, items }]
   const groupedSections = React.useMemo(() => {
     const groups = [];
@@ -58,12 +65,14 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
               {/* Section buttons in this group */}
               {g.items.map(({ id, label, icon: Icon, badge }) => {
                 const active = activeSection === id;
+                const shortcutNum = shortcutMap[id];
                 return (
                   <button
                     key={id}
                     type="button"
                     onClick={() => onSelect?.(id)}
                     onMouseEnter={() => handleMouseEnter(id)}
+                    title={shortcutNum !== undefined ? `Ctrl+${shortcutNum}` : undefined}
                     className={clsx(
                       'group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all duration-150 whitespace-nowrap',
                       active
@@ -90,6 +99,18 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
                         </span>
                       )}
                     </span>
+                    {shortcutNum !== undefined && (
+                      <span
+                        className={clsx(
+                          'ml-0.5 shrink-0 rounded border px-1 py-0.5 font-mono text-[9px] leading-none',
+                          active
+                            ? 'border-sky-500/40 bg-sky-500/20 text-sky-300'
+                            : 'border-slate-700 bg-slate-800/80 text-slate-500'
+                        )}
+                      >
+                        ⌃{shortcutNum}
+                      </span>
+                    )}
                   </button>
                 );
               })}

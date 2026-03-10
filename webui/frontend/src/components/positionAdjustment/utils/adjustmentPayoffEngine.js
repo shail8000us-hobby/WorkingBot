@@ -367,6 +367,34 @@ export function calculateBlackScholesPoP(spotPrice, breakevens, volatility, time
 // ============================================================================
 
 /**
+ * Calculate PoP using lognormal probability distribution (risk-neutral measure).
+ * Integrates PDF × (payoff > 0) across the price range.
+ * Falls back to simple uniform-range count if insufficient data.
+ */
+function calculateLognormalPoP(payoffData, spotPrice, volatility, timeToExpiry) {
+  if (!payoffData || payoffData.length < 2 || !spotPrice || !(volatility > 0) || !(timeToExpiry > 0)) {
+    return calculateStrategyPoP(payoffData);
+  }
+  const sigma = Math.max(0.05, Math.min(5.0, volatility));
+  const mu = Math.log(spotPrice) + (-0.5 * sigma * sigma) * timeToExpiry;
+  const sigmaT = sigma * Math.sqrt(timeToExpiry);
+  let profitProb = 0;
+  let totalProb = 0;
+  for (let i = 1; i < payoffData.length; i++) {
+    const p = payoffData[i];
+    const prevP = payoffData[i - 1];
+    if (p.price <= 0) continue;
+    const z = (Math.log(p.price) - mu) / sigmaT;
+    const pdf = Math.exp(-0.5 * z * z) / (p.price * sigmaT * Math.sqrt(2 * Math.PI));
+    const dp = p.price - prevP.price;
+    const prob = pdf * dp;
+    totalProb += prob;
+    if (p.pnl > 0) profitProb += prob;
+  }
+  return totalProb > 0 ? profitProb / totalProb : calculateStrategyPoP(payoffData);
+}
+
+/**
  * Calculate comprehensive metrics for a set of positions
  * @param {Array} payoffData - Payoff curve data
  * @param {Array} positions - Position objects
@@ -396,13 +424,8 @@ export function calculateMetrics(payoffData, positions, spotPrice, volatility = 
   const maxLoss = Math.min(...pnls);
   const breakevens = findBreakevens(payoffData);
   
-  // Calculate PoP
-  // Method 1: Simple payoff curve percentage
-  const simplePop = calculateStrategyPoP(payoffData);
-  
-  // Method 2: Black-Scholes based (if we have IV and time)
-  // For now use simple method
-  const pop = simplePop;
+  // Calculate PoP using lognormal probability distribution (risk-neutral)
+  const pop = calculateLognormalPoP(payoffData, spotPrice, volatility, timeToExpiry);
   
   // Greeks
   const greeks = calculateAggregatedGreeks(positions);
@@ -441,7 +464,7 @@ export function calculateMetrics(payoffData, positions, spotPrice, volatility = 
  * @param {number} rangePercent - Price range for chart (±%)
  * @returns {Object} { chartData, currentMetrics, combinedMetrics }
  */
-export function calculateCombinedPayoff(currentPositions, proposedTrades, spotPrice, rangePercent = 15) {
+export function calculateCombinedPayoff(currentPositions, proposedTrades, spotPrice, rangePercent = 15, customPriceRange = null) {
   if (!spotPrice || spotPrice <= 0) {
     return {
       chartData: [],
@@ -450,9 +473,9 @@ export function calculateCombinedPayoff(currentPositions, proposedTrades, spotPr
       error: 'Invalid spot price',
     };
   }
-  
-  // Generate price range
-  const priceRange = generatePriceRange(spotPrice, rangePercent);
+
+  // Use custom price range if provided (dynamic, covers all strikes), else generate default
+  const priceRange = customPriceRange || generatePriceRange(spotPrice, rangePercent);
   
   // Current positions payoff
   const currentPayoff = calculatePayoffCurve(currentPositions || [], priceRange);

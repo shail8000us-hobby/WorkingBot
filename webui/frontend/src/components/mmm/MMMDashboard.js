@@ -470,6 +470,9 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
   };
 
   const handleCreate = async () => {
+    // Guard: prevent double-submit (button disabled state can lag one render)
+    if (creating) return;
+
     // Validate expiry
     if (!params.expiry) {
       setError('Please select an expiry date');

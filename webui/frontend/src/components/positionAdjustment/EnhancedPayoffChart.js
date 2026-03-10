@@ -102,12 +102,13 @@ const CustomTooltip = ({ active, payload, label, hasProposedTrades, thetaFanEnab
                         : entry.dataKey === 'delta' ? CHART_COLORS.delta
                             : entry.color || '#94a3b8';
 
-                const displayName = entry.dataKey === 'current' ? 'Current'
+                const displayName = entry.dataKey === 'current' ? 'On Expiry'
                     : entry.dataKey === 'combined' ? 'After Adj.'
-                        : entry.dataKey === 'delta' ? 'Delta'
-                            : THETA_FAN_KEYS.includes(entry.dataKey)
-                                ? THETA_FAN_LABELS[THETA_FAN_KEYS.indexOf(entry.dataKey)]
-                                : entry.name;
+                        : entry.dataKey === 'todayBs' ? 'On Target Date'
+                            : entry.dataKey === 'delta' ? 'Delta'
+                                : THETA_FAN_KEYS.includes(entry.dataKey)
+                                    ? THETA_FAN_LABELS[THETA_FAN_KEYS.indexOf(entry.dataKey)]
+                                    : entry.name;
 
                 const value = entry.dataKey === 'delta'
                     ? entry.value?.toFixed(4)
@@ -201,7 +202,7 @@ export default function EnhancedPayoffChart({
 
         // PnL Y-axis
         const pnlValues = filteredData.flatMap(d => {
-            const vals = [d.current, d.combined].filter(v => v != null);
+            const vals = [d.current, d.combined, d.todayBs].filter(v => v != null);
             if (thetaFanEnabled) {
                 THETA_FAN_KEYS.forEach(key => { if (d[key] != null) vals.push(d[key]); });
             }
@@ -601,6 +602,21 @@ export default function EnhancedPayoffChart({
                             isAnimationActive={false}
                         />
 
+                        {/* Curve C: Today's BS P&L — blue dashed "On Target Date" */}
+                        {/* Shows what the portfolio is worth today at each price (pre-expiry) */}
+                        <Line
+                            yAxisId="pnl"
+                            type="monotone"
+                            dataKey="todayBs"
+                            name="On Target Date"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            strokeDasharray="6 3"
+                            dot={false}
+                            activeDot={{ r: 3, fill: '#3b82f6' }}
+                            isAnimationActive={false}
+                        />
+
                         {/* ═══ DELTA PROFILE (when enabled) ═══ */}
                         {deltaProfileEnabled && (
                             <Line
@@ -662,6 +678,14 @@ export default function EnhancedPayoffChart({
                     <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.65rem' }}>
                         {hasProposedTrades ? 'After Adjustment' : 'On Expiry'}
                     </Typography>
+                </Box>
+                {/* On Target Date (always visible when todayBs data exists) */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Box sx={{
+                        width: 20, height: 2,
+                        background: 'repeating-linear-gradient(90deg, #3b82f6 0px, #3b82f6 6px, transparent 6px, transparent 9px)',
+                    }} />
+                    <Typography variant="caption" sx={{ color: '#3b82f6', fontSize: '0.65rem' }}>On Target Date</Typography>
                 </Box>
                 {/* Diff zones */}
                 {hasProposedTrades && (

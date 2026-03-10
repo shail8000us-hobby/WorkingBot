@@ -390,6 +390,11 @@ class MMMStorage:
             now = datetime.now(timezone.utc).isoformat()
             session['updated_at'] = now
 
+            # Recalculate checksum after merging updates so get_session won't
+            # flag this as corrupted on the next read.
+            session['_checksum'] = self._calculate_checksum(session)
+            session.pop('_checksum_warning', None)
+
             status = session.get('strategy_status', 'IDLE')
             params = session.get('params', {})
 

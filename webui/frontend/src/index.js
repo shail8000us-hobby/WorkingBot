@@ -38,9 +38,6 @@ root.render(
   </React.StrictMode>
 );
 
-// Phase 15: Register service worker for offline caching
-serviceWorkerRegistration.register({
-  onUpdate: (registration) => {
-    console.log('[SW] New version available. Refresh to update.');
-  },
-});
+// Unregister any existing service worker — SW caching causes blank-screen
+// issues after every npm run build (cache invalidation race condition).
+serviceWorkerRegistration.unregister();

@@ -60,8 +60,17 @@ const mmmService = {
    * @param {string} sessionId
    */
   async deleteSession(sessionId) {
-    const { data } = await api.delete(`${BASE_URL}/session/${sessionId}`);
-    return data;
+    try {
+      const { data } = await api.delete(`${BASE_URL}/session/${sessionId}`);
+      return data;
+    } catch (err) {
+      // 404 = session already deleted. Treat as success so the circuit breaker
+      // is never tripped by stale session IDs in the frontend list.
+      if (err?.status === 404) {
+        return { success: true, message: `Session ${sessionId} not found (already deleted)` };
+      }
+      throw err;
+    }
   },
 
   // =========================================================================

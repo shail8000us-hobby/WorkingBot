@@ -36,7 +36,7 @@ const shortcuts = [
   { key: 'Ctrl+.', description: 'Stop bot', category: 'Bot Control' },
   { key: 'Ctrl+R', description: 'Refresh data', category: 'Actions' },
   { key: 'Escape', description: 'Close dialog/modal', category: 'General' },
-  { key: '1-9', description: 'Switch tabs', category: 'Navigation' },
+  { key: 'Ctrl+1–9', description: 'Switch to nav tab 1–9', category: 'Navigation' },
   { key: 'Ctrl+K', description: 'Focus search/command', category: 'Navigation' },
   { key: 'Ctrl+/', description: 'Toggle help panel', category: 'General' },
 ];
@@ -110,24 +110,15 @@ export const KeyboardProvider = ({ children, callbacks = {} }) => {
         }
       }
 
-      // Number keys 1-9 - Switch tabs
-      if (!e.ctrlKey && !e.metaKey && !e.altKey && /^[1-9]$/.test(e.key)) {
-        const target = e.target;
-        // More comprehensive check to prevent shortcuts when typing in inputs
-        if (
-          target.tagName === 'INPUT' || 
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable ||
-          target.closest('[role="dialog"]') ||
-          target.closest('.MuiDialog-root')
-        ) {
-          return;
-        }
+      // Ctrl/Cmd + 1-9 - Switch navigation tabs
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && /^[1-9]$/.test(e.key)) {
+        e.preventDefault();
         const tabIndex = parseInt(e.key) - 1;
         if (callbacks.onTabChange) {
           callbacks.onTabChange(tabIndex);
         }
       }
+
     };
 
     window.addEventListener('keydown', handleKeyDown);

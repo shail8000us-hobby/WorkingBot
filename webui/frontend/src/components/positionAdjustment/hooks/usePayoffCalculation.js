@@ -22,6 +22,7 @@ import {
   calculateDeltaProfile,
   calculateStressMatrix,
   calculateNetDebitCredit,
+  calculatePreExpiryPayoff,
   getWeightedIV,
   generateDynamicPriceRange,
 } from '../utils/adjustmentBSEngine';
@@ -42,6 +43,7 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     enabled = true,
     thetaFanEnabled = false,
     deltaProfileEnabled = false,
+    daysToTarget = 0,
   } = options;
 
   // Calculate payoff data when inputs change
@@ -58,11 +60,19 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     }
 
     try {
+      // Build combined position list for dynamic range
+      const proposed = formatProposedAsPositions(proposedTrades || []);
+      const allPositions = [...(currentPositions || []), ...proposed];
+
+      // Dynamic price range: auto-expands to cover all strikes ±5%
+      const dynamicRange = generateDynamicPriceRange(spotPrice, allPositions, rangePercent);
+
       const result = calculateCombinedPayoff(
         currentPositions || [],
         proposedTrades || [],
         spotPrice,
-        rangePercent
+        rangePercent,
+        dynamicRange
       );
 
       return {
@@ -93,6 +103,35 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     const proposed = formatProposedAsPositions(proposedTrades || []);
     return [...(currentPositions || []), ...proposed];
   }, [currentPositions, proposedTrades]);
+
+  // Today's BS pre-expiry P&L curve (daysToTarget = 0 → current moment)
+  // This is the "On Target Date" blue line — shows what P&L looks like today
+  // before time decay finishes. Updates when daysToTarget changes via slider.
+  const todayBsPayoff = useMemo(() => {
+    if (!enabled || !spotPrice || !payoffResult.isValid || !payoffResult.priceRange?.length) return null;
+    if (combinedPositions.length === 0) return null;
+    try {
+      return calculatePreExpiryPayoff(
+        combinedPositions,
+        spotPrice,
+        payoffResult.priceRange,
+        daysToTarget,
+      );
+    } catch (e) {
+      console.error('[usePayoffCalculation] todayBs error:', e);
+      return null;
+    }
+  }, [enabled, spotPrice, payoffResult.isValid, payoffResult.priceRange, combinedPositions, daysToTarget]);
+
+  // Merge todayBs into chartData rows
+  const enhancedChartData = useMemo(() => {
+    if (!payoffResult.chartData?.length) return payoffResult.chartData || [];
+    if (!todayBsPayoff) return payoffResult.chartData;
+    return payoffResult.chartData.map((d, i) => ({
+      ...d,
+      todayBs: todayBsPayoff[i] != null ? Math.round(todayBsPayoff[i].pnl * 100) / 100 : null,
+    }));
+  }, [payoffResult.chartData, todayBsPayoff]);
 
   // Resolve average IV and days to expiry
   const ivAndExpiry = useMemo(() => {
@@ -254,11 +293,11 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
 
   // Chart configuration helpers
   const chartConfig = useMemo(() => {
-    if (!payoffResult.chartData || payoffResult.chartData.length === 0) {
+    if (!enhancedChartData || enhancedChartData.length === 0) {
       return null;
     }
 
-    const allPnls = payoffResult.chartData.flatMap(d => [d.current, d.combined].filter(v => v != null));
+    const allPnls = enhancedChartData.flatMap(d => [d.current, d.combined, d.todayBs].filter(v => v != null));
     const minPnl = Math.min(...allPnls);
     const maxPnl = Math.max(...allPnls);
     const padding = Math.abs(maxPnl - minPnl) * 0.1 || 100;
@@ -266,13 +305,13 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
     return {
       yDomain: [minPnl - padding, maxPnl + padding],
       xDomain: [
-        payoffResult.chartData[0]?.price,
-        payoffResult.chartData[payoffResult.chartData.length - 1]?.price,
+        enhancedChartData[0]?.price,
+        enhancedChartData[enhancedChartData.length - 1]?.price,
       ],
       zeroLine: 0,
       spotLine: spotPrice,
     };
-  }, [payoffResult.chartData, spotPrice]);
+  }, [enhancedChartData, spotPrice]);
 
   // Summary for quick display
   const summary = useMemo(() => {
@@ -314,8 +353,9 @@ export function usePayoffCalculation(currentPositions, proposedTrades, spotPrice
   }, [payoffResult, currentPositions, proposedTrades]);
 
   return {
-    // Raw calculation results
+    // Raw calculation results (chartData overridden with todayBs merged in)
     ...payoffResult,
+    chartData: enhancedChartData,
 
     // Formatted for display
     formattedMetrics,

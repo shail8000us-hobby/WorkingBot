@@ -595,6 +595,7 @@ export default function SensibullStyleAdjustmentPage({
   const [showChainPanel, setShowChainPanel] = useState(false);
   const [selectedExpiry, setSelectedExpiry] = useState('');
   const [targetPrice, setTargetPrice] = useState(spotPrice || 0);
+  const [targetDays, setTargetDays] = useState(0); // 0 = today; increases toward expiry
 
   // Enhanced chart toggle state
   const [thetaFanEnabled, setThetaFanEnabled] = useState(false);
@@ -702,6 +703,7 @@ export default function SensibullStyleAdjustmentPage({
       enabled: open,
       thetaFanEnabled,
       deltaProfileEnabled,
+      daysToTarget: targetDays,
     }
   );
 
@@ -1329,48 +1331,63 @@ export default function SensibullStyleAdjustmentPage({
                     onDeltaProfileToggle={setDeltaProfileEnabled}
                   />
 
-                  {/* Projected profit - shows combined when proposed trades exist */}
-                  <Box sx={{
-                    mt: 2,
-                    p: 1.5,
-                    bgcolor: proposedTrades.length > 0 ? 'rgba(59, 130, 246, 0.15)' : 'rgba(34, 197, 94, 0.1)',
-                    borderRadius: 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    gap: 1,
-                  }}>
-                    <Typography variant="body2" sx={{ color: proposedTrades.length > 0 ? COLORS.primary : COLORS.profit }}>
-                      {proposedTrades.length > 0 ? 'After Adjustment' : 'Projected profit'}: {
-                        proposedTrades.length > 0
-                          ? payoffData.formattedMetrics?.combined?.maxProfit
-                          : payoffData.formattedMetrics?.current?.maxProfit
-                      } max profit
-                    </Typography>
-                    {proposedTrades.length > 0 && (
-                      <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
-                        Current: {payoffData.formattedMetrics?.current?.maxProfit || '-'}
-                      </Typography>
-                    )}
-                  </Box>
+                  {/* Projected P&L at current spot — uses todayBs for real mark-to-market value */}
+                  {(() => {
+                    // Find the todayBs P&L at the current spot price
+                    const spotPoint = payoffData.chartData?.find(
+                      d => Math.abs(d.price - (spotPrice || 0)) < (spotPrice || 1) * 0.01
+                    );
+                    const projectedPnl = spotPoint?.todayBs ?? spotPoint?.combined ?? spotPoint?.current ?? null;
+                    const isLoss = projectedPnl != null && projectedPnl < 0;
+                    return (
+                      <Box sx={{
+                        mt: 2,
+                        p: 1.5,
+                        bgcolor: isLoss ? 'rgba(239, 68, 68, 0.12)' : 'rgba(34, 197, 94, 0.1)',
+                        borderRadius: 1,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1,
+                      }}>
+                        <Typography variant="body2" sx={{ color: isLoss ? COLORS.loss : COLORS.profit }}>
+                          {targetDays === 0 ? 'Current P&L at spot' : `P&L at spot in ${targetDays}D`}:{' '}
+                          <strong>
+                            {projectedPnl != null
+                              ? `${projectedPnl >= 0 ? '+' : ''}$${projectedPnl.toFixed(2)}`
+                              : '-'}
+                          </strong>
+                          {isLoss && ' ⚠'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary }}>
+                          Max profit at expiry: {payoffData.formattedMetrics?.combined?.maxProfit
+                            || payoffData.formattedMetrics?.current?.maxProfit || '-'}
+                        </Typography>
+                      </Box>
+                    );
+                  })()}
                 </Paper>
 
                 {/* Bottom Section: Target Price, then Metrics + Proposed Trades below */}
                 <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                  {/* Target Price Row */}
+                  {/* Target Price + Date Row */}
                   <Paper sx={{
                     p: 1.5,
                     bgcolor: COLORS.cardBg,
                     border: `1px solid ${COLORS.border}`,
                     borderRadius: 2,
                   }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
                       <Typography variant="body2" sx={{ color: COLORS.text }}>
                         {derivedUnderlying} Target
                       </Typography>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip label="0.0%" size="small" sx={{ bgcolor: 'rgba(255,255,255,0.1)', color: COLORS.text }} />
-                        <IconButton size="small" sx={{ color: COLORS.textSecondary }}><RemoveIcon fontSize="small" /></IconButton>
+                        <Chip
+                          label={`${targetPrice && spotPrice ? ((targetPrice / spotPrice - 1) * 100).toFixed(1) : '0.0'}%`}
+                          size="small"
+                          sx={{ bgcolor: 'rgba(255,255,255,0.1)', color: COLORS.text }}
+                        />
+                        <IconButton size="small" sx={{ color: COLORS.textSecondary }} onClick={() => setTargetPrice(p => p - (derivedUnderlying === 'ETH' ? 100 : 500))}><RemoveIcon fontSize="small" /></IconButton>
                         <TextField
                           size="small"
                           value={targetPrice || spotPrice || ''}
@@ -1383,9 +1400,32 @@ export default function SensibullStyleAdjustmentPage({
                             },
                           }}
                         />
-                        <IconButton size="small" sx={{ color: COLORS.textSecondary }}><AddIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" sx={{ color: COLORS.textSecondary }} onClick={() => setTargetPrice(p => p + (derivedUnderlying === 'ETH' ? 100 : 500))}><AddIcon fontSize="small" /></IconButton>
                       </Box>
-                      <Button size="small" sx={{ color: COLORS.primary }}>Reset</Button>
+                      <Button size="small" sx={{ color: COLORS.primary }} onClick={() => setTargetPrice(spotPrice || 0)}>Reset</Button>
+
+                      {/* Date slider — controls the "On Target Date" blue line */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, ml: 'auto' }}>
+                        <Typography variant="caption" sx={{ color: COLORS.textSecondary, whiteSpace: 'nowrap' }}>
+                          Date:
+                        </Typography>
+                        <input
+                          type="range"
+                          min={0}
+                          max={Math.max(1, Math.floor(payoffData.ivAndExpiry?.daysToExpiry || 30) - 1)}
+                          value={targetDays}
+                          onChange={(e) => setTargetDays(Number(e.target.value))}
+                          style={{ width: 100, accentColor: '#3b82f6', cursor: 'pointer' }}
+                        />
+                        <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, minWidth: 70 }}>
+                          {targetDays === 0 ? 'Today' : `${targetDays}D from now`}
+                        </Typography>
+                        {targetDays > 0 && (
+                          <Button size="small" sx={{ color: COLORS.textSecondary, fontSize: '0.65rem', py: 0.25, minWidth: 0 }} onClick={() => setTargetDays(0)}>
+                            Reset
+                          </Button>
+                        )}
+                      </Box>
                     </Box>
                     <MarginImpactRow
                       netDebitCredit={payoffData.netDebitCredit}
@@ -1632,9 +1672,16 @@ export default function SensibullStyleAdjustmentPage({
                                         >
                                           <RemoveIcon sx={{ fontSize: 14 }} />
                                         </IconButton>
-                                        <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, minWidth: 24, textAlign: 'center' }}>
-                                          {finalQty}
-                                        </Typography>
+                                        <Box sx={{ textAlign: 'center' }}>
+                                          <Typography variant="body2" sx={{ color: COLORS.text, fontWeight: 600, minWidth: 24 }}>
+                                            {finalQty}
+                                          </Typography>
+                                          {multiplier > 1 && (
+                                            <Typography variant="caption" sx={{ color: COLORS.textSecondary, fontSize: '0.6rem' }}>
+                                              {baseQty}×{multiplier}
+                                            </Typography>
+                                          )}
+                                        </Box>
                                         <IconButton
                                           size="small"
                                           sx={{ p: 0.25, color: COLORS.textSecondary }}
