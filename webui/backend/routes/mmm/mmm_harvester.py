@@ -54,6 +54,10 @@ def get_effective_harvest_params(session: Dict, side: str) -> Dict:
     pe_lots = session.get('pe', {}).get('active_lots', 0)
     max_lots = max(params.get('max_lots_per_side', 100), 1)
 
+    asym_threshold = params.get('rebalance_asymmetry_threshold', 5.0)
+    pressure_threshold = params.get('rebalance_pressure_threshold', 0.8)
+    base_profit_pct = params.get('harvest_profit_pct', 40.0)
+
     my_lots = ce_lots if side == 'ce' else pe_lots
     other_lots = pe_lots if side == 'ce' else ce_lots
 
@@ -73,10 +77,6 @@ def get_effective_harvest_params(session: Dict, side: str) -> Dict:
 
     asymmetry = my_lots / other_lots
     pressure = my_lots / max_lots
-
-    asym_threshold = params.get('rebalance_asymmetry_threshold', 5.0)
-    pressure_threshold = params.get('rebalance_pressure_threshold', 0.8)
-    base_profit_pct = params.get('harvest_profit_pct', 40.0)
 
     if asymmetry > asym_threshold and pressure > pressure_threshold:
         # Extreme asymmetry — aggressively harvest dominant side

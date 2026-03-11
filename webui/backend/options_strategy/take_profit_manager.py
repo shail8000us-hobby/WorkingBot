@@ -542,60 +542,29 @@ class TakeProfitMonitor:
                 for s in tp_settings:
                     print(f"🎯 DEBUG: TP Setting: {s['symbol']} | Target: ${s['target_profit']} | Exit Qty: {s['exit_quantity']}", flush=True)
                 
-                # Get current positions from API (with caching to reduce API calls)
+# Get current positions from shared cache (no HTTP self-call)
                 positions = None
                 try:
-                    # Check cache first (thread-safe)
-                    now = time.time()
-                    with self._cache_lock:
-                        if self._positions_cache and (now - self._cache_time) < self._cache_ttl:
-                            positions_data = self._positions_cache
-                            print(f"🎯 DEBUG: Using cached positions ({now - self._cache_time:.1f}s old)", flush=True)
-                        else:
-                            positions_data = None
-                    
-                    # Fetch via internal HTTP endpoint (avoids asyncio+eventlet event loop conflicts).
-                    # Mirrors max_loss_manager's proven pattern.
+                    from webui.backend.routes.options.options_control import get_cached_positions
+                    positions_data = get_cached_positions(max_age=30)
                     if positions_data is None:
-                        print(f"🎯 DEBUG: Cache miss/expired, fetching via HTTP...", flush=True)
-                        import requests as _requests
-                        resp = _requests.get(
-                            "http://localhost:5555/api/options/positions",
-                            timeout=10
-                        )
-                        if resp.status_code == 200:
-                            http_data = resp.json()
-                            positions_data = http_data.get('positions', [])
-                            print(f"🎯 DEBUG: HTTP returned {len(positions_data)} positions", flush=True)
-                            with self._cache_lock:
-                                self._positions_cache = positions_data
-                                self._cache_time = now
-                        else:
-                            logger.error(f"HTTP fetch failed: {resp.status_code}")
-                            print(f"🎯 DEBUG: HTTP fetch failed: {resp.status_code}", flush=True)
-                            return
+                        logger.debug("No fresh positions cache available, skipping TP check")
+                        return
                     
                     # Normalise to list
                     if isinstance(positions_data, dict):
                         futures_list = positions_data.get('futures', [])
                         options_list = positions_data.get('options', [])
                         positions = futures_list + options_list
-                        print(f"🎯 DEBUG: Dict response, extracted {len(positions)} positions", flush=True)
                     elif isinstance(positions_data, list):
                         positions = positions_data
-                        print(f"🎯 DEBUG: List response with {len(positions)} positions", flush=True)
                     else:
                         logger.warning(f"Invalid positions response type: {type(positions_data)}")
-                        print(f"🎯 DEBUG: Invalid positions response type!", flush=True)
                         return
                     if not positions:
-                        print(f"🎯 DEBUG: No positions found", flush=True)
                         return
-                        
-                    print(f"🎯 DEBUG: Processing {len(positions)} positions", flush=True)
                 except Exception as e:
-                    logger.error(f"Failed to get positions from API: {e}", exc_info=True)
-                    print(f"🎯 DEBUG: Exception getting positions: {e}", flush=True)
+                    logger.error(f"Failed to get positions: {e}", exc_info=True)
                     return
                 
                 # Check each position with TP settings

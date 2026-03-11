@@ -209,3 +209,71 @@ with _positions_fetch_lock:
 **Prevention rule:**
 NEVER call `future.result()` (blocking) from an eventlet greenlet — even with eventlet's monkey-patched `threading.Condition`, cross-thread notification between a real OS thread (asyncio loop) and a greenlet (Flask request handler) does NOT propagate correctly. Always use `eventlet.sleep(0)` polling OR run the entire async operation in the real OS thread used by the dedicated asyncio event loop.
 
+---
+
+## [2026-03-11] Watchdog restart race condition — orphaned exchange positions
+
+**What went wrong:**
+PE showed 0 lots in MMM but exchange had 38 PE lots at strike 69600. During a watchdog restart at 09:49, the old monitor was mid-way through a PE strike shift (69400→69600). The watchdog called `stop()` (setting `_save_disabled=True`), then spawned a new monitor from persisted storage. But the old monitor's async `_process_strike_shift` completed AFTER `stop()` — the order was placed on exchange (38 lots PE at 69600), `activate_new_strike()` updated in-memory state, but `_save_my_session()` was blocked by `_save_disabled`. The new monitor loaded the pre-shift state from storage (PE at 69400) and never knew about the PE at 69600.
+
+**Root cause (two cascading bugs):**
+1. **No pre-order guard in `_process_strike_shift`**: Exchange-mutating operations (sell orders) executed even after `stop()` set `_running=False` and `_save_disabled=True`. The async operation was already in flight and couldn't be cancelled by the flag check.
+2. **Reconciliation blind spot**: `_reconcile_exchange_positions()` builds `session_symbols` only from known strikes. P-BTC-69600 wasn't in `session_symbols` because the session didn't know about 69600. The isolation filter `if symbol not in session_symbols: continue` excluded the orphan completely. The "UNTRACKED_EXCHANGE_POSITION" detection (which iterates `exchange_positions`) was effectively dead code — it could only find positions already in the filtered `exchange_positions` dict, which by definition are already at known strikes.
+
+**Fixes applied:**
+1. **Guard in `_process_strike_shift`** (`mmm_monitor.py`): Before placing the sell order, check `if not self._running or session.get('_save_disabled')` → abort the shift and unfreeze positions. Prevents orphaned exchange orders.
+2. **Broader orphan scan in reconciliation** (`mmm_monitor.py`): Instead of iterating the pre-filtered `exchange_positions`, iterate ALL raw exchange `positions` matching this session's option type prefix and expiry suffix. When untracked positions are found (not owned by other sessions), auto-adopt them into the session with `type='orphan_adopted'`. This recovers from crashed monitors' in-flight shifts.
+
+**Prevention rule:**
+Any code that modifies exchange state (placing/cancelling orders) MUST check `self._running` and `_save_disabled` immediately before the exchange call. If the monitor has been stopped, abort and unfreeze — the new monitor will detect the condition and retry. Reconciliation must scan ALL exchange positions matching the session's expiry, not just those at known strikes.
+
+---
+
+## [2026-03-11] WebUI performance regression — eventlet worker blocking & CPU spin
+
+**What went wrong:**
+WebUI became completely unresponsive. `/api/health` took 6.7s (should be 2ms). `/api/options/positions` timed out entirely (0 bytes in 8s). All endpoints were slow because requests queued behind a blocked worker.
+
+**Root causes:**
+1. **`_run_async()` 90-second timeout**: In `options_client.py`, the cooperative polling loop waited up to 90s for exchange API responses. During this time, it held `_positions_fetch_lock`, blocking all other position requests.
+2. **CPU spin from `eventlet.sleep(0)`**: The polling loop called `_yield(0)` (yield immediately) millions of times per second, consuming 94% CPU even while waiting for a response.
+3. **HTTP self-referencing calls**: `sl_tp_monitor`, `take_profit_manager`, and `max_loss_manager` all made internal HTTP requests to `http://localhost:5555/api/options/positions`. With a single eventlet worker, these self-calls competed with the same worker already handling the request — causing cascading timeouts and potential deadlocks.
+
+**Fixes applied:**
+1. **Reduced `_run_async` timeout** (`options_client.py`): 90s → 20s, made configurable via parameter.
+2. **Added 10ms sleep** (`options_client.py`): `_yield(0)` → `_yield(0.01)`. CPU dropped from 94% → 0.2%.
+3. **Created `get_cached_positions()` helper** (`options_control.py`): Returns cached positions directly for background monitors — zero network overhead, zero deadlock risk.
+4. **Eliminated HTTP self-calls**: `sl_tp_monitor`, `take_profit_manager`, `max_loss_manager` now use `get_cached_positions(max_age=30)` instead of `requests.get("http://localhost:5555/api/options/positions")`.
+
+**Prevention rule:**
+Background monitors must NEVER make HTTP requests to localhost:5555 — use shared cache or direct function calls instead. Polling loops with `eventlet.sleep()` should always use a nonzero sleep (≥10ms) to prevent CPU spin.
+
+---
+
+## [2026-03-11] Heartbeat crash: `pressure_threshold` referenced before assignment
+
+**What went wrong:**
+Every heartbeat for session mmm11mar26-2 crashed with `UnboundLocalError: local variable 'pressure_threshold' referenced before assignment` in `mmm_harvester.py`. This prevented reconciliation state from being saved, and prevented the orphan adoption from persisting.
+
+**Root cause:**
+In `_compute_asymmetry_overrides()` (mmm_harvester.py), when `other_lots == 0` (the PE side had 0 lots), the code branched to an early-return path at line 64 that used `pressure_threshold` — but this variable was only defined at line 78, AFTER the `if other_lots == 0` block.
+
+**Fix applied:**
+Moved `pressure_threshold`, `asym_threshold`, and `base_profit_pct` definitions to BEFORE the `if other_lots == 0` check.
+
+**Prevention rule:**
+When adding early-return branches, verify all referenced variables are defined before the branch point. Python does not hoist variable declarations.
+
+---
+
+## [2026-03-11] Orphan scan expiry suffix mismatch (ddmmyyyy vs ddmmyy)
+
+**What went wrong:**
+The orphan scan in `_reconcile_exchange_positions()` used `expiry_suffix = f'-{expiry}'` where `expiry` was in ddmmyyyy format (e.g., `11032026`). But Delta Exchange symbols use ddmmyy suffix (e.g., `110326`). The `sym.endswith('-11032026')` check failed for every symbol (`P-BTC-69600-110326`), so ALL orphan candidates were silently filtered out and never adopted.
+
+**Fix applied:**
+Added `from .mmm_initializer import expiry_to_symbol_suffix` and converted: `sym_expiry = expiry_to_symbol_suffix(expiry)` → produces `110326` from `11032026`.
+
+**Prevention rule:**
+When building or comparing symbol strings, always use `expiry_to_symbol_suffix()` to convert ddmmyyyy → ddmmyy. The session stores ddmmyyyy; symbols use ddmmyy. Never use the raw expiry parameter directly in symbol comparisons.
+

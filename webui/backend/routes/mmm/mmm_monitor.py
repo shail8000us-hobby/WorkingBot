@@ -3237,6 +3237,30 @@ class MMMMonitor:
         if lots <= 0:
             return
 
+        # GUARD: Abort if monitor was stopped (e.g. by watchdog restart).
+        # An in-flight strike shift that completes AFTER stop() places orders
+        # on exchange but _save_disabled prevents persisting the state update.
+        # This creates orphaned positions invisible to the new monitor.
+        if not self._running or session.get('_save_disabled'):
+            log.warning(
+                f"[{sid}] SHIFT ABORTED: monitor stopped during "
+                f"{side.upper()} shift {old_strike}→{new_strike} "
+                f"(would create orphan). Unfreezing positions."
+            )
+            # Unfreeze positions so the new monitor sees them correctly
+            from .mmm_state import recompute_side_lots
+            for pos in session.get(side, {}).get('positions', []):
+                if pos.get('status') == 'shifted':
+                    pos['status'] = 'active'
+            recompute_side_lots(session.get(side, {}))
+            log_activity('shift_aborted',
+                f'⚠️ Strike shift {side.upper()} {old_strike}→{new_strike} '
+                f'aborted: monitor stopped (preventing orphan position)',
+                sid, 'warning',
+                {'side': side, 'old_strike': old_strike,
+                 'new_strike': new_strike, 'lots': lots})
+            return
+
         # Execute sell at new strike
         expiry = session.get('params', {}).get('expiry', '')
         option_type = 'call' if side == 'ce' else 'put'
@@ -5378,7 +5402,13 @@ class MMMMonitor:
                             })
 
                 # Also check for exchange positions at strikes the session
-                # doesn't know about at all (completely untracked)
+                # doesn't know about at all (completely untracked).
+                # BUG FIX: Scan ALL exchange positions matching this session's
+                # expiry + option type, not just those in session_symbols.
+                # Without this, orphaned positions created by a dead monitor
+                # instance during an in-flight strike shift are invisible
+                # (session_symbols only contains known strikes, so orphans
+                # at unknown strikes are filtered out by the earlier guard).
                 known_strikes = set()
                 if active_strike > 0:
                     known_strikes.add(active_strike)
@@ -5388,10 +5418,17 @@ class MMMMonitor:
                     if fs > 0:
                         known_strikes.add(fs)
 
-                for sym, epos in exchange_positions.items():
-                    # Check if this is our option type symbol
-                    prefix = 'C-BTC-' if option_type == 'call' else 'P-BTC-'
+                prefix = 'C-BTC-' if option_type == 'call' else 'P-BTC-'
+                # expiry is ddmmyyyy but symbol suffix is ddmmyy
+                from .mmm_initializer import expiry_to_symbol_suffix
+                sym_expiry = expiry_to_symbol_suffix(expiry) if expiry else ''
+                expiry_suffix = f'-{sym_expiry}' if sym_expiry else ''
+
+                for pos in positions:
+                    sym = pos.get('product', {}).get('symbol', '') or pos.get('symbol', '')
                     if not sym.startswith(prefix):
+                        continue
+                    if expiry_suffix and not sym.endswith(expiry_suffix):
                         continue
                     # Extract strike from symbol (e.g., C-BTC-68000-210226 → 68000)
                     try:
@@ -5400,30 +5437,73 @@ class MMMMonitor:
                     except (IndexError, ValueError):
                         continue
 
+                    ex_size = abs(float(pos.get('size', 0)))
+                    if ex_size <= 0:
+                        continue
+
                     if ex_strike not in known_strikes:
-                        ex_size = epos.get('size', 0)
-                        if ex_size > 0:
-                            # Before auto-syncing, check if other sessions own
-                            # these lots — avoid cross-session position adoption.
-                            other_lots = self._get_other_sessions_lots_at_symbol(sym)
-                            unowned = ex_size - other_lots
+                        # Before flagging, check if other sessions own
+                        # these lots — avoid cross-session position adoption.
+                        other_lots = self._get_other_sessions_lots_at_symbol(sym)
+                        unowned = ex_size - other_lots
 
-                            discrepancies.append({
-                                'side': side_key.upper(),
-                                'type': 'UNTRACKED_EXCHANGE_POSITION',
-                                'detail': (
-                                    f"{side_key.upper()} @ {ex_strike}: exchange has {ex_size} lots "
-                                    f"but session has NO record (other sessions own {other_lots})"
-                                ),
-                                'symbol': sym,
-                                'session_lots': 0,
-                                'exchange_size': ex_size,
-                                'other_sessions_lots': other_lots,
+                        if unowned <= 0:
+                            continue  # fully owned by other sessions
+
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'UNTRACKED_EXCHANGE_POSITION',
+                            'detail': (
+                                f"{side_key.upper()} @ {ex_strike}: exchange has {ex_size} lots "
+                                f"but session has NO record (other sessions own {other_lots})"
+                            ),
+                            'symbol': sym,
+                            'session_lots': 0,
+                            'exchange_size': ex_size,
+                            'other_sessions_lots': other_lots,
+                            'auto_corrected': True,
+                        })
+
+                        # AUTO-ADOPT: Add orphaned position to session state.
+                        # This catches positions created by a dead monitor's
+                        # in-flight strike shift that couldn't persist state.
+                        # Safety: only adopts lots NOT owned by other sessions.
+                        adopt_lots = int(unowned)
+                        if adopt_lots > 0:
+                            from .mmm_state import recompute_side_lots
+                            now_ts = datetime.now(timezone.utc).isoformat()
+                            counter = side.get('_pos_counter', 0) + 1
+                            side['_pos_counter'] = counter
+                            side.setdefault('positions', []).append({
+                                'id': f"{side_key}_orphan_{counter:03d}",
+                                'strike': ex_strike,
+                                'lots': adopt_lots,
+                                'entry_premium': 0,
+                                'premium': 0,
+                                'type': 'orphan_adopted',
+                                'status': 'active',
+                                'created_at': now_ts,
+                                'shifted_at': None,
+                                'closed_at': None,
+                                'realized_pnl': None,
+                                'timestamp': now_ts,
+                                'adopted_reason': 'watchdog_restart_orphan',
                             })
-
-                            # NOTE: Auto-sync DISABLED for untracked positions.
-                            # The exchange may hold positions from other algos,
-                            # manual trades, or other MMM sessions. Log only.
+                            side['active_strike'] = ex_strike
+                            # Update symbol to match adopted strike
+                            side['symbol'] = sym
+                            recompute_side_lots(side)
+                            log.warning(
+                                f"[{sid}] ORPHAN ADOPTED: {side_key.upper()} @ {ex_strike} "
+                                f"({adopt_lots} lots) — likely from crashed monitor's "
+                                f"in-flight strike shift"
+                            )
+                            log_activity('reconciliation_autocorrect',
+                                f'🔧 Orphan adopted: {side_key.upper()} @ {ex_strike} '
+                                f'({adopt_lots} lots) — watchdog restart recovery',
+                                sid, 'warning',
+                                {'side': side_key, 'strike': ex_strike,
+                                 'lots': adopt_lots, 'reason': 'orphan_from_dead_monitor'})
 
             # §26.10: Orphan perp check — detect BTCUSD position on exchange
             # that the session doesn't know about (crash recovery).

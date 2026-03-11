@@ -143,17 +143,13 @@ class SLTPMonitor:
             logger.error(f"Error checking positions: {e}", exc_info=True)
     
     def _get_positions(self) -> List[Dict]:
-        """Get current options positions via internal HTTP endpoint (avoids asyncio+eventlet conflicts)."""
+        """Get current options positions from shared cache (no HTTP self-call)."""
         try:
-            import requests
-            response = requests.get(
-                "http://localhost:5555/api/options/positions",
-                timeout=10
-            )
-            if response.status_code == 200:
-                data = response.json()
-                return data.get('positions', [])
-            logger.error(f"HTTP fetch failed: {response.status_code}")
+            from webui.backend.routes.options.options_control import get_cached_positions
+            positions = get_cached_positions(max_age=30)
+            if positions is not None:
+                return positions
+            logger.debug("No fresh positions cache available, skipping check")
             return []
         except Exception as e:
             logger.error(f"Error fetching positions: {e}", exc_info=True)

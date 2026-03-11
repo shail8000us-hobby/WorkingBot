@@ -66,7 +66,7 @@ def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
         return _dedicated_loop
 
 
-def _run_async(coro):
+def _run_async(coro, timeout=20):
     """Run an async coroutine cooperatively from a sync Flask/eventlet context.
 
     Submits *coro* to the dedicated asyncio loop (real OS thread) then POLLs
@@ -75,8 +75,8 @@ def _run_async(coro):
     requests (health checks, session creation, WebSocket heartbeats …) are
     served while the async API call is in flight.
 
-    Timeout is 90 s — long enough to cover worst-case Delta Exchange latency:
-    two sequential requests × 3 retries × 10 s httpx timeout ≈ 67 s max.
+    Default timeout is 20 s — enough for typical Delta Exchange latency.
+    Callers that expect longer operations can pass a higher timeout.
     """
     import time as _time
     try:
@@ -88,12 +88,12 @@ def _run_async(coro):
     loop = _get_dedicated_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
 
-    deadline = _time.time() + 90
+    deadline = _time.time() + timeout
     while not future.done():
         if _time.time() >= deadline:
             future.cancel()
-            raise TimeoutError("Async operation timed out after 90 s")
-        _yield(0)   # cooperatively yield; hub can schedule other greenlets
+            raise TimeoutError(f"Async operation timed out after {timeout} s")
+        _yield(0.01)  # 10ms sleep — prevents CPU spin while staying responsive
 
     return future.result(timeout=0)  # already done — returns immediately
 

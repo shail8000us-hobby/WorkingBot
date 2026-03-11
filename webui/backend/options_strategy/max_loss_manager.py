@@ -860,47 +860,12 @@ class MaxLossMonitor:
                 positions = self._test_positions
                 logger.info(f"🧪 TEST MODE: Using {len(positions)} mock positions")
             else:
-                # Use cached positions if available and fresh (thread-safe)
-                now = time.time()
-                with self._cache_lock:
-                    if self._positions_cache and (now - self._cache_time) < self._cache_ttl:
-                        positions = self._positions_cache.copy()
-                        logger.debug(f"Using cached positions: {len(positions)} positions")
-                    else:
-                        positions = None
-
+                # Use shared positions cache (no HTTP self-call — avoids eventlet deadlock)
+                from webui.backend.routes.options.options_control import get_cached_positions
+                positions = get_cached_positions(max_age=30)
                 if positions is None:
-                    # Fetch positions using sync HTTP request to avoid asyncio event loop issues
-                    # The async API client has objects bound to main thread's event loop,
-                    # which causes "bound to a different event loop" errors in background threads
-                    try:
-                        import requests
-
-                        # Use internal Flask endpoint (thread-safe, no asyncio issues)
-                        response = requests.get(
-                            "http://localhost:5555/api/options/positions",
-                            timeout=10
-                        )
-
-                        if response.status_code == 200:
-                            data = response.json()
-                            # The endpoint returns {'positions': [...], 'dashboard': {...}}
-                            positions = data.get('positions', [])
-                            logger.debug(f"Fetched {len(positions)} positions via HTTP")
-
-                            # Update cache with lock
-                            with self._cache_lock:
-                                self._positions_cache = positions
-                                self._cache_time = now
-                        else:
-                            logger.error(f"❌ HTTP fetch failed: {response.status_code}")
-                            self._metrics["api_errors"] += 1
-                            return
-
-                    except Exception as e:
-                        logger.error(f"❌ Error fetching positions: {e}")
-                        self._metrics["api_errors"] += 1
-                        return
+                    logger.debug("No fresh positions cache available, skipping max-loss check")
+                    return
 
             # Handle dict response format {'futures': [...], 'options': [...]}
             if isinstance(positions, dict):

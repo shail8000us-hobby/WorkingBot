@@ -3,7 +3,45 @@
 > **Feature:** When both CE and PE premiums are decaying (market is flat/safe), automatically open new option positions at fresh OTM strikes to capture additional theta. Once created, these positions are fully integrated into MMM — loss calculations, adjustments, strike shifts, close-at-5, harvesting all apply identically.
 >
 > **Date:** March 11, 2026
-> **Status:** Plan — ready for implementation
+> **Status:** ✅ Implemented — ready for live testing
+
+---
+
+## 0. IMPLEMENTATION STATUS
+
+**Completed:** March 11, 2026
+
+### Files Modified
+| File | Changes |
+|---|---|
+| `mmm_state.py` | 7 FSU params added to `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS` |
+| `mmm_config.py` | 7 validation entries added to `PARAM_RULES` |
+| `mmm_activity.py` | 4 activity types added (`scale_up_triggered`, `scale_up_complete`, `scale_up_blocked`, `scale_up_failed`) + added to `ACTIVITY_CATEGORIES['adjustments']` |
+| `mmm_websocket.py` | `emit_scale_up()` function added |
+| `mmm_monitor.py` | `emit_scale_up` import, `OUTCOME_NONE` replacement, `_process_scale_up()` method (~160 lines) |
+| `MMMSettingsDialog.js` | Favorable Scale-Up settings section with 7 parameter controls + tooltips |
+
+### New File
+| File | Purpose |
+|---|---|
+| `mmm_scaler.py` (~265 lines) | Core FSU logic: `check_scale_eligibility()`, `find_scale_strikes()`, `record_scale_event()` |
+
+### Verification
+- All Python files compile clean (`py_compile`)
+- Frontend production build updated (61 files, 3795KB, within budget)
+- Backend health check passes
+- 11 existing integration tests pass (no regressions)
+
+### Parameters Added
+| Param | Default | Description |
+|---|---|---|
+| `scale_enabled` | `False` | Master switch |
+| `scale_decay_pct` | `40.0` | Min % decay on both sides to trigger |
+| `scale_target_premium` | `100.0` | Target premium for new strikes |
+| `scale_lots_pct` | `50.0` | % of `initial_lots` to sell at new strikes |
+| `scale_cooldown_mins` | `30` | Min minutes between scale-up events |
+| `scale_max_events` | `3` | Max scale-ups per session |
+| `scale_min_session_pnl` | `0.0` | Session P&L must be >= this to scale |
 
 ---
 

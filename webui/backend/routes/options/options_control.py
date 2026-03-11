@@ -268,6 +268,23 @@ import threading as _threading
 _positions_fetch_lock = _threading.Lock()
 
 
+def get_cached_positions(max_age=30.0):
+    """Return cached positions for internal background monitors (no HTTP self-call).
+
+    Background monitors (sl_tp_monitor, take_profit_manager, max_loss_manager)
+    previously called http://localhost:5555/api/options/positions which could
+    deadlock the single eventlet worker. This function reads the shared cache
+    directly — zero network overhead, zero deadlock risk.
+
+    Returns list of enriched position dicts, or None if cache is too stale.
+    """
+    if _positions_cache['data'] is not None:
+        age = time.time() - _positions_cache['time']
+        if age < max_age:
+            return list(_positions_cache['data'])
+    return None
+
+
 @options_bp.route('/positions', methods=['GET'])
 def get_options_positions():
     """
