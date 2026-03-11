@@ -115,6 +115,12 @@ ACTIVITY_TYPES = {
     'shift_recycle': 'Shift-Time Recycle',
     'rebalance_boost': 'Rebalance Boost',
 
+    # FSU: Favorable Scale-Up
+    'scale_up_triggered': 'Scale-Up Triggered',
+    'scale_up_complete': 'Scale-Up Complete',
+    'scale_up_failed': 'Scale-Up Failed',
+    'scale_up_no_strikes': 'Scale-Up No Strikes',
+
     # Hot reload
     'hot_reload': 'Hot Reload',
 
@@ -137,7 +143,9 @@ ACTIVITY_CATEGORIES = {
                     'close_at_5', 'wind_down', 'atm_wind_down', 'atm_auto_close',
                     'margin_wind_down', 'margin_block_sells', 'perp_hedge',
                     'both_sides_auto_decision',
-                    'harvest', 'recycle', 'shift_recycle', 'rebalance_boost'},
+                    'harvest', 'recycle', 'shift_recycle', 'rebalance_boost',
+                    'scale_up_triggered', 'scale_up_complete', 'scale_up_failed',
+                    'scale_up_no_strikes'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error'},

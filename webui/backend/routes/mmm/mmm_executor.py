@@ -1123,6 +1123,13 @@ class MMMExecutor:
             mid = round(mid / tick) * tick
         return round(mid, 2)
 
+    async def get_mid_price(self, symbol: str) -> float:
+        """Fetch quotes for a symbol and return the mid-price."""
+        quotes = await self._fetch_quotes(symbol)
+        if not quotes:
+            return 0.0
+        return self._calculate_mid_price(quotes)
+
     # =========================================================================
     # Internal: Order Operations
     # =========================================================================

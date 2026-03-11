@@ -239,13 +239,26 @@ def recompute_side_lots(side_state: Dict) -> Dict:
     shifted_positions = [p for p in positions if p.get('status') == 'shifted']
 
     # --- Rebuild original_lots / original_premium scalar ---
-    orig_pos = next(
-        (p for p in active_positions if p.get('type') == 'original'), None
-    )
-    side_state['original_lots'] = orig_pos['lots'] if orig_pos else 0
-    side_state['original_premium'] = (
-        orig_pos.get('entry_premium', orig_pos.get('premium', 0)) if orig_pos else 0.0
-    )
+    # AUDIT FIX BUG1: Sum ALL active originals (not just first) to prevent lot drops
+    orig_positions = [p for p in active_positions if p.get('type') == 'original']
+    if len(orig_positions) > 1:
+        log.warning(
+            f"recompute_side_lots: found {len(orig_positions)} active originals — "
+            f"summing lots (expected 1). Check for duplicate position records."
+        )
+    total_orig_lots = sum(p.get('lots', 0) for p in orig_positions)
+    side_state['original_lots'] = total_orig_lots
+    if orig_positions:
+        # Use lot-weighted average premium for multiple originals
+        total_prem_wt = sum(
+            p.get('lots', 0) * p.get('entry_premium', p.get('premium', 0))
+            for p in orig_positions
+        )
+        side_state['original_premium'] = (
+            total_prem_wt / total_orig_lots if total_orig_lots > 0 else 0.0
+        )
+    else:
+        side_state['original_premium'] = 0.0
     # original_strike is set at creation and never changed by recompute
 
     # --- Rebuild adjustment_fills view (active non-original positions) ---
@@ -259,6 +272,7 @@ def recompute_side_lots(side_state: Dict) -> Dict:
             'timestamp': p.get('created_at', p.get('timestamp', '')),
             'type': p.get('type', 'adjustment'),
             '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
+            '_being_closed': p.get('_being_closed', False),  # AUDIT FIX: propagate in-flight flag
         }
         for p in adj_positions
     ]
@@ -273,6 +287,7 @@ def recompute_side_lots(side_state: Dict) -> Dict:
             'type': p.get('type', 'adjustment'),
             'frozen_at': p.get('shifted_at', ''),
             '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
+            '_being_closed': p.get('_being_closed', False),  # AUDIT FIX: propagate in-flight flag
             'source': p.get('source', ''),
         }
         for p in shifted_positions
@@ -416,7 +431,7 @@ DEFAULT_PARAMS = {
 
     # Lot Velocity Limiter (T2-4) — cap lot growth rate to prevent runaway accumulation
     'lot_velocity_enabled': True,           # master switch
-    'lot_velocity_limit': 10,               # max lots added per velocity window
+    'lot_velocity_limit': 30,               # max lots added per velocity window
     'lot_velocity_window_mins': 30,         # rolling window in minutes
 
     # Gamma-Aware Lot Multiplier (T3-2) — extra lots when premium has spiked aggressively
@@ -465,6 +480,15 @@ DEFAULT_PARAMS = {
     'perp_hedge_max_lots': 50,            # hard cap on perp position size (lots)
     'perp_hedge_cooldown_sec': 30,        # minimum seconds between hedge executions
     'perp_hedge_max_flips_per_hour': 6,   # M-8: max direction flips per hour
+
+    # FSU: Favorable Scale-Up
+    'scale_enabled': False,               # master switch — disabled until user opts in
+    'scale_min_decay_pct': 35.0,          # both CE and PE must have decayed this % from trigger snapshot
+    'scale_lots_pct': 50.0,               # lots per side = initial_lots × this% (e.g., 50% of 10 = 5 lots)
+    'scale_max_events': 3,                # max scale-up events per session
+    'scale_cooldown_mins': 30,            # minutes between scale-up events
+    'scale_target_premium': 100.0,        # target premium for new strikes (same unit as shift_target_premium)
+    'scale_min_premium': 30.0,            # reject strikes with premium below this (liquidity/theta floor)
 }
 
 # Which parameters can be changed while algo is running
@@ -534,6 +558,12 @@ HOT_RELOAD_PARAMS = {
     'strike_shift_otm_tier3',
     # IMP-9: Full delta perp on cap
     'perp_full_delta_on_cap', 'perp_full_delta_max_lots',
+    # AUDIT FIX BUG3: close_at_use_bid was missing from hot-reload
+    'close_at_use_bid',
+    # FSU: Favorable Scale-Up
+    'scale_enabled', 'scale_min_decay_pct', 'scale_lots_pct',
+    'scale_max_events', 'scale_cooldown_mins', 'scale_target_premium',
+    'scale_min_premium',
 }
 
 

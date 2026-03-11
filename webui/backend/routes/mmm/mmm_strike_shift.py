@@ -53,7 +53,11 @@ def check_shift_needed(
     
     if threshold_pct > 0:
         side_state = session.get(side, {})
-        hedge_entry_premium = side_state.get('original_premium', 0)
+        # AUDIT FIX: Use persistent _initial_hedge_premium to prevent threshold
+        # collapse after shifts (original_premium goes to 0 after first shift)
+        hedge_entry_premium = side_state.get('_initial_hedge_premium', 0)
+        if hedge_entry_premium == 0:
+            hedge_entry_premium = side_state.get('original_premium', 0)
         # If original was shifted, use latest adjustment fill premium
         if hedge_entry_premium == 0:
             fills = side_state.get('adjustment_fills', [])
@@ -126,7 +130,23 @@ def freeze_current_positions(
     # recompute_side_lots() rebuilds frozen_positions view + resets
     # original_lots/adjustment_fills to empty (no active positions remain)
     recompute_side_lots(side_state)
+
+    # AUDIT FIX BUG2: Clear stale trigger_snapshot for old strike.
+    # The frozen positions won't trigger adjustments; leaving the old key
+    # confuses evaluate_trigger() if the bot ever shifts back to this strike.
+    old_key = _strike_key(old_strike)
+    side_state.get('trigger_snapshot', {}).pop(old_key, None)
+
     session[side] = side_state
+
+    # AUDIT FIX BUG6: Compute frozen_entry (lot-weighted avg premium)
+    frozen_entry = 0.0
+    if frozen_lots > 0:
+        total_prem = 0.0
+        for pos in side_state.get('frozen_positions', []):
+            if pos.get('strike') == old_strike:
+                total_prem += pos.get('entry_premium', 0) * pos.get('lots', 0)
+        frozen_entry = total_prem / frozen_lots
 
     log.info(
         f"Frozen {frozen_lots} lots at strike {old_strike} "
@@ -136,6 +156,7 @@ def freeze_current_positions(
     return {
         'frozen_lots': frozen_lots,
         'old_strike': old_strike,
+        'frozen_entry': frozen_entry,
     }
 
 
@@ -169,7 +190,10 @@ def find_new_strike(
     effective_threshold = threshold_floor
     if threshold_pct > 0:
         side_state = session.get(side, {})
-        hedge_entry_premium = side_state.get('original_premium', 0)
+        # AUDIT FIX: Use persistent _initial_hedge_premium (same as check_shift_needed)
+        hedge_entry_premium = side_state.get('_initial_hedge_premium', 0)
+        if hedge_entry_premium == 0:
+            hedge_entry_premium = side_state.get('original_premium', 0)
         if hedge_entry_premium == 0:
             fills = side_state.get('adjustment_fills', [])
             if fills:
@@ -219,6 +243,12 @@ def find_new_strike(
 
             # Don't re-select the current active strike
             if abs(strike - old_strike) < 1:
+                continue
+
+            # AUDIT FIX BUG5: Don't shift back to a strike with frozen positions
+            frozen = session.get(side, {}).get('frozen_positions', [])
+            frozen_strikes = {f.get('strike', 0) for f in frozen if f.get('lots', 0) > 0}
+            if any(abs(strike - fs) < 1 for fs in frozen_strikes):
                 continue
 
             candidates.append({
@@ -278,6 +308,12 @@ def activate_new_strike(
     side_state = session.get(side, {})
 
     side_state['active_strike'] = new_strike
+
+    # AUDIT FIX: Preserve initial hedge premium for dynamic threshold across shifts
+    if '_initial_hedge_premium' not in side_state or side_state.get('_initial_hedge_premium', 0) == 0:
+        # First shift — preserve the original premium before it's zeroed by recompute
+        orig_prem = side_state.get('original_premium', 0)
+        side_state['_initial_hedge_premium'] = orig_prem if orig_prem > 0 else fill_premium
 
     # FIX: Update symbol to match the new active strike.
     expiry = session.get('params', {}).get('expiry', '')

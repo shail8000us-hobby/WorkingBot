@@ -14,12 +14,36 @@ Endpoints:
 
 import time
 import hashlib
+import asyncio
 from functools import wraps
 from flask import jsonify, request
 from . import options_chain_bp
 import logging
 
 log = logging.getLogger(__name__)
+
+
+def _run_async(coro):
+    """Run async coroutine cooperatively from eventlet Flask context.
+
+    Uses eventlet.tpool.execute() so the coroutine runs in a real OS thread
+    with a fresh asyncio event loop.  The tpool call is cooperative — the
+    eventlet hub can serve other greenlets while waiting.
+    Each OptionsChainOrderService call creates its own client, so a fresh
+    loop per call is safe (no shared asyncio Lock/Event to rebind).
+    """
+    import eventlet.tpool
+
+    def _worker():
+        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    return eventlet.tpool.execute(_worker)
 
 # ============================================================================
 # Rate Limiting & Safety
@@ -322,16 +346,11 @@ def place_chain_order():
         }), 400
     
     try:
-        import asyncio
         from .order_service import OptionsChainOrderService
-        
+
         order_service = OptionsChainOrderService()
-        
-        # Run async order placement
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        result = loop.run_until_complete(
+
+        result = _run_async(
             order_service.place_order(
                 symbol=symbol,
                 side=side,
@@ -374,15 +393,11 @@ def cancel_order(order_id, product_id):
         Cancellation result
     """
     try:
-        import asyncio
         from .order_service import OptionsChainOrderService
-        
+
         order_service = OptionsChainOrderService()
-        
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        result = loop.run_until_complete(
+
+        result = _run_async(
             order_service.cancel_order(order_id, product_id)
         )
         
@@ -409,15 +424,11 @@ def get_open_orders():
         List of open orders
     """
     try:
-        import asyncio
         from .order_service import OptionsChainOrderService
-        
+
         order_service = OptionsChainOrderService()
-        
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        
-        result = loop.run_until_complete(
+
+        result = _run_async(
             order_service.get_open_orders()
         )
         

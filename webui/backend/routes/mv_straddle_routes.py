@@ -14,16 +14,24 @@ from datetime import datetime
 
 
 def _run_async(coro):
-    """Run async coroutine without closing the event loop."""
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_closed():
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
+    """Run async coroutine cooperatively from eventlet Flask context.
+
+    Uses eventlet.tpool.execute() so the coroutine runs in a real OS thread
+    with a fresh asyncio event loop.  Cooperative — hub can serve other
+    greenlets while waiting for the result.
+    """
+    import eventlet.tpool
+
+    def _worker():
+        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
         asyncio.set_event_loop(loop)
-    return loop.run_until_complete(coro)
+        try:
+            return loop.run_until_complete(coro)
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    return eventlet.tpool.execute(_worker)
 
 # Configure logging with DEBUG level
 logging.basicConfig(
@@ -682,8 +690,18 @@ def place_ssr_order():
                 'adjustments': 0
             }
             
-            # Start monitoring in background thread
-            thread = threading.Thread(
+            # Start monitoring in background thread.
+            # Use a real OS thread (not eventlet's monkey-patched greenlet) so that
+            # the asyncio event loop created inside _run_mv_ssr_monitoring_loop can
+            # drive httpx sockets without conflicting with the eventlet hub.
+            try:
+                from eventlet.patcher import original as _ep_orig
+                _RealThread = _ep_orig('threading').Thread
+            except Exception:
+                import threading as _threading_mod
+                _RealThread = _threading_mod.Thread
+
+            thread = _RealThread(
                 target=_run_mv_ssr_monitoring_loop,
                 args=(creds, symbol, quantity, side, order_id, ssr_mode, tick_size, product_id),
                 daemon=True

@@ -1578,7 +1578,6 @@ class MaxLossWebSocketMonitor:
                 return
             
             # Get position details
-            loop = asyncio.get_event_loop()
             positions_response = await self.api_client.get_all_positions_with_options()
             
             # FIX: get_all_positions_with_options() returns {'futures': [...], 'options': [...]}

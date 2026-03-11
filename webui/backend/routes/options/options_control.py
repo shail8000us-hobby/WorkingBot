@@ -261,6 +261,12 @@ POSITIONS_CACHE_SECONDS = 10.0  # Cache positions for 10 seconds (was 3s — too
 _tickers_cache = {'data': None, 'time': 0}
 TICKERS_CACHE_SECONDS = 8.0  # Slightly shorter than positions cache so it stays fresh
 
+# One-at-a-time fetch lock — prevents concurrent greenlets from each launching
+# their own _run_async(fetch()) when the cache expires simultaneously.
+# With eventlet's patched Lock, waiting greenlets yield (don't block the worker).
+import threading as _threading
+_positions_fetch_lock = _threading.Lock()
+
 
 @options_bp.route('/positions', methods=['GET'])
 def get_options_positions():
@@ -277,7 +283,7 @@ def get_options_positions():
     """
     global _positions_cache
     
-    # Return cached data if still fresh
+    # Fast path: return cached data without acquiring the lock
     now = time.time()
     if now - _positions_cache['time'] < POSITIONS_CACHE_SECONDS and _positions_cache['data'] is not None:
         return jsonify({
@@ -288,102 +294,119 @@ def get_options_positions():
             'cached': True
         })
     
-    try:
-        import asyncio
-        client = get_unified_client()
-        
-        # Run async code using ONE bulk tickers call instead of N individual calls.
-        # This is the key fix: /v2/tickers returns ALL 1000+ tickers in a single request,
-        # completely eliminating the 45-concurrent-request storm that trips the circuit breaker.
-        async def fetch():
-            global _tickers_cache
-
-            positions_result = await client.get_all_positions_with_options()
-            options = positions_result['options']
-
-            # Fetch ALL tickers in one API call (1 call vs 45 individual calls)
-            tickers_age = time.time() - _tickers_cache['time']
-            if _tickers_cache['data'] is not None and tickers_age < TICKERS_CACHE_SECONDS:
-                all_tickers = _tickers_cache['data']
-            else:
-                all_tickers = await client.rest_client.get_all_tickers()
-                _tickers_cache['data'] = all_tickers
-                _tickers_cache['time'] = time.time()
-
-            # Build symbol→ticker lookup map once
-            ticker_map = {t.get('symbol'): t for t in all_tickers if t.get('symbol')}
-
-            # Enrich each position from the map — zero additional API calls
-            enriched = []
-            for pos in options:
-                symbol = pos.get('product_symbol', '')
-                raw_ticker = ticker_map.get(symbol)
-                if raw_ticker:
-                    # Wrap raw ticker into the shape enrich_position_data expects
-                    quotes = raw_ticker.get('quotes', {})
-                    best_bid = float(quotes.get('best_bid') or 0)
-                    best_ask = float(quotes.get('best_ask') or 0)
-                    spread_pct = 0
-                    if best_bid > 0 and best_ask > 0:
-                        spread_pct = ((best_ask - best_bid) / best_bid) * 100
-                    ticker = {
-                        'symbol': symbol,
-                        'mark_price': float(raw_ticker.get('mark_price') or 0),
-                        'spot_price': float(raw_ticker.get('spot_price') or 0),
-                        'strike_price': float(raw_ticker.get('strike_price') or 0),
-                        'bid': best_bid,
-                        'ask': best_ask,
-                        'spread_pct': spread_pct,
-                        'greeks': raw_ticker.get('greeks', {}),
-                        'quotes': quotes,
-                        'volume': float(raw_ticker.get('volume') or 0),
-                        'open_interest': raw_ticker.get('open_interest', 0),
-                        'mark_vol': float(raw_ticker.get('mark_vol') or 0),
-                        'raw': raw_ticker,
-                    }
-                    enriched.append(enrich_position_data(pos, ticker))
-                else:
-                    log.debug(f"No bulk ticker found for {symbol}, using raw position")
-                    enriched.append(pos)
-
-            return enriched
-        
-        options = _run_async(fetch())
-        
-        # Cache the successful result
-        _positions_cache['data'] = options
-        _positions_cache['time'] = time.time()
-        _positions_cache['error'] = None
-        
-        return jsonify({
-            'success': True,
-            'positions': options,
-            'count': len(options),
-            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
-        })
-        
-    except Exception as e:
-        log.error(f"Failed to fetch options positions: {e}")  # Single line error
-        
-        # Return cached data if available during errors
-        if _positions_cache['data'] is not None:
-            log.info("Returning cached positions due to API error")
+    # Slow path: acquire lock so only ONE greenlet fetches at a time.
+    # Other greenlets that arrive while the fetch is in progress will wait here
+    # (eventlet's patched Lock yields cooperatively), then see the fresh cache
+    # on the second check below and return without re-fetching.
+    with _positions_fetch_lock:
+        # Double-check: another greenlet may have refreshed the cache while
+        # we were waiting to acquire the lock.
+        now = time.time()
+        if now - _positions_cache['time'] < POSITIONS_CACHE_SECONDS and _positions_cache['data'] is not None:
             return jsonify({
                 'success': True,
                 'positions': _positions_cache['data'],
                 'count': len(_positions_cache['data']),
                 'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
-                'cached': True,
-                'warning': f'Using cached data: {str(e)}'
+                'cached': True
             })
-        
-        # First request failed with no cache - provide helpful error
-        return jsonify({
-            'success': False,
-            'error': 'Failed to fetch positions. Please try again.',
-            'details': str(e),
-            'suggestion': 'Check API connectivity and credentials'
-        }), 500
+
+        try:
+            import asyncio
+            client = get_unified_client()
+            
+            # Run async code using ONE bulk tickers call instead of N individual calls.
+            # This is the key fix: /v2/tickers returns ALL 1000+ tickers in a single request,
+            # completely eliminating the 45-concurrent-request storm that trips the circuit breaker.
+            async def fetch():
+                global _tickers_cache
+
+                positions_result = await client.get_all_positions_with_options()
+                options = positions_result['options']
+
+                # Fetch ALL tickers in one API call (1 call vs 45 individual calls)
+                tickers_age = time.time() - _tickers_cache['time']
+                if _tickers_cache['data'] is not None and tickers_age < TICKERS_CACHE_SECONDS:
+                    all_tickers = _tickers_cache['data']
+                else:
+                    all_tickers = await client.rest_client.get_all_tickers()
+                    _tickers_cache['data'] = all_tickers
+                    _tickers_cache['time'] = time.time()
+
+                # Build symbol→ticker lookup map once
+                ticker_map = {t.get('symbol'): t for t in all_tickers if t.get('symbol')}
+
+                # Enrich each position from the map — zero additional API calls
+                enriched = []
+                for pos in options:
+                    symbol = pos.get('product_symbol', '')
+                    raw_ticker = ticker_map.get(symbol)
+                    if raw_ticker:
+                        # Wrap raw ticker into the shape enrich_position_data expects
+                        quotes = raw_ticker.get('quotes', {})
+                        best_bid = float(quotes.get('best_bid') or 0)
+                        best_ask = float(quotes.get('best_ask') or 0)
+                        spread_pct = 0
+                        if best_bid > 0 and best_ask > 0:
+                            spread_pct = ((best_ask - best_bid) / best_bid) * 100
+                        ticker = {
+                            'symbol': symbol,
+                            'mark_price': float(raw_ticker.get('mark_price') or 0),
+                            'spot_price': float(raw_ticker.get('spot_price') or 0),
+                            'strike_price': float(raw_ticker.get('strike_price') or 0),
+                            'bid': best_bid,
+                            'ask': best_ask,
+                            'spread_pct': spread_pct,
+                            'greeks': raw_ticker.get('greeks', {}),
+                            'quotes': quotes,
+                            'volume': float(raw_ticker.get('volume') or 0),
+                            'open_interest': raw_ticker.get('open_interest', 0),
+                            'mark_vol': float(raw_ticker.get('mark_vol') or 0),
+                            'raw': raw_ticker,
+                        }
+                        enriched.append(enrich_position_data(pos, ticker))
+                    else:
+                        log.debug(f"No bulk ticker found for {symbol}, using raw position")
+                        enriched.append(pos)
+
+                return enriched
+            
+            options = _run_async(fetch())
+            
+            # Cache the successful result
+            _positions_cache['data'] = options
+            _positions_cache['time'] = time.time()
+            _positions_cache['error'] = None
+            
+            return jsonify({
+                'success': True,
+                'positions': options,
+                'count': len(options),
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
+            })
+            
+        except Exception as e:
+            log.error(f"Failed to fetch options positions: {e}")  # Single line error
+            
+            # Return cached data if available during errors
+            if _positions_cache['data'] is not None:
+                log.info("Returning cached positions due to API error")
+                return jsonify({
+                    'success': True,
+                    'positions': _positions_cache['data'],
+                    'count': len(_positions_cache['data']),
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                    'cached': True,
+                    'warning': f'Using cached data: {str(e)}'
+                })
+            
+            # First request failed with no cache - provide helpful error
+            return jsonify({
+                'success': False,
+                'error': 'Failed to fetch positions. Please try again.',
+                'details': str(e),
+                'suggestion': 'Check API connectivity and credentials'
+            }), 500
 
 
 @options_bp.route('/ssr-status', methods=['GET'])
@@ -649,9 +672,7 @@ def place_ssr_order_endpoint():
         
         if tick_offset is not None:
             # Standard mode: use tick-based offset
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
+            result = _run_async(
                 place_ssr_order(
                     client=client,
                     symbol=symbol,
@@ -662,9 +683,7 @@ def place_ssr_order_endpoint():
             )
         else:
             # Percentage-based mode: use margin pricing
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            result = loop.run_until_complete(
+            result = _run_async(
                 place_ssr_order_with_margin(
                     client=client,
                     symbol=symbol,

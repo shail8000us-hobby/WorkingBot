@@ -1158,6 +1158,12 @@ def resume_session(session_id: str):
         session['_watchdog_restarts'] = 0
         session['strategy_status'] = new_status
         session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
+        # Clear whipsaw state — manual resume is an explicit user override
+        session.pop('_whipsaw_paused_at', None)
+        session.pop('_whipsaw_consecutive_alternating', None)
+        session.pop('_paused_reason', None)
+        session.pop('_paused_at', None)
+        session.pop('_paused_resume_at', None)
         storage.save_session(session)
 
         emit_status_change(session_id, old_status, new_status, 'User resumed')
@@ -1170,6 +1176,12 @@ def resume_session(session_id: str):
             # Reset watchdog counter on the LIVE monitor's in-memory session
             # so the watchdog won't immediately give up on next timeout.
             monitor.session['_watchdog_restarts'] = 0
+            # Clear whipsaw state from live monitor's in-memory session too
+            monitor.session.pop('_whipsaw_paused_at', None)
+            monitor.session.pop('_whipsaw_consecutive_alternating', None)
+            monitor.session.pop('_paused_reason', None)
+            monitor.session.pop('_paused_at', None)
+            monitor.session.pop('_paused_resume_at', None)
             monitor.resume('User resumed')
         else:
             # Monitor is dead — start a fresh one
@@ -2805,7 +2817,7 @@ def get_monitor_status(session_id: str):
                 'session_id': session_id,
                 'running': monitor.is_running,
                 'paused': monitor.is_paused,
-                'heartbeat_count': getattr(monitor, '_heartbeat_count', 0),
+                'heartbeat_count': monitor.session.get('_heartbeat_counter', 0),
             },
         })
     except Exception as e:

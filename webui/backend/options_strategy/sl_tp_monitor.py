@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 class SLTPMonitor:
     """Background service to monitor SL/TP triggers"""
-    
+
     def __init__(self, check_interval: int = 5):
         self.check_interval = check_interval
         self.running = False
@@ -26,12 +26,7 @@ class SLTPMonitor:
         self.api_client = None
         self.sl_tp_manager = None
         self._triggers_fired = set()  # Track fired triggers to avoid duplicates
-        # Dedicated event loop for this monitor's async calls.
-        # Using a per-instance loop (instead of asyncio.get_event_loop()) avoids
-        # the "This event loop is already running" error under eventlet, and ensures
-        # the httpx.AsyncClient stays bound to a single consistent loop.
-        self._loop = asyncio.new_event_loop()
-    
+
     def set_dependencies(self, api_client, sl_tp_manager):
         """Set dependencies (called after initialization)"""
         self.api_client = api_client

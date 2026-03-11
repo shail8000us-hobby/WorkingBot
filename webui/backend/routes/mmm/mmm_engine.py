@@ -104,6 +104,16 @@ class MMMEngine:
         _fetch_errors = 0
         _total_positions = 0
 
+        # AUDIT FIX: If trigger is 0/missing, we cannot compute incremental loss.
+        # Returning 0 loss with incomplete=True prevents massive over-hedge from
+        # (premium_now - 0) producing an inflated loss value.
+        if trigger <= 0:
+            log.warning(
+                f"Standard loss: trigger_snapshot missing/zero for {aggressor_side.upper()} "
+                f"@ {active_strike} — returning 0 loss with incomplete flag"
+            )
+            return 0.0, True
+
         # 1. Active strike loss (trigger-based)
         # Fix #19: Use Decimal arithmetic to prevent rounding accumulation
         # (active_loss may be negative when aggressor premium is below trigger)
@@ -141,6 +151,15 @@ class MMMEngine:
                     log.warning(
                         f"Failed to fetch shifted position premium "
                         f"@ {p_strike}: {e} [Robust v2 Fix #2: tracked as incomplete]"
+                    )
+                    continue
+
+                # AUDIT FIX: Handle None return from cache miss
+                if p_current is None:
+                    _fetch_errors += 1
+                    log.warning(
+                        f"Shifted position premium is None @ {p_strike} — "
+                        f"tracked as incomplete"
                     )
                     continue
 
@@ -303,6 +322,10 @@ class MMMEngine:
         """
         if hedge_premium <= 0:
             return 0, 'Hedge premium is zero — cannot sell', False
+
+        # AUDIT FIX: Don't sell phantom lots when there's no loss to cover
+        if loss_to_cover <= 0:
+            return 0, 'No loss to cover', False
 
         params = session.get('params', {})
         buffer_pct = params.get('premium_buffer_pct', 0.05)
@@ -722,6 +745,8 @@ class MMMEngine:
                 _total_positions += 1
                 try:
                     current = fetch_premium_fn(active_strike, option_type)
+                    if current is None:
+                        raise ValueError(f"Premium is None for {side_key}@{active_strike}")
                     total_unrealized += (_D(orig_prem) - _D(current)) * _D(orig_lots) * _LOT
                 except Exception as e:
                     _fetch_errors += 1
@@ -736,6 +761,8 @@ class MMMEngine:
                     _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
+                        if current is None:
+                            raise ValueError(f"Premium is None for {side_key}@{strike}")
                         total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
                     except Exception as e:
                         _fetch_errors += 1
@@ -750,6 +777,8 @@ class MMMEngine:
                     _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
+                        if current is None:
+                            raise ValueError(f"Premium is None for {side_key}@{strike}")
                         total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
                     except Exception as e:
                         _fetch_errors += 1
@@ -813,7 +842,9 @@ class MMMEngine:
             threshold = session.get('params', {}).get('pnl_reconciliation_threshold', 10.0)
 
         pnl = self.compute_total_pnl(session, fetch_premium_fn)
-        tracked = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0)
+        # AUDIT FIX: tracked must subtract fees to match actual (net_pnl includes fees)
+        fees = session.get('total_fees', 0)
+        tracked = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - fees
         actual = pnl['net_pnl']
 
         discrepancy = abs(actual - tracked)

@@ -1,0 +1,38 @@
+# Backtesting Engine Requirements
+# Install with: pip install -r backtesting/requirements.txt
+
+# Core data handling
+pandas>=2.0.0
+pyarrow>=14.0.0       # Parquet read/write
+
+# HTTP client
+requests>=2.31.0
+urllib3>=2.0.0
+
+# Database
+# sqlite3 is built into Python standard library
+
+# Numerics & stats
+numpy>=1.24.0
+scipy>=1.11.0
+
+# Optimization (Phase 5)
+scikit-optimize>=0.9.0
+
+# Web UI backend (Phase 6)
+flask>=3.0.0
+flask-socketio>=5.3.6
+flask-cors>=4.0.0
+
+# CLI
+click>=8.1.0
+
+# Progress bars
+tqdm>=4.66.0
+
+# Scheduling / rate limiting
+ratelimit>=2.2.1
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0

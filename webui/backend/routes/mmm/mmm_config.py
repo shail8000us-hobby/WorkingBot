@@ -139,6 +139,18 @@ PARAM_RULES = {
     'rebalance_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
     'rebalance_asymmetry_threshold': {'type': float, 'min': 2,  'max': 20,    'hot': True},
     'rebalance_pressure_threshold': {'type': float, 'min': 0.5,  'max': 1.0,   'hot': True},
+    # T2-4: Lot Velocity Limiter
+    'lot_velocity_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'lot_velocity_limit':           {'type': int,   'min': 1,    'max': 500,   'hot': True},
+    'lot_velocity_window_mins':     {'type': int,   'min': 5,    'max': 120,   'hot': True},
+    # FSU: Favorable Scale-Up
+    'scale_enabled':          {'type': bool,  'min': None, 'max': None,   'hot': True},
+    'scale_min_decay_pct':    {'type': float, 'min': 10,   'max': 90,     'hot': True},
+    'scale_lots_pct':         {'type': float, 'min': 10,   'max': 100,    'hot': True},
+    'scale_max_events':       {'type': int,   'min': 1,    'max': 20,     'hot': True},
+    'scale_cooldown_mins':    {'type': int,   'min': 5,    'max': 240,    'hot': True},
+    'scale_target_premium':   {'type': float, 'min': 10,   'max': 5000,   'hot': True},
+    'scale_min_premium':      {'type': float, 'min': 5,    'max': 1000,   'hot': True},
 }
 
 

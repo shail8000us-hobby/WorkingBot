@@ -65,7 +65,7 @@ from .mmm_websocket import (
     emit_heartbeat, emit_adjustment, emit_reversal,
     emit_strike_shift, emit_close_at_5, emit_both_sides_alert,
     emit_safety, emit_pnl_update, emit_status_change,
-    emit_harvest, emit_recycle,
+    emit_harvest, emit_recycle, emit_scale_up,
 )
 from .mmm_harvester import scan_harvestable_positions
 from .mmm_recycler import execute_lot_recycling
@@ -119,6 +119,7 @@ class MMMMonitor:
         self._stop_event = threading.Event()
         self._force_event = threading.Event()   # Force-heartbeat signal
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._heartbeat_in_progress = False  # AUDIT FIX BUG5: re-entrancy guard
         # C-2 fix: protects self.session pointer swap in the heartbeat thread
         # against concurrent API reads from Flask request threads.
         self._session_lock = threading.Lock()
@@ -402,6 +403,10 @@ class MMMMonitor:
             self.session.pop('_paused_reason', None)
             self.session.pop('_paused_at', None)
             self.session.pop('_paused_resume_at', None)
+            # AUDIT FIX: Clear stale margin flags that persist across pause/resume
+            self.session.pop('_margin_block_sells', None)
+            self.session.pop('_margin_wind_down', None)
+            self.session.pop('_margin_rapid_check', None)
             # Force immediate reconciliation on next heartbeat
             self.session['_recon_counter'] = 0
             self.session['_force_recon'] = True
@@ -546,8 +551,16 @@ class MMMMonitor:
 
     def _run_loop(self):
         """Main heartbeat loop (runs in background thread)."""
-        self._loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self._loop)
+        # Use DefaultEventLoopPolicy to bypass eventlet's monkey-patched asyncio.
+        # Without this, run_until_complete() fails with "Cannot run the event
+        # loop while another loop is running" because eventlet's custom policy
+        # returns a loop wrapper that detects the eventlet hub as a running loop.
+        try:
+            self._loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+            asyncio.set_event_loop(self._loop)
+        except Exception as loop_err:
+            log.critical(f"[{self.session_id}] _run_loop FAILED to create event loop: {loop_err}")
+            return
 
         try:
             while self._running and not self._stop_event.is_set():
@@ -557,7 +570,7 @@ class MMMMonitor:
                     fresh_session = storage.get_session(self.session_id)
                 except Exception as e:
                     log.critical("Storage read failed — aborting heartbeat: %s", e)
-                    self._interruptible_sleep(
+                    self._wait_for_next_cycle(
                         self.session.get('params', {}).get('adjustment_interval', 300)
                     )
                     continue
@@ -734,7 +747,19 @@ class MMMMonitor:
     # =========================================================================
 
     async def _heartbeat(self):
-        """Execute one heartbeat cycle.
+        """Execute one heartbeat cycle."""
+        # AUDIT FIX BUG5: Re-entrancy guard — prevent overlapping heartbeats
+        if self._heartbeat_in_progress:
+            log.warning(f"[{self.session_id}] Heartbeat already in progress — skipping")
+            return
+        self._heartbeat_in_progress = True
+        try:
+            await self._heartbeat_inner()
+        finally:
+            self._heartbeat_in_progress = False
+
+    async def _heartbeat_inner(self):
+        """Execute one heartbeat cycle (inner implementation).
 
         NOTE (M-2): _session_lock is NOT held during heartbeat field updates.
         API threads calling get_session_snapshot() (which acquires the lock)
@@ -1723,7 +1748,9 @@ class MMMMonitor:
 
             # Step 7: Process outcome (§4.7)
             if outcome == OUTCOME_NONE:
-                pass  # Stable — included in heartbeat summary
+                # FSU: Favorable Scale-Up — add positions when both sides are decaying
+                if not is_wind_down_active(session):
+                    await self._process_scale_up(ce_now, pe_now)
 
             elif outcome == OUTCOME_BOTH:
                 # §8: Both sides up — pause and alert user
@@ -2794,11 +2821,12 @@ class MMMMonitor:
         # Before executing, check if this adjustment is the mirror image of
         # the last one (rapid reversal). If so, boost the whipsaw counter
         # so the existing whipsaw check fires sooner.
+        # Skip OPERATOR aggressors — manual injections are intentional.
         history = session.get('adjustment_history', [])
         if history:
             last_adj = history[-1]
             last_aggressor = last_adj.get('aggressor', '')
-            if last_aggressor and last_aggressor != aggressor:
+            if last_aggressor and last_aggressor != 'OPERATOR' and aggressor != 'OPERATOR' and last_aggressor != aggressor:
                 # Direction flip — increment the alternating counter eagerly
                 session['_whipsaw_consecutive_alternating'] = (
                     session.get('_whipsaw_consecutive_alternating', 0) + 1
@@ -3704,6 +3732,265 @@ class MMMMonitor:
             )
 
         return harvested_count
+
+    # =========================================================================
+    # §3b: FSU — Favorable Scale-Up
+    # =========================================================================
+
+    async def _process_scale_up(self, ce_now: float, pe_now: float):
+        """
+        Favorable Scale-Up: When both premiums are decaying, open new
+        positions at fresh OTM strikes to capture additional theta.
+
+        Positions are registered in the unified ledger with status='shifted'
+        and become standard MMM frozen positions — subject to all loss
+        calculations, adjustments, close-at-5, harvesting, and recycling.
+        """
+        session = self.session
+        sid = self.session_id
+
+        from .mmm_scaler import check_scale_eligibility, find_scale_strikes, record_scale_event
+
+        # Step 1: Check eligibility
+        eligible, reason = check_scale_eligibility(session, ce_now, pe_now)
+        if not eligible:
+            return
+
+        log.info(f"[{sid}] Scale-up eligible: {reason}")
+
+        # Step 2: Find strikes
+        spot_price = await self._fetch_spot_price()
+        if spot_price <= 0:
+            log.warning(f"[{sid}] Scale-up: Could not fetch spot price")
+            return
+
+        scale_info = find_scale_strikes(self.initializer, session, spot_price)
+        if not scale_info:
+            log_activity('scale_up_no_strikes',
+                        f'\U0001F4C8 Scale-up eligible but no suitable strikes found',
+                        sid, 'info', {'reason': reason})
+            return
+
+        lots = scale_info['lots']
+        ce_target = scale_info['ce']
+        pe_target = scale_info['pe']
+
+        log_activity('scale_up_triggered',
+                    f'\U0001F4C8 Scale-Up Triggered: Selling {lots} lots each \u2014 '
+                    f'CE @ {ce_target["strike"]} (${ce_target["premium"]:.2f}), '
+                    f'PE @ {pe_target["strike"]} (${pe_target["premium"]:.2f})',
+                    sid, 'info',
+                    {
+                        'lots': lots,
+                        'ce_strike': ce_target['strike'],
+                        'ce_premium': ce_target['premium'],
+                        'pe_strike': pe_target['strike'],
+                        'pe_premium': pe_target['premium'],
+                        'reason': reason,
+                        'scale_event': session.get('scale_count', 0) + 1,
+                    })
+
+        # Step 3: Execute CE sell
+        params = session.get('params', {})
+        expiry = params.get('expiry', '')
+        _reprice_max = params.get('max_reprice_attempts', None)
+
+        ce_symbol = ce_target.get('symbol') or self.initializer.build_symbol(
+            'call', 'BTC', ce_target['strike'], expiry
+        )
+        pe_symbol = pe_target.get('symbol') or self.initializer.build_symbol(
+            'put', 'BTC', pe_target['strike'], expiry
+        )
+
+        # Register pending orders
+        try:
+            register_pending(sid, 'ce', 'pending', ce_symbol, lots,
+                           ce_target['strike'], 'scale_up')
+        except Exception:
+            pass
+
+        ce_result = await self.executor.smart_execute(
+            symbol=ce_symbol, side='sell', size=lots,
+            max_reprice_attempts=_reprice_max,
+        )
+
+        try:
+            if ce_result.get('success'):
+                register_pending(sid, 'ce', str(ce_result.get('order_id', '')),
+                               ce_symbol, lots, ce_target['strike'], 'scale_up')
+            else:
+                clear_pending(sid, 'ce')
+        except Exception:
+            pass
+
+        if not ce_result.get('success'):
+            log_activity('scale_up_failed',
+                        f'\u274C Scale-up CE sell FAILED @ {ce_target["strike"]}: '
+                        f'{ce_result.get("error", "unknown")}',
+                        sid, 'error',
+                        {'side': 'CE', 'strike': ce_target['strike'],
+                         'error': ce_result.get('error')})
+            try:
+                clear_pending(sid, 'ce')
+            except Exception:
+                pass
+            return  # Abort — don't sell PE without CE (keeps balance)
+
+        ce_fill = ce_result.get('fill_price', 0)
+
+        # Step 4: Execute PE sell
+        try:
+            register_pending(sid, 'pe', 'pending', pe_symbol, lots,
+                           pe_target['strike'], 'scale_up')
+        except Exception:
+            pass
+
+        pe_result = await self.executor.smart_execute(
+            symbol=pe_symbol, side='sell', size=lots,
+            max_reprice_attempts=_reprice_max,
+        )
+
+        try:
+            if pe_result.get('success'):
+                register_pending(sid, 'pe', str(pe_result.get('order_id', '')),
+                               pe_symbol, lots, pe_target['strike'], 'scale_up')
+            else:
+                clear_pending(sid, 'pe')
+        except Exception:
+            pass
+
+        if not pe_result.get('success'):
+            log_activity('scale_up_failed',
+                        f'\u274C Scale-up PE sell FAILED @ {pe_target["strike"]}: '
+                        f'{pe_result.get("error", "unknown")} '
+                        f'(CE was filled @ {ce_fill:.2f} \u2014 positions will be asymmetric)',
+                        sid, 'error',
+                        {'side': 'PE', 'strike': pe_target['strike'],
+                         'error': pe_result.get('error')})
+            # CE already filled — must still register it. Continue below.
+
+        pe_fill = pe_result.get('fill_price', 0) if pe_result.get('success') else 0
+
+        # Step 5: Register positions in the unified ledger
+        from .mmm_constants import LOT_SIZE_BTC, strike_key as _sk
+        from .mmm_state import recompute_side_lots
+        from .mmm_trigger import update_trigger_snapshots
+
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Register CE position
+        ce_state = session.get('ce', {})
+        counter = ce_state.get('_pos_counter', 0) + 1
+        ce_state['_pos_counter'] = counter
+        ce_state.setdefault('positions', []).append({
+            'id': f"ce_scale_{counter:03d}",
+            'strike': ce_target['strike'],
+            'lots': lots,
+            'entry_premium': ce_fill,
+            'premium': ce_fill,
+            'type': 'scale_up',
+            'status': 'shifted',          # NOT 'active' — frozen from birth (§1.4)
+            'created_at': now,
+            'shifted_at': now,
+            'closed_at': None,
+            'realized_pnl': None,
+            'timestamp': now,
+        })
+        recompute_side_lots(ce_state)
+        session['ce'] = ce_state
+
+        # Register PE position (only if filled)
+        if pe_result.get('success'):
+            pe_state = session.get('pe', {})
+            counter = pe_state.get('_pos_counter', 0) + 1
+            pe_state['_pos_counter'] = counter
+            pe_state.setdefault('positions', []).append({
+                'id': f"pe_scale_{counter:03d}",
+                'strike': pe_target['strike'],
+                'lots': lots,
+                'entry_premium': pe_fill,
+                'premium': pe_fill,
+                'type': 'scale_up',
+                'status': 'shifted',          # NOT 'active' — frozen from birth (§1.4)
+                'created_at': now,
+                'shifted_at': now,
+                'closed_at': None,
+                'realized_pnl': None,
+                'timestamp': now,
+            })
+            recompute_side_lots(pe_state)
+            session['pe'] = pe_state
+
+        # Step 6: Set trigger snapshots for the new scale-up strikes.
+        # CRITICAL: update_trigger_snapshots() only writes snapshots for
+        # active_strike and existing frozen_positions. Scale-up positions
+        # were JUST created and their strikes may not be in the premium cache.
+        # We must EXPLICITLY set trigger_snapshot to the fill price.
+        ce_state = session.get('ce', {})
+        ce_state.setdefault('trigger_snapshot', {})[_sk(ce_target['strike'])] = ce_fill
+        session['ce'] = ce_state
+
+        if pe_result.get('success'):
+            pe_state = session.get('pe', {})
+            pe_state.setdefault('trigger_snapshot', {})[_sk(pe_target['strike'])] = pe_fill
+            session['pe'] = pe_state
+
+        # Update trigger snapshots for active strikes + other frozen positions
+        update_trigger_snapshots(session, ce_now, pe_now,
+                                fetch_premium_fn=self._make_fetch_fn())
+
+        # Force-set AGAIN after update_trigger_snapshots to prevent overwrite
+        ce_state = session.get('ce', {})
+        ce_state.setdefault('trigger_snapshot', {})[_sk(ce_target['strike'])] = ce_fill
+        session['ce'] = ce_state
+        if pe_result.get('success'):
+            pe_state = session.get('pe', {})
+            pe_state.setdefault('trigger_snapshot', {})[_sk(pe_target['strike'])] = pe_fill
+            session['pe'] = pe_state
+
+        # Step 7: Update session tracking
+        premium_collected_ce = ce_fill * lots * LOT_SIZE_BTC
+        premium_collected_pe = pe_fill * lots * LOT_SIZE_BTC if pe_result.get('success') else 0
+        total_premium = premium_collected_ce + premium_collected_pe
+        session['total_premium_collected'] = session.get('total_premium_collected', 0) + total_premium
+
+        record_scale_event(session, ce_target, pe_target, lots)
+
+        # Clear pending orders
+        try:
+            clear_pending(sid, 'ce')
+            clear_pending(sid, 'pe')
+        except Exception:
+            pass
+
+        # Step 8: Emit events
+        emit_scale_up(
+            sid, lots,
+            ce_target['strike'], ce_fill,
+            pe_target['strike'], pe_fill if pe_result.get('success') else 0,
+            session.get('scale_count', 0),
+        )
+
+        sessions_filled = 2 if pe_result.get('success') else 1
+        pe_status_str = f'${pe_fill:.2f}' if pe_result.get('success') else 'FAILED'
+        log_activity('scale_up_complete',
+                    f'\u2705 Scale-Up #{session.get("scale_count", 0)}: '
+                    f'{sessions_filled}/2 sides filled \u2014 '
+                    f'CE {lots}L @ {ce_target["strike"]} (${ce_fill:.2f}), '
+                    f'PE {lots}L @ {pe_target["strike"]} ({pe_status_str})',
+                    sid, 'success',
+                    {
+                        'scale_event': session.get('scale_count', 0),
+                        'ce_strike': ce_target['strike'],
+                        'ce_premium': ce_fill,
+                        'pe_strike': pe_target['strike'],
+                        'pe_premium': pe_fill if pe_result.get('success') else 0,
+                        'lots': lots,
+                        'sides_filled': sessions_filled,
+                        'premium_collected': total_premium,
+                    })
+
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
     # =========================================================================
     # §4: M2 Lot Recycling
@@ -5580,8 +5867,8 @@ class MMMMonitor:
                 bid_cache[key] = bid_price if bid_price > 0 else mark_price
 
         self._premium_cache = cache
-        self._bid_cache = getattr(self, '_bid_cache', {})
-        self._bid_cache.update(bid_cache)
+        # AUDIT FIX: Replace bid_cache fresh each beat to prevent stale entries
+        self._bid_cache = bid_cache
 
     async def _fetch_spot_price(self) -> float:
         """Fetch current BTC spot price."""
@@ -5604,44 +5891,20 @@ class MMMMonitor:
             if key in cache:
                 return cache[key]
             # Bug #14 fix: cache miss should be rare after Bug #12 parallel prefetch.
-            # Instead of creating a disposable event loop (which risks conflicts
-            # with the main loop), log a warning and attempt a sync fallback
-            # only once, caching the result to avoid repeat misses.
+            # Cannot create a new event loop here — we're already inside
+            # self._loop.run_until_complete(_heartbeat()), so any
+            # loop.run_until_complete() call will fail with "Cannot run the
+            # event loop while another loop is running". The next heartbeat's
+            # prefetch will populate this key.
             log.warning(
                 f"Premium cache miss for {option_type}@{strike}. "
                 f"This should not happen — check _prefetch_all_premiums coverage."
             )
-            try:
-                expiry = self.session.get('params', {}).get('expiry', '')
-                symbol = self.initializer.build_symbol(
-                    option_type, 'BTC', strike, expiry,
-                )
-                # Use a fresh, isolated loop for the one-off fetch
-                loop = asyncio.new_event_loop()
-                try:
-                    from bot.api.async_delta_client import AsyncDeltaClient
-                    from config.loader import get_api_credentials
-                    creds = get_api_credentials()
-                    rest = AsyncDeltaClient(
-                        api_key=creds.get('api_key', ''),
-                        api_secret=creds.get('api_secret', ''),
-                        testnet=creds.get('testnet', False) or False,
-                    )
-                    resp = loop.run_until_complete(
-                        rest._request_with_retry(
-                            method="GET", path=f"/v2/tickers/{symbol}",
-                        )
-                    )
-                    data = resp.get('result', resp)
-                    mark = float(data.get('mark_price', 0))
-                    cache[key] = mark
-                    return mark
-                finally:
-                    loop.close()
-            except Exception as e:
-                log.error(f"Cache miss fallback fetch failed for {option_type}@{strike}: {e}")
-                cache[key] = 0  # Cache the failure to prevent repeated attempts
-                return 0
+            # AUDIT FIX: Return None instead of 0. Returning 0 makes every
+            # position look maximally profitable and hides losses. Callers
+            # must handle None (engine treats it as fetch failure).
+            cache[key] = None
+            return None
         return fetch
 
     def _make_bid_fetch_fn(self):

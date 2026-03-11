@@ -76,8 +76,11 @@ def scan_closeable_positions(
         if orig_lots > 0 and orig_strike > 0 and not orig_being_closed:
             try:
                 current = fetch_premium_fn(orig_strike, option_type)
-                if current <= threshold:
-                    profit = (orig_prem - current) * orig_lots
+                # AUDIT FIX: Guard against None premium return
+                if current is None:
+                    log.debug(f"No premium data for {side_key} original @ {orig_strike}")
+                elif current <= threshold:
+                    profit = (orig_prem - current) * orig_lots * LOT_SIZE_BTC
                     closeable.append({
                         'side': side_key,
                         'strike': orig_strike,
@@ -95,14 +98,19 @@ def scan_closeable_positions(
         # Check adjustment fills at active strike
         # Fix #8: removal is content-match based (with Fix #23 ID fallback)
         for fill in side_state.get('adjustment_fills', []):
+            # AUDIT FIX: Skip positions already being closed
+            if fill.get('_being_closed'):
+                continue
             lots = fill.get('lots', 0)
             prem = fill.get('premium', 0)
             strike = fill.get('strike', active_strike)
             if lots > 0:
                 try:
                     current = fetch_premium_fn(strike, option_type)
+                    if current is None:
+                        continue
                     if current <= threshold:
-                        profit = (prem - current) * lots
+                        profit = (prem - current) * lots * LOT_SIZE_BTC
                         closeable.append({
                             'side': side_key,
                             'strike': strike,
@@ -119,14 +127,19 @@ def scan_closeable_positions(
         # Check frozen positions
         # Fix #8: removal is content-match based (with Fix #23 ID fallback)
         for frozen in side_state.get('frozen_positions', []):
+            # AUDIT FIX: Skip positions already being closed
+            if frozen.get('_being_closed'):
+                continue
             lots = frozen.get('lots', 0)
             prem = frozen.get('entry_premium', 0)
             strike = frozen.get('strike', 0)
             if lots > 0 and strike > 0:
                 try:
                     current = fetch_premium_fn(strike, option_type)
+                    if current is None:
+                        continue
                     if current <= threshold:
-                        profit = (prem - current) * lots
+                        profit = (prem - current) * lots * LOT_SIZE_BTC
                         closeable.append({
                             'side': side_key,
                             'strike': strike,
@@ -218,6 +231,7 @@ async def close_position(
     # Audit fix: Mark position as in-flight in the ledger BEFORE placing order.
     # This prevents a duplicate buy order if the state-removal crashes post-fill.
     side_state = session.get(side, {})
+    _content_match_view = None  # Track content-match entry for flag cleanup
     if pos_id:
         for pos in side_state.get('positions', []):
             if pos.get('id') == pos_id:
@@ -233,6 +247,29 @@ async def close_position(
                     }
                 pos['_being_closed'] = True
                 break
+    else:
+        # AUDIT FIX BUG4: Content-match guard for pre-migration (no pos_id) positions
+        view_key = 'adjustment_fills' if pos_type == 'adjustment' else (
+            'frozen_positions' if pos_type == 'frozen' else None
+        )
+        if view_key:
+            for entry in side_state.get(view_key, []):
+                prem_key = 'premium' if pos_type == 'adjustment' else 'entry_premium'
+                if (entry.get('lots') == lots
+                        and abs(entry.get(prem_key, 0) - entry_prem) < 0.01
+                        and abs(entry.get('strike', 0) - strike) < 1):
+                    if entry.get('_being_closed'):
+                        log.warning(
+                            f"Close-at-5: Skipping {side.upper()} {pos_type} @ {strike} — "
+                            f"already marked _being_closed (content-match guard)."
+                        )
+                        return {
+                            'success': False,
+                            'error': 'Position already being closed (content-match guard)',
+                        }
+                    entry['_being_closed'] = True
+                    _content_match_view = entry
+                    break
 
     # Build symbol
     expiry = session.get('params', {}).get('expiry', '')
@@ -259,6 +296,8 @@ async def close_position(
                     if pos.get('id') == pos_id:
                         pos.pop('_being_closed', None)
                         break
+            elif _content_match_view:
+                _content_match_view.pop('_being_closed', None)
             # On order failure, check if position was already closed externally
             try:
                 rest = executor._create_rest_client()
@@ -277,10 +316,13 @@ async def close_position(
                         symbol,
                     )
                     _remove_closed_position(session, side, position, pos_type)
+                    # AUDIT FIX BUG5: Estimate realized PnL from last known premium
+                    est_close = position.get('current_premium', 0)
+                    est_pnl = float((_D(entry_prem) - _D(est_close)) * _D(lots) * _LOT) if est_close else 0.0
                     return {
                         'success': True,
-                        'realized_pnl': 0.0,
-                        'close_premium': 0.0,
+                        'realized_pnl': est_pnl,
+                        'close_premium': est_close,
                         'lots_closed': lots,
                         'side': side,
                         'strike': strike,
@@ -347,6 +389,8 @@ async def close_position(
                 if pos.get('id') == pos_id:
                     pos.pop('_being_closed', None)
                     break
+        elif _content_match_view:
+            _content_match_view.pop('_being_closed', None)
         # Fix F2.4: Force recompute after exception to ensure derived values are consistent
         recompute_side_lots(side_state)
         session[side] = side_state
@@ -400,6 +444,12 @@ def _remove_closed_position(
     if pos_type == 'original':
         side_state['original_lots'] = 0
         side_state['original_premium'] = 0.0
+        # AUDIT FIX: Also mark in positions[] so recompute doesn't revert
+        for pos in side_state.get('positions', []):
+            if pos.get('type') == 'original' and pos.get('status') == 'active':
+                pos['status'] = 'closed'
+                pos['closed_at'] = now
+                break
 
     elif pos_type == 'adjustment':
         fills = side_state.get('adjustment_fills', [])

@@ -47,15 +47,29 @@ def get_effective_harvest_params(session: Dict, side: str) -> Dict:
     if not params.get('rebalance_enabled', True):
         return {}
 
-    ce_lots = session.get('ce', {}).get('total_lots', 0)
-    pe_lots = session.get('pe', {}).get('total_lots', 0)
+    # AUDIT FIX BUG2: Use active_lots (not total_lots) for asymmetry calc.
+    # total_lots includes frozen positions which inflates the ratio and
+    # can cause M3 to aggressively harvest when it shouldn't.
+    ce_lots = session.get('ce', {}).get('active_lots', 0)
+    pe_lots = session.get('pe', {}).get('active_lots', 0)
     max_lots = max(params.get('max_lots_per_side', 100), 1)
 
     my_lots = ce_lots if side == 'ce' else pe_lots
     other_lots = pe_lots if side == 'ce' else ce_lots
 
     if other_lots == 0:
-        return {}  # No asymmetry when other side has no positions
+        # AUDIT FIX: When other side has 0 lots but our side is under pressure,
+        # this is the WORST asymmetry — don't disable M3, enable extreme boost
+        pressure = my_lots / max_lots
+        if pressure > pressure_threshold:
+            return {
+                'harvest_profit_pct': max(base_profit_pct * 0.6, 20.0),
+                'harvest_max_per_beat': 5,
+                'harvest_pressure_threshold': 0.3,
+                '_boosted': True,
+                '_boost_level': 'extreme',
+            }
+        return {}  # Other side empty but we're not under pressure
 
     asymmetry = my_lots / other_lots
     pressure = my_lots / max_lots
@@ -126,7 +140,9 @@ def scan_harvestable_positions(
     for side_key in ['ce', 'pe']:
         side_state = session.get(side_key, {})
         option_type = 'call' if side_key == 'ce' else 'put'
-        total_side_lots = side_state.get('total_lots', 0)
+        # AUDIT FIX BUG5: Use active_lots for capacity pressure, since frozen
+        # positions are already being managed separately by close-at-5.
+        total_side_lots = side_state.get('active_lots', 0)
 
         # Get effective params (M3 asymmetry override) — once per side
         overrides = get_effective_harvest_params(session, side_key)

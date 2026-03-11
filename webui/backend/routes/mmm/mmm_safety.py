@@ -195,6 +195,10 @@ class MMMSafety:
         params = session.get('params', {})
         max_loss = params.get('max_loss_amount', 5000.0)
 
+        # AUDIT FIX: Guard against max_loss ≤ 0 which would trigger instant auto-close
+        if max_loss <= 0:
+            return events
+
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
         # Fix #26: Include perp hedge P&L in total for accurate max-loss check
@@ -216,6 +220,7 @@ class MMMSafety:
                     'max_loss': max_loss,
                     'realized': realized,
                     'unrealized': unrealized,
+                    'perp_pnl': round(perp_pnl, 4),
                 },
             })
         elif total_pnl <= -max_loss * 0.8:
@@ -230,6 +235,7 @@ class MMMSafety:
                 'details': {
                     'total_pnl': total_pnl,
                     'max_loss': max_loss,
+                    'perp_pnl': round(perp_pnl, 4),
                 },
             })
 
@@ -347,8 +353,19 @@ class MMMSafety:
         if len(history) < whipsaw_limit:
             return events
 
+        # AUDIT FIX: Skip entries already evaluated before last whipsaw pause
+        checked_up_to = session.pop('_whipsaw_checked_up_to', 0)
+        if checked_up_to > 0 and len(history) <= checked_up_to:
+            return events  # No new adjustments since last whipsaw — don't re-evaluate
+
+        # Filter out OPERATOR (manual) adjustments — intentional human actions
+        # should not trigger whipsaw detection (algo-only alternation).
+        algo_history = [h for h in history if h.get('aggressor', '') != 'OPERATOR']
+        if len(algo_history) < whipsaw_limit:
+            return events
+
         # Check last N adjustments for alternating pattern
-        recent = history[-whipsaw_limit:]
+        recent = algo_history[-whipsaw_limit:]
         sides = [h.get('aggressor', '') for h in recent]
 
         alternating = True
@@ -361,8 +378,8 @@ class MMMSafety:
         # alternating flips eagerly, lower the effective threshold by 1.
         alt_pre = session.get('_whipsaw_consecutive_alternating', 0)
         effective_limit = max(whipsaw_limit - 1, 2) if alt_pre >= whipsaw_limit - 1 else whipsaw_limit
-        enough_history = len(history) >= effective_limit
-        recent_eff = history[-effective_limit:] if enough_history else recent
+        enough_history = len(algo_history) >= effective_limit
+        recent_eff = algo_history[-effective_limit:] if enough_history else recent
         sides_eff = [h.get('aggressor', '') for h in recent_eff]
         alt_eff = all(sides_eff[i] != sides_eff[i-1] for i in range(1, len(sides_eff))) if len(sides_eff) > 1 else False
         use_alternating = (alternating and len(set(sides)) > 1) or (alt_eff and len(set(sides_eff)) > 1)
@@ -372,6 +389,10 @@ class MMMSafety:
             cooldown_secs = params.get('adjustment_interval', 300) * 2
             resume_at = (now + timedelta(seconds=cooldown_secs)).isoformat()
             session['_whipsaw_paused_at'] = now.isoformat()
+            # AUDIT FIX: Reset counter and record how far we checked to prevent
+            # re-triggering on the same stale history after auto-resume
+            session['_whipsaw_consecutive_alternating'] = 0
+            session['_whipsaw_checked_up_to'] = len(algo_history)
             events.append({
                 'type': 'whipsaw',
                 'level': 'alert',
@@ -720,6 +741,9 @@ class MMMSafety:
         history = session.get('adjustment_history', [])
         lots_in_window = 0
         for adj in history:
+            # AUDIT FIX: Skip OPERATOR (manual) injections — same as whipsaw filter
+            if adj.get('aggressor', '') == 'OPERATOR':
+                continue
             try:
                 ts = datetime.fromisoformat(adj.get('timestamp', ''))
                 if ts.tzinfo is None:
@@ -821,18 +845,31 @@ class MMMSafety:
 def update_peak_pnl(session: Dict, total_pnl: float):
     """Track high-water mark for trailing stop.
 
-    Robust v2 Fix #7: Peak is now a 'decaying peak' — on each update, if
-    the current P&L is below peak, let peak decay toward current by 10%.
-    This prevents stale peaks from causing perpetual trailing stop alerts
-    after close-at-5 reduces the position profile.
+    AUDIT FIX: Changed from 10%/heartbeat decay (which nullified trailing stop
+    in ~2 minutes) to time-based decay with 15-minute half-life.
+    This preserves the peak long enough for trailing stop to be meaningful
+    while still preventing stale peaks after close-at-5 reduces positions.
     """
     current_peak = session.get('peak_pnl', 0)
     if total_pnl > current_peak:
         session['peak_pnl'] = total_pnl
+        session['_peak_pnl_set_at'] = datetime.now(timezone.utc).isoformat()
     elif current_peak > 0 and total_pnl < current_peak:
-        # Decay peak toward current by 10% per heartbeat
-        # Floor at 0 to prevent negative peak when total_pnl is negative
-        session['peak_pnl'] = max(current_peak * 0.9 + total_pnl * 0.1, 0)
+        # Time-based decay: half-life of 15 minutes
+        decay_factor = 0.95  # fallback per-beat decay (much gentler than 0.9)
+        peak_set_at = session.get('_peak_pnl_set_at')
+        if peak_set_at:
+            try:
+                t = datetime.fromisoformat(peak_set_at)
+                if t.tzinfo is None:
+                    t = t.replace(tzinfo=timezone.utc)
+                age_mins = (datetime.now(timezone.utc) - t).total_seconds() / 60
+                half_life = 15.0  # minutes
+                decay_factor = 0.5 ** (age_mins / half_life)
+            except (ValueError, TypeError):
+                pass
+        decayed = current_peak * decay_factor + total_pnl * (1 - decay_factor)
+        session['peak_pnl'] = max(decayed, 0)
 
 
 def reset_peak_pnl_on_reversal(session: Dict, total_pnl: float):

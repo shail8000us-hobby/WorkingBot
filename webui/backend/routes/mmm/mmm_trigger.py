@@ -96,6 +96,24 @@ def evaluate_triggers(
     ce_trigger = ce_side.get('trigger_snapshot', {}).get(ce_active_strike, 0)
     pe_trigger = pe_side.get('trigger_snapshot', {}).get(pe_active_strike, 0)
 
+    # AUDIT FIX BUG4: Guard against 0/missing trigger snapshots.
+    # When trigger is 0, any positive premium produces enormous excess_pct
+    # via TRIGGER_PCT_FLOOR, causing false triggers.
+    if ce_trigger <= 0 or pe_trigger <= 0:
+        log.warning(
+            f"Trigger snapshot missing/zero (CE={ce_trigger}, PE={pe_trigger}) "
+            f"— skipping evaluation to prevent false triggers"
+        )
+        return {
+            'outcome': OUTCOME_NONE,
+            'ce_excess': 0, 'pe_excess': 0,
+            'ce_excess_pct': 0, 'pe_excess_pct': 0,
+            'ce_triggered': False, 'pe_triggered': False,
+            'ce_trigger': ce_trigger, 'pe_trigger': pe_trigger,
+            'ce_now': ce_now, 'pe_now': pe_now,
+            'min_trigger_move': min_trigger_move,
+        }
+
     # Calculate absolute excess above trigger
     ce_excess = ce_now - ce_trigger
     pe_excess = pe_now - pe_trigger
@@ -183,6 +201,9 @@ def update_trigger_snapshots(
     # §6.2: Also snapshot ALL strikes with open frozen positions.
     # This makes frozen position loss INCREMENTAL (since last hedge)
     # instead of lifetime (since entry), preventing double-counting.
+    # AUDIT FIX: Skip frozen strikes that match active strike (prevents overwrite)
+    # AUDIT FIX: Validate fetch_premium_fn return value (skip 0/None/negative)
+    active_keys = {ce_active, pe_active}
     if fetch_premium_fn:
         for side_key, side_state, option_type in [
             ('ce', ce_side, 'call'),
@@ -193,8 +214,18 @@ def update_trigger_snapshots(
                 if f_strike <= 0 or frozen_pos.get('lots', 0) <= 0:
                     continue
                 f_strike_key = strike_key(f_strike)
+                # AUDIT FIX BUG1: Don't overwrite active strike trigger
+                if f_strike_key in active_keys:
+                    continue
                 try:
                     f_current = fetch_premium_fn(f_strike, option_type)
+                    # AUDIT FIX BUG3: Validate return value
+                    if f_current is None or f_current <= 0:
+                        log.debug(
+                            f"Skipping frozen snapshot {side_key.upper()}@{f_strike_key}: "
+                            f"invalid premium {f_current}"
+                        )
+                        continue
                     old_snap = side_state['trigger_snapshot'].get(f_strike_key)
                     side_state['trigger_snapshot'][f_strike_key] = f_current
                     if old_snap is not None:

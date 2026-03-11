@@ -33,7 +33,15 @@ _loop_lock = threading.Lock()
 
 
 def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
-    """Return (and lazily create) the single persistent event loop."""
+    """Return (and lazily create) the single persistent event loop.
+
+    IMPORTANT: The loop MUST run in a real OS thread, not an eventlet greenlet.
+    eventlet.monkey_patch() replaces threading.Thread with a greenlet-based
+    implementation.  If the asyncio loop ran in a greenlet, asyncio's own I/O
+    selector (kqueue/epoll) would conflict with eventlet's hub, causing hangs.
+    We use eventlet.patcher.original('threading') to get the unpatched Thread
+    so the loop always gets a genuine OS thread.
+    """
     global _dedicated_loop, _loop_thread
 
     with _loop_lock:
@@ -41,7 +49,15 @@ def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
             return _dedicated_loop
 
         _dedicated_loop = asyncio.new_event_loop()
-        _loop_thread = threading.Thread(
+
+        # Real OS thread — bypasses eventlet's greenlet substitution.
+        try:
+            from eventlet.patcher import original as _orig
+            _RealThread = _orig('threading').Thread
+        except Exception:
+            _RealThread = threading.Thread  # fallback when not under eventlet
+
+        _loop_thread = _RealThread(
             target=_dedicated_loop.run_forever,
             daemon=True,
             name="options-async-loop",
@@ -51,19 +67,35 @@ def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
 
 
 def _run_async(coro):
-    """Run an async coroutine from sync Flask context.
+    """Run an async coroutine cooperatively from a sync Flask/eventlet context.
 
-    Submits *coro* to a **dedicated persistent event loop** running in a
-    background daemon thread and blocks until the result is available.
+    Submits *coro* to the dedicated asyncio loop (real OS thread) then POLLs
+    ``future.done()`` with ``eventlet.sleep(0)`` between checks.  Each
+    ``sleep(0)`` yields the current greenlet back to the eventlet hub so other
+    requests (health checks, session creation, WebSocket heartbeats …) are
+    served while the async API call is in flight.
 
-    This guarantees that all asyncio-bound objects (httpx ``AsyncClient``,
-    ``asyncio.Event``, ``asyncio.Lock``, etc.) created by the singleton
-    ``UnifiedAPIClient`` always execute on the **same** loop, eliminating
-    the "bound to a different event loop" errors.
+    Timeout is 90 s — long enough to cover worst-case Delta Exchange latency:
+    two sequential requests × 3 retries × 10 s httpx timeout ≈ 67 s max.
     """
+    import time as _time
+    try:
+        import eventlet as _ev
+        _yield = _ev.sleep
+    except ImportError:
+        _yield = _time.sleep
+
     loop = _get_dedicated_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)
-    return future.result(timeout=60)
+
+    deadline = _time.time() + 90
+    while not future.done():
+        if _time.time() >= deadline:
+            future.cancel()
+            raise TimeoutError("Async operation timed out after 90 s")
+        _yield(0)   # cooperatively yield; hub can schedule other greenlets
+
+    return future.result(timeout=0)  # already done — returns immediately
 
 
 # Singleton UnifiedAPIClient — creating a new client on every request opens

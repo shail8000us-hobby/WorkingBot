@@ -404,7 +404,7 @@ class TakeProfitMonitor:
         self.config = config or {}
         
         # Configuration
-        self.check_interval = self.config.get('check_interval', 3)  # seconds - Fast checks for quick execution
+        self.check_interval = self.config.get('check_interval', 15)  # seconds - was 3, increased to reduce self-HTTP thundering herd
         self.enabled = self.config.get('enabled', True)
         
         # Threading
@@ -435,7 +435,7 @@ class TakeProfitMonitor:
         # Position caching (reduce API calls - match max_loss_manager)
         self._positions_cache = None
         self._cache_time = 0
-        self._cache_ttl = self.config.get('cache_ttl', 3.0)  # 3-second cache
+        self._cache_ttl = self.config.get('cache_ttl', 10.0)  # 10-second cache, aligned with check_interval
         self._cache_lock = threading.Lock()  # Thread-safe cache access
 
         # Dedicated event loop for this monitor's async calls.
@@ -756,8 +756,6 @@ class TakeProfitMonitor:
     
     def _close_position(self, symbol: str, actual_pnl: float, exit_quantity: int, target_profit: float):
         """Close partial position due to take profit/loss limit - Delta Exchange API"""
-        should_close_loop = False
-        loop = None
         try:
             print(f"🎯 DEBUG: _close_position called for {symbol}", flush=True)
             # Rate limit check
@@ -766,28 +764,19 @@ class TakeProfitMonitor:
                 time.sleep(1)
                 # Treat rate limit as a transient failure so caller can retry with backoff
                 raise Exception("Rate limit reached - try again")
-            
+
             print(f"🎯 DEBUG: Getting positions for order placement...", flush=True)
-            # Get position details using async API - proper event loop management
+            # Route async calls through the dedicated asyncio loop owned by options_client.
+            # This monitor runs in a monkey-patched greenlet — calling loop.run_until_complete()
+            # directly inside a greenlet conflicts with eventlet's hub and deadlocks.
+            # _run_async() uses cooperative polling (eventlet.sleep(0)) so the hub stays live.
+            from routes.options.options_client import _run_async as _oc_run_async
+
             try:
-                # Use the thread's current event loop (keeps httpx AsyncClient on the same loop
-                # as _check_take_profit). get_running_loop() would ALWAYS raise RuntimeError here
-                # because we are in a synchronous thread — no loop is *running*, only *set*.
-                loop = asyncio.get_event_loop()
-                if loop.is_closed():
-                    loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(loop)
-                should_close_loop = False
-            except RuntimeError:
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                should_close_loop = False
-            
-            try:
-                positions_data = loop.run_until_complete(
+                positions_data = _oc_run_async(
                     self.api_client.get_all_positions_with_options()
                 )
-                
+
                 # Handle both dict and list responses (match max_loss_manager)
                 if isinstance(positions_data, dict):
                     futures_list = positions_data.get('futures', [])
@@ -799,35 +788,36 @@ class TakeProfitMonitor:
                     raise Exception(f"Invalid positions response type: {type(positions_data)}")
                 if not positions:
                     raise Exception("No positions found from API")
-                
+
                 print(f"🎯 DEBUG: Got {len(positions)} positions", flush=True)
                 pos = next((p for p in positions if p.get('product_symbol') == symbol), None)
                 if not pos:
                     raise Exception(f"Position {symbol} not found")
-                
+
                 size = pos.get('size', 0)
                 product_id = pos.get('product_id')
                 print(f"🎯 DEBUG: Found position - size={size}, product_id={product_id}", flush=True)
-                
+
                 if size == 0:
                     logger.warning(f"⚠️ {symbol} already closed (size=0)")
                     return
-                
+
                 # Determine side (opposite of current position)
                 close_side = 'sell' if size > 0 else 'buy'
                 close_size = min(abs(exit_quantity), abs(size))  # Don't close more than we have
-                
+
                 target_type = "profit target" if target_profit > 0 else "loss limit"
                 logger.info(f"🎯 Closing {close_size} lots of {symbol} ({close_side}) due to {target_type}")
                 logger.info(f"   Target: ${target_profit:.2f} | Actual P&L: ${actual_pnl:.2f}")
                 print(f"🎯 DEBUG: About to place order - symbol={symbol}, size={close_size}, side={close_side}", flush=True)
-                
+
                 # Place LIMIT order to close partial position using async API
                 if ORDER_EXECUTION_AVAILABLE and place_smart_order:
                     print(f"🎯 DEBUG: Calling place_smart_order...", flush=True)
                     try:
-                        # Call async function
-                        order_result = loop.run_until_complete(
+                        # Route through dedicated loop so the singleton client's asyncio
+                        # locks stay on the correct event loop
+                        order_result = _oc_run_async(
                             place_smart_order(
                                 client=self.api_client,
                                 symbol=symbol,
@@ -838,7 +828,7 @@ class TakeProfitMonitor:
                             )
                         )
                         print(f"🎯 DEBUG: Order result: {order_result}", flush=True)
-                        
+
                         # Check if order was placed successfully (has 'id' field)
                         if order_result and isinstance(order_result, dict) and order_result.get('id'):
                             order_id = order_result.get('id')

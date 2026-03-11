@@ -58,3 +58,154 @@ self._thread = _RealThread(target=self._run_loop, name=f"mmm-monitor-{self.sessi
 **Prevention rule:**
 When gunicorn uses `worker_class=eventlet`, any background thread that runs `asyncio.run_until_complete()` MUST use `eventlet.patcher.original('threading').Thread`. The monkey-patched `threading.Thread` creates a greenlet, not a real OS thread, causing asyncio conflicts. `_socketio.emit()` from a real OS thread is safe with Flask-SocketIO in eventlet mode.
 
+---
+
+## [2026-03-11] MMM Lot Velocity Limit Too Restrictive
+
+**Symptom:** "LOT VELOCITY LIMIT: 12 lots sold in last 30min (limit: 10)" — algo blocked from trading with max_lots_per_side=100.
+**Root cause:** Default `lot_velocity_limit=10` in mmm_state.py was too low. A single strike_shift selling 12 lots instantly exceeded it. Also, `lot_velocity_limit` was missing from `PARAM_RULES` in mmm_config.py, so it couldn't be updated via API.
+**Fix:** Changed default to 30. Added `lot_velocity_enabled`, `lot_velocity_limit`, `lot_velocity_window_mins` to PARAM_RULES.
+**Prevention rule:** Any new safety parameter added to DEFAULT_PARAMS/HOT_RELOAD_PARAMS MUST also be added to PARAM_RULES, or it becomes un-configurable via the API.
+
+---
+
+## [2026-03-11] Whipsaw False Positive from OPERATOR Injections
+
+**Symptom:** Session auto-pauses with "Whipsaw detected: 3 alternating adjustments" when the last adjustments include operator-injected manual positions.
+**Root cause:** Operator manual adjustments (aggressor=OPERATOR) were counted in whipsaw detection alongside algo adjustments. T3-3 pre-filter boosted the consecutive counter, lowering the effective whipsaw limit from 3 to 2. With effective limit 2, OPERATOR→PE appeared "alternating" → false positive.
+**Fix:** (1) mmm_safety.py: Filter OPERATOR from history before whipsaw alternation check. (2) mmm_monitor.py: Skip T3-3 pre-filter increment when either aggressor is OPERATOR. (3) mmm_api.py: Resume endpoint clears whipsaw state on both storage AND live monitor session.
+**Prevention rule:** Safety detectors that analyze adjustment patterns MUST exclude OPERATOR (manual) entries. Manual rebalancing is not algo whipsaw.
+
+---
+
+## [2026-03-11] Backend Crash from Zombie Gunicorn Processes
+
+**Symptom:** Backend at 97% CPU, health endpoint times out, `launchctl list` shows LastExitStatus=9 (SIGKILL). Multiple PIDs on port 5555. Error: `greenlet.error: Cannot switch to a different thread`.
+**Root cause:** Rapid `launchctl stop/start` cycles don't always kill old gunicorn workers. Old zombie workers hold port 5555 resources, and concurrent eventlet hubs from different processes cause cross-thread greenlet switching errors that crash the hub.
+**Fix:** Kill all processes on port 5555 (`lsof -ti:5555 | xargs kill -9`) before restarting. Also: don't add `log.warning()` calls at the very start of real OS threads — they fire before the asyncio event loop exists and can trigger eventlet lock contention.
+**Prevention rule:** Before restarting the backend, always kill ALL processes on port 5555 first. Use: `lsof -ti:5555 | xargs kill -9; sleep 1; launchctl start com.gridbot.production.webui`.
+
+---
+
+## [2026-03-11] heartbeat_count API Shows 0 — Wrong Attribute Name
+
+**Symptom:** Monitor API endpoint reports `heartbeat_count: 0` even when heartbeats are running.
+**Root cause:** API used `getattr(monitor, '_heartbeat_count', 0)` but the actual counter is `session['_heartbeat_counter']` (stored in session dict, not as monitor attribute).
+**Fix:** Changed to `monitor.session.get('_heartbeat_counter', 0)` in mmm_api.py.
+**Prevention rule:** When reading session-specific counters in API endpoints, check whether the value lives in `monitor.session[...]` vs `monitor._attribute`. Session dict is the source of truth for heartbeat state.
+
+## [2026-03-12] Comprehensive MMM Code Audit — 37 Bugs Found Across 8 Modules
+
+**Scope:** Deep audit of mmm_engine, mmm_trigger, mmm_safety, mmm_close_at_5, mmm_strike_shift, mmm_state, mmm_harvester, mmm_monitor.
+
+**Critical bugs fixed (HIGH severity):**
+1. **Engine:** `calculate_standard_loss` trigger defaults to 0 → massive over-hedge. Fix: Early return with incomplete=True when trigger≤0.
+2. **Engine:** `reconcile_pnl` formula missing fee subtraction → reconciliation never detects real drift. Fix: `tracked = realized + unrealized - fees`.
+3. **Engine:** `calculate_lots_to_sell` forces min 1 lot even when loss=0. Fix: Early return if loss_to_cover≤0.
+4. **Trigger:** Frozen loop overwrites active trigger snapshot with 0 (cache miss). Fix: Skip frozen strikes that match active strike + validate return values.
+5. **Trigger:** `evaluate_triggers` has no defense against 0-value snapshot → false triggers. Fix: Return NONE when trigger≤0.
+6. **Safety:** `max_loss_amount ≤ 0` triggers instant auto-close. Fix: Early return if max_loss≤0.
+7. **Safety:** Whipsaw infinite pause loop (counter never reset, re-triggers on same history). Fix: Reset counter + record checked_up_to.
+8. **Safety:** Peak PnL decay at 10%/heartbeat nullifies trailing stop in <2 min. Fix: Time-based decay with 15-min half-life.
+9. **Safety:** Lot velocity counts OPERATOR lots, blocking algo hedging for 30min. Fix: Skip OPERATOR entries.
+10. **Close-at-5:** Fallback original removal reverted by recompute_side_lots. Fix: Also mark position in positions[].
+11. **Strike shift:** Dynamic threshold collapses after first shift (original_premium→0). Fix: Persistent `_initial_hedge_premium`.
+12. **Monitor:** `_interruptible_sleep` doesn't exist → storage failure kills session permanently. Fix: Use `_wait_for_next_cycle`.
+13. **Monitor:** resume() doesn't clear stale margin flags → false wind-down after resume. Fix: Pop margin flags.
+14. **Monitor:** `_make_fetch_fn` returns 0 on cache miss → hides losses. Fix: Return None.
+15. **Monitor:** `_bid_cache` accumulates stale entries across heartbeats. Fix: Fresh dict each beat.
+16. **State:** Bare dict access `orig_pos['lots']` → KeyError crash on corrupted data. Fix: `.get('lots', 0)`.
+17. **Harvester:** `other_lots==0` disables M3 boost in worst-case (one-sided accumulation). Fix: Enable extreme boost.
+
+**Prevention rules:**
+- Always use `.get()` with defaults — never bare dict access in state management code
+- Cache miss must return None/sentinel, never 0 (0 is a valid value that hides errors)
+- Safety checks must handle misconfigured thresholds (≤0) gracefully
+- Any counter used for re-trigger detection must be reset when the trigger fires
+- Derived state fields (original_premium) that get zeroed by recompute need persistent backups (_initial_hedge_premium)
+
+### Round 2 Audit Fixes (2026-03-11) — 15 bugs across 6 files
+
+**close_at_5.py (5 fixes):**
+18. Profit calc in scan missing `× LOT_SIZE_BTC` → 1000x inflated sort priority. Fix: Add multiplier at all 3 scan locations.
+19. `_being_closed` guard only worked for pos_id path → adjustment/frozen positions could double-buyback. Fix: Content-match guard + propagate flag through recompute views.
+20. No double-close guard when pos_id is falsy (pre-migration). Fix: Content-match on adjustment_fills/frozen_positions views.
+21. External close records `realized_pnl: 0.0` → PnL drift. Fix: Estimate from entry_premium - current_premium.
+22. None premium from fetch could trigger comparison crash. Fix: Guard `if current is None: continue` in adj/frozen scan loops.
+
+**mmm_state.py (3 fixes):**
+23. `recompute_side_lots` uses `next()` for original — silently drops lots from 2nd+ original. Fix: Sum all active originals + warning log.
+24. `_being_closed` flag not propagated to adjustment_fills/frozen_positions views. Fix: Include in view dict comprehensions.
+25. `close_at_use_bid` missing from HOT_RELOAD_PARAMS. Fix: Add to set.
+
+**mmm_strike_shift.py (3 fixes):**
+26. `freeze_current_positions` doesn't clear old strike's trigger_snapshot → stale data on shift-back. Fix: Pop old key.
+27. `find_new_strike` allows shift-back to frozen strike → duplicate positions. Fix: Skip frozen strikes in candidate filter.
+28. Missing `frozen_entry` in freeze return dict (promised by docstring). Fix: Compute lot-weighted avg premium.
+
+**mmm_safety.py (1 fix):**
+29. perp_pnl missing from 80% warning details (was only in CRITICAL). Fix: Add to alert-level details dict.
+
+**mmm_harvester.py (2 fixes):**
+30. `total_lots` used for asymmetry calc inflated by frozen. Fix: Use `active_lots`.
+31. Capacity pressure includes frozen lots. Fix: Use `active_lots` for pressure calculation.
+
+**mmm_monitor.py (1 fix):**
+32. No re-entrancy guard on `_heartbeat()` — overlapping heartbeats possible. Fix: Boolean flag + wrapper/inner split.
+
+**Prevention rules (added):**
+- Scan profit calculations must match actual execution formula (both need `× LOT_SIZE_BTC`)
+- In-flight guards (`_being_closed`) must work on ALL position types, not just ID-based paths
+- View dicts rebuilt by recompute must propagate ALL transient flags from source positions[]
+- HOT_RELOAD_PARAMS must be updated when adding new runtime-tunable params
+- Strike shift must check frozen strikes to prevent duplicate positions at same strike
+- Active-vs-total lot distinction matters: asymmetry/capacity should use active_lots only
+
+---
+
+## [2026-03-11] OPTIONS Positions Endpoint Freezes Single Eventlet Worker — Session Creation Blocked
+
+**Symptom:** User clicks "+ New Session" — nothing happens. Globe stays green (WebSocket alive) but all HTTP requests (health check, session creation, everything) time out for 12-15 seconds every ~13s. Logs show repeated `"Failed to fetch options positions: "` (empty exception = `concurrent.futures.TimeoutError`) alternating with `"Failed to get positions from API: Read timed out (10s)"`.
+
+**Root cause:**
+`options_client.py` `_run_async()` called `asyncio.run_coroutine_threadsafe(coro, loop)` then `future.result(timeout=60)`. With `gunicorn worker_class=eventlet`, the Flask request handler is an eventlet greenlet. `future.result(timeout=60)` uses `threading.Condition.wait()` (eventlet-patched). The patched wait is supposed to yield, but `concurrent.futures.Future` synchronization does NOT properly cooperate with eventlet's hub — the greenlet FREEZES for the full duration of the async API call (12-15 seconds). With `workers=1`, the ENTIRE backend becomes unresponsive for that duration. New session creation requests queue up and time out silently.
+
+Secondary problem: `_get_dedicated_loop()` used `threading.Thread` (monkey-patched → eventlet greenlet) to host the asyncio event loop. An asyncio loop running inside an eventlet greenlet has I/O selector conflicts that can cause the loop to stall under load.
+
+**Fix applied (options_client.py):**
+
+1. `_get_dedicated_loop()` — use a **real OS thread** for the asyncio loop:
+```python
+from eventlet.patcher import original as _orig
+_RealThread = _orig('threading').Thread
+_loop_thread = _RealThread(target=_dedicated_loop.run_forever, daemon=True, ...)
+```
+
+2. `_run_async()` — replace blocking `future.result()` with **cooperative polling**:
+```python
+future = asyncio.run_coroutine_threadsafe(coro, loop)
+deadline = time.time() + 60
+while not future.done():
+    if time.time() >= deadline:
+        future.cancel()
+        raise TimeoutError("Async operation timed out after 60s")
+    eventlet.sleep(0)   # yield to hub each iteration
+return future.result(timeout=0)  # already done — returns immediately
+```
+`eventlet.sleep(0)` yields the greenlet on every iteration, allowing the eventlet hub to serve health checks, session creation, and WebSocket heartbeats while the async API call is in flight. Because the asyncio loop IS in a real OS thread, `future.done()` becomes True when the coroutine completes, and the poll loop exits naturally.
+
+3. `options_control.py` — added one-at-a-time fetch lock (`_positions_fetch_lock`) with double-checked caching to prevent thundering herd when cache expires:
+```python
+# Fast path (no lock)
+if cache is fresh: return cached_data
+# Slow path — serialize all concurrent cache-miss requests
+with _positions_fetch_lock:
+    if cache is now fresh (another greenlet fetched): return cached_data
+    options = _run_async(fetch())  # only ONE call in flight at a time
+```
+
+**Verified:** After fix, `health: OK in 0.05s` and `sessions: OK in 0.04s` while `positions` live-fetches from Delta Exchange (`OK in 1.08s`). Previously those would time out for 12-15 seconds.
+
+**Prevention rule:**
+NEVER call `future.result()` (blocking) from an eventlet greenlet — even with eventlet's monkey-patched `threading.Condition`, cross-thread notification between a real OS thread (asyncio loop) and a greenlet (Flask request handler) does NOT propagate correctly. Always use `eventlet.sleep(0)` polling OR run the entire async operation in the real OS thread used by the dedicated asyncio event loop.
+

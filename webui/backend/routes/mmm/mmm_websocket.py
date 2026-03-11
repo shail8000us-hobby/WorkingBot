@@ -398,6 +398,22 @@ def emit_recycle(session_id: str, hedge_side: str,
     })
 
 
+def emit_scale_up(session_id: str, lots: int,
+                  ce_strike: float, ce_premium: float,
+                  pe_strike: float, pe_premium: float,
+                  scale_count: int):
+    """Emit FSU scale-up event."""
+    _emit('mmm_scale_up', {
+        'session_id': session_id,
+        'lots': lots,
+        'ce_strike': ce_strike,
+        'ce_premium': ce_premium,
+        'pe_strike': pe_strike,
+        'pe_premium': pe_premium,
+        'scale_count': scale_count,
+    })
+
+
 def emit_perp_hedge_flip(session_id: str, old_direction: str,
                          new_direction: str, lots_closed: int,
                          new_lots: int, realized_pnl: float,

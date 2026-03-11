@@ -152,6 +152,17 @@ const PARAM_GROUPS = {
       'rebalance_pressure_threshold',
     ],
   },
+  favorableScaleUp: {
+    title: '\uD83D\uDCC8 Favorable Scale-Up',
+    color: '#8bc34a',
+    blurb: 'When both CE and PE premiums are decaying (market is flat), automatically open new OTM option positions to capture additional theta. Positions become standard MMM positions with full protection.',
+    params: [
+      'scale_enabled',
+      'scale_min_decay_pct', 'scale_lots_pct',
+      'scale_max_events', 'scale_cooldown_mins',
+      'scale_target_premium', 'scale_min_premium',
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -256,6 +267,14 @@ const PARAM_TOOLTIPS = {
   rebalance_enabled: 'M3: Enable asymmetry-aware harvest threshold relaxation. When one side accumulates many more lots than the other, the harvest thresholds on the dominant side are automatically relaxed to free capacity faster.',
   rebalance_asymmetry_threshold: 'M3: CE/PE lot ratio that triggers relaxed harvesting on the dominant side. Default 5.0 = relax when one side has 5× more lots than the other. Lower = more aggressive rebalancing.',
   rebalance_pressure_threshold: 'M3: Minimum capacity pressure on the dominant side (combined with asymmetry ratio) to activate M3. Prevents threshold relaxation when lots are still plentiful on the dominant side.',
+  // FSU: Favorable Scale-Up
+  scale_enabled: 'Master switch for Favorable Scale-Up (FSU). When enabled and both premiums have decayed significantly, the algo opens new positions at fresh OTM strikes. Positions become standard MMM positions \u2014 included in adjustments, loss calculations, close-at-5, etc. Disabled by default.',
+  scale_min_decay_pct: 'Both CE and PE premiums must have decayed by at least this percentage from the trigger snapshot before a scale-up event fires. Higher = more conservative. Default 35% means premiums must have dropped by a third.',
+  scale_lots_pct: 'Lots per side as a percentage of initial_lots. With initial_lots=10 and scale_lots_pct=50, each scale-up sells 5 lots CE + 5 lots PE. Lower = more conservative. Default 50%.',
+  scale_max_events: 'Maximum number of scale-up events per session. After this many, no more scale-ups occur. Default 3.',
+  scale_cooldown_mins: 'Minimum minutes between consecutive scale-up events. Prevents rapid stacking even when conditions remain favorable. Default 30 minutes.',
+  scale_target_premium: 'Target premium when scanning for new OTM strikes. The algo picks the OTM strike with premium closest to this value. Higher = further OTM (safer, less theta). Default $100.',
+  scale_min_premium: 'Minimum premium threshold for scale-up strikes. Strikes below this premium are rejected \u2014 too little theta to justify the risk. Default $30.',
 };
 
 // =============================================================================
