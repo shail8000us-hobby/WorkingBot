@@ -515,14 +515,15 @@ class MMMMonitor:
         # IMP-5: A force-heartbeat from the operator confirms they want to
         # continue despite the consecutive same-direction block — clear it
         # and reset the counter so it doesn't immediately re-block.
-        if self.session and self.session.get('_consecutive_dir_blocked'):
-            self.session.pop('_consecutive_dir_blocked', None)
-            self.session['_consecutive_same_dir_count'] = 0
-            self.session['_consecutive_same_dir_side'] = ''
-            log.info(
-                f"[{self.session_id}] IMP-5: consecutive direction block and counter "
-                f"cleared by force-heartbeat"
-            )
+        with self._session_lock:
+            if self.session and self.session.get('_consecutive_dir_blocked'):
+                self.session.pop('_consecutive_dir_blocked', None)
+                self.session['_consecutive_same_dir_count'] = 0
+                self.session['_consecutive_same_dir_side'] = ''
+                log.info(
+                    f"[{self.session_id}] IMP-5: consecutive direction block and counter "
+                    f"cleared by force-heartbeat"
+                )
         log.info(f"[{self.session_id}] ⚡ Force heartbeat requested")
         return True
 

@@ -21,6 +21,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from .mmm_constants import LOT_SIZE_BTC, _D, _LOT
+from .mmm_state import recompute_side_lots
 
 log = logging.getLogger('mmm_recycler')
 
@@ -472,6 +473,8 @@ async def execute_lot_recycling(
             pos['status'] = 'active'
             pos.pop('_being_closed', None)
             side_state.setdefault('positions', []).append(pos)
+        recompute_side_lots(side_state)
+        session[hedge_side] = side_state
         # Rollback realized P&L added by close_position() during Phase A
         session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
         # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
@@ -503,6 +506,8 @@ async def execute_lot_recycling(
             pos['status'] = 'active'
             pos.pop('_being_closed', None)
             side_state.setdefault('positions', []).append(pos)
+        recompute_side_lots(side_state)
+        session[hedge_side] = side_state
         # Rollback realized P&L added by close_position() during Phase A
         session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
         # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)

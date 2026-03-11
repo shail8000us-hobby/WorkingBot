@@ -200,7 +200,7 @@ def find_scale_strikes(
             # CE candidates: CALL, OTM (strike > spot)
             call_data = entry.get('call', {})
             if call_data and strike > spot_price:
-                bid = call_data.get('best_bid', 0) or 0
+                bid = call_data.get('bid', 0) or 0
                 mark = call_data.get('mark_price', 0) or 0
                 premium = bid if bid > 0 else mark
                 symbol = call_data.get('symbol', '')
@@ -219,7 +219,7 @@ def find_scale_strikes(
             # PE candidates: PUT, OTM (strike < spot)
             put_data = entry.get('put', {})
             if put_data and strike < spot_price:
-                bid = put_data.get('best_bid', 0) or 0
+                bid = put_data.get('bid', 0) or 0
                 mark = put_data.get('mark_price', 0) or 0
                 premium = bid if bid > 0 else mark
                 symbol = put_data.get('symbol', '')

@@ -257,13 +257,13 @@ class MMMSafety:
 
         params = session.get('params', {})
         max_loss = params.get('max_loss_amount', 5000.0)
-        initial_lots = session.get('lots', 0) or params.get('initial_lots', 0)
+        initial_lots = params.get('initial_lots', 0)
         if initial_lots <= 0:
             return events
 
         # Compute average premium per lot across both sides at entry
-        ce_entry = session.get('ce', {}).get('entry_fill_price', 0.0) or 0.0
-        pe_entry = session.get('pe', {}).get('entry_fill_price', 0.0) or 0.0
+        ce_entry = session.get('ce', {}).get('original_premium', 0.0) or 0.0
+        pe_entry = session.get('pe', {}).get('original_premium', 0.0) or 0.0
         if ce_entry <= 0 or pe_entry <= 0:
             return events
 
