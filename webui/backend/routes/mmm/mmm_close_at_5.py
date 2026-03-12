@@ -336,8 +336,17 @@ async def close_position(
             }
 
         close_price = result.get('fill_price', 0)
+        # AUDIT BUG-2 FIX: Use actual filled size, not requested lots.
+        actual_lots = result.get('filled_size', lots)
+        if actual_lots <= 0:
+            actual_lots = lots
+        if actual_lots < lots:
+            log.warning(
+                f"Close-at-5 PARTIAL FILL: requested {lots} {side.upper()} "
+                f"@ {strike}, only {actual_lots} filled."
+            )
         # Fix #19: Decimal arithmetic to prevent float rounding accumulation
-        realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(lots) * _LOT)
+        realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(actual_lots) * _LOT)
 
         # Update state: remove the closed position
         # Note: _being_closed flag is removed by _remove_closed_position since it
@@ -360,16 +369,16 @@ async def close_position(
             'timestamp': datetime.now(timezone.utc).isoformat(),
             'side': side,
             'strike': strike,
-            'lots': lots,
+            'lots': actual_lots,
             'reason': 'close_at_threshold',
             'realized_pnl': realized_pnl,
         })
         if len(analytics['auto_close_events']) > 200:
             analytics['auto_close_events'] = analytics['auto_close_events'][-200:]
-        analytics['auto_close_total_lots'] = analytics.get('auto_close_total_lots', 0) + lots
+        analytics['auto_close_total_lots'] = analytics.get('auto_close_total_lots', 0) + actual_lots
 
         log.info(
-            f"Close-at-5 success: {lots} {side.upper()} @ {strike}, "
+            f"Close-at-5 success: {actual_lots} {side.upper()} @ {strike}, "
             f"realized P&L: {realized_pnl:.2f}"
         )
 
@@ -377,7 +386,7 @@ async def close_position(
             'success': True,
             'realized_pnl': realized_pnl,
             'close_premium': close_price,
-            'lots_closed': lots,
+            'lots_closed': actual_lots,
             'side': side,
             'strike': strike,
         }

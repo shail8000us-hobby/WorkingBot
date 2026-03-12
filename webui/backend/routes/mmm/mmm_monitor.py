@@ -236,6 +236,26 @@ class MMMMonitor:
         except Exception as _pend_e:
             log.warning(f"[{self.session_id}] Failed to clear pending order registry at start: {_pend_e}")
 
+        # AUDIT DEAD-6 FIX: Clear stale _being_closed flags from all positions.
+        # If the process crashed mid-order, these flags persist in storage and
+        # permanently block close-at-5 from retrying the position.
+        try:
+            _cleared_count = 0
+            for _side_key in ('ce', 'pe'):
+                _side_data = self.session.get(_side_key, {})
+                if not isinstance(_side_data, dict):
+                    continue
+                for _pos in _side_data.get('positions', []):
+                    if _pos.pop('_being_closed', None):
+                        _cleared_count += 1
+                for _frz in _side_data.get('frozen_positions', []):
+                    if _frz.pop('_being_closed', None):
+                        _cleared_count += 1
+            if _cleared_count:
+                log.info(f"[{self.session_id}] Cleared {_cleared_count} stale _being_closed flags at start")
+        except Exception as _bc_e:
+            log.warning(f"[{self.session_id}] Failed to clear _being_closed flags: {_bc_e}")
+
         # Use a REAL OS thread (not an eventlet greenlet) so that asyncio's
         # run_until_complete() works inside _run_loop().  When gunicorn uses
         # worker_class=eventlet, threading.Thread is monkey-patched to a
@@ -418,6 +438,10 @@ class MMMMonitor:
             self.session.pop('_margin_block_sells', None)
             self.session.pop('_margin_wind_down', None)
             self.session.pop('_margin_rapid_check', None)
+            # AUDIT BUG-3 FIX: Clear ATM wind-down flag so it can re-arm after resume.
+            # Without this, if ATM wind-down fired once and session was paused
+            # (e.g. one-side-close guard), the flag sticks forever on resume.
+            self.session.pop('_atm_wind_down_triggered', None)
             # Force immediate reconciliation on next heartbeat
             self.session['_recon_counter'] = 0
             self.session['_force_recon'] = True
@@ -1154,6 +1178,12 @@ class MMMMonitor:
             # Guard: skip if already triggered this session (prevent repeat fires)
             if session.get('_atm_close_triggered'):
                 log.debug(f"[{sid}] ATM auto-close already triggered, skipping")
+            # AUDIT CONFLICT-6 FIX: If wind_down_on_atm already triggered,
+            # skip close_at_atm — wind-down takes priority for gradual exit.
+            # Both use 0.5% threshold; without this guard, wind-down activates
+            # then close_at_atm immediately overrides and closes everything.
+            elif session.get('_atm_wind_down_triggered'):
+                log.debug(f"[{sid}] ATM wind-down active, skipping close_at_atm")
             else:
                 spot_price = await self._fetch_spot_price()
                 if spot_price > 0:
@@ -1505,8 +1535,10 @@ class MMMMonitor:
                 from .mmm_websocket import emit_regime
                 emit_regime(sid, regime_status)
             except Exception as e:
-                log.error("Regime engine error — failing closed: %s", e, exc_info=True)
-                session['_regime_action'] = ACTION_BLOCK_ALL_SELLS
+                log.error("Regime engine error (observation mode): %s", e, exc_info=True)
+                # AUDIT CONFLICT-1 FIX: When regime is DISABLED, error should NOT
+                # silently block all sells. The user explicitly disabled regime.
+                session['_regime_action'] = ACTION_NORMAL
             # Fall through to normal trigger evaluation
         else:
             # Regime is ENABLED — enforce regime actions
@@ -2410,23 +2442,32 @@ class MMMMonitor:
                     continue
 
                 close_price = result.get('fill_price', 0)
+                # AUDIT BUG-2 FIX: Use actual filled size for P&L calculation.
+                actual_filled = result.get('filled_size', group_lots)
+                if actual_filled <= 0:
+                    actual_filled = group_lots
+                if actual_filled < group_lots:
+                    log.warning(
+                        f"[{sid}] Wind-down PARTIAL FILL: requested {group_lots} "
+                        f"{aggressor.upper()} @ {strike_val}, only {actual_filled} filled."
+                    )
 
                 # Apply LIFO removals for this strike's records only
                 avg_entry = apply_lifo_removals(side_state, group_records)
                 session[aggressor] = side_state
 
                 # Realized P&L for this strike group
-                group_realized = (avg_entry - close_price) * group_lots * LOT_SIZE_BTC
+                group_realized = (avg_entry - close_price) * actual_filled * LOT_SIZE_BTC
                 total_realized += group_realized
                 session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
 
                 log_activity('wind_down',
-                            f'🌙 Wind-Down leg: Bought back {group_lots} {aggressor.upper()} '
+                            f'🌙 Wind-Down leg: Bought back {actual_filled} {aggressor.upper()} '
                             f'@ {strike_val} fill ${close_price:.2f} '
                             f'(avg entry ${avg_entry:.2f}, P&L ${group_realized:.2f})',
                             sid, 'success',
                             {'side': aggressor.upper(), 'strike': strike_val,
-                             'lots': group_lots, 'close_price': close_price,
+                             'lots': actual_filled, 'close_price': close_price,
                              'avg_entry': round(avg_entry, 2),
                              'realized_pnl': round(group_realized, 2)})
 
@@ -3131,6 +3172,19 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
 
+        # AUDIT CONFLICT-7 FIX: Shift cooldown — prevent rapid oscillation
+        # when premium bounces around shift_threshold. Default 120s cooldown.
+        shift_cooldown = session.get('params', {}).get('shift_cooldown_sec', 120)
+        last_shift_time = session.get('_last_shift_time', 0)
+        if shift_cooldown > 0 and last_shift_time:
+            elapsed = time.time() - last_shift_time
+            if elapsed < shift_cooldown:
+                log.debug(
+                    f"[{sid}] Strike shift {side.upper()} skipped: cooldown "
+                    f"{elapsed:.0f}s / {shift_cooldown}s"
+                )
+                return
+
         old_strike = session.get(side, {}).get('active_strike', 0)
         hedge_premium = ce_now if side == 'ce' else pe_now
 
@@ -3355,6 +3409,18 @@ class MMMMonitor:
 
         if result.get('success'):
             fill_price = result.get('fill_price', 0)
+            # AUDIT BUG-2 FIX: Use actual filled size, not requested lots.
+            # smart_execute() can return partial fills; recording requested
+            # lots would make the ledger diverge from exchange state.
+            filled_lots = result.get('filled_size', lots)
+            if filled_lots <= 0:
+                filled_lots = lots
+            if filled_lots < lots:
+                log.warning(
+                    f"[{sid}] STRIKE SHIFT PARTIAL FILL: requested {lots} "
+                    f"{side.upper()} lots, only {filled_lots} filled."
+                )
+            lots = filled_lots  # Override for all downstream state updates
 
             # BUG-1 FIX: Wrap entire post-fill sequence in try/except.
             # Each step is individually exception-safe so a failure in one
@@ -3409,6 +3475,7 @@ class MMMMonitor:
                 session['last_aggressor'] = aggressor_side.upper()
                 session['adjustment_count'] = session.get('adjustment_count', 0) + 1
                 session['shift_count'] = session.get('shift_count', 0) + 1
+                session['_last_shift_time'] = time.time()  # AUDIT CONFLICT-7: cooldown tracking
                 session['total_premium_collected'] = (
                     session.get('total_premium_collected', 0) + premium_collected
                 )

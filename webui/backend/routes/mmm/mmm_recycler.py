@@ -432,11 +432,14 @@ async def execute_lot_recycling(
     )
 
     # ── Phase B: Sell at new strike ────────────────────────────────────────
-    # Recompute final Phase B lots using the viability details
-    total_to_cover = buyback_cost + max(loss_to_hedge, 0)
+    # AUDIT BUG-5 FIX: Recompute Phase B lots using ACTUAL Phase A results.
+    # If Phase A bought back fewer lots than planned (partial fills, failures),
+    # total_to_cover should reflect the actual buyback cost, not the pre-planned one.
+    actual_buyback_cost = abs(phase_a_pnl) if phase_a_pnl < 0 else 0
+    total_to_cover = actual_buyback_cost + max(loss_to_hedge, 0)
     buffer_pct = params.get('premium_buffer_pct', 0.05)
-    raw_phase_b_lots = total_to_cover / (new_premium * LOT_SIZE_BTC) * (1 + buffer_pct)
-    phase_b_lots = max(math.ceil(raw_phase_b_lots), 1)
+    raw_phase_b_lots = total_to_cover / (new_premium * LOT_SIZE_BTC) * (1 + buffer_pct) if new_premium > 0 else 0
+    phase_b_lots = max(math.ceil(raw_phase_b_lots), 1) if raw_phase_b_lots > 0 else 1
 
     # Final cap check after Phase A — Split Ledger: Phase A only closes frozen,
     # so active_lots is unchanged. Phase B adds to active_lots.

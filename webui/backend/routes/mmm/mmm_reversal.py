@@ -236,6 +236,20 @@ def handle_reversal_skip_transition(
     # standard formula (Case A) instead of reversal detection
     session['last_aggressor'] = aggressor.upper()
 
+    # AUDIT CONFLICT-3 FIX: Record reversal-skip as a direction change in
+    # adjustment_history so the whipsaw detector can see the alternation.
+    # Without this, rapid reversal-skips (profitable) are invisible to
+    # whipsaw tracking, allowing unlimited oscillation.
+    session.setdefault('adjustment_history', []).append({
+        'timestamp': datetime.now(timezone.utc).isoformat(),
+        'aggressor': aggressor.upper(),
+        'type': 'reversal_skip',
+        'spot': session.get('_regime_spot_price', 0),
+    })
+    _hist = session['adjustment_history']
+    if len(_hist) > 200:
+        del _hist[:-200]
+
     # §6.2: Update BOTH trigger snapshots to current premiums.
     # This resets the baseline so the trigger system works correctly
     # from the new direction.
