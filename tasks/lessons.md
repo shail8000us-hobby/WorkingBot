@@ -291,3 +291,27 @@ The orphan adoption code in `_reconcile_exchange_positions()` (~line 5487) hardc
 **Prevention rule:**
 When creating position records from exchange data, always populate `entry_premium` from the exchange's `entry_price` field. Never hardcode financial values to 0 — use the exchange as source of truth.
 
+---
+
+## [2026-03-12] wind_down_on_atm and close_at_atm checked original_strike, not active_strike
+
+**What went wrong:**
+Both `wind_down_on_atm` and `close_at_atm` proximity checks used `original_strike`
+(the session's initial entry strike — set at first sell, never updated on shifts).
+After 6 strike shifts the original CE strike was 71,800 and PE was 66,400 — both
+3-4% from spot (~69,234). The active strikes (CE=69,600, PE=69,400) were ATM/ITM
+but the checks were blind to them. Wind-down never fired. User had to manually pause.
+
+**Fix applied:**
+Changed all 3 ATM-proximity checks in `mmm_monitor.py` to use `active_strike` +
+`active_lots > 0` guard (instead of `original_strike` + `total_lots > 0`):
+1. `wind_down_on_atm` block
+2. `close_at_atm` block
+3. `perp_hedge atm_only` gate
+
+**Prevention rule:**
+Any code that checks whether the market has approached our position MUST use
+`active_strike` (current exposure), not `original_strike` (historical entry,
+irrelevant after shifts). The `original_strike` field exists only for P&L
+attribution — it has no role in proximity/safety checks.
+
