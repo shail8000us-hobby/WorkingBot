@@ -67,6 +67,7 @@ from .mmm_websocket import (
     emit_safety, emit_pnl_update, emit_status_change,
     emit_harvest, emit_recycle, emit_scale_up,
 )
+from .mmm_atm_shield import execute_atm_shield
 from .mmm_harvester import scan_harvestable_positions
 from .mmm_recycler import execute_lot_recycling
 from .mmm_perp_hedge import (
@@ -186,6 +187,16 @@ class MMMMonitor:
         else:
             self._paused = False
             self.session['strategy_status'] = 'RUNNING'
+
+        # Backfill any new params that did not exist when this session was created.
+        # Uses setdefault so existing user-configured values are never overwritten.
+        try:
+            from .mmm_state import DEFAULT_PARAMS as _DP
+            session_params = self.session.setdefault('params', {})
+            for _k, _v in _DP.items():
+                session_params.setdefault(_k, _v)
+        except Exception as _e:
+            log.warning(f"[{self.session_id}] Could not backfill DEFAULT_PARAMS: {_e}")
 
         # H-4 fix: increment generation counter so stale old-thread saves are rejected
         self.session['_monitor_generation'] = self.session.get('_monitor_generation', 0) + 1
@@ -417,30 +428,6 @@ class MMMMonitor:
             self.session_id, old_status, 'RUNNING', reason
         )
         log.info(f"Monitor resumed for {self.session_id}: {reason}")
-
-        # BUG-3 FIX: Warn if whipsaw cooldown is still active after resume.
-        # Adjustments will still be blocked by Step 4.5 whipsaw gate.
-        _whipsaw_at = self.session.get('_whipsaw_paused_at')
-        if _whipsaw_at:
-            try:
-                _wp = datetime.fromisoformat(_whipsaw_at)
-                if _wp.tzinfo is None:
-                    _wp = _wp.replace(tzinfo=timezone.utc)
-                _interval = self.session.get('params', {}).get('adjustment_interval', 300)
-                _remaining = (_interval * 2) - (datetime.now(timezone.utc) - _wp).total_seconds()
-                if _remaining > 0:
-                    log.warning(
-                        f"[{self.session_id}] BUG-3: Session resumed but whipsaw "
-                        f"cooldown still active ({_remaining:.0f}s remaining). "
-                        f"Adjustments will remain blocked until cooldown expires."
-                    )
-                    log_activity('info',
-                                f'⚠️ Whipsaw cooldown still active ({_remaining:.0f}s remaining). '
-                                f'Heartbeat resumed but adjustments blocked until cooldown expires.',
-                                self.session_id, 'warning',
-                                {'whipsaw_remaining': round(_remaining)})
-            except (ValueError, TypeError):
-                pass
 
     @property
     def is_running(self) -> bool:
@@ -1027,6 +1014,35 @@ class MMMMonitor:
         ce_strike = session.get('ce', {}).get('active_strike', 'N/A')
         pe_strike = session.get('pe', {}).get('active_strike', 'N/A')
 
+        # ── Trigger snapshot heal (runs even when PAUSED) ──
+        # Moved from Step 6 so it fires regardless of _skip_to_pnl.
+        # If active_strike has no trigger_snapshot entry (e.g. set-active-strike
+        # API failed to fetch prices, or session was paused before heal ran),
+        # initialize it with the current premium to prevent 0.0 baseline.
+        for _heal_side in ('ce', 'pe'):
+            _heal = session.get(_heal_side, {})
+            _heal_strike = _heal.get('active_strike', 0)
+            if _heal_strike > 0:
+                from .mmm_constants import strike_key as _sk
+                _heal_key = _sk(_heal_strike)
+                _heal_snap = _heal.get('trigger_snapshot', {})
+                if _heal_key not in _heal_snap or _heal_snap.get(_heal_key, 0) == 0:
+                    _heal_prem = ce_now if _heal_side == 'ce' else pe_now
+                    if _heal_prem > 0:
+                        if 'trigger_snapshot' not in _heal:
+                            _heal['trigger_snapshot'] = {}
+                        _heal['trigger_snapshot'][_heal_key] = _heal_prem
+                        session[_heal_side] = _heal
+                        log.warning(
+                            f"[{sid}] Trigger snapshot healed: "
+                            f"{_heal_side.upper()}[{_heal_key}] = {_heal_prem:.2f} (was missing/zero)"
+                        )
+                        log_activity('trigger_stale',
+                                    f'⚠️ Trigger snapshot healed for {_heal_side.upper()} '
+                                    f'@ {_heal_key} = ${_heal_prem:.2f} (was missing/zero)',
+                                    sid, 'warning',
+                                    {'side': _heal_side, 'strike': _heal_key, 'premium': _heal_prem})
+
         # Stale-price guard: warn if HeartbeatHealth detects frozen exchange data
         if self._health.stale_ce_detected or self._health.stale_pe_detected:
             stale_sides = []
@@ -1083,6 +1099,17 @@ class MMMMonitor:
                         _atm_wd_side = 'CE'
                     elif _pe_orig and _pe_lots > 0 and abs(_wd_spot - _pe_orig) <= _wd_atm_threshold:
                         _atm_wd_side = 'PE'
+
+                    if _atm_wd_side:
+                        # ATM Shield deferral: let shield handle if it has capacity
+                        if params.get('atm_shield_enabled', False):
+                            _ws = _atm_wd_side.lower()
+                            _sc = session.get(f'_atm_shield_count_{_ws}', 0)
+                            _sm = params.get('atm_shield_max_per_session', 3)
+                            if _sc < _sm:
+                                log.info(f"[{sid}] ATM wind-down deferred to ATM Shield "
+                                         f"(capacity: {_sm - _sc} fires remaining)")
+                                _atm_wd_side = None   # skip this beat — shield at Step 5.5
 
                     if _atm_wd_side:
                         _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
@@ -1145,6 +1172,17 @@ class MMMMonitor:
                         atm_triggered_side = 'CE'
                     elif pe_original_strike and pe_total_lots > 0 and abs(spot_price - pe_original_strike) <= atm_threshold:
                         atm_triggered_side = 'PE'
+
+                    if atm_triggered_side:
+                        # ATM Shield deferral: let shield handle if it has capacity
+                        if params.get('atm_shield_enabled', False):
+                            _es = atm_triggered_side.lower()
+                            _sc = session.get(f'_atm_shield_count_{_es}', 0)
+                            _sm = params.get('atm_shield_max_per_session', 3)
+                            if _sc < _sm:
+                                log.info(f"[{sid}] close_at_ATM deferred to ATM Shield "
+                                         f"(capacity: {_sm - _sc} fires remaining)")
+                                atm_triggered_side = None  # skip — shield at Step 5.5
 
                     if atm_triggered_side:
                         triggered_strike = ce_original_strike if atm_triggered_side == 'CE' else pe_original_strike
@@ -1549,12 +1587,27 @@ class MMMMonitor:
                     self.pause(f'Regime pause — vol={vol_r}, trend={trend_r}')
                     _skip_to_pnl = True
 
-                # Handle BLOCK_ALL_SELLS — skip trigger evaluation entirely
+                # Handle BLOCK_ALL_SELLS — skip trigger evaluation entirely,
+                # UNLESS wind-down is also active.
+                # When wind-down is active, we MUST let trigger evaluation run so the
+                # OUTCOME_CE/PE path can execute buybacks instead of sells (line ~1786:
+                # 'if blocked and regime_action != FORCE_REDUCE: wind-down buyback').
+                # Proactive wind-down (every heartbeat regardless of trigger) was
+                # intentionally removed — it caused unintended position erosion.
                 if not _skip_to_pnl and regime_action == ACTION_BLOCK_ALL_SELLS:
-                    log_activity('regime_block',
-                                f'All sells blocked by regime controls — skipping trigger evaluation',
-                                sid, 'warning')
-                    _skip_to_pnl = True
+                    if is_wind_down_active(session):
+                        # Wind-down is active — don't skip trigger evaluation.
+                        # The OUTCOME_CE/PE path will call _process_wind_down_buyback()
+                        # when a trigger fires, even though sells are blocked.
+                        log_activity('regime_block',
+                                    f'All sells blocked by regime — but wind-down is active: '
+                                    f'trigger evaluation continues so buybacks can fire',
+                                    sid, 'warning')
+                    else:
+                        log_activity('regime_block',
+                                    f'All sells blocked by regime controls — skipping trigger evaluation',
+                                    sid, 'warning')
+                        _skip_to_pnl = True
 
             except Exception as e:
                 log.warning(f"[{sid}] Regime check failed (non-fatal): {e}")
@@ -1648,54 +1701,19 @@ class MMMMonitor:
                 # Paused status shown in live heartbeat summary
                 _skip_to_pnl = True
 
-        # Step 4.5 (BUG-3 FIX): Whipsaw cooldown gate — independent of _paused.
-        # If user manually resumes during whipsaw cooldown, _paused becomes False
-        # but _whipsaw_paused_at is still active. We must respect the cooldown
-        # regardless of how the session got unpaused.
-        if not _skip_to_pnl:
-            _whipsaw_paused_at = session.get('_whipsaw_paused_at')
-            if _whipsaw_paused_at:
-                try:
-                    _wp_time = datetime.fromisoformat(_whipsaw_paused_at)
-                    if _wp_time.tzinfo is None:
-                        _wp_time = _wp_time.replace(tzinfo=timezone.utc)
-                    _wp_interval = params.get('adjustment_interval', 300)
-                    _wp_resume_after = _wp_interval * 2
-                    _wp_elapsed = (datetime.now(timezone.utc) - _wp_time).total_seconds()
-                    if _wp_elapsed < _wp_resume_after:
-                        _wp_remaining = _wp_resume_after - _wp_elapsed
-                        log.info(
-                            f"[{sid}] BUG-3: Whipsaw cooldown still active "
-                            f"({_wp_elapsed:.0f}s / {_wp_resume_after}s) — "
-                            f"{_wp_remaining:.0f}s remaining. Blocking adjustments."
-                        )
-                        log_activity('adjustment_skipped',
-                                    f'⏸️ Whipsaw cooldown active — {_wp_remaining:.0f}s remaining. '
-                                    f'Adjustments blocked.',
-                                    sid, 'warning',
-                                    {
-                                        'reason': 'whipsaw_cooldown',
-                                        'elapsed': round(_wp_elapsed),
-                                        'remaining': round(_wp_remaining),
-                                        'resume_after': _wp_resume_after,
-                                    })
-                        _skip_to_pnl = True
-                    else:
-                        # Cooldown expired — clean up the flag
-                        session.pop('_whipsaw_paused_at', None)
-                        log.info(
-                            f"[{sid}] Whipsaw cooldown expired "
-                            f"({_wp_elapsed:.0f}s >= {_wp_resume_after}s) — "
-                            f"adjustments re-enabled"
-                        )
-                except (ValueError, TypeError):
-                    # Corrupted timestamp — clear it
-                    session.pop('_whipsaw_paused_at', None)
-
         # Step 5: Cooldown check (§14.3)
         if not _skip_to_pnl and is_cooldown_active(session):
             # Cooldown status shown in live heartbeat summary
             _skip_to_pnl = True
+
+        # Step 5.5: ATM Shield — proactive close & retreat
+        if not _skip_to_pnl and params.get('atm_shield_enabled', False):
+            try:
+                _shield_fired = await execute_atm_shield(self, ce_now, pe_now)
+                if _shield_fired:
+                    session['_atm_shield_fired'] = True
+            except Exception as _shield_err:
+                log.error(f"[{sid}] ATM Shield error: {_shield_err}", exc_info=True)
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
@@ -1705,32 +1723,34 @@ class MMMMonitor:
             # Fall through to Step 7.5 (perp hedge) + Step 8 (P&L) + save + record_beat
 
         if not _skip_to_pnl:
+            # Shield fired this beat → skip trigger evaluation (snapshots are stale)
+            if session.pop('_atm_shield_fired', False):
+                log.info(f"[{sid}] ATM Shield fired this beat — skipping trigger evaluation")
+                _skip_to_pnl = True
+                self._emit_heartbeat_data(ce_now, pe_now)
+
+        if not _skip_to_pnl:
             # Step 6: Evaluate triggers (§7)
-            # Robust v2 Fix #6: Validate trigger_snapshot has active strike key.
-            # If missing (e.g. after restart, adoption, or strike key mismatch),
-            # initialize it with the CURRENT premium to avoid false trigger (baseline=0).
-            for _side_key in ('ce', 'pe'):
-                _side = session.get(_side_key, {})
-                _active_strike = _side.get('active_strike', 0)
-                if _active_strike > 0:
-                    from .mmm_constants import strike_key as _sk
-                    _strike_key = _sk(_active_strike)
-                    _snap = _side.get('trigger_snapshot', {})
-                    if _strike_key not in _snap or _snap.get(_strike_key, 0) == 0:
-                        _current_prem = ce_now if _side_key == 'ce' else pe_now
-                        if 'trigger_snapshot' not in _side:
-                            _side['trigger_snapshot'] = {}
-                        _side['trigger_snapshot'][_strike_key] = _current_prem
-                        session[_side_key] = _side
-                        log.warning(
-                            f"[{sid}] Robust v2 Fix #6: Initialized missing trigger_snapshot "
-                            f"for {_side_key.upper()}[{_strike_key}] = {_current_prem:.2f}"
-                        )
-                        log_activity('trigger_stale',
-                                    f'⚠️ Trigger snapshot initialized for {_side_key.upper()} '
-                                    f'@ {_strike_key} = ${_current_prem:.2f} (was missing/zero)',
-                                    sid, 'warning',
-                                    {'side': _side_key, 'strike': _strike_key, 'premium': _current_prem})
+            # NOTE: Trigger snapshot healing moved earlier (runs even when paused).
+
+            # Adaptive Whipsaw Guard: widen triggers based on score
+            _ws_score = session.get('_whipsaw_score', 0)
+            _ws_params = session.get('params', {})
+            _ws_caution = _ws_params.get('whipsaw_caution_score', 2)
+            _ws_restrict = _ws_params.get('whipsaw_restrict_score', 3)
+            if _ws_score >= _ws_restrict:
+                _ws_factor = 2.0
+            elif _ws_score >= _ws_caution:
+                _ws_factor = 1.5
+            else:
+                _ws_factor = 1.0
+            if _ws_factor > 1.0:
+                _base_trigger = session.get(
+                    '_effective_min_trigger_move',
+                    _ws_params.get('min_trigger_move', 10.0)
+                )
+                session['_effective_min_trigger_move'] = _base_trigger * _ws_factor
+                session['_whipsaw_trigger_widened'] = True
 
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
             outcome = trigger_result['outcome']
@@ -1752,6 +1772,8 @@ class MMMMonitor:
                 # FSU: Favorable Scale-Up — add positions when both sides are decaying
                 if not is_wind_down_active(session):
                     await self._process_scale_up(ce_now, pe_now)
+                # Wind-down + no trigger: just wait. Close-at-5 handles cheap positions.
+                # Proactive wind-down every heartbeat was intentionally removed (position erosion).
 
             elif outcome == OUTCOME_BOTH:
                 # §8: Both sides up — pause and alert user
@@ -2521,6 +2543,7 @@ class MMMMonitor:
             'premium_collected': premium_collected,
             'adjustment_number': session['adjustment_count'],
             'source': 'pending_order_recovery',
+            'spot': session.get('_regime_spot_price', 0),
         })
         if len(session['adjustment_history']) > 200:
             session['adjustment_history'] = session['adjustment_history'][-200:]
@@ -2818,33 +2841,21 @@ class MMMMonitor:
                                     sid, 'warning',
                                     {'hedge': hedge.upper(), 'strike': hedge_strike, 'spot': spot_price})
 
-        # ── T3-3: Whipsaw Pre-Filter ─────────────────────────────────────
-        # Before executing, check if this adjustment is the mirror image of
-        # the last one (rapid reversal). If so, boost the whipsaw counter
-        # so the existing whipsaw check fires sooner.
-        # Skip OPERATOR aggressors — manual injections are intentional.
-        history = session.get('adjustment_history', [])
-        if history:
-            last_adj = history[-1]
-            last_aggressor = last_adj.get('aggressor', '')
-            if last_aggressor and last_aggressor != 'OPERATOR' and aggressor != 'OPERATOR' and last_aggressor != aggressor:
-                # Direction flip — increment the alternating counter eagerly
-                session['_whipsaw_consecutive_alternating'] = (
-                    session.get('_whipsaw_consecutive_alternating', 0) + 1
-                )
-                alt_count = session['_whipsaw_consecutive_alternating']
-                log.debug(
-                    f"[{sid}] T3-3 Whipsaw pre-filter: direction flip "
-                    f"{last_aggressor.upper()} → {aggressor.upper()}, "
-                    f"alternating count={alt_count}"
-                )
-            else:
-                session['_whipsaw_consecutive_alternating'] = 0
-        # ── END T3-3 ─────────────────────────────────────────────────────
-
         lots, constraint_msg, is_position_cap = self._engine.calculate_lots_to_sell(
             session, hedge, loss, hedge_premium,
         )
+
+        # ── Adaptive Whipsaw Guard: lot reduction at RESTRICT+ ────────────
+        _ws_score = session.get('_whipsaw_score', 0)
+        _ws_restrict = session.get('params', {}).get('whipsaw_restrict_score', 3)
+        if _ws_score >= _ws_restrict and lots > 1:
+            _ws_orig_lots = lots
+            lots = max(1, int(lots * 0.5))
+            constraint_msg = (constraint_msg or '') + f' [whipsaw lot reduction {_ws_orig_lots}→{lots}]'
+            log.info(
+                f"[{sid}] Whipsaw RESTRICT lot reduction: "
+                f"{_ws_orig_lots} → {lots} lots (score={_ws_score})"
+            )
 
         # ── IMP-5: Consecutive same-direction adjustment limiter ──────────
         lots, constraint_msg = self._apply_consecutive_dir_limit(
@@ -2948,6 +2959,22 @@ class MMMMonitor:
                 loss, adj_type,
                 session.get('adjustment_count', 0),
             )
+            # Trend Boost: log when boost multiplier was applied
+            if session.get('_trend_boost_active'):
+                boost_mult = session.get('_trend_boost_mult', 1.0)
+                trend_dir = session.get('_trend_direction', '?')
+                trend_tier = session.get('_trend_tier', 0)
+                log_activity('trend_boost',
+                            f'⚡ Trend Boost T{trend_tier} ({trend_dir.upper()}): '
+                            f'{hedge.upper()} {lots} lots @ {boost_mult:.1f}x multiplier',
+                            sid, 'info',
+                            {
+                                'side': hedge.upper(),
+                                'lots': lots,
+                                'boost_mult': boost_mult,
+                                'trend_tier': trend_tier,
+                                'trend_direction': trend_dir,
+                            })
             # IMP-5: Update consecutive same-direction counter after successful sell
             self._update_consecutive_dir_counter(session, aggressor)
         else:
@@ -3206,11 +3233,25 @@ class MMMMonitor:
             if opposite_active > lots:
                 pre_match_lots = lots
                 target = opposite_active
-                # Apply same trend-tier reduction to the balance target
+                # Apply trend-tier adjustment to the balance target
                 # (the formula lots already went through calculate_lots_to_sell
-                # which applied this reduction, so repeat it here too)
+                # which applied this adjustment, so repeat it here too)
                 trend_tier = session.get('_trend_tier', 0)
-                if trend_tier >= 1:
+                trend_direction = session.get('_trend_direction', 'none')
+                is_safe_side = (
+                    (trend_direction == 'up' and side == 'pe') or
+                    (trend_direction == 'down' and side == 'ce')
+                )
+                if trend_tier >= 1 and params.get('trend_boost_enabled', False) and is_safe_side:
+                    # Trend Boost: boost lots on safe side during shifts too
+                    if trend_tier >= 3:
+                        boost_mult = params.get('trend_boost_tier3_mult', 2.0)
+                    elif trend_tier >= 2:
+                        boost_mult = params.get('trend_boost_tier2_mult', 1.5)
+                    else:
+                        boost_mult = params.get('trend_boost_tier1_mult', 1.3)
+                    target = max(int(opposite_active * boost_mult + 0.999), lots)
+                elif trend_tier >= 1:
                     lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
                     mult = max(1.0 - lot_reduction, 0.1)
                     # Floor at formula lots — never go below what hedging demands
@@ -3219,7 +3260,12 @@ class MMMMonitor:
                 max_per_side = params.get('max_lots_per_side', 100)
                 lots = min(target, max_per_side)
                 if lots > pre_match_lots:
-                    trend_note = f' (trend T{trend_tier} reduction applied)' if trend_tier >= 1 else ''
+                    if trend_tier >= 1 and params.get('trend_boost_enabled', False) and is_safe_side:
+                        trend_note = f' (trend T{trend_tier} boost {boost_mult:.1f}x)'
+                    elif trend_tier >= 1:
+                        trend_note = f' (trend T{trend_tier} reduction applied)'
+                    else:
+                        trend_note = ''
                     log.info(
                         f"[{sid}] DELTA-NEUTRAL MATCH: {side.upper()} lots "
                         f"{pre_match_lots} → {lots} (matching "
@@ -3400,6 +3446,7 @@ class MMMMonitor:
                     'type': 'strike_shift',
                     'premium_collected': premium_collected,
                     'adjustment_number': session.get('adjustment_count', 0),
+                    'spot': session.get('_regime_spot_price', 0),
                 })
                 if len(session['adjustment_history']) > 200:
                     session['adjustment_history'] = session['adjustment_history'][-200:]
@@ -3522,7 +3569,21 @@ class MMMMonitor:
                 pre_match_lots = lots
                 target = opposite_active
                 trend_tier = session.get('_trend_tier', 0)
-                if trend_tier >= 1:
+                trend_tier = session.get('_trend_tier', 0)
+                trend_direction = session.get('_trend_direction', 'none')
+                is_safe_side = (
+                    (trend_direction == 'up' and side == 'pe') or
+                    (trend_direction == 'down' and side == 'ce')
+                )
+                if trend_tier >= 1 and params.get('trend_boost_enabled', False) and is_safe_side:
+                    if trend_tier >= 3:
+                        boost_mult = params.get('trend_boost_tier3_mult', 2.0)
+                    elif trend_tier >= 2:
+                        boost_mult = params.get('trend_boost_tier2_mult', 1.5)
+                    else:
+                        boost_mult = params.get('trend_boost_tier1_mult', 1.3)
+                    target = max(int(opposite_active * boost_mult + 0.999), lots)
+                elif trend_tier >= 1:
                     lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
                     mult = max(1.0 - lot_reduction, 0.1)
                     target = max(int(opposite_active * mult + 0.999), lots)
@@ -5475,12 +5536,15 @@ class MMMMonitor:
                             now_ts = datetime.now(timezone.utc).isoformat()
                             counter = side.get('_pos_counter', 0) + 1
                             side['_pos_counter'] = counter
+                            # Use exchange entry_price as entry_premium
+                            # (best available proxy for original fill price)
+                            ex_entry = float(pos.get('entry_price', 0))
                             side.setdefault('positions', []).append({
                                 'id': f"{side_key}_orphan_{counter:03d}",
                                 'strike': ex_strike,
                                 'lots': adopt_lots,
-                                'entry_premium': 0,
-                                'premium': 0,
+                                'entry_premium': ex_entry,
+                                'premium': ex_entry,
                                 'type': 'orphan_adopted',
                                 'status': 'active',
                                 'created_at': now_ts,
@@ -5505,6 +5569,36 @@ class MMMMonitor:
                                 sid, 'warning',
                                 {'side': side_key, 'strike': ex_strike,
                                  'lots': adopt_lots, 'reason': 'orphan_from_dead_monitor'})
+
+            # §26.9b: Self-heal existing positions with entry_premium=0.
+            # Orphan positions adopted before this fix may have entry_premium=0.
+            # Look up the exchange entry_price and patch them.
+            for side_key in ['ce', 'pe']:
+                side = session.get(side_key, {})
+                option_type = 'call' if side_key == 'ce' else 'put'
+                for p in side.get('positions', []):
+                    if p.get('status') != 'active':
+                        continue
+                    if (p.get('entry_premium') or 0) > 0:
+                        continue
+                    # Position has entry_premium=0 — try to fix from exchange
+                    p_strike = p.get('strike', 0)
+                    if p_strike <= 0:
+                        continue
+                    p_sym = self.initializer.build_symbol(
+                        option_type, 'BTC', p_strike, expiry)
+                    for epos in positions:
+                        esym = epos.get('product', {}).get('symbol', '') or epos.get('symbol', '')
+                        if esym == p_sym:
+                            ex_ep = float(epos.get('entry_price', 0))
+                            if ex_ep > 0:
+                                p['entry_premium'] = ex_ep
+                                p['premium'] = ex_ep
+                                log.info(
+                                    f"[{sid}] HEALED entry_premium: "
+                                    f"{side_key.upper()} {p['id']} @ {p_strike} "
+                                    f"→ {ex_ep}")
+                            break
 
             # §26.10: Orphan perp check — detect BTCUSD position on exchange
             # that the session doesn't know about (crash recovery).

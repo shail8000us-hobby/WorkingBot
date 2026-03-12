@@ -43,6 +43,12 @@ PARAM_RULES = {
     'auto_close_mins':         {'type': int,   'min': 0,    'max': 1440,  'hot': True},
     'cooldown_on_reversal':    {'type': bool,  'min': None, 'max': None,  'hot': True},
     'whipsaw_limit':           {'type': int,   'min': 2,    'max': 100,   'hot': True},
+    # Adaptive Whipsaw Guard
+    'whipsaw_window_mins':     {'type': int,   'min': 5,    'max': 120,   'hot': True},
+    'whipsaw_spot_move_pct':   {'type': float, 'min': 0.05, 'max': 5.0,   'hot': True},
+    'whipsaw_caution_score':   {'type': int,   'min': 1,    'max': 10,    'hot': True},
+    'whipsaw_restrict_score':  {'type': int,   'min': 2,    'max': 15,    'hot': True},
+    'whipsaw_cooldown_score':  {'type': int,   'min': 3,    'max': 20,    'hot': True},
     'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -139,6 +145,11 @@ PARAM_RULES = {
     'rebalance_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
     'rebalance_asymmetry_threshold': {'type': float, 'min': 2,  'max': 20,    'hot': True},
     'rebalance_pressure_threshold': {'type': float, 'min': 0.5,  'max': 1.0,   'hot': True},
+    # Trend Boost — aggressive safe-side selling
+    'trend_boost_enabled':          {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'trend_boost_tier1_mult':       {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    'trend_boost_tier2_mult':       {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    'trend_boost_tier3_mult':       {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
     # T2-4: Lot Velocity Limiter
     'lot_velocity_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
     'lot_velocity_limit':           {'type': int,   'min': 1,    'max': 500,   'hot': True},
@@ -151,6 +162,13 @@ PARAM_RULES = {
     'scale_cooldown_mins':    {'type': int,   'min': 5,    'max': 240,    'hot': True},
     'scale_target_premium':   {'type': float, 'min': 10,   'max': 5000,   'hot': True},
     'scale_min_premium':      {'type': float, 'min': 5,    'max': 1000,   'hot': True},
+    # ATM Shield — Close & Retreat
+    'atm_shield_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'atm_shield_proximity_pct':        {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
+    'atm_shield_target_otm_pct':       {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
+    'atm_shield_loss_split_aggressor': {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'atm_shield_max_per_session':      {'type': int,   'min': 1,    'max': 10,    'hot': True},
+    'atm_shield_cooldown_mins':        {'type': int,   'min': 0,    'max': 60,    'hot': True},
 }
 
 
@@ -242,13 +260,26 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
                 f"Margin tier ordering violated: {k1} ({v1}) must be < {k2} ({v2})"
             )
 
-    # max_adjustments should be >= whipsaw_limit for whipsaw detection to be meaningful
+    # max_adjustments should be >= whipsaw_cooldown_score
     max_adj = validated.get('max_adjustments')
     whipsaw = validated.get('whipsaw_limit')
     if max_adj is not None and whipsaw is not None and max_adj < whipsaw:
         errors.append(
             f"max_adjustments ({max_adj}) < whipsaw_limit ({whipsaw}): "
             "max-adjustments will be reached before whipsaw can detect alternation"
+        )
+
+    # Whipsaw score ordering: caution < restrict < cooldown
+    ws_caution = validated.get('whipsaw_caution_score')
+    ws_restrict = validated.get('whipsaw_restrict_score')
+    ws_cooldown = validated.get('whipsaw_cooldown_score')
+    if ws_caution is not None and ws_restrict is not None and ws_caution >= ws_restrict:
+        errors.append(
+            f"whipsaw_caution_score ({ws_caution}) must be < whipsaw_restrict_score ({ws_restrict})"
+        )
+    if ws_restrict is not None and ws_cooldown is not None and ws_restrict >= ws_cooldown:
+        errors.append(
+            f"whipsaw_restrict_score ({ws_restrict}) must be < whipsaw_cooldown_score ({ws_cooldown})"
         )
 
     # auto_close_mins should be <= stop_adjustment_mins (stop adjusting before closing)
@@ -314,6 +345,19 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             "normal exchange latency spikes will constantly trip the breaker"
         )
 
+    # Trend Boost: multiplier ordering tier1 <= tier2 <= tier3
+    boost_keys = ['trend_boost_tier1_mult', 'trend_boost_tier2_mult', 'trend_boost_tier3_mult']
+    boost_vals = [(k, validated.get(k)) for k in boost_keys]
+    boost_vals = [(k, v) for k, v in boost_vals if v is not None]
+    for i in range(len(boost_vals) - 1):
+        k1, v1 = boost_vals[i]
+        k2, v2 = boost_vals[i + 1]
+        if v1 > v2:
+            errors.append(
+                f"Trend boost multiplier ordering violated: {k1} ({v1}) must be <= {k2} ({v2}). "
+                "Higher tiers should have equal or larger boost multipliers."
+            )
+
 
 def get_hot_reload_params() -> Set[str]:
     """Return set of parameter names that support hot-reload."""
@@ -348,7 +392,12 @@ def get_param_info() -> Dict[str, Dict]:
         'stop_adjustment_mins': 'Stop adjusting N minutes before expiry',
         'auto_close_mins': 'Auto-close all positions N minutes before expiry',
         'cooldown_on_reversal': 'Skip one interval on reversal detection',
-        'whipsaw_limit': 'Max alternating adjustments before auto-pause',
+        'whipsaw_limit': 'DEPRECATED — backward compat alias for whipsaw_cooldown_score',
+        'whipsaw_window_mins': 'Rolling window (minutes): only count alternations within this window. Old alternations age out. Default 30.',
+        'whipsaw_spot_move_pct': 'If BTC spot moved more than this % between two alternating adjustments, the alternation is considered justified (real hedge, not noise). Default 0.3%.',
+        'whipsaw_caution_score': 'Whipsaw score to enter CAUTION: widen triggers by +50%. Score decays -1 per interval without new noise alternation.',
+        'whipsaw_restrict_score': 'Whipsaw score to enter RESTRICT: widen triggers by +100% and halve lot sizes.',
+        'whipsaw_cooldown_score': 'Whipsaw score to enter COOLDOWN: skip one interval, then score drops by 2. Never a full session PAUSE.',
         'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
         'theta_acceleration_window': 'Minutes before expiry to widen triggers',
         'close_at_atm': 'Auto-close all if original strike becomes ATM (spot ≈ strike)',

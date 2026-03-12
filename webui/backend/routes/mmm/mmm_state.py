@@ -346,8 +346,15 @@ DEFAULT_PARAMS = {
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry
     'cooldown_on_reversal': True,       # skip 1 interval on reversal
-    'whipsaw_limit': 3,                 # max alternating adjustments before pause
+    'whipsaw_limit': 3,                 # DEPRECATED — backward compat alias for whipsaw_cooldown_score
     'trailing_stop_pct': 0.0,           # protect profit at N% of peak (0 = disabled)
+
+    # Adaptive Whipsaw Guard — graduated response to alternating adjustments
+    'whipsaw_window_mins': 30,           # rolling window: only count alternations within this window
+    'whipsaw_spot_move_pct': 0.3,        # spot move % to consider alternation 'justified' (not noise)
+    'whipsaw_caution_score': 2,          # score to widen triggers +50%
+    'whipsaw_restrict_score': 3,         # score to widen triggers +100% and halve lots
+    'whipsaw_cooldown_score': 4,         # score to skip one interval (NOT full pause)
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
     'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
@@ -429,6 +436,12 @@ DEFAULT_PARAMS = {
     'rebalance_asymmetry_threshold': 5.0,  # lots ratio threshold for extreme asymmetry boost
     'rebalance_pressure_threshold': 0.7,   # capacity pressure threshold for asymmetry boost
 
+    # Trend Boost — aggressive safe-side selling during confirmed trends
+    'trend_boost_enabled': False,          # master switch: boost safe-side lots during trend
+    'trend_boost_tier1_mult': 1.3,         # safe-side lot multiplier at Tier 1 (ALERT)
+    'trend_boost_tier2_mult': 1.5,         # safe-side lot multiplier at Tier 2 (GUARD)
+    'trend_boost_tier3_mult': 2.0,         # safe-side lot multiplier at Tier 3 (BLOCK)
+
     # Lot Velocity Limiter (T2-4) — cap lot growth rate to prevent runaway accumulation
     'lot_velocity_enabled': True,           # master switch
     'lot_velocity_limit': 30,               # max lots added per velocity window
@@ -489,6 +502,13 @@ DEFAULT_PARAMS = {
     'scale_cooldown_mins': 30,            # minutes between scale-up events
     'scale_target_premium': 100.0,        # target premium for new strikes (same unit as shift_target_premium)
     'scale_min_premium': 30.0,            # reject strikes with premium below this (liquidity/theta floor)
+    # ATM Shield — Close & Retreat
+    'atm_shield_enabled': False,
+    'atm_shield_proximity_pct': 0.5,
+    'atm_shield_target_otm_pct': 1.0,
+    'atm_shield_loss_split_aggressor': 0.3,
+    'atm_shield_max_per_session': 3,
+    'atm_shield_cooldown_mins': 10,
 }
 
 # Which parameters can be changed while algo is running
@@ -504,6 +524,9 @@ HOT_RELOAD_PARAMS = {
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
     'trailing_stop_pct', 'theta_acceleration_window',
+    # Adaptive Whipsaw Guard
+    'whipsaw_window_mins', 'whipsaw_spot_move_pct',
+    'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score',
     'adaptive_interval_enabled',
     'wind_down_enabled', 'wind_down_hours_before_expiry',
     'wind_down_buyback_pct', 'wind_down_close_threshold',
@@ -537,6 +560,8 @@ HOT_RELOAD_PARAMS = {
     'recycle_max_pct', 'recycle_cooldown_sec', 'recycle_min_lot_gain',
     'recycle_free_lot_buffer', 'recycle_protect_original',
     'rebalance_enabled', 'rebalance_asymmetry_threshold', 'rebalance_pressure_threshold',
+    # Trend Boost
+    'trend_boost_enabled', 'trend_boost_tier1_mult', 'trend_boost_tier2_mult', 'trend_boost_tier3_mult',
     # Lot Velocity Limiter (T2-4)
     'lot_velocity_enabled', 'lot_velocity_limit', 'lot_velocity_window_mins',
     # Gamma-Aware Lot Multiplier (T3-2)
@@ -564,6 +589,10 @@ HOT_RELOAD_PARAMS = {
     'scale_enabled', 'scale_min_decay_pct', 'scale_lots_pct',
     'scale_max_events', 'scale_cooldown_mins', 'scale_target_premium',
     'scale_min_premium',
+    # ATM Shield
+    'atm_shield_enabled', 'atm_shield_proximity_pct', 'atm_shield_target_otm_pct',
+    'atm_shield_loss_split_aggressor', 'atm_shield_max_per_session',
+    'atm_shield_cooldown_mins',
 }
 
 

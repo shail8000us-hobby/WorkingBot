@@ -165,6 +165,7 @@ def find_new_strike(
     session: Dict,
     side: str,
     spot_price: float,
+    min_otm_distance: float = 0.0,
 ) -> Optional[Dict[str, Any]]:
     """
     §10: Scan the chain for a new strike closer to spot with premium >= threshold.
@@ -177,6 +178,7 @@ def find_new_strike(
         session: Full session dict
         side: 'ce' or 'pe'
         spot_price: Current BTC spot price
+        min_otm_distance: Minimum absolute distance from spot (used by ATM Shield)
 
     Returns:
         {strike, premium, symbol} or None if no suitable strike found
@@ -240,6 +242,13 @@ def find_new_strike(
                 continue
             if option_type == 'put' and strike >= spot_price:
                 continue
+
+            # ATM Shield: enforce minimum OTM distance
+            if min_otm_distance > 0:
+                if option_type == 'call' and strike < spot_price + min_otm_distance:
+                    continue
+                if option_type == 'put' and strike > spot_price - min_otm_distance:
+                    continue
 
             # Don't re-select the current active strike
             if abs(strike - old_strike) < 1:

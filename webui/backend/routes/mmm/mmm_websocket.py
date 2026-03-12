@@ -414,6 +414,11 @@ def emit_scale_up(session_id: str, lots: int,
     })
 
 
+def emit_atm_shield(session_id: str, data: dict):
+    """Emit ATM Shield fire event to connected clients."""
+    _emit('mmm_atm_shield', {'session_id': session_id, **data})
+
+
 def emit_perp_hedge_flip(session_id: str, old_direction: str,
                          new_direction: str, lots_closed: int,
                          new_lots: int, realized_pnl: float,

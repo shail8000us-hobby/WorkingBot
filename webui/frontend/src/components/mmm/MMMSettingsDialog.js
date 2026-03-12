@@ -64,7 +64,7 @@ const PARAM_GROUPS = {
     title: 'Safety Limits',
     color: '#ff9800',
     blurb: 'Guard rails to prevent runaway exposure. Adjust carefully.',
-    params: ['whipsaw_limit', 'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
+    params: ['whipsaw_window_mins', 'whipsaw_spot_move_pct', 'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score', 'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
   },
   expiry: {
     title: 'Close-at-Expiry',
@@ -106,6 +106,8 @@ const PARAM_GROUPS = {
       'trend_retrace_pct', 'trend_ema_period', 'trend_ema_slope_threshold',
       'trend_action', 'trend_reset_beats',
       'trend_acceleration_window_s', 'trend_acceleration_pct',
+      'trend_boost_enabled', 'trend_boost_tier1_mult',
+      'trend_boost_tier2_mult', 'trend_boost_tier3_mult',
     ],
   },
   perpHedge: {
@@ -163,6 +165,17 @@ const PARAM_GROUPS = {
       'scale_target_premium', 'scale_min_premium',
     ],
   },
+  atmShield: {
+    title: '\uD83D\uDEE1\uFE0F ATM Shield \u2014 Close & Retreat',
+    color: '#e91e63',
+    blurb: 'Pre-emptively closes endangered positions approaching ATM and repositions at a safer OTM strike. Full position shift (original lots) + loss recovery. Overrides Trend Guard at T1/T2 when active.',
+    params: [
+      'atm_shield_enabled',
+      'atm_shield_proximity_pct', 'atm_shield_target_otm_pct',
+      'atm_shield_loss_split_aggressor',
+      'atm_shield_max_per_session', 'atm_shield_cooldown_mins',
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -177,7 +190,11 @@ const PARAM_TOOLTIPS = {
   shift_match_opposite_lots: 'Delta-neutral balance: when a strike shift opens a new position, sell AT LEAST as many lots as the opposite side has active. Example: PE has 11 lots, CE shifts → CE opens 11 lots too (not just 4). Prevents directional bias from lot asymmetry. Trend-tier lot reduction is applied proportionally so risk controls are respected. Recommended: ON.',
   max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',
   cooldown_on_reversal: HELP.cooldown || 'After a reversal is detected, skip one heartbeat interval before adjusting. Filters out false reversals from short price spikes.',
-  whipsaw_limit: HELP.whipsaw || 'If the last N adjustments alternate between CE and PE, the market is whipsawing. The algo pauses.',
+  whipsaw_window_mins: 'Rolling window (minutes) for counting alternating adjustments. Only alternations within this window contribute to the whipsaw score. Default 30.',
+  whipsaw_spot_move_pct: 'If BTC spot moved more than this % between two alternating adjustments, treat it as justified (not whipsaw noise). Default 0.3%.',
+  whipsaw_caution_score: 'Whipsaw score threshold for CAUTION level: triggers widened +50%. Default 2.',
+  whipsaw_restrict_score: 'Whipsaw score threshold for RESTRICT level: triggers widened +100%, lots halved. Default 3.',
+  whipsaw_cooldown_score: 'Whipsaw score threshold for COOLDOWN: skip one interval, then score drops by 2. Default 4.',
   max_lots_per_side: HELP.position_cap || 'Maximum total lots allowed per side (CE or PE). With Split Ledger, only ACTIVE lots count against this cap — frozen (shifted) lots do not. Prevents runaway accumulation of productive adjustments.',
   max_total_exposure: 'Split Ledger: Absolute ceiling on active + frozen lots per side. 0 = auto (2× max_lots_per_side). A safety net for the safety net — prevents runaway total exposure even if frozen lots don\'t block the active cap. Fires "Total exposure ceiling" error which does NOT trigger M2 recycling.',
   trailing_stop_pct: HELP.trailing_profit || 'Once P&L hits a peak, if it drops more than this % from that peak, the algo alerts you. Protects profits from giving back too much.',
@@ -233,6 +250,10 @@ const PARAM_TOOLTIPS = {
   trend_reset_beats: 'After retracement and EMA slope calm down, must stay calm for this many consecutive heartbeats before resetting ALL tiers back to Tier 0 (Normal). Prevents whipsaw on/off. Binary reset — all tiers clear at once. Recommended: 3–8.',
   trend_acceleration_window_s: 'Acceleration detection window in seconds. Looks at BTC spot price history within this window to detect fast moves. If price moved more than acceleration_pct within this window, Tier 1 can fire WITHOUT EMA confirmation (fast-move bypass). Recommended: 300–900.',
   trend_acceleration_pct: 'Acceleration threshold (% move within window). If BTC moves this % within the acceleration window, it triggers a "fast move" bypass — Tier 1 activates without waiting for EMA confirmation. Catches sudden spikes that EMA is too slow to detect. At BTC $100K, 0.5% ≈ $500. Recommended: 0.3–0.7.',
+  trend_boost_enabled: 'Trend Boost: When a directional trend is confirmed, BOOST lot size on the safe/hedge side instead of blocking it. In an uptrend, PE is far OTM and safe to sell aggressively — collect more premium while the trend confirms your safety. In a downtrend, CE is safe. At Tier 3 (BLOCK), instead of blocking ALL sells, only the dangerous side is blocked while the safe side gets boosted lots. Existing safety guards (position cap, margin guardian, asymmetry) still apply.',
+  trend_boost_tier1_mult: 'Safe-side lot multiplier at Tier 1 (Alert). E.g., 1.3 = sell 30% MORE lots on the safe side. In an uptrend, PE is the safe side. In a downtrend, CE is the safe side. Recommended: 1.2–1.5.',
+  trend_boost_tier2_mult: 'Safe-side lot multiplier at Tier 2 (Guard). E.g., 1.5 = sell 50% MORE lots on the safe side. The stronger the trend, the further OTM the safe side is — more aggressive selling is justified. Recommended: 1.3–2.0.',
+  trend_boost_tier3_mult: 'Safe-side lot multiplier at Tier 3 (Block). E.g., 2.0 = DOUBLE the lots on the safe side. At this tier, the dangerous side is fully blocked, so all premium collection depends on the safe side. This is the biggest win — collecting rich IV premium while the trend confirms your safety. Recommended: 1.5–2.5.',
   // Perp Delta Hedge tooltips
   perp_hedge_enabled: 'Master switch for perpetual futures delta hedging. When enabled, the algo trades BTCUSD perpetual each heartbeat to neutralize portfolio delta. When disabled, no perp trades are made but existing positions remain.',
   perp_hedge_mode: 'Hedge activation mode. "Full" = hedge entire portfolio delta (CE + PE combined) every heartbeat to make you delta-neutral. "ATM Only" = perp activates ONLY when an ORIGINAL entry strike is within the ATM threshold % of spot — OTM positions keep profiting from theta decay undisturbed. Recommended: ATM Only for 0DTE.',
@@ -275,6 +296,13 @@ const PARAM_TOOLTIPS = {
   scale_cooldown_mins: 'Minimum minutes between consecutive scale-up events. Prevents rapid stacking even when conditions remain favorable. Default 30 minutes.',
   scale_target_premium: 'Target premium when scanning for new OTM strikes. The algo picks the OTM strike with premium closest to this value. Higher = further OTM (safer, less theta). Default $100.',
   scale_min_premium: 'Minimum premium threshold for scale-up strikes. Strikes below this premium are rejected \u2014 too little theta to justify the risk. Default $30.',
+  // ATM Shield
+  atm_shield_enabled: 'Master switch for ATM Shield. When enabled, the algo pre-emptively closes positions approaching ATM and repositions at a safer OTM strike. Original lots are fully shifted + additional lots for loss recovery. Overrides Trend Guard T1/T2 lot reduction. Recommended ON.',
+  atm_shield_proximity_pct: 'Base % proximity from active strike that triggers the shield. Scaled by time-to-expiry (wider near expiry). At 6hr+: fires when spot is within 0.5% of strike. At 1hr: fires at 1.5%. Default 0.5%.',
+  atm_shield_target_otm_pct: 'Base target % OTM for the retreat strike. Scaled by time-to-expiry and progressive widening (each successive fire retreats 50% farther). At 6hr+: first retreat to 1% OTM. Default 1.0%.',
+  atm_shield_loss_split_aggressor: 'Fraction of buyback loss recovered from endangered-side re-sell. Remaining fraction from safe-side. 0.3 = 30% from CE (if CE retreated), 70% from PE. Default 0.3.',
+  atm_shield_max_per_session: 'Maximum shield fires per side per session. After exhaustion, Trend Guard reverts to original behavior and close_at_ATM resumes. Default 3.',
+  atm_shield_cooldown_mins: 'Minimum minutes between shield fires on the same side. Prevents rapid-fire whipsaw. Default 10 minutes.',
 };
 
 // =============================================================================

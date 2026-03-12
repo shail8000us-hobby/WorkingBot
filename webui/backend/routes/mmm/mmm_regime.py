@@ -760,13 +760,39 @@ def _compute_regime_action(session: Dict) -> str:
     if vol_regime == VOL_ELEVATED:
         return ACTION_BLOCK_ALL_SELLS
 
+    # ── ATM Shield override: relax trend tiers when shield has capacity ──
+    # Shield catches ATM risk proactively, so trend guard's defensive blocks
+    # become unnecessary at T1/T2 and can be narrowed at T3/T4.
+    shield_on = params.get('atm_shield_enabled', False)
+    if shield_on and trend_tier >= TREND_TIER_ALERT:
+        trend_dir = session.get('_trend_direction', 'none')
+        if trend_dir in ('up', 'down'):
+            endangered = 'ce' if trend_dir == 'up' else 'pe'
+            count = session.get(f'_atm_shield_count_{endangered}', 0)
+            max_fires = params.get('atm_shield_max_per_session', 3)
+            if count < max_fires:
+                if trend_tier <= TREND_TIER_GUARD:  # T1 or T2
+                    return ACTION_NORMAL
+                else:  # T3 or T4
+                    if trend_dir == 'up':
+                        return ACTION_BLOCK_CE_SELLS
+                    else:
+                        return ACTION_BLOCK_PE_SELLS
+        # Shield exhausted or no clear direction → fall through to original
+
     # Tier 4: wind-down + block all sells
     if trend_tier >= TREND_TIER_WIND_DOWN:
         session['_trend_wind_down_triggered'] = True
         return ACTION_BLOCK_ALL_SELLS
 
-    # Tier 3: block ALL sells (both CE and PE)
+    # Tier 3: block dangerous side; allow safe-side if trend_boost_enabled
     if trend_tier >= TREND_TIER_BLOCK:
+        if params.get('trend_boost_enabled', False):
+            # Trend Boost: only block the dangerous side, allow safe-side sells
+            if trend_regime == TREND_UP:
+                return ACTION_BLOCK_CE_SELLS
+            if trend_regime == TREND_DOWN:
+                return ACTION_BLOCK_PE_SELLS
         return ACTION_BLOCK_ALL_SELLS
 
     # Tier 2: block aggressor-side sells only
@@ -859,6 +885,8 @@ class MMMRegimeEngine:
             'trend_tier': session.get('_trend_tier', TREND_TIER_NONE),
             'trend_direction': session.get('_trend_direction', 'none'),
             'regime_action': session.get('_regime_action', ACTION_NORMAL),
+            'trend_boost_active': session.get('_trend_boost_active', False),
+            'trend_boost_mult': session.get('_trend_boost_mult', 1.0),
             'details': {
                 'iv_change_pct': session.get('_vol_iv_change_pct', 0),
                 'rv_annualized': session.get('_vol_rv_annualized', 0),

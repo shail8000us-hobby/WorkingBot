@@ -365,23 +365,65 @@ class MMMEngine:
                 )
         # ── END T3-2 ──────────────────────────────────────────────────────
 
-        # ── IMP-2: Trend Tier 1 lot reduction ──────────────────────────────
-        # When trend guard is at Tier 1 (ALERT), reduce lots by configurable %
-        # Tier 2+ blocks sells entirely (handled in regime engine), so this
-        # only applies to the "soft warning" zone.
+        # ── IMP-2 + Trend Boost: Directional lot adjustment ──────────────
+        # When a trend is detected, the dangerous side (CE in uptrend) gets
+        # reduced lots, but the safe/hedge side (PE in uptrend) gets BOOSTED
+        # lots when trend_boost_enabled. This aggressively collects premium
+        # on the safe side while the trend confirms it's far OTM.
         trend_tier = session.get('_trend_tier', 0)
-        if trend_tier >= 1:
-            lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
-            multiplier = max(1.0 - lot_reduction, 0.1)  # Floor at 10% to avoid zero
+        trend_boost_enabled = params.get('trend_boost_enabled', False)
+        trend_direction = session.get('_trend_direction', 'none')
+
+        # Determine if hedge_side is the "safe" side for this trend
+        # UP trend: PE is safe (far OTM), CE is dangerous (approaching ATM)
+        # DOWN trend: CE is safe (far OTM), PE is dangerous (approaching ATM)
+        is_safe_side = (
+            (trend_direction == 'up' and hedge_side == 'pe') or
+            (trend_direction == 'down' and hedge_side == 'ce')
+        )
+
+        if trend_tier >= 1 and trend_boost_enabled and is_safe_side:
+            # Trend Boost: multiply lots on safe side
+            if trend_tier >= 3:
+                boost_mult = params.get('trend_boost_tier3_mult', 2.0)
+            elif trend_tier >= 2:
+                boost_mult = params.get('trend_boost_tier2_mult', 1.5)
+            else:
+                boost_mult = params.get('trend_boost_tier1_mult', 1.3)
             original_lots = lots_to_sell
-            lots_to_sell = max(math.ceil(lots_to_sell * multiplier), 1)
-            if lots_to_sell < original_lots:
+            lots_to_sell = max(math.ceil(lots_to_sell * boost_mult), 1)
+            session['_trend_boost_active'] = True
+            session['_trend_boost_mult'] = boost_mult
+            if lots_to_sell > original_lots:
                 trend_msg = (
-                    f"Trend Tier {trend_tier} lot reduction: {original_lots} → "
-                    f"{lots_to_sell} ({lot_reduction:.0%} reduction)"
+                    f"Trend Boost T{trend_tier} ({trend_direction.upper()}): "
+                    f"{original_lots} → {lots_to_sell} ({boost_mult:.1f}x safe-side boost)"
                 )
                 constraint_msg = f"{constraint_msg}; {trend_msg}" if constraint_msg else trend_msg
-        # ── END IMP-2 ─────────────────────────────────────────────────────
+        elif trend_tier >= 1:
+            # ATM Shield override: skip T1 lot reduction — shield manages ATM risk
+            shield_on = params.get('atm_shield_enabled', False)
+            if shield_on:
+                session['_trend_boost_active'] = False
+                session['_trend_boost_mult'] = 1.0
+            else:
+                # Original IMP-2: reduce lots on dangerous side (or when boost disabled)
+                lot_reduction = params.get('trend_tier1_lot_reduction', 0.30)
+                multiplier = max(1.0 - lot_reduction, 0.1)  # Floor at 10% to avoid zero
+                original_lots = lots_to_sell
+                lots_to_sell = max(math.ceil(lots_to_sell * multiplier), 1)
+                session['_trend_boost_active'] = False
+                session['_trend_boost_mult'] = 1.0
+                if lots_to_sell < original_lots:
+                    trend_msg = (
+                        f"Trend Tier {trend_tier} lot reduction: {original_lots} → "
+                        f"{lots_to_sell} ({lot_reduction:.0%} reduction)"
+                    )
+                    constraint_msg = f"{constraint_msg}; {trend_msg}" if constraint_msg else trend_msg
+        else:
+            session['_trend_boost_active'] = False
+            session['_trend_boost_mult'] = 1.0
+        # ── END IMP-2 + Trend Boost ───────────────────────────────────────
 
         # §13.1: Position cap — Split Ledger: only active_lots count against cap
         hedge_state = session.get(hedge_side, {})
@@ -699,6 +741,7 @@ class MMMEngine:
             'type': adj_type,
             'premium_collected': premium_collected,
             'adjustment_number': session['adjustment_count'],
+            'spot': session.get('_regime_spot_price', 0),
         })
 
         session['updated_at'] = datetime.now(timezone.utc).isoformat()

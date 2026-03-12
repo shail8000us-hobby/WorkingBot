@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
-> **Last Updated:** March 11, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** Production-ready.
+> **Last Updated:** March 12, 2026
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
@@ -154,7 +154,7 @@ When BOTH CE and PE exceed triggers simultaneously:
 | Max Total Exposure | Absolute ceiling on active+frozen lots per side (default auto: 2× `max_lots_per_side`). Prevents runaway accumulation when frozen lots no longer block the cap. Error string "Total exposure ceiling" — does NOT trigger M2. |
 | Max Adjustments | Counter limit (default 30) |
 | Max Loss | Hard stop — close all if P&L < -max_loss |
-| Whipsaw Detection | 3 alternating adjustments → auto-pause |
+| Adaptive Whipsaw Guard | Score-based graduated response (NORMAL→CAUTION→RESTRICT→COOLDOWN). Replaces old binary pause. See §2.8b. |
 | Position Asymmetry | Warn at 3:1, alert at 5:1 ratio (uses `total_lots` — includes frozen) |
 | Near-Expiry | Stop adjustments at 15min, auto-close at 5min |
 | Margin Check | Verify margin before every sell (uses `total_lots` — includes frozen) |
@@ -162,6 +162,22 @@ When BOTH CE and PE exceed triggers simultaneously:
 | Theta Acceleration | Widen triggers near expiry (let theta work) |
 | P&L Guardrail | Warn/pause/stop at loss thresholds |
 | Periodic Reconciliation | True P&L check every 5 adjustments |
+
+#### 2.8b Adaptive Whipsaw Guard (Mar 2026)
+
+Replaces the old binary whipsaw pause (`_whipsaw_paused_at` → manual resume) with a score-based graduated response that automatically throttles and recovers.
+
+**Score levels:**
+| Score | Level | Effect |
+|-------|-------|--------|
+| 0-1 | NORMAL | No restrictions |
+| ≥ `whipsaw_caution_score` (2) | CAUTION | Triggers widened 1.5× |
+| ≥ `whipsaw_restrict_score` (3) | RESTRICT | Triggers widened 2.0× + lots halved |
+| ≥ `whipsaw_cooldown_score` (4) | COOLDOWN | Skip one interval, score -2 |
+
+**Noise detection:** A direction flip-flop counts as noise only if (a) it's within the `whipsaw_window_mins` rolling window AND (b) the spot move was < `whipsaw_spot_move_pct`. Genuine large moves don't penalize.
+
+**Score decay:** -1 per adjustment_interval with no noise detected.
 
 ### 2.9 User Parameters (Section 19)
 
@@ -183,7 +199,12 @@ When BOTH CE and PE exceed triggers simultaneously:
 | `stop_adjustment_mins` | 15 | **Yes** |
 | `auto_close_mins` | 5 | **Yes** |
 | `cooldown_on_reversal` | true | **Yes** |
-| `whipsaw_limit` | 3 | **Yes** |
+| `whipsaw_limit` | 3 | **Yes** | *(DEPRECATED — kept for compat, replaced by score-based params below)* |
+| `whipsaw_window_mins` | 30 | **Yes** |
+| `whipsaw_spot_move_pct` | 0.3 | **Yes** |
+| `whipsaw_caution_score` | 2 | **Yes** |
+| `whipsaw_restrict_score` | 3 | **Yes** |
+| `whipsaw_cooldown_score` | 4 | **Yes** |
 | `trailing_stop_pct` | 50% | **Yes** |
 | `adaptive_interval_enabled` | true | **Yes** |
 | `adaptive_max_interval` | 1200 | **Yes** |
@@ -264,6 +285,8 @@ Three pre-adjustment controls checked every heartbeat BEFORE trigger evaluation:
 **Acceleration check:** If BTC moves `trend_acceleration_pct` within `trend_acceleration_window_s`, Tier 1 can fire without EMA confirmation (fast-move bypass). Reuses existing `_vol_spot_history` ring buffer.
 
 Aggregate actions: `NORMAL` (proceed), `WARN` (Tier 1 — lot reduction), `BLOCK_CE/PE_SELLS` (Tier 2 — directional block), `BLOCK_ALL_SELLS` (Tier 3), `FORCE_REDUCE` (Tier 4 — auto wind-down).
+
+**Wind-down + Regime interaction (Fixed March 12, 2026):** `BLOCK_ALL_SELLS` blocks new *sells* only. If wind-down is simultaneously active (e.g. Tier 4 or vol-HIGH sets `_trend_wind_down_triggered`), trigger evaluation is **not skipped** — the heartbeat continues to OUTCOME_CE/PE so the existing `blocked + is_wind_down_active → _process_wind_down_buyback()` path at line ~1786 can execute buybacks. Without this, `BLOCK_ALL_SELLS` set `_skip_to_pnl = True` which bypassed the entire trigger block, silently preventing any wind-down from acting. Note: proactive wind-down (every heartbeat regardless of trigger) is intentionally NOT used — it was previously removed for causing unintended position erosion.
 
 **Implementation:** `mmm_regime.py` + monitor heartbeat + `MMMRegimePanel.js` (frontend).
 
@@ -920,6 +943,7 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Methods: `check_position_cap`, `check_total_exposure`, `check_max_adjustments`, `check_max_loss`, `check_whipsaw`, `check_asymmetry`, `check_near_expiry`, `check_trailing_profit`, `check_pnl_guardrail`
 - **Split Ledger:** `check_position_cap` uses `active_lots` (not `total_lots`)
 - **`check_total_exposure()`:** Warning-only check on `active + frozen` vs `max_total_exposure`. Action='warn' (does not block). Asymmetry check uses `total_lots` (unchanged)
+- **`check_whipsaw()` (Mar 2026 rewrite):** Adaptive Whipsaw Guard — score-based graduated response (NORMAL/CAUTION/RESTRICT/COOLDOWN). Auto-migrates old binary pause state on first call. See T3-3 in §15.
 
 ### 6.14 mmm_monitor.py (~5533 lines)
 - `MMMMonitor` class — runs heartbeat in background thread per session
@@ -930,6 +954,8 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Wind-down integration: calls `_process_wind_down_buyback()` before normal adjustment logic
 - Prefetches all premiums in parallel for multi-strike sessions
 - **Shift-Time Recycle:** `_shift_time_recycle()` method (~lines 3392-3534) hooks into strike-shift flow. Scans frozen positions at old strike, applies dynamic premium floor (`shift_recycle_floor_ratio`), caps at `shift_recycle_max_pct`, folds buyback cost into `total_loss_to_cover`. ROI tracked in `session['shift_recycle_stats']`
+- **Orphan Adoption Fix (Mar 2026):** `_reconcile_exchange_positions()` now uses exchange `entry_price` as `entry_premium` for adopted orphan positions (previously hardcoded to 0, breaking loss calculations). Self-heal block scans existing active positions with `entry_premium=0` and patches them from exchange data each reconciliation cycle.
+- **Whipsaw Guard Integration (Mar 2026):** Applies trigger multiplier (1.5× CAUTION, 2.0× RESTRICT) before `evaluate_triggers()` and lot reduction (50% at RESTRICT+) after `calculate_lots_to_sell()`. Records `spot` in `adjustment_history`.
 
 ### 6.15 mmm_wind_down.py (~348 lines)
 - `is_wind_down_active(session, minutes_to_expiry)` → bool
@@ -1650,10 +1676,32 @@ New params (hot-reloadable):
 - `gamma_aware_enabled` (default `True`)
 - `gamma_aware_max_multiplier` (default `1.3`)
 
-**T3-3: Whipsaw Pre-Filter (`mmm_monitor.py` + `mmm_safety.py`)**
-In `_process_adjustment()`, before calling `calculate_lots_to_sell()`, a direction-flip counter `session['_whipsaw_consecutive_alternating']` is incremented each time the aggressor flips vs the last adjustment. Resets to 0 on same-direction adjustments.
+**T3-3: Adaptive Whipsaw Guard (`mmm_safety.py` + `mmm_monitor.py`)**
+Replaces the old binary whipsaw pause with a graduated score-based system.
 
-In `check_whipsaw()` (safety), when `_whipsaw_consecutive_alternating >= whipsaw_limit - 1`, the effective whipsaw limit is lowered by 1 so the pause fires one adjustment earlier than normal. This catches micro-whipsaw patterns faster.
+**Three rules:**
+1. **Time-windowed counting** — Only counts flip-flops within a rolling `whipsaw_window_mins` window (default 30 min). Old flips outside the window are ignored.
+2. **Spot-move validation** — A flip only counts as noise if the spot move between adjustments was < `whipsaw_spot_move_pct` (default 0.3%). Genuine large moves don't increase the score.
+3. **Graduated response** — Score determines the action level:
+   - **NORMAL** (score 0–1): No restrictions
+   - **CAUTION** (score ≥ `whipsaw_caution_score`, default 2): Triggers widened by 1.5×
+   - **RESTRICT** (score ≥ `whipsaw_restrict_score`, default 3): Triggers widened by 2.0× + lots halved
+   - **COOLDOWN** (score ≥ `whipsaw_cooldown_score`, default 4): Skip one adjustment interval, score reduced by 2
+
+**Score mechanics:** +1 per noise flip-flop, -1 per adjustment interval with no noise. Score is stored in `session['_whipsaw_score']`.
+
+**Monitor integration:**
+- Before `evaluate_triggers()`: trigger multiplier applied (1.5× at CAUTION, 2.0× at RESTRICT)
+- After `calculate_lots_to_sell()`: lots halved at RESTRICT or higher
+- `spot` field recorded in `adjustment_history` for post-analysis
+
+**Session state keys:**
+- `_whipsaw_score`: Current noise score (int)
+- `_whipsaw_last_noise_at`: ISO timestamp of last noise event
+- `_whipsaw_skip_until`: ISO timestamp when COOLDOWN skip expires
+- `_whipsaw_last_checked_idx`: Last adjustment index processed
+
+**Migration:** Old keys (`_whipsaw_paused_at`, `_whipsaw_checked_up_to`, `_whipsaw_consecutive_alternating`) are auto-cleaned on first `check_whipsaw()` call. Session auto-resumes from old pause state.
 
 ### 15.4 T4 — Nice-to-Have
 
@@ -1684,6 +1732,11 @@ All new params are in both `DEFAULT_PARAMS` and `HOT_RELOAD_PARAMS` in `mmm_stat
 | `consecutive_critical_threshold` | `3` | Beats at CRITICAL margin before force-stop |
 | `perp_hedge_project_adjustment` | `True` | Include projected adjustment delta in perp hedge |
 | `perp_hedge_approx_option_delta` | `0.5` | Approximate option delta for projection |
+| `whipsaw_window_mins` | `30` | Rolling window for noise counting (minutes) |
+| `whipsaw_spot_move_pct` | `0.3` | Spot move below this % counts as noise |
+| `whipsaw_caution_score` | `2` | Score threshold for CAUTION level (triggers ×1.5) |
+| `whipsaw_restrict_score` | `3` | Score threshold for RESTRICT level (triggers ×2.0, lots ÷2) |
+| `whipsaw_cooldown_score` | `4` | Score threshold for COOLDOWN (skip interval, score -2) |
 
 ---
 

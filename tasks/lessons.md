@@ -277,3 +277,17 @@ Added `from .mmm_initializer import expiry_to_symbol_suffix` and converted: `sym
 **Prevention rule:**
 When building or comparing symbol strings, always use `expiry_to_symbol_suffix()` to convert ddmmyyyy → ddmmyy. The session stores ddmmyyyy; symbols use ddmmyy. Never use the raw expiry parameter directly in symbol comparisons.
 
+---
+
+## [2026-03-12] Orphan adopted positions had entry_premium=0
+
+**What went wrong:**
+The orphan adoption code in `_reconcile_exchange_positions()` (~line 5487) hardcoded `'entry_premium': 0, 'premium': 0` when auto-adopting positions discovered on the exchange during reconciliation. This made loss calculations treat the entire current premium as loss, broke close-at-5 profit% checks, and corrupted trigger snapshots.
+
+**Fix applied:**
+1. Changed orphan adoption to use `float(pos.get('entry_price', 0))` from the exchange position object (the average entry price the exchange reports).
+2. Added §26.9b self-heal block: each reconciliation cycle, scans all active positions for `entry_premium=0`, looks up the exchange `entry_price`, and patches them.
+
+**Prevention rule:**
+When creating position records from exchange data, always populate `entry_premium` from the exchange's `entry_price` field. Never hardcode financial values to 0 — use the exchange as source of truth.
+

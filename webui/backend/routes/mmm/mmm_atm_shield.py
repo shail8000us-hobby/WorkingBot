@@ -1,0 +1,452 @@
+"""
+MMM ATM Shield — Close & Retreat
+
+Pre-emptively closes positions approaching ATM and repositions at a safer
+OTM strike.  Fires BEFORE close_at_ATM to preserve premium-collection capacity.
+
+Key behavior:
+  - Full position shift: original lots are re-established at the new strike
+  - Loss recovery: additional lots are sold to cover 30%/70% of buyback loss
+  - Sympathetic rebalance: safe side shifted closer if premium decayed
+
+Created: March 12, 2026
+"""
+
+import logging
+import math
+from datetime import datetime, timezone
+from typing import Dict, Optional, Tuple
+
+from .mmm_constants import LOT_SIZE_BTC
+from .mmm_close_at_5 import close_position
+from .mmm_strike_shift import find_new_strike
+from .mmm_wind_down import is_wind_down_active
+
+log = logging.getLogger('mmm_atm_shield')
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _compute_time_mult(minutes_to_expiry: float) -> float:
+    """Time-to-expiry multiplier: fires wider as expiry approaches."""
+    hours = max(minutes_to_expiry / 60.0, 0.5)
+    return min(3.0, max(1.0, 3.0 / hours))
+
+
+def _compute_effective_proximity(params: Dict, time_mult: float) -> float:
+    """Effective proximity % scaled by time multiplier."""
+    base = params.get('atm_shield_proximity_pct', 0.5)
+    return base * time_mult
+
+
+def _compute_effective_target_otm(params: Dict, time_mult: float,
+                                  shield_count: int) -> float:
+    """Effective target OTM % scaled by time and progressive widening."""
+    base = params.get('atm_shield_target_otm_pct', 1.0)
+    progressive_mult = 1.0 + (shield_count * 0.5)
+    return base * time_mult * progressive_mult
+
+
+def check_atm_proximity(
+    session: Dict,
+    spot: float,
+    params: Dict,
+    time_mult: float,
+) -> Tuple[Optional[str], float]:
+    """Return (endangered_side, distance_pct) or (None, 0)."""
+    eff_proximity = _compute_effective_proximity(params, time_mult)
+
+    for side in ('ce', 'pe'):
+        side_state = session.get(side, {})
+        active_lots = side_state.get('active_lots', 0)
+        active_strike = side_state.get('active_strike', 0)
+        if active_lots <= 0 or active_strike <= 0:
+            continue
+
+        if side == 'ce':
+            distance_pct = (active_strike - spot) / spot * 100
+        else:
+            distance_pct = (spot - active_strike) / spot * 100
+
+        if distance_pct <= eff_proximity:
+            return side, distance_pct
+
+    return None, 0.0
+
+
+def _check_shield_gates(
+    session: Dict,
+    side: str,
+    params: Dict,
+    margin_tier: str,
+    minutes_to_expiry: float,
+) -> Tuple[bool, str]:
+    """Return (can_fire, reason).  can_fire=True means gate checks pass."""
+    sid = session.get('session_id', '?')
+    from .mmm_margin_guardian import TIER_RED, TIER_CRITICAL
+
+    if not params.get('atm_shield_enabled', False):
+        return False, 'disabled'
+
+    status = session.get('strategy_status', 'RUNNING')
+    if status != 'RUNNING':
+        return False, f'status={status}'
+
+    if margin_tier in (TIER_RED, TIER_CRITICAL):
+        return False, f'margin={margin_tier}'
+
+    auto_close_mins = params.get('auto_close_mins', 5)
+    if minutes_to_expiry is not None and minutes_to_expiry <= auto_close_mins:
+        return False, 'within auto_close window'
+
+    # Cooldown
+    cooldown_mins = params.get('atm_shield_cooldown_mins', 10)
+    last_fire_key = f'_atm_shield_last_fire_{side}'
+    last_fire = session.get(last_fire_key)
+    if last_fire:
+        try:
+            last_dt = datetime.fromisoformat(last_fire)
+            elapsed = (datetime.now(timezone.utc) - last_dt).total_seconds() / 60.0
+            if elapsed < cooldown_mins:
+                return False, f'cooldown ({elapsed:.1f}/{cooldown_mins}min)'
+        except (ValueError, TypeError):
+            pass
+
+    # Capacity
+    max_fires = params.get('atm_shield_max_per_session', 3)
+    count = session.get(f'_atm_shield_count_{side}', 0)
+    if count >= max_fires:
+        return False, f'exhausted ({count}/{max_fires})'
+
+    # Already proactively shifted this beat
+    if session.get(f'_proactive_shifted_{side}'):
+        return False, 'proactive shift already ran'
+
+    return True, 'ok'
+
+
+# ---------------------------------------------------------------------------
+# Main entry point — called from mmm_monitor heartbeat at Step 5.5
+# ---------------------------------------------------------------------------
+
+async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
+    """
+    ATM Shield core logic.  Returns True if the shield fired this beat.
+
+    Called from MMMMonitor._run_heartbeat() between Step 5 (cooldown) and
+    Step 6 (evaluate triggers).
+    """
+    session = monitor.session
+    sid = session.get('session_id', '?')
+    params = session.get('params', {})
+
+    if not params.get('atm_shield_enabled', False):
+        return False
+
+    # Fetch spot + time context
+    spot = await monitor._fetch_spot_price()
+    if spot <= 0:
+        return False
+
+    minutes_to_expiry = monitor._get_minutes_to_expiry() or 360
+    time_mult = _compute_time_mult(minutes_to_expiry)
+
+    # Proximity check
+    endangered_side, distance_pct = check_atm_proximity(
+        session, spot, params, time_mult,
+    )
+    if endangered_side is None:
+        return False
+
+    # Both sides endangered simultaneously → defer to close_at_ATM
+    safe_side = 'pe' if endangered_side == 'ce' else 'ce'
+    _, safe_distance = check_atm_proximity(
+        session, spot, params, time_mult,
+    )
+    # Check safe side explicitly
+    safe_state = session.get(safe_side, {})
+    safe_active_strike = safe_state.get('active_strike', 0)
+    safe_active_lots = safe_state.get('active_lots', 0)
+    if safe_active_lots > 0 and safe_active_strike > 0:
+        eff_prox = _compute_effective_proximity(params, time_mult)
+        if safe_side == 'ce':
+            safe_dist = (safe_active_strike - spot) / spot * 100
+        else:
+            safe_dist = (spot - safe_active_strike) / spot * 100
+        if safe_dist <= eff_prox:
+            log.warning(
+                f"[{sid}] ATM Shield: both sides endangered — "
+                f"deferring to close_at_ATM"
+            )
+            return False
+
+    # Gate checks
+    margin_tier = getattr(monitor, '_margin_guardian', None)
+    margin_tier_val = margin_tier.last_tier if margin_tier else 'GREEN'
+    can_fire, gate_reason = _check_shield_gates(
+        session, endangered_side, params, margin_tier_val, minutes_to_expiry,
+    )
+    if not can_fire:
+        log.debug(f"[{sid}] ATM Shield skipped: {gate_reason}")
+        return False
+
+    # ── FIRE ──────────────────────────────────────────────────────────────
+
+    shield_count = session.get(f'_atm_shield_count_{endangered_side}', 0)
+    endangered_strike = session.get(endangered_side, {}).get('active_strike', 0)
+
+    log.warning(
+        f"[{sid}] 🛡️ ATM SHIELD FIRE #{shield_count + 1}: "
+        f"{endangered_side.upper()} @ {endangered_strike:.0f} "
+        f"(spot ${spot:.0f}, dist {distance_pct:.2f}%, "
+        f"time_mult {time_mult:.1f}x)"
+    )
+
+    # ── Step 1: CLOSE all active positions on endangered side ─────────
+    side_state = session.get(endangered_side, {})
+    positions_to_close = [
+        p for p in side_state.get('positions', [])
+        if p.get('status') == 'active' and not p.get('_being_closed')
+    ]
+
+    total_realized_loss = 0.0
+    total_closed_lots = 0
+
+    for pos in positions_to_close:
+        try:
+            result = await close_position(
+                monitor.executor, monitor.initializer, session, pos,
+                pnl_attribution_key='atm_shield',
+            )
+            if result.get('success'):
+                close_prem = result.get('close_premium', 0)
+                entry_prem = pos.get('entry_premium', 0)
+                lots = pos.get('lots', 0)
+                total_closed_lots += lots
+                total_realized_loss += (close_prem - entry_prem) * lots * LOT_SIZE_BTC
+        except Exception as e:
+            log.error(
+                f"[{sid}] ATM Shield close error on {endangered_side.upper()}: {e}",
+                exc_info=True,
+            )
+
+    if total_closed_lots == 0:
+        log.warning(f"[{sid}] ATM Shield: no positions closed, aborting")
+        return False
+
+    log.info(
+        f"[{sid}] ATM Shield closed {total_closed_lots} lots on "
+        f"{endangered_side.upper()}, realized loss: ${total_realized_loss:.4f}"
+    )
+
+    # ── Step 2: FIND new OTM strike ──────────────────────────────────
+    eff_target_otm = _compute_effective_target_otm(params, time_mult, shield_count)
+    min_distance = spot * eff_target_otm / 100.0
+
+    new_strike_info = find_new_strike(
+        monitor.initializer, session, endangered_side, spot,
+        min_otm_distance=min_distance,
+    )
+
+    new_strike = new_strike_info['strike'] if new_strike_info else None
+    new_premium = new_strike_info['premium'] if new_strike_info else 0
+
+    if new_strike is None:
+        log.warning(
+            f"[{sid}] ATM Shield: no viable strike at {eff_target_otm:.1f}% OTM "
+            f"for {endangered_side.upper()} — close only (loss absorbed)"
+        )
+
+    # ── Step 3: RE-SELL — full position shift + loss recovery ────────
+    from .mmm_engine import get_engine
+    engine = get_engine()
+
+    # Check sell-blocking conditions (vol/gamma only — trend exempt for shield)
+    from .mmm_margin_guardian import TIER_YELLOW, TIER_ORANGE
+    margin_blocks_sells = margin_tier_val in (TIER_YELLOW, TIER_ORANGE)
+    wind_down_active = is_wind_down_active(session)
+    stop_adj_mins = params.get('stop_adjustment_mins', 15)
+    near_stop = (minutes_to_expiry is not None and minutes_to_expiry <= stop_adj_mins)
+
+    vol_regime = session.get('_vol_regime', 'NORMAL')
+    gamma_regime = session.get('_gamma_regime', 'NORMAL')
+    vol_gamma_blocked = (
+        vol_regime in ('HIGH', 'ELEVATED')
+        or gamma_regime in ('HARD', 'EMERGENCY')
+    )
+
+    sells_possible = not (
+        margin_blocks_sells or wind_down_active or near_stop or vol_gamma_blocked
+    )
+
+    lots_sold_endangered = 0
+    lots_sold_safe = 0
+    loss_split_agr = params.get('atm_shield_loss_split_aggressor', 0.3)
+
+    # Endangered side re-sell (exempt from BLOCK_CE/PE_SELLS trend regime)
+    if new_strike is not None and sells_possible:
+        # Base lots: re-establish original position at new strike
+        base_lots = total_closed_lots
+
+        # Recovery lots: cover 30% of loss
+        loss_share_agr = max(total_realized_loss, 0) * loss_split_agr
+        recovery_lots = 0
+        if loss_share_agr > 0 and new_premium > 0:
+            recovery_lots = max(math.ceil(
+                loss_share_agr / (new_premium * LOT_SIZE_BTC)
+            ), 0)
+
+        total_lots_agr = base_lots + recovery_lots
+
+        # Apply position cap
+        max_lots = params.get('max_lots_per_side', 100)
+        current_lots = session.get(endangered_side, {}).get('active_lots', 0)
+        cap_remaining = max(max_lots - current_lots, 0)
+        total_lots_agr = min(total_lots_agr, cap_remaining)
+
+        if total_lots_agr > 0:
+            try:
+                result = await engine.execute_adjustment(
+                    session, endangered_side, new_strike, total_lots_agr,
+                    ce_now, pe_now, adj_type='atm_shield',
+                )
+                if result.get('success'):
+                    lots_sold_endangered = total_lots_agr
+                    log.info(
+                        f"[{sid}] ATM Shield re-sold {total_lots_agr} lots "
+                        f"({base_lots} shifted + {recovery_lots} recovery) "
+                        f"on {endangered_side.upper()} @ {new_strike:.0f}"
+                    )
+            except Exception as e:
+                log.error(
+                    f"[{sid}] ATM Shield re-sell error: {e}", exc_info=True,
+                )
+
+    # Safe side re-sell — loss recovery only, normal regime rules apply
+    safe_premium = pe_now if safe_side == 'pe' else ce_now
+    safe_active_strike = session.get(safe_side, {}).get('active_strike', 0)
+
+    if (safe_active_strike > 0 and safe_premium > 0
+            and sells_possible and not margin_blocks_sells):
+        # Check normal regime blocks (NOT exempt for safe side)
+        from .mmm_regime import MMMRegimeEngine
+        regime_engine = MMMRegimeEngine()
+        blocked, _ = regime_engine.should_block_sell(session, safe_side)
+
+        if not blocked:
+            loss_share_safe = max(total_realized_loss, 0) * (1.0 - loss_split_agr)
+            if loss_share_safe > 0 and safe_premium > 0:
+                lots_safe, _, _ = engine.calculate_lots_to_sell(
+                    session, safe_side, loss_share_safe, safe_premium,
+                )
+                if lots_safe > 0:
+                    try:
+                        result = await engine.execute_adjustment(
+                            session, safe_side, safe_active_strike, lots_safe,
+                            ce_now, pe_now, adj_type='atm_shield',
+                        )
+                        if result.get('success'):
+                            lots_sold_safe = lots_safe
+                            log.info(
+                                f"[{sid}] ATM Shield safe-side re-sold "
+                                f"{lots_safe} lots on {safe_side.upper()} "
+                                f"@ {safe_active_strike:.0f}"
+                            )
+                    except Exception as e:
+                        log.error(
+                            f"[{sid}] ATM Shield safe-side error: {e}",
+                            exc_info=True,
+                        )
+
+    # ── Step 4: SYMPATHETIC REBALANCE — shift safe side if premium decayed
+    shift_threshold = params.get('shift_threshold', 50.0)
+    safe_current_lots = session.get(safe_side, {}).get('active_lots', 0)
+    if (safe_current_lots > 0
+            and safe_premium < shift_threshold
+            and not session.get(f'_proactive_shifted_{safe_side}')):
+        log.info(
+            f"[{sid}] ATM Shield: sympathetic rebalance {safe_side.upper()} "
+            f"(premium ${safe_premium:.2f} < threshold ${shift_threshold:.0f})"
+        )
+        try:
+            await monitor._process_strike_shift(safe_side, 0.0, ce_now, pe_now)
+            session[f'_proactive_shifted_{safe_side}'] = True
+            sympathetic_shifted = True
+        except Exception as e:
+            log.error(
+                f"[{sid}] ATM Shield sympathetic shift error: {e}",
+                exc_info=True,
+            )
+            sympathetic_shifted = False
+    else:
+        sympathetic_shifted = False
+
+    # ── Step 5: UPDATE STATE ─────────────────────────────────────────
+    max_fires = params.get('atm_shield_max_per_session', 3)
+    new_count = shield_count + 1
+    session[f'_atm_shield_count_{endangered_side}'] = new_count
+    session[f'_atm_shield_last_fire_{endangered_side}'] = (
+        datetime.now(timezone.utc).isoformat()
+    )
+    session['_atm_shield_fired'] = True
+
+    if new_count >= max_fires:
+        session[f'_atm_shield_exhausted_{endangered_side}'] = True
+        log.warning(
+            f"[{sid}] ATM Shield EXHAUSTED for {endangered_side.upper()} "
+            f"({new_count}/{max_fires})"
+        )
+
+    # ── Step 6: ACTIVITY LOG + WEBSOCKET ─────────────────────────────
+    try:
+        from .mmm_activity import log_activity
+        log_activity(
+            'atm_shield',
+            f'🛡️ ATM Shield #{new_count}: {endangered_side.upper()} '
+            f'@ {endangered_strike:.0f} → {new_strike or "close-only"} '
+            f'(closed {total_closed_lots}L, re-sold {lots_sold_endangered}L '
+            f'+ {lots_sold_safe}L safe, loss ${total_realized_loss:.4f})',
+            sid, 'warning',
+            {
+                'side': endangered_side,
+                'endangered_strike': endangered_strike,
+                'new_strike': new_strike,
+                'spot': spot,
+                'distance_pct': round(distance_pct, 3),
+                'fire_number': new_count,
+                'fires_remaining': max_fires - new_count,
+                'total_closed_lots': total_closed_lots,
+                'lots_sold_endangered': lots_sold_endangered,
+                'lots_sold_safe': lots_sold_safe,
+                'realized_loss': round(total_realized_loss, 6),
+                'effective_target_otm_pct': round(eff_target_otm, 2),
+                'time_mult': round(time_mult, 2),
+                'sympathetic_shifted': sympathetic_shifted,
+            },
+        )
+    except Exception as e:
+        log.error(f"[{sid}] ATM Shield activity log error: {e}")
+
+    try:
+        from .mmm_websocket import emit_atm_shield
+        emit_atm_shield(sid, {
+            'side': endangered_side,
+            'endangered_strike': endangered_strike,
+            'spot_price': spot,
+            'distance_pct': round(distance_pct, 3),
+            'fire_number': new_count,
+            'fires_remaining': max_fires - new_count,
+            'new_strike': new_strike,
+            'effective_target_otm_pct': round(eff_target_otm, 2),
+            'realized_loss': round(total_realized_loss, 6),
+            'lots_closed': total_closed_lots,
+            'lots_sold_endangered': lots_sold_endangered,
+            'lots_sold_safe': lots_sold_safe,
+            'sympathetic_shifted': sympathetic_shifted,
+        })
+    except Exception as e:
+        log.error(f"[{sid}] ATM Shield websocket emit error: {e}")
+
+    return True
