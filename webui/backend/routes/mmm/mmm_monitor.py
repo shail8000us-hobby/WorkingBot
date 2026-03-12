@@ -1089,10 +1089,14 @@ class MMMMonitor:
                 _wd_spot = await self._fetch_spot_price()
                 if _wd_spot > 0:
                     _wd_atm_threshold = _wd_spot * 0.005  # 0.5% of spot (same as close_at_atm)
-                    _ce_orig = session.get('ce', {}).get('original_strike', 0)
-                    _pe_orig = session.get('pe', {}).get('original_strike', 0)
-                    _ce_lots = session.get('ce', {}).get('total_lots', 0)
-                    _pe_lots = session.get('pe', {}).get('total_lots', 0)
+                    # BUG FIX (Mar 12 2026): use active_strike, NOT original_strike.
+                    # After multiple shifts the original entry strike can be 3-4% away
+                    # from current spot while the active strike is already ATM/ITM.
+                    # Guard: active_lots > 0 (prevents stale zero-lot sides from firing).
+                    _ce_orig = session.get('ce', {}).get('active_strike', 0)
+                    _pe_orig = session.get('pe', {}).get('active_strike', 0)
+                    _ce_lots = session.get('ce', {}).get('active_lots', 0)
+                    _pe_lots = session.get('pe', {}).get('active_lots', 0)
                     _atm_wd_side = None
 
                     if _ce_orig and _ce_lots > 0 and abs(_wd_spot - _ce_orig) <= _wd_atm_threshold:
@@ -1125,23 +1129,23 @@ class MMMMonitor:
                         self._save_my_session(session)
                         log.warning(
                             f"[{sid}] ATM WIND-DOWN TRIGGERED: Spot ${_wd_spot:.0f} within "
-                            f"0.5% of {_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f}. "
+                            f"0.5% of {_atm_wd_side} ACTIVE strike ${_triggered_strike:.0f}. "
                             f"Switching to wind-down mode (gradual LIFO buyback)."
                         )
                         log_activity('atm_wind_down',
                                      f'🌙 ATM WIND-DOWN: Spot ${_wd_spot:.0f} reached '
-                                     f'{_atm_wd_side} ORIGINAL strike ${_triggered_strike:.0f} '
+                                     f'{_atm_wd_side} ACTIVE strike ${_triggered_strike:.0f} '
                                      f'— activating wind-down mode (gradual buyback)',
                                      sid, 'warning',
                                      {'spot': _wd_spot,
-                                      'ce_original_strike': _ce_orig,
-                                      'pe_original_strike': _pe_orig,
+                                      'ce_active_strike': _ce_orig,
+                                      'pe_active_strike': _pe_orig,
                                       'triggered_side': _atm_wd_side,
                                       'triggered_strike': _triggered_strike})
                         emit_safety(
                             sid, 'atm_wind_down', 'warning',
                             f'ATM WIND-DOWN: Spot ${_wd_spot:.0f} reached {_atm_wd_side} '
-                            f'ORIGINAL strike ${_triggered_strike:.0f}. Wind-down mode activated.',
+                            f'ACTIVE strike ${_triggered_strike:.0f}. Wind-down mode activated.',
                             {'spot': _wd_spot, 'triggered_side': _atm_wd_side,
                              'triggered_strike': _triggered_strike}
                         )
@@ -1155,17 +1159,14 @@ class MMMMonitor:
                 if spot_price > 0:
                     atm_threshold_pct = 0.005  # 0.5% of spot
                     atm_threshold = spot_price * atm_threshold_pct
-                    # Use ORIGINAL strike (entry strike), not active_strike
-                    ce_original_strike = session.get('ce', {}).get('original_strike', 0)
-                    pe_original_strike = session.get('pe', {}).get('original_strike', 0)
-                    # CRITICAL: Only check sides that HAVE open positions.
-                    # After close-at-5 or shift, original_strike remains set
-                    # even when total_lots = 0 (no positions). Without this
-                    # guard, a stale original_strike on a fully-closed side
-                    # could falsely trigger ATM auto-close and kill the
-                    # other side's perfectly safe positions.
-                    ce_total_lots = session.get('ce', {}).get('total_lots', 0)
-                    pe_total_lots = session.get('pe', {}).get('total_lots', 0)
+                    # BUG FIX (Mar 12 2026): use active_strike, NOT original_strike.
+                    # After multiple shifts the original entry strike can be 3-4% away
+                    # from current spot while the active strike is already ATM/ITM.
+                    # Guard: active_lots > 0 (prevents stale zero-lot sides from firing).
+                    ce_original_strike = session.get('ce', {}).get('active_strike', 0)
+                    pe_original_strike = session.get('pe', {}).get('active_strike', 0)
+                    ce_total_lots = session.get('ce', {}).get('active_lots', 0)
+                    pe_total_lots = session.get('pe', {}).get('active_lots', 0)
                     atm_triggered_side = None
 
                     if ce_original_strike and ce_total_lots > 0 and abs(spot_price - ce_original_strike) <= atm_threshold:
@@ -1190,23 +1191,23 @@ class MMMMonitor:
                         session['_atm_close_triggered'] = True
                         log.critical(
                             f"[{sid}] ATM AUTO-CLOSE: Spot ${spot_price:.0f} within "
-                            f"0.5% of {atm_triggered_side} ORIGINAL strike "
+                            f"0.5% of {atm_triggered_side} ACTIVE strike "
                             f"${triggered_strike:.0f}. CLOSING ALL."
                         )
                         log_activity('atm_auto_close',
                                     f'🛑 ATM AUTO-CLOSE: Spot ${spot_price:.0f} is at '
-                                    f'{atm_triggered_side} ORIGINAL strike ${triggered_strike:.0f} '
+                                    f'{atm_triggered_side} ACTIVE strike ${triggered_strike:.0f} '
                                     f'— closing all positions',
                                     sid, 'error',
                                     {'spot': spot_price,
-                                     'ce_original_strike': ce_original_strike,
-                                     'pe_original_strike': pe_original_strike,
+                                     'ce_active_strike': ce_original_strike,
+                                     'pe_active_strike': pe_original_strike,
                                      'triggered_side': atm_triggered_side,
                                      'triggered_strike': triggered_strike})
                         emit_safety(
                             sid, 'atm_auto_close', 'critical',
                             f'ATM AUTO-CLOSE: Spot ${spot_price:.0f} reached {atm_triggered_side} '
-                            f'ORIGINAL strike ${triggered_strike:.0f}. Closing all positions.',
+                            f'ACTIVE strike ${triggered_strike:.0f}. Closing all positions.',
                             {'spot': spot_price, 'triggered_side': atm_triggered_side,
                              'triggered_strike': triggered_strike}
                         )
@@ -1947,11 +1948,12 @@ class MMMMonitor:
                 if perp_mode == 'atm_only':
                     atm_gate_passed = False
                     atm_threshold_pct = params.get('perp_hedge_atm_threshold_pct', 1.5)
-                    # Check ORIGINAL entry strikes against spot (not active/shifted strikes)
-                    ce_orig_strike = float(session.get('ce', {}).get('original_strike', 0) or 0)
-                    pe_orig_strike = float(session.get('pe', {}).get('original_strike', 0) or 0)
-                    ce_total_lots = session.get('ce', {}).get('total_lots', 0)
-                    pe_total_lots = session.get('pe', {}).get('total_lots', 0)
+                    # BUG FIX (Mar 12 2026): use active_strike not original_strike.
+                    # After shifts the active strike is the current risk exposure.
+                    ce_orig_strike = float(session.get('ce', {}).get('active_strike', 0) or 0)
+                    pe_orig_strike = float(session.get('pe', {}).get('active_strike', 0) or 0)
+                    ce_total_lots = session.get('ce', {}).get('active_lots', 0)
+                    pe_total_lots = session.get('pe', {}).get('active_lots', 0)
                     atm_triggered_side = None
 
                     if ce_orig_strike > 0 and ce_total_lots > 0 and perp_btc_mark > 0:
@@ -1960,7 +1962,7 @@ class MMMMonitor:
                             atm_gate_passed = True
                             atm_triggered_side = 'CE'
                             log.info(
-                                f"[{sid}] Perp ATM gate: CE ORIGINAL strike "
+                                f"[{sid}] Perp ATM gate: CE ACTIVE strike "
                                 f"{ce_orig_strike:.0f} is {dist_pct:.1f}% "
                                 f"from spot {perp_btc_mark:.0f} (threshold {atm_threshold_pct}%)"
                             )
@@ -1971,14 +1973,14 @@ class MMMMonitor:
                             atm_gate_passed = True
                             atm_triggered_side = 'PE'
                             log.info(
-                                f"[{sid}] Perp ATM gate: PE ORIGINAL strike "
+                                f"[{sid}] Perp ATM gate: PE ACTIVE strike "
                                 f"{pe_orig_strike:.0f} is {dist_pct:.1f}% "
                                 f"from spot {perp_btc_mark:.0f} (threshold {atm_threshold_pct}%)"
                             )
 
                     if not atm_gate_passed:
                         log.debug(
-                            f"[{sid}] Perp ATM-only mode: original strikes "
+                            f"[{sid}] Perp ATM-only mode: active strikes "
                             f"CE={ce_orig_strike:.0f} PE={pe_orig_strike:.0f} not within "
                             f"{atm_threshold_pct}% of spot {perp_btc_mark:.0f} — skipping hedge"
                         )
