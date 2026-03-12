@@ -36,8 +36,11 @@ def get_recent_logs(lines: int = 30, log_file: str = "bot/logs/bot.log") -> List
         # Try alternate log paths if primary doesn't exist
         base_dir = Path(__file__).parent.parent.parent.parent
         alternate_paths = [
-            base_dir / "logs" / "gridbot.log",
             base_dir / "bot" / "logs" / "gridbot_live.log",
+            base_dir / "bot" / "logs" / "gridbot_detailed.log",
+            base_dir / "bot" / "logs" / "pm2-gridbot-btc-live-out.log",
+            base_dir / "bot" / "logs" / "pm2-gridbot-eth-live-out.log",
+            base_dir / "logs" / "gridbot.log",
             base_dir / "logs" / "trading_bot.log",
             base_dir / "logs" / "webui_guardian.log",
             base_dir / "logs" / "guardian_monitor.log",

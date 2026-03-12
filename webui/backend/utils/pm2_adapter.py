@@ -101,7 +101,7 @@ class PM2Adapter:
     with fallback to direct process management if PM2 is not available.
     """
     
-    def __init__(self, config_file: str = 'ecosystem.gridbot.config.js'):
+    def __init__(self, config_file: str = 'ecosystem.config.js'):
         """
         Initialize PM2 adapter
 

@@ -64,16 +64,15 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // Use long-polling only — backend runs async_mode='threading' which does not
-      // support WebSocket upgrades; polling avoids the 'Invalid frame header' errors.
-      transports: ['polling'],
+      // Backend uses async_mode='eventlet' (via gunicorn) which supports WebSocket.
+      // Prefer WebSocket for low-latency real-time updates; fall back to polling.
+      transports: ['websocket', 'polling'],
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
       timeout: 60000, // Increased from 20s to 60s for mobile networks
-      // No WebSocket upgrade needed
-      upgrade: false,
-      rememberUpgrade: false,
+      upgrade: true,
+      rememberUpgrade: true,
       // NOTE: Do NOT set withCredentials or custom extraHeaders —
       // they trigger CORS preflight and block WebSocket upgrades
       ...socketIOConfig,

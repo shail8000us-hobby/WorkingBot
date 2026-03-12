@@ -62,63 +62,42 @@ def get_logs():
         
         # v6.0: Use instance-specific log file if provided
         if instance:
-            
-            # Map instance name to PM2 log file
-            # The actual PM2 process names are: gridbot-BTCUSD-LONG, gridbot-ETHUSD-LONG
-            # PM2 logs: Python logging goes to stderr, so we check -error- logs FIRST
-            # File naming: logs/pm2/gridbot-BTCUSD-LONG-error-0.log (with dashes, not underscores)
-            
-            # Convert underscores to dashes for PM2 filename
+            # Derive ticker from instance name (BTCUSD_LONG → btc, ETHUSD_LONG → eth)
+            symbol = instance.split('_')[0]
+            ticker = symbol[:3].lower()
             instance_dashed = instance.replace('_', '-')
-            
-            # Try multiple PM2 log file locations
-            # PM2 stores logs with process ID suffix (0-9 after restarts)
-            # IMPORTANT: Check -error- logs FIRST because Python logging uses stderr
+
+            # PM2 ecosystem config names processes gridbot-{ticker}-live
+            # Logs stored as bot/logs/pm2-gridbot-{ticker}-live-{out|error}.log
             possible_pm2_logs = [
-                # Error logs (Python logging goes to stderr) - check 0-9
+                # Ecosystem-named PM2 logs (primary location)
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live-out.log',
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live-error.log',
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live.log',
+                # Instance-named PM2 logs (alternative naming)
                 BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-0.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-1.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-2.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-3.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-4.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-5.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-6.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-7.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-8.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-9.log',
-                # Stdout logs (print statements) - check 0-9
                 BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-0.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-1.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-2.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-3.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-4.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-5.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-6.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-7.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-8.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-9.log',
                 BASE_DIR / 'reports' / f'pm2-gridbot-{instance.lower().replace("_", "-")}-out.log',
             ]
-            
+
             # Fallback to direct log file
-            direct_log = BASE_DIR / f'gridbot_{instance.lower()}.log'
-            
-            # Find the most recently modified log file (not just the first one)
+            direct_log = BASE_DIR / 'bot' / 'logs' / f'gridbot_{symbol.lower()}.log'
+
+            # Find the most recently modified log file
             log_file_found = None
             newest_mtime = 0
             for pm2_log in possible_pm2_logs:
-                if pm2_log.exists():
+                if pm2_log.exists() and pm2_log.stat().st_size > 0:
                     mtime = pm2_log.stat().st_mtime
                     if mtime > newest_mtime:
                         newest_mtime = mtime
                         log_file_found = str(pm2_log)
-            
+
             if log_file_found:
                 log_lines = get_recent_logs(lines, log_file=log_file_found)
             elif direct_log.exists():
                 log_lines = get_recent_logs(lines, log_file=str(direct_log))
             else:
-                log.warning(f"No log file found for instance {instance}. Tried: {pm2_log}, {direct_log}")
                 log_lines = []
         else:
             log_lines = get_recent_logs(lines)
@@ -173,62 +152,32 @@ def get_logs_recent():
         
         # v6.0: Determine log file based on instance first
         if instance:
-            
-            # Map instance name to PM2 log file
-            # The actual PM2 process names are: gridbot-BTCUSD-LONG, gridbot-ETHUSD-LONG
-            # PM2 logs: Python logging goes to stderr, so we check -error- logs FIRST
-            # File naming: logs/pm2/gridbot-BTCUSD-LONG-error-0.log (with dashes, not underscores)
-            
-            # Convert underscores to dashes for PM2 filename
+            symbol = instance.split('_')[0]
+            ticker = symbol[:3].lower()
             instance_dashed = instance.replace('_', '-')
-            
-            # Try multiple PM2 log file locations
-            # PM2 stores logs with process ID suffix (0-9 after restarts)
-            # IMPORTANT: Check -error- logs FIRST because Python logging uses stderr
+
             possible_pm2_logs = [
-                # Error logs (Python logging goes to stderr) - check 0-9
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live-out.log',
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live-error.log',
+                BASE_DIR / 'bot' / 'logs' / f'pm2-gridbot-{ticker}-live.log',
                 BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-0.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-1.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-2.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-3.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-4.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-5.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-6.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-7.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-8.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-error-9.log',
-                # Stdout logs (print statements) - check 0-9
                 BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-0.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-1.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-2.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-3.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-4.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-5.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-6.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-7.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-8.log',
-                BASE_DIR / 'logs' / 'pm2' / f'gridbot-{instance_dashed}-out-9.log',
                 BASE_DIR / 'reports' / f'pm2-gridbot-{instance.lower().replace("_", "-")}-out.log',
             ]
-            
-            # Fallback to direct log file
-            direct_log = BASE_DIR / f'gridbot_{instance.lower()}.log'
-            
-            # Find the most recently modified log file (not just the first one)
+
+            direct_log = BASE_DIR / 'bot' / 'logs' / f'gridbot_{symbol.lower()}.log'
+
             log_file = None
             newest_mtime = 0
             for pm2_log in possible_pm2_logs:
-                if pm2_log.exists():
+                if pm2_log.exists() and pm2_log.stat().st_size > 0:
                     mtime = pm2_log.stat().st_mtime
                     if mtime > newest_mtime:
                         newest_mtime = mtime
                         log_file = str(pm2_log)
-            
+
             if not log_file and direct_log.exists():
                 log_file = str(direct_log)
-            
-            if not log_file:
-                log.warning(f"No log file found for instance {instance}. Tried: {', '.join([str(p) for p in possible_pm2_logs])}")
         
         
         # Determine log file based on bot_type if not explicitly specified

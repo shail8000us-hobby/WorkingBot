@@ -737,6 +737,7 @@ def toggle_instance():
     
     Request Body:
         instance: Instance name (e.g., "BTCUSD_LONG", "ETHUSD_LONG")
+        enabled (optional): Explicit desired state; if omitted, current state is toggled.
     
     Returns:
         - Updated instance status
@@ -748,35 +749,46 @@ def toggle_instance():
         if not instance_name:
             return jsonify({'success': False, 'error': 'Instance name is required'}), 400
         
-        # Load config.yaml
-        config_path = Path('config.yaml')
+        # Derive symbol (e.g. BTCUSD_LONG → BTCUSD)
+        symbol = instance_name.split('_')[0]
+
+        # Load config.yaml from project root
+        config_path = Path(__file__).parent.parent.parent.parent / 'config.yaml'
         if not config_path.exists():
             return jsonify({'success': False, 'error': 'config.yaml not found'}), 404
         
         with open(config_path, 'r') as f:
             config = yaml.safe_load(f)
         
-        # Check if instances section exists
-        if 'instances' not in config:
-            return jsonify({'success': False, 'error': 'No instances configured in config.yaml'}), 404
+        # Locate target: prefer dedicated 'instances' section, fall back to 'symbols'
+        if 'instances' in config and instance_name in config['instances']:
+            target = config['instances'][instance_name]
+        elif 'symbols' in config and symbol in config['symbols']:
+            target = config['symbols'][symbol]
+        else:
+            return jsonify({'success': False, 'error': f'Instance {instance_name} not found in config'}), 404
         
-        # Find and toggle the instance
-        if instance_name not in config['instances']:
-            return jsonify({'success': False, 'error': f'Instance {instance_name} not found'}), 404
-        
-        current_enabled = config['instances'][instance_name].get('enabled', False)
-        new_enabled = not current_enabled
-        config['instances'][instance_name]['enabled'] = new_enabled
+        current_enabled = target.get('enabled', True)
+        new_enabled = data['enabled'] if 'enabled' in data else not current_enabled
+        target['enabled'] = new_enabled
         
         # Save config.yaml
         with open(config_path, 'w') as f:
-            yaml.dump(config, f, default_flow_style=False, sort_keys=False)
+            yaml.dump(config, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
+
+        # Reload config cache
+        try:
+            from config.loader import reload_config
+            reload_config()
+        except Exception:
+            pass
         
         logger.info(f"✅ Toggled instance {instance_name}: enabled={new_enabled}")
         
         return jsonify({
             'success': True,
             'instance': instance_name,
+            'symbol': symbol,
             'enabled': new_enabled,
             'message': f'Instance {instance_name} {"enabled" if new_enabled else "disabled"}'
         })

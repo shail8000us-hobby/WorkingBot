@@ -40,6 +40,7 @@ import {
   Warning,
   TrendingUp,
   TrendingDown,
+  Shield,
 } from '@mui/icons-material';
 import { styled } from '@mui/material/styles';
 import api from '../../utils/apiShim';
@@ -74,6 +75,39 @@ const BotManagementDashboard = () => {
   const [loading, setLoading] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'info' });
   const [instanceStatus, setInstanceStatus] = useState({}); // Per-instance status
+  const [guardianStatus, setGuardianStatus] = useState({ running: false, loading: false });
+
+  // Fetch guardian status
+  const fetchGuardianStatus = useCallback(async () => {
+    try {
+      const response = await api.get('/api/guardian/status');
+      setGuardianStatus(prev => ({
+        ...prev,
+        running: response.data?.running || false,
+      }));
+    } catch {
+      setGuardianStatus(prev => ({ ...prev, running: false }));
+    }
+  }, []);
+
+  // Guardian start/stop
+  const handleGuardianAction = async (action) => {
+    setGuardianStatus(prev => ({ ...prev, loading: true }));
+    try {
+      const response = await api.post(`/api/guardian/${action}`);
+      const ok = response.data?.success;
+      setSnackbar({
+        open: true,
+        message: ok ? `Guardian ${action}ed successfully` : (response.data?.message || `Failed to ${action} Guardian`),
+        severity: ok ? 'success' : 'error',
+      });
+      setTimeout(fetchGuardianStatus, 1500);
+    } catch (error) {
+      setSnackbar({ open: true, message: `Error: ${error.message}`, severity: 'error' });
+    } finally {
+      setGuardianStatus(prev => ({ ...prev, loading: false }));
+    }
+  };
 
   // Fetch instances from config
   const fetchInstances = useCallback(async () => {
@@ -353,15 +387,17 @@ const BotManagementDashboard = () => {
     fetchInstances();
     fetchBotStatus();
     fetchProcesses();
+    fetchGuardianStatus();
 
     // Set up auto-refresh
     const interval = setInterval(() => {
       fetchBotStatus();
       fetchProcesses();
+      fetchGuardianStatus();
     }, 10000);
 
     return () => clearInterval(interval);
-  }, [fetchInstances]);
+  }, [fetchInstances, fetchGuardianStatus]);
 
   // Group instances by symbol
   const instancesBySymbol = Object.values(instanceStatus).reduce((acc, inst) => {
@@ -499,6 +535,61 @@ const BotManagementDashboard = () => {
           );
         })}
       </Grid>
+
+      {/* Guardian Control */}
+      <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+        <Shield /> Safety Guardian
+      </Typography>
+      <Paper sx={{ p: 2, mb: 3, borderLeft: `4px solid ${guardianStatus.running ? '#4caf50' : '#f44336'}` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <StatusIndicator status={guardianStatus.running ? 'running' : 'stopped'} />
+            <Box>
+              <Typography variant="subtitle1" fontWeight="bold">Guardian Bot</Typography>
+              <Typography variant="caption" color="text.secondary">
+                24/7 capital protection monitor — {guardianStatus.running ? 'Active' : 'Stopped'}
+              </Typography>
+            </Box>
+            <Chip
+              label={guardianStatus.running ? 'Running' : 'Stopped'}
+              size="small"
+              color={guardianStatus.running ? 'success' : 'error'}
+            />
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              size="small"
+              variant="contained"
+              color="success"
+              startIcon={<PlayArrow />}
+              onClick={() => handleGuardianAction('start')}
+              disabled={guardianStatus.running || guardianStatus.loading}
+            >
+              Start
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="warning"
+              startIcon={<Refresh />}
+              onClick={() => handleGuardianAction('restart')}
+              disabled={guardianStatus.loading}
+            >
+              Restart
+            </Button>
+            <Button
+              size="small"
+              variant="outlined"
+              color="error"
+              startIcon={<Stop />}
+              onClick={() => handleGuardianAction('stop')}
+              disabled={!guardianStatus.running || guardianStatus.loading}
+            >
+              Stop
+            </Button>
+          </Box>
+        </Box>
+      </Paper>
 
       {/* System Info */}
       <Paper

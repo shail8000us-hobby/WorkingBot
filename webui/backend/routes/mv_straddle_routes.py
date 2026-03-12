@@ -14,24 +14,18 @@ from datetime import datetime
 
 
 def _run_async(coro):
-    """Run async coroutine cooperatively from eventlet Flask context.
+    """Run async coroutine in the current thread's asyncio event loop.
 
-    Uses eventlet.tpool.execute() so the coroutine runs in a real OS thread
-    with a fresh asyncio event loop.  Cooperative — hub can serve other
-    greenlets while waiting for the result.
+    Flask routes run in real OS threads (threading async mode), so we can
+    create a fresh event loop and run the coroutine directly.
     """
-    import eventlet.tpool
-
-    def _worker():
-        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
-
-    return eventlet.tpool.execute(_worker)
+    loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
 
 # Configure logging with DEBUG level
 logging.basicConfig(

@@ -63,6 +63,35 @@ pm2 = get_pm2_adapter()
 # Create blueprint
 bot_control_bp = Blueprint('bot_control', __name__)
 
+
+def _instance_to_pm2_process(instance_name: str) -> str:
+    """Convert instance name (e.g. BTCUSD_LONG) to the PM2 process name.
+
+    The ecosystem config names processes as gridbot-{ticker}-live where ticker
+    is the first 3 chars of the symbol (e.g. BTCUSD → btc).
+    Queries PM2 jlist first to find a running matching process; falls back to
+    the generated name if no match is found.
+    """
+    import json as _json
+    symbol = instance_name.split('_')[0]   # BTCUSD_LONG → BTCUSD
+    ticker = symbol[:3].lower()            # BTCUSD → btc
+    generated = f'gridbot-{ticker}-live'
+
+    try:
+        result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            procs = _json.loads(result.stdout)
+            candidates = [p['name'] for p in procs
+                          if p.get('name', '').startswith('gridbot-')
+                          and (ticker in p['name'].lower()
+                               or symbol.lower() in p['name'].lower())]
+            if generated in candidates:
+                return generated
+            # No running match; use generated name to start from ecosystem config
+    except Exception:
+        pass
+    return generated
+
 # File paths
 BASE_DIR = Path(__file__).parent.parent.parent.parent
 
@@ -268,7 +297,7 @@ def bot_start():
         if should_use_pm2():
             # v6.0: Start specific instance if provided
             if instance_name:
-                success, message = pm2.start_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+                success, message = pm2.start_process(_instance_to_pm2_process(instance_name))
             else:
                 success, message = pm2.start_bot(mode)
             
@@ -358,7 +387,7 @@ def bot_stop():
         if should_use_pm2():
             # v6.0: Stop specific instance if provided
             if instance_name:
-                success, message = pm2.stop_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+                success, message = pm2.stop_process(_instance_to_pm2_process(instance_name))
             else:
                 success, message = pm2.stop_bot(mode)
             
@@ -466,7 +495,7 @@ def bot_restart():
         if should_use_pm2():
             # v6.0: Restart specific instance if provided
             if instance_name:
-                success, message = pm2.restart_process(f'gridbot-{instance_name.lower().replace("_", "-")}')
+                success, message = pm2.restart_process(_instance_to_pm2_process(instance_name))
             else:
                 success, message = pm2.restart_bot(mode)
             

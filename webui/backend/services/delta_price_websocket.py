@@ -4,8 +4,9 @@ Delta Exchange WebSocket Price Service
 Connects to Delta Exchange WebSocket API to fetch real-time BTC and ETH index prices.
 Broadcasts prices to frontend clients via Socket.IO.
 
-Architecture: Uses multiprocessing to run websocket-client in a separate process,
-avoiding eventlet monkey-patching conflicts. Prices are sent back via a pipe.
+Architecture: Uses subprocess.Popen to run a standalone worker script in a completely
+separate Python process with ZERO eventlet contamination.  Communication is via
+JSON lines over stdin (parent→child commands) and stdout (child→parent data).
 
 Created: January 18, 2026
 Author: SSR Bot
@@ -13,199 +14,42 @@ Author: SSR Bot
 
 import json
 import logging
-import time
-import threading
-import multiprocessing
 import os
-import signal
+import subprocess
+import sys
+import time
 from typing import Dict, Optional, Callable
+from pathlib import Path
 
 log = logging.getLogger(__name__)
 
-# Delta Exchange India WebSocket URL and index symbols
-WS_URL = 'wss://socket.india.delta.exchange'
-BTC_INDEX = '.DEXBTUSD'
-ETH_INDEX = '.DEETHUSD'
+# Use real OS thread/lock — after eventlet.monkey_patch() the standard
+# threading primitives are green and won't work from a real OS thread.
+try:
+    from eventlet.patcher import original as _ev_orig
+    _RealThread = _ev_orig('threading').Thread
+    _RealLock = _ev_orig('threading').Lock
+except Exception:
+    import threading
+    _RealThread = threading.Thread
+    _RealLock = threading.Lock
 
-
-def _ws_subprocess(pipe_conn, cmd_conn):
-    """
-    WebSocket client that runs in a separate process (no eventlet).
-    Sends price/ticker updates back to the parent via pipe_conn.
-    Receives subscribe/unsubscribe commands via cmd_conn.
-    """
-    # Reset signal handlers in child
-    signal.signal(signal.SIGTERM, lambda s, f: _cleanup_and_exit(ws_ref))
-    signal.signal(signal.SIGINT, signal.SIG_IGN)
-
-    import websocket as _websocket
-
-    ws_ref = [None]  # mutable ref for signal handler
-    subscribed_options = set()
-
-    def _cleanup_and_exit(ref):
-        if ref[0]:
-            try:
-                ref[0].close()
-            except Exception:
-                pass
-        os._exit(0)
-
-    def on_open(ws):
-        ws_ref[0] = ws
-        pipe_conn.send({'type': 'status', 'connected': True})
-
-        # Subscribe to BTC and ETH spot prices
-        ws.send(json.dumps({
-            "type": "subscribe",
-            "payload": {
-                "channels": [{
-                    "name": "v2/spot_price",
-                    "symbols": [BTC_INDEX, ETH_INDEX]
-                }]
-            }
-        }))
-
-        # Re-subscribe to any pending options tickers
-        if subscribed_options:
-            ws.send(json.dumps({
-                "type": "subscribe",
-                "payload": {
-                    "channels": [{
-                        "name": "v2/ticker",
-                        "symbols": list(subscribed_options)
-                    }]
-                }
-            }))
-
-    def on_message(ws, message):
-        try:
-            data = json.loads(message)
-            msg_type = data.get('type')
-
-            if msg_type == 'v2/spot_price':
-                symbol = data.get('s')
-                price = data.get('p')
-                if symbol and price is not None:
-                    asset = None
-                    if symbol == BTC_INDEX:
-                        asset = 'BTC'
-                    elif symbol == ETH_INDEX:
-                        asset = 'ETH'
-                    if asset:
-                        pipe_conn.send({
-                            'type': 'price',
-                            'symbol': asset,
-                            'price': float(price),
-                            'timestamp': time.time()
-                        })
-
-            elif msg_type == 'v2/ticker':
-                sym = data.get('symbol')
-                if sym:
-                    pipe_conn.send({
-                        'type': 'ticker',
-                        'symbol': sym,
-                        'best_bid': float(data.get('best_bid_price', 0) or 0),
-                        'best_ask': float(data.get('best_ask_price', 0) or 0),
-                        'mark_price': float(data.get('mark_price', 0) or 0),
-                        'timestamp': time.time()
-                    })
-        except Exception:
-            pass
-
-    def on_error(ws, error):
-        try:
-            pipe_conn.send({'type': 'error', 'message': str(error)})
-        except Exception:
-            pass
-
-    def on_close(ws, close_status_code, close_msg):
-        try:
-            pipe_conn.send({'type': 'status', 'connected': False})
-        except Exception:
-            pass
-
-    # Command reader thread — checks for subscribe/unsubscribe commands
-    def _read_commands():
-        while True:
-            try:
-                if cmd_conn.poll(1.0):
-                    cmd = cmd_conn.recv()
-                    action = cmd.get('action')
-                    symbols = cmd.get('symbols', [])
-
-                    if action == 'subscribe' and symbols and ws_ref[0]:
-                        subscribed_options.update(symbols)
-                        ws_ref[0].send(json.dumps({
-                            "type": "subscribe",
-                            "payload": {
-                                "channels": [{"name": "v2/ticker", "symbols": symbols}]
-                            }
-                        }))
-
-                    elif action == 'unsubscribe' and symbols and ws_ref[0]:
-                        subscribed_options.difference_update(symbols)
-                        ws_ref[0].send(json.dumps({
-                            "type": "unsubscribe",
-                            "payload": {
-                                "channels": [{"name": "v2/ticker", "symbols": symbols}]
-                            }
-                        }))
-
-                    elif action == 'stop':
-                        _cleanup_and_exit(ws_ref)
-            except (EOFError, BrokenPipeError):
-                _cleanup_and_exit(ws_ref)
-            except Exception:
-                pass
-
-    # Start command reader in a daemon thread
-    import threading as _threading
-    cmd_thread = _threading.Thread(target=_read_commands, daemon=True)
-    cmd_thread.start()
-
-    # Main reconnection loop
-    max_attempts = 100
-    attempt = 0
-    while attempt < max_attempts:
-        try:
-            _websocket.enableTrace(False)
-            ws = _websocket.WebSocketApp(
-                WS_URL,
-                on_open=on_open,
-                on_message=on_message,
-                on_error=on_error,
-                on_close=on_close
-            )
-            ws_ref[0] = ws
-            ws.run_forever(ping_interval=30, ping_timeout=10)
-        except Exception:
-            pass
-
-        attempt += 1
-        time.sleep(5)  # Wait before reconnect
-
-    pipe_conn.send({'type': 'error', 'message': 'Max reconnection attempts reached'})
-    os._exit(1)
+# Path to the standalone worker script (no eventlet imports)
+_WORKER_SCRIPT = str(Path(__file__).with_name('_ws_subprocess_worker.py'))
 
 
 class DeltaPriceWebSocket:
     """
     WebSocket client for Delta Exchange index prices.
 
-    Runs websocket-client in a subprocess to avoid eventlet compatibility issues.
-    Parent process reads prices from a pipe and invokes callbacks.
+    Runs a standalone worker script via subprocess.Popen to guarantee zero
+    eventlet contamination.  Communication uses JSON lines over stdin/stdout.
     """
 
     def __init__(self, on_price_update: Optional[Callable] = None, on_ticker_update: Optional[Callable] = None):
         self.running = False
         self.connected = False
-        self._process: Optional[multiprocessing.Process] = None
-        self._pipe_parent = None
-        self._pipe_child = None
-        self._cmd_parent = None
-        self._cmd_child = None
+        self._process: Optional[subprocess.Popen] = None
         self._reader_thread = None
 
         # Price storage
@@ -214,7 +58,7 @@ class DeltaPriceWebSocket:
 
         # Options ticker subscriptions
         self.subscribed_options: Dict[str, bool] = {}
-        self.subscribed_options_lock = threading.Lock()
+        self.subscribed_options_lock = _RealLock()
 
         # Callbacks
         self.on_price_update = on_price_update
@@ -222,102 +66,111 @@ class DeltaPriceWebSocket:
 
         self.reconnect_attempts = 0
 
-    def _read_pipe(self):
-        """Read messages from the subprocess pipe and dispatch callbacks."""
-        while self.running:
+    def _read_stdout(self):
+        """Read JSON lines from the subprocess stdout and dispatch callbacks.
+
+        Runs in a REAL OS thread (not a green thread).
+        """
+        proc = self._process
+        while self.running and proc and proc.poll() is None:
             try:
-                if self._pipe_parent.poll(1.0):
-                    msg = self._pipe_parent.recv()
-                    msg_type = msg.get('type')
+                line = proc.stdout.readline()
+                if not line:
+                    break  # EOF — subprocess exited
 
-                    if msg_type == 'price':
-                        asset = msg['symbol']
-                        price = msg['price']
-                        self.prices[asset] = price
-                        self.last_update[asset] = msg['timestamp']
+                msg = json.loads(line)
+                msg_type = msg.get('type')
 
-                        if self.on_price_update:
-                            try:
-                                self.on_price_update(asset, price)
-                            except Exception as e:
-                                log.error(f"[DeltaWS] Price callback error: {e}")
+                if msg_type == 'price':
+                    asset = msg['symbol']
+                    price = msg['price']
+                    self.prices[asset] = price
+                    self.last_update[asset] = msg['timestamp']
 
-                    elif msg_type == 'ticker':
-                        if self.on_ticker_update:
-                            try:
-                                self.on_ticker_update(msg['symbol'], msg)
-                            except Exception as e:
-                                log.error(f"[DeltaWS] Ticker callback error: {e}")
+                    if self.on_price_update:
+                        try:
+                            self.on_price_update(asset, price)
+                        except Exception as e:
+                            log.error(f"[DeltaWS] Price callback error: {e}")
 
-                    elif msg_type == 'status':
-                        self.connected = msg.get('connected', False)
-                        if self.connected:
-                            log.info("[DeltaWS] Connection established (subprocess)")
-                            self.reconnect_attempts = 0
-                        else:
-                            log.warning("[DeltaWS] Connection lost (subprocess)")
+                elif msg_type == 'ticker':
+                    if self.on_ticker_update:
+                        try:
+                            self.on_ticker_update(msg['symbol'], msg)
+                        except Exception as e:
+                            log.error(f"[DeltaWS] Ticker callback error: {e}")
 
-                    elif msg_type == 'error':
-                        log.error(f"[DeltaWS] Subprocess error: {msg.get('message')}")
+                elif msg_type == 'status':
+                    self.connected = msg.get('connected', False)
+                    if self.connected:
+                        log.info("[DeltaWS] Connection established (subprocess)")
+                        self.reconnect_attempts = 0
+                    else:
+                        log.warning("[DeltaWS] Connection lost (subprocess)")
 
-            except (EOFError, BrokenPipeError):
-                log.warning("[DeltaWS] Pipe closed, subprocess may have exited")
-                self.connected = False
+                elif msg_type == 'error':
+                    log.error(f"[DeltaWS] Subprocess error: {msg.get('message')}")
+
+            except json.JSONDecodeError:
+                pass
+            except (OSError, ValueError):
                 break
             except Exception as e:
-                log.error(f"[DeltaWS] Pipe read error: {e}")
-                time.sleep(1)
+                log.error(f"[DeltaWS] Stdout read error: {e}")
+                time.sleep(0.5)
+
+        self.connected = False
+        if self.running:
+            log.warning("[DeltaWS] Subprocess stdout closed, process may have exited")
 
     def start(self):
-        """Start the WebSocket subprocess and pipe reader."""
+        """Start the WebSocket subprocess and stdout reader."""
         if self.running:
             log.warning("[DeltaWS] Already running")
             return
 
         self.running = True
 
-        # Create pipes: price pipe (child->parent), command pipe (parent->child)
-        self._pipe_parent, self._pipe_child = multiprocessing.Pipe(duplex=False)
-        self._cmd_child, self._cmd_parent = multiprocessing.Pipe(duplex=False)
+        # Use the same Python interpreter that is running this process
+        python_exe = sys.executable
 
-        # Start subprocess
-        self._process = multiprocessing.Process(
-            target=_ws_subprocess,
-            args=(self._pipe_child, self._cmd_child),
-            daemon=True,
-            name='delta-price-ws'
+        # Launch the standalone worker script — clean process, no eventlet
+        self._process = subprocess.Popen(
+            [python_exe, _WORKER_SCRIPT],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            bufsize=1,  # line-buffered
         )
-        self._process.start()
 
-        # Close child ends in parent
-        self._pipe_child.close()
-        self._cmd_child.close()
-
-        # Start pipe reader thread
-        self._reader_thread = threading.Thread(
-            target=self._read_pipe, daemon=True, name='delta-ws-reader'
+        # Start stdout reader in a REAL OS thread
+        self._reader_thread = _RealThread(
+            target=self._read_stdout, daemon=True, name='delta-ws-reader'
         )
         self._reader_thread.start()
 
         log.info(f"[DeltaWS] WebSocket subprocess started (PID: {self._process.pid})")
+
+    def _send_cmd(self, cmd: dict):
+        """Send a JSON command to the subprocess via stdin."""
+        if self._process and self._process.stdin:
+            try:
+                self._process.stdin.write(json.dumps(cmd) + '\n')
+                self._process.stdin.flush()
+            except (BrokenPipeError, OSError):
+                pass
 
     def stop(self):
         """Stop the WebSocket subprocess."""
         self.running = False
         self.connected = False
 
-        if self._cmd_parent:
-            try:
-                self._cmd_parent.send({'action': 'stop'})
-            except Exception:
-                pass
+        self._send_cmd({'action': 'stop'})
 
-        if self._process and self._process.is_alive():
+        if self._process:
             try:
                 self._process.terminate()
-                self._process.join(timeout=5)
-                if self._process.is_alive():
-                    self._process.kill()
             except Exception:
                 pass
 
@@ -350,11 +203,7 @@ class DeltaPriceWebSocket:
         with self.subscribed_options_lock:
             for symbol in symbols:
                 self.subscribed_options[symbol] = True
-        if self._cmd_parent:
-            try:
-                self._cmd_parent.send({'action': 'subscribe', 'symbols': symbols})
-            except Exception as e:
-                log.error(f"[DeltaWS] Error sending subscribe command: {e}")
+        self._send_cmd({'action': 'subscribe', 'symbols': symbols})
 
     def unsubscribe_options(self, symbols: list):
         if not symbols:
@@ -362,11 +211,7 @@ class DeltaPriceWebSocket:
         with self.subscribed_options_lock:
             for symbol in symbols:
                 self.subscribed_options.pop(symbol, None)
-        if self._cmd_parent:
-            try:
-                self._cmd_parent.send({'action': 'unsubscribe', 'symbols': symbols})
-            except Exception as e:
-                log.error(f"[DeltaWS] Error sending unsubscribe command: {e}")
+        self._send_cmd({'action': 'unsubscribe', 'symbols': symbols})
 
 
 # Global instance

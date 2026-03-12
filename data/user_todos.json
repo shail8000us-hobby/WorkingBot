@@ -180,5 +180,12 @@
     "completed": false,
     "createdAt": "2026-02-05T12:47:56.020211",
     "updatedAt": "2026-02-05T12:47:56.020220"
+  },
+  {
+    "id": "1773290262026",
+    "text": "cd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
+    "completed": false,
+    "createdAt": "2026-03-12T10:07:42.026447",
+    "updatedAt": "2026-03-12T10:07:42.026455"
   }
 ]

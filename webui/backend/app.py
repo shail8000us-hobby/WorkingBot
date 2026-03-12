@@ -1492,7 +1492,7 @@ if __name__ == '__main__':
         # --- IV Background Recorder ---
         try:
             from webui.backend.db.iv_history_db import start_iv_background_recorder
-            start_iv_background_recorder(interval=300)
+            start_iv_background_recorder(app=app, interval=300)
             print("✅ IV Background Recorder started (every 5 min)\n")
         except Exception as e:
             print(f"⚠️  IV Background Recorder failed: {e}\n")

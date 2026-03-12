@@ -29,7 +29,19 @@ log = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 _dedicated_loop: Optional[asyncio.AbstractEventLoop] = None
 _loop_thread: Optional[threading.Thread] = None
-_loop_lock = threading.Lock()
+
+# MUST be a real (unpatched) OS lock, NOT an eventlet semaphore.
+# _loop_lock is acquired from both eventlet greenlets (Flask requests) AND
+# real OS threads (monitor init, IV recorder, asyncio callbacks).
+# If this were an eventlet monkey-patched threading.Lock, acquiring it from
+# a real OS thread would corrupt the eventlet hub's greenlet scheduler:
+#   greenlet.error: Cannot switch to a different thread
+try:
+    from eventlet.patcher import original as _ev_orig
+    _loop_lock = _ev_orig('threading').Lock()
+except Exception:
+    import threading as _stdlib_threading
+    _loop_lock = _stdlib_threading.Lock()
 
 
 def _get_dedicated_loop() -> asyncio.AbstractEventLoop:
@@ -70,20 +82,31 @@ def _run_async(coro, timeout=20):
     """Run an async coroutine cooperatively from a sync Flask/eventlet context.
 
     Submits *coro* to the dedicated asyncio loop (real OS thread) then POLLs
-    ``future.done()`` with ``eventlet.sleep(0)`` between checks.  Each
-    ``sleep(0)`` yields the current greenlet back to the eventlet hub so other
-    requests (health checks, session creation, WebSocket heartbeats …) are
-    served while the async API call is in flight.
+    ``future.done()`` with a sleep between checks.
+
+    Yield strategy depends on the calling context:
+    - Flask/gunicorn greenlet (main OS thread): use eventlet.sleep() so other
+      greenlets (health checks, WebSocket heartbeats) continue to be served.
+    - Real OS thread (monitors, IV recorder, background tasks): use time.sleep()
+      because eventlet.sleep() from a real thread corrupts the eventlet hub.
 
     Default timeout is 20 s — enough for typical Delta Exchange latency.
-    Callers that expect longer operations can pass a higher timeout.
     """
     import time as _time
+
+    # Detect whether we're running in the gunicorn eventlet worker thread.
+    # gunicorn's eventlet worker runs in the process's main thread; Flask
+    # requests are greenlets within it.  Real OS threads we create for monitors
+    # and background tasks are NOT the main thread.
+    _yield = _time.sleep  # safe default for real OS threads
     try:
-        import eventlet as _ev
-        _yield = _ev.sleep
-    except ImportError:
-        _yield = _time.sleep
+        from eventlet.patcher import original as _ev_orig
+        _orig_threading = _ev_orig('threading')
+        if _orig_threading.current_thread() is _orig_threading.main_thread():
+            import eventlet as _ev
+            _yield = _ev.sleep
+    except Exception:
+        pass
 
     loop = _get_dedicated_loop()
     future = asyncio.run_coroutine_threadsafe(coro, loop)

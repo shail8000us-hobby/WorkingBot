@@ -24,26 +24,19 @@ log = logging.getLogger(__name__)
 
 
 def _run_async(coro):
-    """Run async coroutine cooperatively from eventlet Flask context.
+    """Run async coroutine in the current thread's asyncio event loop.
 
-    Uses eventlet.tpool.execute() so the coroutine runs in a real OS thread
-    with a fresh asyncio event loop.  The tpool call is cooperative — the
-    eventlet hub can serve other greenlets while waiting.
-    Each OptionsChainOrderService call creates its own client, so a fresh
-    loop per call is safe (no shared asyncio Lock/Event to rebind).
+    Flask routes run in real OS threads (threading async mode), so we can
+    create a fresh event loop and run the coroutine directly.
+    Each call creates its own client, so a fresh loop per call is safe.
     """
-    import eventlet.tpool
-
-    def _worker():
-        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
-
-    return eventlet.tpool.execute(_worker)
+    loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
 
 # ============================================================================
 # Rate Limiting & Safety

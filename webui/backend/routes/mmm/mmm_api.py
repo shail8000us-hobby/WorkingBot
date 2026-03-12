@@ -28,32 +28,18 @@ except ImportError:
 
 
 def _run_async(coro):
-    """Run async coroutine in a real native OS thread via eventlet.tpool.
+    """Run async coroutine in the current thread's asyncio event loop.
 
-    eventlet.monkey_patch() converts threading.Thread AND
-    concurrent.futures.ThreadPoolExecutor into eventlet green threads that all
-    share the same eventlet hub. asyncio.run() inside any green thread fails:
-        "asyncio.run() cannot be called from a running event loop"
-    because asyncio._get_running_loop() returns the shared eventlet hub.
-
-    eventlet.tpool.execute() dispatches to a REAL native OS thread pool that
-    is NOT monkey-patched. In a real OS thread, no event loop is running, so
-    a fresh asyncio SelectorEventLoop can be created and used normally.
-    asyncio.DefaultEventLoopPolicy() bypasses eventlet's custom asyncio policy
-    to ensure a real SelectorEventLoop (not eventlet's hub wrapper).
+    Flask routes run in real OS threads (threading async mode), so we can
+    create a fresh event loop and run the coroutine directly.
     """
-    import eventlet.tpool
-
-    def _worker():
-        loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            return loop.run_until_complete(coro)
-        finally:
-            loop.close()
-            asyncio.set_event_loop(None)
-
-    return eventlet.tpool.execute(_worker)
+    loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
 
 from .mmm_storage import get_storage
 from .mmm_state import (
@@ -3296,6 +3282,7 @@ def inject_position(session_id: str):
             'premium_collected': premium_collected,
             'adjustment_number': session.get('adjustment_count', 0),
             'source': 'operator_inject',
+            'spot': session.get('_regime_spot_price', 0),
         })
         if len(session['adjustment_history']) > 200:
             session['adjustment_history'] = session['adjustment_history'][-200:]
@@ -3492,6 +3479,17 @@ def set_active_strike(session_id: str):
             log.warning(
                 f'[{session_id}] Could not reset trigger snapshots after set-active-strike: {snap_err}'
             )
+            # Fallback: ensure the new active strike has a trigger_snapshot entry.
+            # Use 0 as placeholder — the heartbeat heal will replace it with
+            # the live premium on the next beat (prevents indefinite 0.0 gauge).
+            from .mmm_constants import strike_key as _sk
+            _sk_val = _sk(strike_val)
+            snap = side_state.setdefault('trigger_snapshot', {})
+            if _sk_val not in snap or snap.get(_sk_val, 0) == 0:
+                log.warning(
+                    f'[{session_id}] Set-active-strike fallback: trigger_snapshot[{_sk_val}] '
+                    f'left at 0 — heartbeat heal will initialise on next beat'
+                )
 
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
         storage.save_session(session)

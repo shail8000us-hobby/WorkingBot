@@ -234,23 +234,27 @@ import logging as _logging
 _iv_logger = _logging.getLogger(__name__)
 _iv_bg_thread = None
 
-def start_iv_background_recorder(interval: int = 300):
+def start_iv_background_recorder(app=None, interval: int = 300):
     """
     Start a daemon thread that records IV snapshots every `interval` seconds.
     Safe to call multiple times — only one thread will run.
+    Pass the Flask app instance so the thread can push an application context.
     """
     global _iv_bg_thread
     if _iv_bg_thread and _iv_bg_thread.is_alive():
         return  # already running
 
     def _loop():
+        from contextlib import nullcontext
         _iv_logger.info("IV background recorder started (interval=%ds)", interval)
         while True:
             try:
                 time.sleep(interval)
                 from webui.backend.routes.options.dashboard_service import fetch_options_positions_data
                 from webui.backend.routes.market import _price_cache
-                data = fetch_options_positions_data()
+                ctx = app.app_context() if app is not None else nullcontext()
+                with ctx:
+                    data = fetch_options_positions_data()
                 positions = data.get('positions', [])
                 if positions:
                     spot_entry = _price_cache.get('spot_BTC')

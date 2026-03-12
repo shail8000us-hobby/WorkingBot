@@ -294,119 +294,222 @@ class MMMSafety:
         return events
 
     # =========================================================================
-    # §13.4: Whipsaw Detection
+    # §13.4: Adaptive Whipsaw Guard
     # =========================================================================
 
     def check_whipsaw(self, session: Dict) -> List[Dict]:
         """
-        Detect 3 rapid alternating adjustments (CE→PE→CE or PE→CE→PE).
-        Bug #15 fix: track whipsaw_paused_at for auto-resume after 2 intervals.
+        Adaptive Whipsaw Guard — graduated response to alternating adjustments.
+
+        Three rules:
+        1. Time-windowed counting: only count alternations within rolling window
+        2. Spot-move validation: skip alternations where BTC spot moved enough
+        3. Graduated response: score → NORMAL / CAUTION / RESTRICT / COOLDOWN
+
+        Session state keys:
+          _whipsaw_score           int   — current noise score
+          _whipsaw_last_noise_at   str   — ISO timestamp of last noise increment
+          _whipsaw_skip_until      str   — ISO timestamp, skip adjustments until
+          _whipsaw_last_checked_idx int  — last algo_history index evaluated
         """
         events = []
         params = session.get('params', {})
-        whipsaw_limit = params.get('whipsaw_limit', 3)
+        now = datetime.now(timezone.utc)
 
-        # Bug #15 fix: check for auto-resume
-        whipsaw_paused_at = session.get('_whipsaw_paused_at')
-        if whipsaw_paused_at:
+        # ── Migration: clear old binary-pause whipsaw state ───────────────
+        # Sessions created before the Adaptive Guard upgrade may have
+        # _whipsaw_paused_at set (old system). Clear it and auto-resume so
+        # the session is not stuck PAUSED forever.
+        old_paused_at = session.pop('_whipsaw_paused_at', None)
+        session.pop('_whipsaw_checked_up_to', None)
+        session.pop('_whipsaw_consecutive_alternating', None)
+        if old_paused_at:
+            log.info(
+                f"Whipsaw migration: cleared old _whipsaw_paused_at, "
+                f"resuming under Adaptive Guard"
+            )
+            events.append({
+                'type': 'whipsaw_guard',
+                'level': 'info',
+                'message': (
+                    'Whipsaw system upgraded to Adaptive Guard. '
+                    'Previous pause cleared — resuming adjustments.'
+                ),
+                'action': 'resume',
+                'details': {'migration': True},
+            })
+            return events
+        window_mins = params.get('whipsaw_window_mins', 30)
+        spot_move_pct = params.get('whipsaw_spot_move_pct', 0.3)
+        caution_threshold = params.get('whipsaw_caution_score', 2)
+        restrict_threshold = params.get('whipsaw_restrict_score', 3)
+        cooldown_threshold = params.get('whipsaw_cooldown_score', 4)
+        interval = params.get('adjustment_interval', 300)
+
+        score = session.get('_whipsaw_score', 0)
+
+        # ── Rule 0: Skip-interval check ──────────────────────────────────
+        skip_until = session.get('_whipsaw_skip_until')
+        if skip_until:
             try:
-                # Fix #14: normalize to timezone-aware UTC before comparison
-                paused_time = datetime.fromisoformat(whipsaw_paused_at)
-                if paused_time.tzinfo is None:
-                    paused_time = paused_time.replace(tzinfo=timezone.utc)
-                interval = params.get('adjustment_interval', 300)
-                resume_after = interval * 2  # Resume after 2 intervals
-                elapsed = (datetime.now(timezone.utc) - paused_time).total_seconds()
-                if elapsed >= resume_after:
-                    session.pop('_whipsaw_paused_at', None)
-                    log.info(
-                        f"Whipsaw auto-resume: {elapsed:.0f}s elapsed "
-                        f"(threshold: {resume_after}s)"
+                skip_time = datetime.fromisoformat(skip_until)
+                if skip_time.tzinfo is None:
+                    skip_time = skip_time.replace(tzinfo=timezone.utc)
+                if now < skip_time:
+                    remaining = (skip_time - now).total_seconds()
+                    log.debug(
+                        f"Whipsaw COOLDOWN skip active: {remaining:.0f}s remaining"
                     )
                     events.append({
-                        'type': 'whipsaw_resume',
-                        'level': 'info',
+                        'type': 'whipsaw_guard',
+                        'level': 'alert',
                         'message': (
-                            f"Whipsaw auto-resume after {elapsed:.0f}s cooldown. "
-                            f"Adjustments re-enabled."
+                            f"Whipsaw COOLDOWN active (score {score}): "
+                            f"skipping adjustments, {remaining:.0f}s remaining"
                         ),
-                        'action': 'resume',
+                        'action': 'stop_adjustments',
                         'details': {
-                            'elapsed': round(elapsed),
-                            'resume_after': resume_after,
+                            'score': score,
+                            'level': 'COOLDOWN',
+                            'remaining': round(remaining),
                         },
                     })
+                    return events
                 else:
-                    # Still in cooldown — return immediately without re-checking.
-                    # Critical: falling through to the whipsaw detection below would
-                    # re-detect the same alternating pattern (no new trades during pause)
-                    # and reset _whipsaw_paused_at to now, causing the timer to never
-                    # count down and the session to never auto-resume.
-                    log.debug(
-                        f"Whipsaw cooldown active: {elapsed:.0f}s / {resume_after}s elapsed"
+                    # Skip expired — reduce score by 2
+                    score = max(0, score - 2)
+                    session.pop('_whipsaw_skip_until', None)
+                    session['_whipsaw_score'] = score
+                    log.info(
+                        f"Whipsaw COOLDOWN expired, score reduced to {score}"
                     )
-                return events  # Resume or still cooling — don't re-check whipsaw
             except (ValueError, TypeError):
-                session.pop('_whipsaw_paused_at', None)
+                session.pop('_whipsaw_skip_until', None)
 
+        # ── Rule 1: Score decay ───────────────────────────────────────────
+        # Decay -1 for each full adjustment_interval elapsed since last noise
+        last_noise = session.get('_whipsaw_last_noise_at')
+        if last_noise and score > 0:
+            try:
+                noise_time = datetime.fromisoformat(last_noise)
+                if noise_time.tzinfo is None:
+                    noise_time = noise_time.replace(tzinfo=timezone.utc)
+                elapsed = (now - noise_time).total_seconds()
+                decay_intervals = int(elapsed / interval)
+                if decay_intervals > 0:
+                    old_score = score
+                    score = max(0, score - decay_intervals)
+                    session['_whipsaw_score'] = score
+                    # Advance the noise timestamp so we don't double-decay
+                    session['_whipsaw_last_noise_at'] = (
+                        noise_time + timedelta(seconds=decay_intervals * interval)
+                    ).isoformat()
+                    if score < old_score:
+                        log.info(
+                            f"Whipsaw score decayed {old_score} → {score} "
+                            f"({decay_intervals} interval(s) without noise)"
+                        )
+            except (ValueError, TypeError):
+                session.pop('_whipsaw_last_noise_at', None)
+
+        # ── Rule 2: Evaluate new adjustment history ───────────────────────
         history = session.get('adjustment_history', [])
-        if len(history) < whipsaw_limit:
-            return events
-
-        # AUDIT FIX: Skip entries already evaluated before last whipsaw pause
-        checked_up_to = session.pop('_whipsaw_checked_up_to', 0)
-        if checked_up_to > 0 and len(history) <= checked_up_to:
-            return events  # No new adjustments since last whipsaw — don't re-evaluate
-
-        # Filter out OPERATOR (manual) adjustments — intentional human actions
-        # should not trigger whipsaw detection (algo-only alternation).
         algo_history = [h for h in history if h.get('aggressor', '') != 'OPERATOR']
-        if len(algo_history) < whipsaw_limit:
-            return events
 
-        # Check last N adjustments for alternating pattern
-        recent = algo_history[-whipsaw_limit:]
-        sides = [h.get('aggressor', '') for h in recent]
+        last_checked_idx = session.get('_whipsaw_last_checked_idx', 0)
+        if len(algo_history) > last_checked_idx and len(algo_history) >= 2:
+            window_cutoff = now - timedelta(minutes=window_mins)
 
-        alternating = True
-        for i in range(1, len(sides)):
-            if sides[i] == sides[i - 1]:
-                alternating = False
-                break
+            start_idx = max(1, last_checked_idx)
+            for i in range(start_idx, len(algo_history)):
+                curr = algo_history[i]
+                prev = algo_history[i - 1]
 
-        # T3-3: Whipsaw pre-filter boost — if the pre-filter has been counting
-        # alternating flips eagerly, lower the effective threshold by 1.
-        alt_pre = session.get('_whipsaw_consecutive_alternating', 0)
-        effective_limit = max(whipsaw_limit - 1, 2) if alt_pre >= whipsaw_limit - 1 else whipsaw_limit
-        enough_history = len(algo_history) >= effective_limit
-        recent_eff = algo_history[-effective_limit:] if enough_history else recent
-        sides_eff = [h.get('aggressor', '') for h in recent_eff]
-        alt_eff = all(sides_eff[i] != sides_eff[i-1] for i in range(1, len(sides_eff))) if len(sides_eff) > 1 else False
-        use_alternating = (alternating and len(set(sides)) > 1) or (alt_eff and len(set(sides_eff)) > 1)
+                # Not an alternation — same direction
+                if curr.get('aggressor', '') == prev.get('aggressor', ''):
+                    continue
 
-        if use_alternating:
-            now = datetime.now(timezone.utc)  # Fix #14: timezone-aware UTC
-            cooldown_secs = params.get('adjustment_interval', 300) * 2
-            resume_at = (now + timedelta(seconds=cooldown_secs)).isoformat()
-            session['_whipsaw_paused_at'] = now.isoformat()
-            # AUDIT FIX: Reset counter and record how far we checked to prevent
-            # re-triggering on the same stale history after auto-resume
-            session['_whipsaw_consecutive_alternating'] = 0
-            session['_whipsaw_checked_up_to'] = len(algo_history)
+                # Outside rolling window — skip
+                try:
+                    curr_ts = datetime.fromisoformat(curr.get('timestamp', ''))
+                    if curr_ts.tzinfo is None:
+                        curr_ts = curr_ts.replace(tzinfo=timezone.utc)
+                    if curr_ts < window_cutoff:
+                        continue
+                except (ValueError, TypeError):
+                    continue
+
+                # Spot-move validation: if BTC moved enough, this is justified
+                curr_spot = curr.get('spot', 0)
+                prev_spot = prev.get('spot', 0)
+                if curr_spot > 0 and prev_spot > 0:
+                    spot_delta_pct = abs(curr_spot - prev_spot) / prev_spot * 100
+                    if spot_delta_pct >= spot_move_pct:
+                        continue  # Justified — real market movement
+
+                # This is a noise alternation — increment score
+                score += 1
+                session['_whipsaw_last_noise_at'] = now.isoformat()
+
+            session['_whipsaw_last_checked_idx'] = len(algo_history)
+            session['_whipsaw_score'] = score
+
+        # ── Rule 3: Graduated response ────────────────────────────────────
+        if score >= cooldown_threshold:
+            skip_secs = interval
+            session['_whipsaw_skip_until'] = (
+                now + timedelta(seconds=skip_secs)
+            ).isoformat()
             events.append({
-                'type': 'whipsaw',
+                'type': 'whipsaw_guard',
                 'level': 'alert',
                 'message': (
-                    f"Whipsaw detected: {whipsaw_limit} alternating "
-                    f"adjustments ({' → '.join(sides)}). "
-                    f"Auto-pausing for {cooldown_secs}s."
+                    f"Whipsaw COOLDOWN (score {score}): "
+                    f"skipping adjustments for {skip_secs}s, "
+                    f"then score drops by 2"
                 ),
-                'action': 'pause',
+                'action': 'stop_adjustments',
                 'details': {
-                    'sequence': sides,
-                    'limit': whipsaw_limit,
-                    'cooldown_seconds': cooldown_secs,
-                    'resume_at': resume_at,
+                    'score': score,
+                    'level': 'COOLDOWN',
+                    'skip_seconds': skip_secs,
+                    'thresholds': {
+                        'caution': caution_threshold,
+                        'restrict': restrict_threshold,
+                        'cooldown': cooldown_threshold,
+                    },
+                },
+            })
+        elif score >= restrict_threshold:
+            events.append({
+                'type': 'whipsaw_guard',
+                'level': 'warning',
+                'message': (
+                    f"Whipsaw RESTRICT (score {score}): "
+                    f"triggers widened +100%, lots halved"
+                ),
+                'action': 'continue',
+                'details': {
+                    'score': score,
+                    'level': 'RESTRICT',
+                    'trigger_factor': 2.0,
+                    'lot_factor': 0.5,
+                },
+            })
+        elif score >= caution_threshold:
+            events.append({
+                'type': 'whipsaw_guard',
+                'level': 'info',
+                'message': (
+                    f"Whipsaw CAUTION (score {score}): "
+                    f"triggers widened +50%"
+                ),
+                'action': 'continue',
+                'details': {
+                    'score': score,
+                    'level': 'CAUTION',
+                    'trigger_factor': 1.5,
+                    'lot_factor': 1.0,
                 },
             })
 

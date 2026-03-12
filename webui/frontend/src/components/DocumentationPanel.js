@@ -118,25 +118,18 @@ const DocumentationPanel = () => {
       color: '#2196F3',
       commands: [
         {
-          name: 'Start WebUI (Enhanced)',
-          description: 'Start WebUI with production stability (RECOMMENDED)',
-          command: 'launchctl start com.gridbot.webui.enhanced',
+          name: 'Start WebUI',
+          description: 'Start WebUI backend via production LaunchAgent',
+          command: 'launchctl start com.gridbot.production.webui',
           icon: <PlayArrowIcon />,
-          tags: ['webui', 'backend', 'start', 'enhanced', 'production'],
-        },
-        {
-          name: 'Start WebUI (Basic)',
-          description: 'Start WebUI backend using basic LaunchAgent',
-          command: 'launchctl start com.gridbot.webui',
-          icon: <PlayArrowIcon />,
-          tags: ['webui', 'backend', 'start', 'basic'],
+          tags: ['webui', 'backend', 'start', 'production'],
         },
         {
           name: 'Restart WebUI (Enhanced)',
           description: 'Restart enhanced WebUI LaunchAgent',
-          command: 'launchctl restart com.gridbot.webui.enhanced',
+          command: 'launchctl restart com.gridbot.production.webui',
           icon: <RefreshIcon />,
-          tags: ['webui', 'restart', 'launchd', 'enhanced'],
+          tags: ['webui', 'restart', 'launchd'],
         },
         {
           name: 'Build Frontend',

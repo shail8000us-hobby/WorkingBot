@@ -279,7 +279,7 @@ function GammaRegimeCard({ gammaRegime, details }) {
 }
 
 
-function TrendRegimeCard({ trendRegime, details, trendTier, trendDirection }) {
+function TrendRegimeCard({ trendRegime, details, trendTier, trendDirection, trendBoostActive, trendBoostMult }) {
   const tier = trendTier || details?.trend_tier || 0;
   const direction = trendDirection || details?.trend_direction || 'none';
   const tierName = TREND_TIER_NAMES[tier] || 'UNKNOWN';
@@ -365,6 +365,18 @@ function TrendRegimeCard({ trendRegime, details, trendTier, trendDirection }) {
           </Typography>
         </Grid>
       </Grid>
+
+      {/* Trend Boost indicator */}
+      {trendBoostActive && tier >= 1 && (
+        <Box sx={{ mt: 1, p: 0.5, px: 1, borderRadius: 1, backgroundColor: '#4caf5020', border: '1px solid #4caf5040', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: '#4caf50' }}>
+            ⚡ BOOST {(trendBoostMult || 1.0).toFixed(1)}x
+          </Typography>
+          <Typography variant="caption" sx={{ opacity: 0.7 }}>
+            {direction === 'up' ? 'PE' : 'CE'} safe-side lots boosted
+          </Typography>
+        </Box>
+      )}
     </Paper>
   );
 }
@@ -471,7 +483,7 @@ export default function MMMRegimePanel({ session, regimeData, heartbeat }) {
           <GammaRegimeCard gammaRegime={gamma_regime} details={details} />
         </Grid>
         <Grid item xs={12} md={4}>
-          <TrendRegimeCard trendRegime={trend_regime} details={details} trendTier={trend_tier} trendDirection={trend_direction} />
+          <TrendRegimeCard trendRegime={trend_regime} details={details} trendTier={trend_tier} trendDirection={trend_direction} trendBoostActive={effectiveRegime?.trend_boost_active} trendBoostMult={effectiveRegime?.trend_boost_mult} />
         </Grid>
       </Grid>
 

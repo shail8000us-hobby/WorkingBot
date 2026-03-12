@@ -870,24 +870,18 @@ def advanced_predictions():
                         verified_pending_buy = pending_buy
                         verified_pending_sell = pending_sell
                 
-                # Run async verification cooperatively — avoid loop.run_until_complete()
-                # which blocks the single eventlet worker for the full API call duration.
+                # Run async verification in current thread (real OS thread under threading mode).
                 try:
-                    import eventlet.tpool
-
-                    def _verify_worker():
-                        import asyncio as _asyncio
-                        _loop = _asyncio.DefaultEventLoopPolicy().new_event_loop()
-                        _asyncio.set_event_loop(_loop)
-                        try:
-                            return _loop.run_until_complete(verify_pending_orders())
-                        finally:
-                            _loop.close()
-                            _asyncio.set_event_loop(None)
-
-                    eventlet.tpool.execute(_verify_worker)
+                    import asyncio as _asyncio
+                    _loop = _asyncio.DefaultEventLoopPolicy().new_event_loop()
+                    _asyncio.set_event_loop(_loop)
+                    try:
+                        _loop.run_until_complete(verify_pending_orders())
+                    finally:
+                        _loop.close()
+                        _asyncio.set_event_loop(None)
                 except Exception as _tp_err:
-                    log.debug(f"[PREDICTION] tpool verification error: {_tp_err}")
+                    log.debug(f"[PREDICTION] verification error: {_tp_err}")
                     verified_pending_buy = pending_buy
                     verified_pending_sell = pending_sell
             
@@ -1330,20 +1324,16 @@ def opportunistic_recovery():
         if _bot_instance and hasattr(_bot_instance, 'position_actor'):
             try:
                 import asyncio
-                import eventlet.tpool
 
                 _coro_stats = _bot_instance.position_actor.ask("GET_STATE", {}, timeout=3.0)
 
-                def _state_worker():
-                    _loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
-                    asyncio.set_event_loop(_loop)
-                    try:
-                        return _loop.run_until_complete(_coro_stats)
-                    finally:
-                        _loop.close()
-                        asyncio.set_event_loop(None)
-
-                state = eventlet.tpool.execute(_state_worker)
+                _loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
+                asyncio.set_event_loop(_loop)
+                try:
+                    state = _loop.run_until_complete(_coro_stats)
+                finally:
+                    _loop.close()
+                    asyncio.set_event_loop(None)
 
                 stats = state.get("opportunistic_recovery_stats", {})
                 
@@ -1431,20 +1421,16 @@ def opportunistic_positions():
         if _bot_instance and hasattr(_bot_instance, 'position_actor'):
             try:
                 import asyncio
-                import eventlet.tpool
 
                 coro2 = _bot_instance.position_actor.ask("GET_STATE", {}, timeout=3.0)
 
-                def _worker2():
-                    _loop = asyncio.DefaultEventLoopPolicy().new_event_loop()
-                    asyncio.set_event_loop(_loop)
-                    try:
-                        return _loop.run_until_complete(coro2)
-                    finally:
-                        _loop.close()
-                        asyncio.set_event_loop(None)
-
-                state = eventlet.tpool.execute(_worker2)
+                _loop2 = asyncio.DefaultEventLoopPolicy().new_event_loop()
+                asyncio.set_event_loop(_loop2)
+                try:
+                    state = _loop2.run_until_complete(coro2)
+                finally:
+                    _loop2.close()
+                    asyncio.set_event_loop(None)
                 all_positions = state.get("open_tranches", [])
                 opp_positions = [
                     {

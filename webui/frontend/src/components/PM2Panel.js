@@ -365,7 +365,7 @@ const PM2Panel = () => {
                 Run: <code>./toggle_pm2.sh enable</code>
               </li>
               <li>
-                Restart WebUI backend: <code>launchctl restart com.gridbot.webui.enhanced</code>
+                Restart WebUI backend: <code>launchctl stop com.gridbot.production.webui; sleep 3; launchctl start com.gridbot.production.webui</code>
               </li>
               <li>Refresh this page</li>
             </ol>

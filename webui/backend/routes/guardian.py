@@ -535,7 +535,7 @@ def _start_guardian():
     try:
         # Use launchctl to start Guardian (managed by LaunchAgent)
         result = subprocess.run(
-            ['launchctl', 'start', 'com.gridbot.webui.guardian'],
+            ['launchctl', 'start', 'com.gridbot.production.guardian'],
             capture_output=True,
             text=True,
             timeout=10
@@ -548,7 +548,7 @@ def _start_guardian():
         else:
             # LaunchAgent might not be loaded, try loading it first
             load_result = subprocess.run(
-                ['launchctl', 'load', str(Path.home() / 'Library/LaunchAgents/com.gridbot.webui.guardian.plist')],
+                ['launchctl', 'load', str(Path.home() / 'Library/LaunchAgents/com.gridbot.production.guardian.plist')],
                 capture_output=True,
                 text=True
             )
@@ -568,7 +568,7 @@ def _stop_guardian():
     try:
         # Use launchctl to stop Guardian
         result = subprocess.run(
-            ['launchctl', 'stop', 'com.gridbot.webui.guardian'],
+            ['launchctl', 'stop', 'com.gridbot.production.guardian'],
             capture_output=True,
             text=True,
             timeout=10

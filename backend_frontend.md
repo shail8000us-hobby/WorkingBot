@@ -1,6 +1,6 @@
 # Backend & Frontend Documentation
 
-**Last Updated:** March 5, 2026
+**Last Updated:** March 11, 2026
 
 ## Port Configuration
 
@@ -13,9 +13,11 @@
 | **Frontend (Dev)** | `3000` | Development server (optional) | Use for UI development |
 
 **Production Mode:**
-- Backend runs on port 5555 via LaunchAgent
+- Backend runs on port 5555 via LaunchAgent (`python3 webui/backend/app.py` directly — no Gunicorn)
 - Frontend production build served from `webui/frontend/build/`
 - Single port architecture
+
+> ⚠️ **DO NOT introduce Gunicorn.** It was tried and caused random crashes every few hours due to worker recycling (`max_requests`). Flask-SocketIO + `socketio.run()` is the correct stack for this single-user local dashboard.
 
 > ⚠️ **CRITICAL FOR AI AGENTS:** The user accesses the app at **http://localhost:5555** (production mode only). Any change to a frontend source file under `webui/frontend/src/` is **invisible at :5555 until you run `npm run build` AND restart the backend**. Never assume a source edit is live — always rebuild and restart. Hot reload at :3000 is NOT used by this user.
 
@@ -87,9 +89,17 @@ launchctl stop com.gridbot.production.webui && sleep 2 && launchctl start com.gr
 # Status
 launchctl list | grep gridbot
 
-# Logs
-tail -f ~/Projects/WorkingBot/logs/launchagent_webui_error.log
+# Logs (primary)
+tail -f ~/Projects/WorkingBot/logs/webui_production.log
+
+# Logs (errors)
+tail -f ~/Projects/WorkingBot/logs/webui_production_error.log
 ```
+
+### LaunchAgent plist
+`~/Library/LaunchAgents/com.gridbot.production.webui.plist`
+
+Runs: `.venv/bin/python3 webui/backend/app.py` — Flask-SocketIO's `socketio.run()` with `threading` async mode.
 
 ### Frontend Management
 ```bash

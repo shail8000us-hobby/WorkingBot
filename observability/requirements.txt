@@ -10,5 +10,3 @@ flask>=2.3.0
 # System metrics collection
 psutil>=5.9.0
 
-# Optional: Enhanced HTTP server
-gunicorn>=21.0.0

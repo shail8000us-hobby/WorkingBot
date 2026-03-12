@@ -1,5 +1,5 @@
 #!/bin/bash
-# Start GridBot WebUI Backend via Gunicorn (production server)
+# Start GridBot WebUI Backend (Flask-SocketIO / Python direct)
 #
 # Usage:
 #   ./start_webui.sh          # Normal start
@@ -13,32 +13,26 @@ PROJECT_DIR="/Users/ssr/Projects/WorkingBot"
 PID_FILE="/tmp/gridbot_webui.pid"
 LOCK_FILE="$HOME/.gridbot_webui_instance_5555.lock"
 LOG_FILE="$PROJECT_DIR/logs/webui_backend.log"
+PYTHON="$PROJECT_DIR/.venv/bin/python3"
 
 cd "$PROJECT_DIR"
 mkdir -p logs
 
-# Ensure gunicorn is in PATH
-export PATH="/Users/ssr/Library/Python/3.9/bin:/opt/homebrew/bin:$PATH"
 export PYTHONPATH="$PROJECT_DIR"
 
 # ============================================================================
 # Helper: Stop existing instance
 # ============================================================================
 stop_server() {
-    # Kill by PID file
     if [ -f "$PID_FILE" ]; then
         OLD_PID=$(cat "$PID_FILE")
         if ps -p "$OLD_PID" > /dev/null 2>&1; then
-            echo "Stopping Gunicorn (PID $OLD_PID)..."
+            echo "Stopping WebUI (PID $OLD_PID)..."
             kill "$OLD_PID" 2>/dev/null || true
-            # Wait for graceful shutdown (max 5s)
             for i in {1..10}; do
-                if ! ps -p "$OLD_PID" > /dev/null 2>&1; then
-                    break
-                fi
+                if ! ps -p "$OLD_PID" > /dev/null 2>&1; then break; fi
                 sleep 0.5
             done
-            # Force kill if still alive
             if ps -p "$OLD_PID" > /dev/null 2>&1; then
                 kill -9 "$OLD_PID" 2>/dev/null || true
             fi
@@ -46,11 +40,7 @@ stop_server() {
         rm -f "$PID_FILE"
     fi
 
-    # Also kill any orphaned app.py processes
-    pkill -f "gunicorn.*wsgi:app" 2>/dev/null || true
     pkill -f "python.*webui/backend/app.py" 2>/dev/null || true
-
-    # Clean stale lock
     rm -f "$LOCK_FILE"
 }
 
@@ -75,9 +65,9 @@ case "${1:-start}" in
     restart)
         stop_server
         sleep 2
-        ;; # Fall through to start
+        ;;
     start)
-        ;; # Fall through to start
+        ;;
     *)
         echo "Usage: $0 {start|stop|restart|status}"
         exit 1
@@ -85,30 +75,26 @@ case "${1:-start}" in
 esac
 
 # ============================================================================
-# Start Gunicorn
+# Start
 # ============================================================================
 stop_server
 sleep 1
 
-echo "🚀 Starting GridBot WebUI Backend (Gunicorn)..."
+echo "🚀 Starting GridBot WebUI Backend..."
 
-# Start Gunicorn with eventlet worker, writing PID file
-nohup gunicorn \
-    -c "$PROJECT_DIR/gunicorn_config.py" \
-    "webui.backend.wsgi:app" \
+nohup "$PYTHON" "$PROJECT_DIR/webui/backend/app.py" \
     > "$LOG_FILE" 2>&1 &
 
 NEW_PID=$!
 echo "$NEW_PID" > "$PID_FILE"
 
-echo "✅ Gunicorn started (PID: $NEW_PID)"
+echo "✅ Started (PID: $NEW_PID)"
 echo "📝 Logs: $LOG_FILE"
 
-# Wait for server to accept connections (server starts fast with deferred monitors)
 echo "⏳ Waiting for server..."
-for i in {1..20}; do
+for i in {1..30}; do
     if curl -s http://localhost:5555/api/health > /dev/null 2>&1; then
-        echo "✅ Server is responding on port 5555"
+        echo "✅ Server responding on port 5555"
         echo ""
         echo "   Dashboard: http://localhost:5555"
         echo "   Health:    http://localhost:5555/api/health"
@@ -118,7 +104,7 @@ for i in {1..20}; do
     sleep 1
 done
 
-echo "❌ Server failed to start within 20s"
+echo "❌ Server failed to start within 30s"
 echo "   Check logs: tail -50 $LOG_FILE"
 tail -20 "$LOG_FILE"
 exit 1

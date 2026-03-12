@@ -55,30 +55,23 @@ const BackendDownError = ({ onRetry }) => {
 
   const commands = [
     {
-      title: 'Start Backend (Enhanced)',
-      description: 'Recommended: Start WebUI with production stability',
-      command: 'launchctl start com.gridbot.webui.enhanced',
+      title: 'Start Backend',
+      description: 'Start WebUI backend via LaunchAgent',
+      command: 'launchctl start com.gridbot.production.webui',
       icon: <PowerIcon />,
       color: '#4CAF50',
     },
     {
-      title: 'Start Backend (Basic)',
-      description: 'Start WebUI using basic LaunchAgent',
-      command: 'launchctl start com.gridbot.webui',
-      icon: <PowerIcon />,
-      color: '#2196F3',
-    },
-    {
       title: 'Check Backend Status',
       description: 'Verify if the WebUI backend LaunchAgent is running',
-      command: 'launchctl list | grep gridbot.webui',
+      command: 'launchctl list | grep gridbot',
       icon: <TerminalIcon />,
       color: '#2196F3',
     },
     {
       title: 'Restart Backend (Enhanced)',
       description: 'Restart the enhanced WebUI backend',
-      command: 'launchctl restart com.gridbot.webui.enhanced',
+      command: 'launchctl restart com.gridbot.production.webui',
       icon: <RefreshIcon />,
       color: '#FF9800',
     },
