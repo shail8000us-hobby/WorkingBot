@@ -3,10 +3,11 @@
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
 > **Last Updated:** March 12, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** Production-ready.
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
+> **ATM Shield:** Proactive close + full position shift + loss recovery when spot approaches active strike — see §2.20.
 > **Operator Strike Controls:** Set Active Strike, Close Strike (manual buyback + re-establish farther OTM), Operator Position Inject — see §16.
 > **Remaining Hardening:** See `MMM_10_OF_10_PRODUCTION_PLAN.md` for 19 additional issues found in post-robustv2 audit.
 
@@ -32,6 +33,11 @@ MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustmen
 14. **Split Ledger** frees frozen positions from blocking the active position cap — only `active_lots` count against `max_lots_per_side`, with `max_total_exposure` as a safety ceiling on combined active+frozen
 15. **Shift-Time Recycle** proactively closes cheap frozen positions at each strike shift, folding buyback cost into the new sell lot calculation
 16. **Operator Strike Controls** — three manual intervention tools on the Positions tab:
+    - **Set Active Strike (📌):** Switch the algo's monitoring focal point to any open strike without placing any order
+    - **Close Strike (🔴):** Buy back ALL lots at a chosen strike (exchange order), remove from ledger; if active_strike is closed, the remaining open strike with most lots auto-promotes
+    - **Operator Position Inject (💉):** Sell new lots at any strike and register them in the algo ledger
+    - Enables the operator workflow: close a near-ATM risk strike → inject at a safer far-OTM strike → reduces perp futures usage
+17. **ATM Shield** — automated proactive defense: when spot approaches within `atm_shield_proximity_pct` of an active strike, the algo pre-emptively closes all active positions on that side and re-establishes them at a safer OTM strike. Full position shift (original lots preserved) + loss recovery lots + sympathetic rebalance of the safe side.
     - **Set Active Strike (📌):** Switch the algo's monitoring focal point to any open strike without placing any order
     - **Close Strike (🔴):** Buy back ALL lots at a chosen strike (exchange order), remove from ledger; if active_strike is closed, the remaining open strike with most lots auto-promotes
     - **Operator Position Inject (💉):** Sell new lots at any strike and register them in the algo ledger
@@ -234,6 +240,12 @@ Replaces the old binary whipsaw pause (`_whipsaw_paused_at` → manual resume) w
 | `shift_recycle_premium_floor` | 60.0 | **Yes** |
 | `shift_recycle_max_pct` | 1.0 | **Yes** |
 | `shift_recycle_floor_ratio` | 0.40 | **Yes** |
+| `atm_shield_enabled` | false | **Yes** |
+| `atm_shield_proximity_pct` | 0.5 | **Yes** |
+| `atm_shield_target_otm_pct` | 1.0 | **Yes** |
+| `atm_shield_loss_split_aggressor` | 0.3 | **Yes** |
+| `atm_shield_max_per_session` | 3 | **Yes** |
+| `atm_shield_cooldown_mins` | 10 | **Yes** |
 
 "Hot Reload = Yes" means the parameter can be changed via WebUI while the algo is running and takes effect on the next heartbeat interval.
 
@@ -525,9 +537,107 @@ Lowered from 0.7 → 0.5 in `DEFAULT_PARAMS`. M1 harvesting now starts earlier (
 
 ---
 
+### 2.20 ATM Shield — Proactive Close & Retreat (Implemented March 12, 2026)
+
+**New File:** `mmm_atm_shield.py` (~450 lines)
+
+Pre-emptively closes endangered-side positions when spot price approaches within `atm_shield_proximity_pct` (default 0.5%) of the active strike. This fires at **Step 5.5** in the heartbeat — between cooldown checks (Step 5) and trigger evaluation (Step 6) — so it acts BEFORE the standard adjustment logic.
+
+**Core philosophy:** Unlike `close_at_ATM` (emergency stop), the ATM Shield is a *revenue-preserving retreat*. It closes the near-ATM position AND re-establishes it at a safer OTM strike, preserving premium collection capacity while protecting against gamma explosion.
+
+#### How it Works
+
+**Step 1 — Close:** Buy back ALL active positions on the endangered side.
+
+**Step 2 — Find new strike:** Scan options chain for a strike at `atm_shield_target_otm_pct` (default 1.0%) OTM or farther. Widens progressively with each subsequent shield fire on that side.
+
+**Step 3 — Re-sell (full position shift + loss recovery):**
+- **Endangered side (exempt from trend Tier 1/2 lot reduction):**
+  - `base_lots` = `total_closed_lots` (original lot count — full position shift, not just recovery)
+  - `recovery_lots` = `ceil(buyback_loss × 0.30 / (new_premium × LOT_SIZE_BTC))`
+  - Total re-sell = `base_lots + recovery_lots`, capped at `max_lots_per_side`
+- **Safe side (normal regime rules apply):**
+  - `recovery_lots` = `ceil(buyback_loss × 0.70 / (safe_premium × LOT_SIZE_BTC))`
+  - Blocked by BLOCK_CE/PE_SELLS trend regime (only the endangered side is exempt)
+
+**Example:** CE has 10 lots @ $100. Shield fires at premium $200.
+- Buyback loss = ($200-$100) × 0.001 × 10 = $1.00
+- New CE strike OTM, premium = $80
+- CE re-sell: 10 (shifted) + ceil($0.30 / ($80×0.001)) = 10 + 4 = **14 lots**
+- PE re-sell: ceil($0.70 / ($60×0.001)) = **12 lots** (recovery only)
+
+**Step 4 — Sympathetic rebalance:** If safe-side premium has decayed below `shift_threshold`, immediately trigger a strike shift on the safe side.
+
+#### Time Multiplier
+
+As expiry approaches, the proximity threshold widens and the target OTM distance widens:
+```
+hours_to_expiry < 0.5h  →  time_mult = 3.0   (fires very early, retreats far)
+hours_to_expiry = 1h    →  time_mult = 3.0
+hours_to_expiry = 3h    →  time_mult = 1.0   (normal)
+```
+
+#### Gate Checks (must ALL pass to fire)
+1. `atm_shield_enabled = True`
+2. Session status = RUNNING
+3. Margin tier not RED or CRITICAL
+4. `minutes_to_expiry > auto_close_mins`
+5. Cooldown: `>= atm_shield_cooldown_mins` since last fire on this side
+6. Not exhausted: `shield_count < atm_shield_max_per_session`
+7. Not already a proactive shift this beat
+
+#### Regime Interaction
+- In `_compute_regime_action()` (mmm_regime.py): when shield is enabled and has capacity, Trend Tier 1/2 returns `ACTION_NORMAL` instead of `ACTION_WARN`. Tier 3/4 still blocks all sells (vol/gamma blocking is always respected).
+- In `calculate_lots_to_sell()` (mmm_engine.py): T1 lot-reduction block is bypassed when `atm_shield_enabled`.
+- In `wind_down_on_atm` and `close_at_atm` blocks: if shield still has capacity, these defer and let the shield act instead.
+
+#### Parameters
+
+| Parameter | Default | Range | Description |
+|-----------|---------|-------|-------------|
+| `atm_shield_enabled` | `false` | bool | Master on/off switch |
+| `atm_shield_proximity_pct` | `0.5` | 0.1–5.0 | % distance from spot to strike that triggers fire |
+| `atm_shield_target_otm_pct` | `1.0` | 0.1–10.0 | Target OTM % for new strike (progressive widening per fire) |
+| `atm_shield_loss_split_aggressor` | `0.3` | 0.0–1.0 | Loss fraction recovered on endangered side (0.3 = 30%); remaining 70% recovered on safe side |
+| `atm_shield_max_per_session` | `3` | 1–10 | Max shield fires per side per session |
+| `atm_shield_cooldown_mins` | `10` | 0–60 | Minimum minutes between consecutive fires on same side |
+
+All 6 parameters are **hot-reloadable**.
+
+#### Session State Keys
+| Key | Description |
+|-----|-------------|
+| `_atm_shield_count_ce` | CE fire count this session |
+| `_atm_shield_count_pe` | PE fire count this session |
+| `_atm_shield_last_fire_ce` | ISO timestamp of last CE fire |
+| `_atm_shield_last_fire_pe` | ISO timestamp of last PE fire |
+| `_atm_shield_exhausted_ce` | True when CE count >= max_per_session |
+| `_atm_shield_exhausted_pe` | True when PE count >= max_per_session |
+| `_atm_shield_fired` | Set True when shield fires this beat; popped by trigger-skip logic |
+
+#### Files Modified
+| File | Change |
+|------|--------|
+| `mmm_atm_shield.py` | **NEW** — core shield logic |
+| `mmm_monitor.py` | Import + Step 5.5 block + `wind_down_on_atm`/`close_at_atm` deferral + trigger-skip |
+| `mmm_regime.py` | Shield-aware override in `_compute_regime_action()` |
+| `mmm_engine.py` | T1 lot-reduction bypass in `calculate_lots_to_sell()` |
+| `mmm_strike_shift.py` | `min_otm_distance` parameter in `find_new_strike()` |
+| `mmm_state.py` | 6 params in DEFAULT_PARAMS + HOT_RELOAD_PARAMS |
+| `mmm_config.py` | 6 PARAM_RULES entries |
+| `mmm_activity.py` | `'atm_shield': 'ATM Shield'` activity type |
+| `mmm_websocket.py` | `emit_atm_shield()` function |
+| `MMMSettingsDialog.js` | ATM Shield settings group (pink, last group) |
+
+**WebSocket event:** `mmm_atm_shield` — emitted on every shield fire with `{side, endangered_strike, spot_price, distance_pct, fire_number, fires_remaining, new_strike, realized_loss, lots_closed, lots_sold_endangered, lots_sold_safe, sympathetic_shifted}`.
+
+**Activity type:** `atm_shield` — logged to activity ring buffer.
+
+---
+
 ## 3. ARCHITECTURE
 
-### 3.1 File Structure (Complete — Verified March 3, 2026)
+### 3.1 File Structure (Complete — Verified March 12, 2026)
 
 ```
 webui/
@@ -566,6 +676,7 @@ webui/
 │           ├── mmm_perp_hedge.py             ← Perpetual futures delta hedge (added Feb 22, 2026, ~441 lines)
 │           ├── mmm_harvester.py              ← M1 Profit Harvesting + M3 Asymmetry scanner (~246 lines, added Mar 3, 2026)
 │           ├── mmm_recycler.py               ← M2 Lot Recycling two-phase execution (~514 lines, added Mar 3, 2026)
+│           ├── mmm_atm_shield.py             ← ATM Shield proactive close & retreat (~450 lines, added Mar 12, 2026)
 │           ├── mmm_sessions.db               ← SQLite session data (replaces mmm_sessions.json)
 │           └── tests/                        ← Unit tests (12 files)
 │
