@@ -538,3 +538,246 @@ For 20DTE: gamma is naturally low, premiums are $200-$800, and a "normal" daily 
 | Weekend mode | No | Not needed | Phase 4 | Phase 4 |
 
 **Bottom line:** 5DTE works TODAY with just parameter tuning. 10DTE needs adaptive scaling fixes (Phase 2). 20DTE needs the full Phase 3 implementation. Start with Phase 1 presets — they enable all DTEs immediately with acceptable (not optimal) behavior.
+
+---
+---
+
+# Strategic Analysis & Recommendations
+
+> **Analyst:** Deep review of multi-expiry plan against current MMM architecture, Delta Exchange India market reality, and options trading economics
+> **Date:** March 12, 2026
+> **Verdict:** YES — but start with 5DTE only, with significant plan modifications
+
+---
+
+## 1. Is This a Good Idea?
+
+**YES, with caveats.** Expanding to multi-DTE diversifies your risk profile and unlocks premium that 0DTE can't access. But the plan as written has gaps that must be addressed before implementation.
+
+### Why YES:
+- **0DTE is fragile.** One bad intraday move and the entire day's premium is gone. No time to recover.
+- **5DTE is the sweet spot.** Meaningful theta (roughly 50-70% of 0DTE theta-per-strike), much lower gamma (positions don't blow up on a 2% move), and enough time to ride out whipsaws.
+- **Premium stacking.** Running 0DTE + 5DTE simultaneously collects premium across different risk profiles. When 0DTE dies on a volatile day, 5DTE survives.
+- **The current architecture already supports it.** Sessions have expiry dates, the chain service fetches all available expiries, and most features are parameter-driven.
+
+### Why NOT yet for 10/20 DTE:
+- **20DTE is a fundamentally different algo.** It's selling vega, not theta. Your trigger-adjustment model assumes theta decay drives premium changes. At 20DTE, premium moves are 80% vega (IV changes) and 20% theta. The entire decision engine needs rethinking for that.
+- **10DTE is marginal.** Theta becomes meaningful only in the last 3-4 days, meaning you hold risk for 6-7 days with no edge.
+- **Liquidity kills you.** Delta Exchange India is a small exchange. 0DTE near-ATM options have decent volume. 10-20 DTE OTM options may literally have zero bids. Your `smart_execute()` will fail or suffer catastrophic slippage.
+
+---
+
+## 2. Impact on Current Working 0DTE System
+
+### Phase 1 (Presets): ZERO IMPACT
+Adding a `DTE_PRESETS` dictionary and a dropdown is purely additive. No existing code changes. Safe.
+
+### Phase 2 (Adaptive Scaling): MEDIUM RISK
+This is where it gets dangerous:
+- **`compute_adaptive_interval()`** — The current function uses absolute hours (>30h, 20-30h, etc.). The plan proposes percentage-based tiers. **If you change the function signature (add `total_dte_hours` parameter), every caller must be updated.** Missing one caller = runtime crash in production.
+- **`apply_theta_acceleration()`** — Currently hardcoded for last 120 minutes. Changing this affects 0DTE behavior if not carefully branched.
+
+**Recommendation:** Do NOT modify existing functions. Create NEW functions:
+```
+compute_adaptive_interval_v2(base_interval, hours_to_expiry, total_dte_hours)
+apply_theta_acceleration_v2(session, minutes_to_expiry, total_dte_mins)
+```
+Have 0DTE continue using the originals. Only new multi-DTE sessions use the v2 functions. Switch 0DTE to v2 only after thorough regression testing.
+
+### Phase 3 (DTE Intelligence): HIGH RISK
+Theta curve phases, DTE-aware strikes, overnight mode — these touch `mmm_engine.py`, `mmm_initializer.py`, `mmm_monitor.py`. Each is a core production module.
+
+**Recommendation:** Implement Phase 3 features behind a `dte_intelligence_enabled` flag. Default to `False` for 0DTE sessions. Only activate for explicitly configured multi-DTE sessions.
+
+### Phase 4 (Multi-Session): CRITICAL SAFETY
+Running multiple sessions without shared margin awareness is the single most dangerous thing in this plan. **One session can blow up the account while another keeps adding positions.**
+
+**This must be moved to Phase 1 or at minimum before you run two sessions simultaneously.**
+
+---
+
+## 3. Critical Gaps in the Plan
+
+### GAP-1: Liquidity Validation Is Not Addressed Seriously
+
+The plan mentions liquidity under "Key Risks" but only as a mitigation ("check bid-ask spread"). This is the #1 showstopper.
+
+**What to do:**
+- Before starting ANY multi-DTE session, run a liquidity scan: fetch the full chain for that expiry, check how many strikes have `bid > 0` and `bid_size >= lots`. If fewer than 4 strikes (2 CE + 2 PE) have liquidity, refuse to start.
+- Add `min_liquidity_lots` parameter (default: 5). Only consider strikes where `bid_size >= min_liquidity_lots`.
+- Log liquidity snapshots — this data will tell you whether 10/20 DTE is even feasible on Delta Exchange India.
+
+### GAP-2: Multi-Session Risk Must Be Phase 1
+
+The plan puts `MMMPortfolioManager` in Phase 4. This is backwards. You CANNOT safely run two sessions without:
+- **Shared margin monitoring** — the exchange sees one account. Two sessions independently checking "am I at 60% margin?" will both say "yes" even when combined they're at 90%.
+- **Aggregate max_loss** — if 0DTE session hits -$4000 and 5DTE hits -$3000, total loss is -$7000. Each session thinks it's under its individual $5000 cap.
+
+**Minimum viable safety: Before Phase 2, implement a simple `aggregate_session_pnl()` function that all running sessions check. If combined loss exceeds a global cap (`global_max_loss`), pause all sessions.**
+
+### GAP-3: No Profitability Edge Analysis
+
+The plan assumes "more DTE = more premium = more profit." This is wrong. Premium collected scales with DTE, but so does risk. The actual edge in options selling comes from the theta/gamma ratio, and this ratio behaves differently across DTEs:
+
+| DTE | Theta/day | Gamma | Theta/Gamma Ratio | Edge |
+|---|---|---|---|---|
+| 0 DTE | Very high | Very high | Medium | Fast decay but fragile |
+| 3-5 DTE | High | Moderate | **HIGHEST** | **Sweet spot** |
+| 10 DTE | Medium | Low | Medium | Decent but slow |
+| 20 DTE | Low | Very low | Low | No theta edge for 15 days |
+
+**The plan should target 3-7 DTE, not 5/10/20 as proposed.** The theta/gamma ratio peaks in this range.
+
+### GAP-4: No P&L Targets Per DTE
+
+Without targets, you can't measure success. Add:
+- 0DTE: Target $500-1000/day
+- 5DTE: Target $2000-3000/week
+- 10DTE: Target $3000-5000/biweek
+
+If a DTE category consistently misses its target over 4 weeks, it's not profitable and should be dropped.
+
+### GAP-5: No Backtest Plan
+
+The preset parameter values (adjustment_interval=900 for 5DTE, min_trigger_move=20%, etc.) are educated guesses. Before going live, you need:
+1. Historical premium data for Delta Exchange BTC options at each DTE
+2. A simulator that replays the MMM algo with different parameters
+3. At minimum 30 days of simulated results before risking real money
+
+---
+
+## 4. Profitability Strategies
+
+### Strategy A: The Barbell (Recommended First)
+
+Run 0DTE aggressively + 5DTE conservatively:
+- **0DTE session:** Standard parameters, 10 lots/side, $5000 max loss. High theta, accepts gamma risk.
+- **5DTE session:** Conservative parameters, 5 lots/side, $7500 max loss. Low theta but survives the intraday whipsaws that kill 0DTE.
+
+**Why this works:** On quiet days, 0DTE harvests theta fast. On volatile days, 0DTE hits max loss but 5DTE barely moves (low gamma). Over a week, the 5DTE premium covers 1-2 bad 0DTE days.
+
+### Strategy B: Premium Targeting (Advanced)
+
+Don't choose a DTE — choose a premium range. Whatever DTE gives you $100-200 premium at a safe OTM distance, use it.
+
+Low IV day → 0DTE premiums are thin → use 5DTE for better premium
+High IV day → 0DTE premiums are fat → use 0DTE for fast decay
+
+This requires `mmm_initializer.py` to scan across all expiries and recommend the best DTE/strike combination. Add as Phase 3 feature.
+
+### Strategy C: RV-Based DTE Selection (Advanced)
+
+Your volatility collector tracks realized volatility (RV). Use it:
+- **RV < 30%:** Market is calm. Use 5-7 DTE, larger positions, wider strikes. Theta grinds steadily.
+- **RV 30-50%:** Market is normal. Use 0DTE. Fast theta compensates for moderate gamma.
+- **RV > 50%:** Market is wild. Use 0DTE only with small positions, or don't trade. Multi-DTE gets whipsawed.
+
+### Strategy D: Theta Harvesting with Trailing Stops
+
+For 5DTE sessions, implement time-based trailing stops:
+- At entry, set `trailing_stop_pct = 0.5` (protect 50% of peak PnL)
+- After 3 days (>50% of DTE elapsed), tighten to `trailing_stop_pct = 0.7`
+- After 4 days (>80% elapsed), tighten to `trailing_stop_pct = 0.85`
+
+This captures accelerating theta while protecting accumulated gains.
+
+---
+
+## 5. Plan Improvements
+
+### 5.1 Revised Phase Roadmap
+
+| Phase | Scope | Effort | Prerequisite |
+|---|---|---|---|
+| **Phase 0** | Liquidity audit + aggregate PnL safety | 1-2 days | None |
+| **Phase 1** | DTE presets + session tagging | 1-2 days | Phase 0 |
+| **Phase 1.5** | Paper-trade 5DTE with presets (2 weeks) | 0 code | Phase 1 |
+| **Phase 2** | Adaptive scaling v2 (new functions, don't break old) | 3-5 days | Phase 1.5 results |
+| **Phase 3** | DTE-aware intelligence (behind feature flag) | 1-2 weeks | Phase 2 |
+| **Phase 4** | Full multi-session portfolio + rollover | 2-4 weeks | Phase 3 stable |
+
+### 5.2 Drop 20DTE From Initial Scope
+
+20DTE is a different algo. The trigger-based adjustment model doesn't suit it. The first 15 days you're just holding risk with no edge. If you want 20DTE, build a separate "swing options" module that:
+- Enters based on IV percentile (sell when IV is high)
+- Exits based on IV compression (buy back when IV drops)
+- Uses fixed delta targets, not premium-based triggers
+
+This is a separate project, not an MMM extension.
+
+### 5.3 Simplify Theta Curve Phases
+
+The plan proposes 4 phases (ACCUMULATION/NORMAL/ACCELERATION/EXPIRY). This is over-engineering. Use 2:
+
+| Phase | DTE Remaining | Behavior |
+|---|---|---|
+| **HOLD** | > 40% of total DTE | Conservative lots (0.7x), wide triggers, no recycling. Let positions mature. |
+| **HARVEST** | < 40% of total DTE | Normal lots, normal triggers, full M1/M2/M3. Theta is now meaningful. |
+
+For 0DTE (24h), HOLD = first 14h, HARVEST = last 10h (roughly matches current behavior).
+For 5DTE (120h), HOLD = first 72h (3 days), HARVEST = last 48h (2 days).
+
+### 5.4 Add Liquidity Gate to Session Start
+
+```
+NEW SAFETY CHECK at session creation:
+1. Fetch chain for target expiry
+2. Count strikes with bid > 0 and bid_size >= min_liquidity_lots
+3. If CE strikes < 2 OR PE strikes < 2: REFUSE to start
+4. Log: "Insufficient liquidity for {expiry}: {n_ce} CE strikes, {n_pe} PE strikes"
+```
+
+### 5.5 Preset Values — Corrections
+
+Some preset values in the plan need adjustment based on current code analysis:
+
+**5DTE Preset corrections:**
+- `max_lots_per_side: 75` → Change to `50`. With 5x longer DTE, you need fewer lots. 75 is too aggressive for a new DTE category.
+- `lot_velocity_limit: 15` → Change to `8`. Slower accumulation is safer for multi-day.
+- Add `dte_category: '5DTE'` for session tagging.
+
+**10DTE Preset corrections:**
+- `max_lots_per_side: 50` → Change to `30`. Conservative until proven profitable.
+- `wind_down_hours_before_expiry: 24` → Change to `36`. Give more wind-down runway.
+- `adjustment_interval: 1800` → Change to `1200` (20 min). 30 min is too slow — you miss opportunities.
+
+### 5.6 Key Metrics to Track
+
+Before declaring multi-DTE profitable, track these per DTE:
+1. **Premium collected per day** (total premium / DTE days)
+2. **Max drawdown** (worst unrealized loss during session)
+3. **Theta efficiency** = (realized profit) / (theoretical theta collected). Should be > 0.5.
+4. **Fill rate** = (orders filled) / (orders attempted). Below 80% means liquidity is too thin.
+5. **Adjustment count per day** — if 5DTE adjusts more than 3x/day, triggers are too sensitive.
+
+---
+
+## 6. Risk Assessment Summary
+
+| Risk | Severity | Mitigation | Status |
+|---|---|---|---|
+| Liquidity gap for longer DTE | **CRITICAL** | Pre-start liquidity gate | Not in plan — ADD |
+| Multi-session margin collision | **CRITICAL** | Aggregate PnL tracking | In plan as Phase 4 — MOVE TO PHASE 0 |
+| Phase 2 breaks 0DTE | **HIGH** | New v2 functions, don't modify originals | Not in plan — ADD |
+| 20DTE has no theta edge | **HIGH** | Drop from scope | Not in plan — ADD |
+| Preset values untested | **MEDIUM** | Paper-trade 2 weeks before live | Not in plan — ADD |
+| Overnight gap risk (5DTE) | **MEDIUM** | Perp hedge + wider max_loss | Addressed |
+| Code complexity increase | **MEDIUM** | Feature flags, DTE-aware branching | Partially addressed |
+
+---
+
+## 7. Final Recommendation
+
+**Do this in order:**
+1. **Phase 0:** Add aggregate PnL safety check across sessions + liquidity gate at session start. These are safety requirements, not features.
+2. **Phase 1:** Add DTE presets with 0DTE and 5DTE profiles only. No 10DTE/20DTE yet.
+3. **Paper-trade 5DTE for 2 weeks** using the 5DTE preset. Track the metrics in §5.6. Adjust presets based on real data.
+4. **Phase 2:** If 5DTE paper-trade is profitable, implement adaptive scaling v2 (new functions, keep old ones for 0DTE).
+5. **Consider 10DTE only after 5DTE has 30+ days of profitable live trading.**
+6. **Never implement 20DTE as an MMM extension.** If you want it, build a separate IV-based swing module.
+
+The MMM architecture is strong enough for 5DTE today. Don't over-build — prove profitability at each step before adding complexity.
+
+---
+
+*Analysis based on review of current MMM codebase (32 modules, ~32,900 lines), Delta Exchange India API capabilities, and options pricing theory.*
