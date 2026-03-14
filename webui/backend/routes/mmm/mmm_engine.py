@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from .mmm_state import recompute_side_lots
 from .mmm_trigger import update_trigger_snapshots
 from .mmm_constants import LOT_SIZE_BTC, strike_key
+from webui.backend.sealed import sealed
 
 # Fix #19: Decimal precision helper — converts floats/ints to Decimal
 # for all internal P&L arithmetic to avoid IEEE 754 rounding accumulation.
@@ -298,6 +299,7 @@ class MMMEngine:
     # §5.3-5.4: Determine strike and lots
     # =========================================================================
 
+    @sealed
     def calculate_lots_to_sell(
         self,
         session: Dict,

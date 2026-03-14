@@ -1419,15 +1419,17 @@ const OptionsPanel = () => {
         const spotMove = liveSpot > 0 && pollSpot > 0 ? liveSpot - pollSpot : 0;
         const adjustedDelta = perContractDelta + perContractGamma * spotMove;
 
-        greeks.delta += adjustedDelta * size;
-        greeks.gamma += perContractGamma * Math.abs(size);
-        // Theta: short position (size < 0) with negative per-contract theta = positive portfolio theta (earning)
+        // 1 lot = 0.001 BTC — API greeks are per 1 BTC notional, multiply by 0.001.
+        // Theta/vega already divide by 1000 (same as × 0.001) for USD conversion.
+        const LOT_MULT = 0.001;
+        greeks.delta += adjustedDelta * size * LOT_MULT;
+        greeks.gamma += perContractGamma * Math.abs(size) * LOT_MULT;
         greeks.theta += (perContractTheta / 1000) * size;
         greeks.vega += (perContractVega / 1000) * Math.abs(size);
         greeks.count++;
 
         // Separate delta by underlying asset for futures equivalent display
-        const deltaContribution = adjustedDelta * size;
+        const deltaContribution = adjustedDelta * size * LOT_MULT;
         if (underlying === 'BTC') {
           greeks.btcDelta += deltaContribution;
         } else if (underlying === 'ETH') {
@@ -1445,7 +1447,7 @@ const OptionsPanel = () => {
       const currentSize = Math.abs(position.size || 0);
       const pnlPct = position.pnl_percentage || 0;
       const positionDelta = position.greeks?.delta
-        ? parseFloat(position.greeks.delta) * position.size
+        ? parseFloat(position.greeks.delta) * position.size * 0.001
         : 0;
 
       let recommendation = {
@@ -2264,6 +2266,7 @@ const OptionsPanel = () => {
             : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${symbol} (Pending: ${execType})`,
         });
         fetchDashboard(); // BUG-29 FIX: refresh all panel data after order
+        fetchPendingOrders(); // immediate pending orders refresh (bypasses dashboard cache)
       } else {
         setOrderResult({ type: 'error', message: data?.error || 'Quick order failed' });
       }
@@ -2396,6 +2399,7 @@ const OptionsPanel = () => {
             message: `🏎️ SSR ${ssrMode.toUpperCase()}: ${side.toUpperCase()} ${size} ${position.product_symbol} - monitoring started`,
           });
           fetchDashboard(); // BUG-29 FIX
+          fetchPendingOrders(); // immediate pending orders refresh
         } else {
           setOrderResult({ type: 'error', message: data?.error || 'Failed to place SSR order' });
         }
@@ -2443,6 +2447,7 @@ const OptionsPanel = () => {
               : `⏳ Order Placed: ${side.toUpperCase()} ${size} ${position.product_symbol} (Pending: ${execType})`,
           });
           fetchDashboard(); // BUG-29 FIX
+          fetchPendingOrders(); // immediate pending orders refresh
         } else {
           setOrderResult({ type: 'error', message: data?.error || 'Failed to add to position' });
         }
@@ -2750,6 +2755,7 @@ const OptionsPanel = () => {
           message: `🏎️ ${executionLabel}: ${uiResults.filter(r => r.success).length}/${orders.length} orders monitoring`,
         });
         fetchDashboard(); // BUG-29 FIX
+        fetchPendingOrders(); // immediate pending orders refresh
         return;
       }
 
@@ -2819,6 +2825,7 @@ const OptionsPanel = () => {
           message: `✅ Batch complete: ${successful} success, ${failed} failed in ${executionTime}`,
         });
         setTimeout(() => setOrderResult(null), 5000);
+        fetchPendingOrders(); // immediate pending orders refresh
 
         devLog(`[BATCH-COMPLETE] ${successful} success, ${failed} failed in ${executionTime}`);
 
@@ -3431,16 +3438,12 @@ const OptionsPanel = () => {
 
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2, width: '100%' }}>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-          {/* ═══ Phase 2: Primary Header Bar ═══ */}
-          <Box
-            sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}
-          >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* ═══ Row 1: Header — title, status, active badges, actions ═══ */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
               <Typography variant="subtitle1" fontWeight="600" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                 <ShowChartIcon fontSize="small" /> Options Positions
               </Typography>
-
-              {/* Status Badge */}
               {status && (
                 <Chip
                   icon={status.trading_allowed ? <CheckCircleIcon /> : <BlockIcon />}
@@ -3449,111 +3452,8 @@ const OptionsPanel = () => {
                   size="small"
                 />
               )}
-
               <Chip label={`${positions.length} positions`} size="small" variant="outlined" />
-
-              {/* Turbo Mode Toggle — stays in primary bar for fast access */}
-              <Tooltip title={turboMode ? "Exit Turbo Mode - Show all features" : "Turbo Mode - Ultra-fast expiry day trading (minimal UI, keyboard shortcuts)"}>
-                <Button
-                  size="small"
-                  variant={turboMode ? 'contained' : 'outlined'}
-                  color={turboMode ? 'error' : 'warning'}
-                  onClick={() => setTurboMode(!turboMode)}
-                  sx={{ fontWeight: 'bold' }}
-                  startIcon={turboMode ? '⚡' : null}
-                >
-                  {turboMode ? '⚡ TURBO' : 'Turbo'}
-                </Button>
-              </Tooltip>
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-              {/* Keyboard Shortcuts — tooltip instead of permanent bar */}
-              <Tooltip
-                title={
-                  <Box sx={{ p: 0.5 }}>
-                    <Typography variant="caption" fontWeight="bold" sx={{ display: 'block', mb: 0.5 }}>⌨️ Keyboard Shortcuts</Typography>
-                    <Typography variant="caption" component="div">B = Buy &nbsp;|&nbsp; S = Sell &nbsp;|&nbsp; C = Close</Typography>
-                    <Typography variant="caption" component="div">R = Refresh &nbsp;|&nbsp; Esc = Cancel</Typography>
-                    <Typography variant="caption" component="div">↑/↓ = Navigate rows</Typography>
-                  </Box>
-                }
-                arrow
-                placement="bottom-end"
-              >
-                <IconButton size="small" sx={{ color: 'text.secondary' }}>
-                  <HelpOutlineIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title="Sound Settings">
-                <IconButton
-                  onClick={() => setSoundSettingsOpen(true)}
-                  size="small"
-                  color="primary"
-                >
-                  <VolumeIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-
-              <Tooltip title="Refresh">
-                <IconButton onClick={handleRefresh} disabled={refreshing} size="small">
-                  {refreshing ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
-                </IconButton>
-              </Tooltip>
-
-              {/* Toggle secondary toolbar */}
-              <Tooltip title={secondaryToolbarOpen ? 'Hide toolbar' : 'More controls'}>
-                <IconButton
-                  size="small"
-                  onClick={() => {
-                    setSecondaryToolbarOpen(prev => !prev);
-                  }}
-                  sx={{ color: secondaryToolbarOpen ? 'primary.main' : 'text.secondary' }}
-                >
-                  <KeyboardArrowDownIcon
-                    fontSize="small"
-                    sx={{
-                      transition: 'transform 0.2s',
-                      transform: secondaryToolbarOpen ? 'rotate(180deg)' : 'rotate(0deg)',
-                    }}
-                  />
-                </IconButton>
-              </Tooltip>
-            </Box>
-          </Box>
-
-          {/* ═══ Phase 2: Secondary Toolbar (collapsible) ═══ */}
-          <Collapse in={secondaryToolbarOpen}>
-            <Box
-              sx={{
-                display: 'flex',
-                gap: 1,
-                flexWrap: 'wrap',
-                alignItems: 'center',
-                mb: 1,
-                py: 0.75,
-                px: 1,
-                bgcolor: 'action.hover',
-                borderRadius: 1,
-                border: '1px solid',
-                borderColor: 'divider',
-              }}
-            >
-              {/* Polling interval */}
-              <Tooltip title="Change price polling interval">
-                <Button
-                  size="small"
-                  variant={pollInterval === 1000 ? 'contained' : 'outlined'}
-                  color={pollInterval === 1000 ? 'primary' : 'inherit'}
-                  onClick={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
-                  sx={{ fontSize: '0.7rem', py: 0.25 }}
-                >
-                  ⏱ Poll: {pollInterval / 1000}s
-                </Button>
-              </Tooltip>
-
-              {/* Custom order indicator */}
+              {/* Active-state badges — only visible when relevant */}
               {customOrder.length > 0 && (
                 <Chip
                   icon={<DragIcon />}
@@ -3570,8 +3470,6 @@ const OptionsPanel = () => {
                   }
                 />
               )}
-
-              {/* Show hidden positions */}
               {hiddenPositions.length > 0 && (
                 <Chip
                   label={`👁 ${hiddenPositions.length} hidden`}
@@ -3582,8 +3480,6 @@ const OptionsPanel = () => {
                   onDelete={() => setHiddenPositions([])}
                 />
               )}
-
-              {/* Selected for payoff */}
               {selectedPositionsForPayoff.length > 0 && (
                 <Chip
                   size="small"
@@ -3592,8 +3488,21 @@ const OptionsPanel = () => {
                   variant="outlined"
                 />
               )}
+            </Box>
 
-              {/* Position Adjustment Button */}
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+              <Tooltip title={turboMode ? "Exit Turbo Mode" : "Turbo Mode - Ultra-fast expiry day trading"}>
+                <Button
+                  size="small"
+                  variant={turboMode ? 'contained' : 'outlined'}
+                  color={turboMode ? 'error' : 'warning'}
+                  onClick={() => setTurboMode(!turboMode)}
+                  sx={{ fontWeight: 'bold' }}
+                  startIcon={turboMode ? '⚡' : null}
+                >
+                  {turboMode ? '⚡ TURBO' : 'Turbo'}
+                </Button>
+              </Tooltip>
               {positions.length > 0 && !turboMode && (
                 <Tooltip title="Adjust positions - Add/close with live payoff preview">
                   <Button
@@ -3608,46 +3517,127 @@ const OptionsPanel = () => {
                   </Button>
                 </Tooltip>
               )}
+              <Tooltip title="Change polling interval">
+                <Button
+                  size="small"
+                  variant={pollInterval === 1000 ? 'contained' : 'outlined'}
+                  color={pollInterval === 1000 ? 'primary' : 'inherit'}
+                  onClick={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
+                  sx={{ fontSize: '0.7rem', py: 0.25 }}
+                >
+                  ⏱ {pollInterval / 1000}s
+                </Button>
+              </Tooltip>
+              <Tooltip
+                title={
+                  <Box sx={{ p: 0.5 }}>
+                    <Typography variant="caption" fontWeight="bold" sx={{ display: 'block', mb: 0.5 }}>⌨️ Keyboard Shortcuts</Typography>
+                    <Typography variant="caption" component="div">B = Buy &nbsp;|&nbsp; S = Sell &nbsp;|&nbsp; C = Close</Typography>
+                    <Typography variant="caption" component="div">R = Refresh &nbsp;|&nbsp; Esc = Cancel</Typography>
+                    <Typography variant="caption" component="div">↑/↓ = Navigate rows</Typography>
+                  </Box>
+                }
+                arrow
+                placement="bottom-end"
+              >
+                <IconButton size="small" sx={{ color: 'text.secondary' }}>
+                  <HelpOutlineIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Sound Settings">
+                <IconButton onClick={() => setSoundSettingsOpen(true)} size="small" color="primary">
+                  <VolumeIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Refresh">
+                <IconButton onClick={handleRefresh} disabled={refreshing} size="small">
+                  {refreshing ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
+                </IconButton>
+              </Tooltip>
             </Box>
-          </Collapse>
+          </Box>
 
-          {/* Expiry Filter Tabs - Multi-Select */}
-          {uniqueExpiries.length > 1 && (
-            <Box sx={{ mb: 1, display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ mr: 0.5, fontSize: '0.7rem' }}>
-                📅 Expiry:
-              </Typography>
-              <Chip
-                label={selectedExpiries.length === 0 ? "All" : `All (${selectedExpiries.length} selected)`}
-                size="small"
-                onClick={clearExpirySelection}
-                color={selectedExpiries.length === 0 ? 'primary' : 'default'}
-                variant={selectedExpiries.length === 0 ? 'filled' : 'outlined'}
-                sx={{ fontWeight: selectedExpiries.length === 0 ? 'bold' : 'normal' }}
-              />
-              {uniqueExpiries.map((expiry) => {
-                const day = expiry.substring(0, 2);
-                const month = expiry.substring(2, 4);
-                const year = '20' + expiry.substring(4, 6);
-                const formattedDate = `${day}/${month}/${year}`;
-                const posCount = positions.filter(
-                  (p) => getExpiryCode(p.product_symbol) === expiry
-                ).length;
-                const isSelected = selectedExpiries.includes(expiry);
-                return (
+          {/* ═══ Row 2: Expiry filter + spot prices + section toggles ═══ */}
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
+              {uniqueExpiries.length > 1 && (
+                <>
+                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>📅</Typography>
                   <Chip
-                    key={expiry}
-                    label={`${formattedDate} (${posCount})`}
+                    label={selectedExpiries.length === 0 ? "All" : `All (${selectedExpiries.length})`}
                     size="small"
-                    onClick={() => toggleExpirySelection(expiry)}
-                    color={isSelected ? 'primary' : 'default'}
-                    variant={isSelected ? 'filled' : 'outlined'}
-                    sx={{ fontWeight: isSelected ? 'bold' : 'normal' }}
+                    onClick={clearExpirySelection}
+                    color={selectedExpiries.length === 0 ? 'primary' : 'default'}
+                    variant={selectedExpiries.length === 0 ? 'filled' : 'outlined'}
+                    sx={{ fontWeight: selectedExpiries.length === 0 ? 'bold' : 'normal' }}
                   />
-                );
-              })}
+                  {uniqueExpiries.map((expiry) => {
+                    const day = expiry.substring(0, 2);
+                    const month = expiry.substring(2, 4);
+                    const year = '20' + expiry.substring(4, 6);
+                    const formattedDate = `${day}/${month}/${year}`;
+                    const posCount = positions.filter(
+                      (p) => getExpiryCode(p.product_symbol) === expiry
+                    ).length;
+                    const isSelected = selectedExpiries.includes(expiry);
+                    return (
+                      <Chip
+                        key={expiry}
+                        label={`${formattedDate} (${posCount})`}
+                        size="small"
+                        onClick={() => toggleExpirySelection(expiry)}
+                        color={isSelected ? 'primary' : 'default'}
+                        variant={isSelected ? 'filled' : 'outlined'}
+                        sx={{ fontWeight: isSelected ? 'bold' : 'normal' }}
+                      />
+                    );
+                  })}
+                </>
+              )}
             </Box>
-          )}
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+              {/* Compact spot prices */}
+              {indexPrices.BTC > 0 && (
+                <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, fontSize: '0.72rem', px: 0.75, py: 0.2, bgcolor: '#3b82f615', borderRadius: 1, border: '1px solid #3b82f6' }}>
+                  BTC ${indexPrices.BTC.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </Typography>
+              )}
+              {indexPrices.ETH > 0 && (
+                <Typography variant="caption" sx={{ color: '#a855f7', fontWeight: 600, fontSize: '0.72rem', px: 0.75, py: 0.2, bgcolor: '#a855f715', borderRadius: 1, border: '1px solid #a855f7' }}>
+                  ETH ${indexPrices.ETH.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                </Typography>
+              )}
+              {/* Section toggles */}
+              {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
+                <Chip
+                  label="🛡️ Max Loss"
+                  size="small"
+                  variant={expiryMaxLossCollapsed ? 'outlined' : 'filled'}
+                  color={expiryMaxLossCollapsed ? 'default' : 'primary'}
+                  onClick={() => setExpiryMaxLossCollapsed(prev => !prev)}
+                  icon={expiryMaxLossCollapsed
+                    ? <ExpandMoreIcon sx={{ fontSize: '0.75rem !important' }} />
+                    : <ExpandLessIcon sx={{ fontSize: '0.75rem !important' }} />}
+                  sx={{ height: 22, fontSize: '0.65rem' }}
+                />
+              )}
+              <Chip
+                label="📐 Scaling"
+                size="small"
+                variant={scalingStrategyCollapsed ? 'outlined' : 'filled'}
+                color={scalingStrategyCollapsed ? 'default' : 'primary'}
+                onClick={() => {
+                  const next = !scalingStrategyCollapsed;
+                  setScalingStrategyCollapsed(next);
+                  localStorage.setItem('options_scaling_strategy_collapsed', JSON.stringify(next));
+                }}
+                icon={scalingStrategyCollapsed
+                  ? <ExpandMoreIcon sx={{ fontSize: '0.75rem !important' }} />
+                  : <ExpandLessIcon sx={{ fontSize: '0.75rem !important' }} />}
+                sx={{ height: 22, fontSize: '0.65rem' }}
+              />
+            </Box>
+          </Box>
 
           {/* Phase 4: Turbo Mode — compact inline alert */}
           {turboMode && (
@@ -3658,49 +3648,21 @@ const OptionsPanel = () => {
             </Alert>
           )}
 
-          {/* Phase 2: Per-Expiry Max Loss Settings — collapsible */}
+          {/* Per-Expiry Max Loss — toggled via Row 2 chip */}
           {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
-            <Box sx={{ mb: 1 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 1,
-                  cursor: 'pointer',
-                  py: 0.5,
-                  px: 1,
-                  borderRadius: 1,
-                  '&:hover': { bgcolor: 'action.hover' },
-                }}
-                onClick={() => {
-                  setExpiryMaxLossCollapsed(prev => !prev);
-                }}
-              >
-                {expiryMaxLossCollapsed ? <ExpandMoreIcon sx={{ fontSize: '1rem' }} /> : <ExpandLessIcon sx={{ fontSize: '1rem' }} />}
-                <Typography variant="caption" fontWeight="600" sx={{ fontSize: '0.75rem' }}>
-                  🛡️ Per-Expiry Max Loss
-                </Typography>
-                {expiryMaxLossCollapsed && Object.keys(expiryMaxLossSettings || {}).length > 0 && (
-                  <Chip
-                    label={`${Object.keys(expiryMaxLossSettings).length} expiries configured`}
-                    size="small"
-                    variant="outlined"
-                    sx={{ height: 18, fontSize: '0.65rem' }}
-                  />
-                )}
-              </Box>
-              <Collapse in={!expiryMaxLossCollapsed}>
+            <Collapse in={!expiryMaxLossCollapsed}>
+              <Box sx={{ mb: 1 }}>
                 <ExpiryMaxLossPanel
                   uniqueExpiries={uniqueExpiries}
                   expiryPnlMap={expiryPnlMap}
                   expiryMaxLossSettings={expiryMaxLossSettings}
                   onSettingsUpdate={handleExpiryMaxLossUpdate}
                 />
-              </Collapse>
-            </Box>
+              </Box>
+            </Collapse>
           )}
 
-          {/* Phase 2: Position Scaling Strategy — extracted component */}
+          {/* Position Scaling Strategy — toggled via Row 2 chip */}
           <ScalingStrategyPanel
             scalingStrategy={scalingStrategy}
             setScalingStrategy={setScalingStrategy}
@@ -3709,6 +3671,7 @@ const OptionsPanel = () => {
             indexPrices={indexPrices}
             scalingStrategyCollapsed={scalingStrategyCollapsed}
             setScalingStrategyCollapsed={setScalingStrategyCollapsed}
+            hideHeader
           />
 
           {/* Order Result Alert */}

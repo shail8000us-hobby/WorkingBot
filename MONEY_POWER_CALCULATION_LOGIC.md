@@ -2,7 +2,7 @@
 
 > Sell CE + PE on BTC options. Whenever one side's loss grows beyond what's already covered, sell more of the opposite side to collect premium that covers the new loss. If the opposing premium is too low, shift to a closer strike. Close any position at ≤5 premium. Optionally hedge directional risk with BTC perpetual futures. Repeat until expiry or user stops.
 >
-> **Last Updated:** February 22, 2026 — Added: Perpetual Futures Delta Hedge (§23), Regime Controls (§24), Margin Guardian (§25), Decimal arithmetic, Unified Position Ledger, production hardening notes.
+> **Last Updated:** March 12, 2026 — Added: Multi-DTE Support (§26), v2 Adaptive Interval, v2 Theta Acceleration, v2 Near-Expiry Safety, Aggregate PnL Safety, Liquidity Gate.
 
 ---
 
@@ -68,6 +68,9 @@ strategy_status        — "RUNNING" | "PAUSED" | "STOPPED" | "BOTH_SIDES_UP"
 peak_pnl               — high-water mark for trailing stop (decays: 0.9×old + 0.1×current when below peak)
 _pnl_calculation_incomplete — bool, set when >50% of premium fetches fail
 _watchdog_restarts     — count of monitor auto-restarts
+dte_category           — "0DTE" | "5DTE" | "" — DTE preset used for this session
+total_dte_hours        — float, total hours from session creation to expiry
+global_max_loss        — float, max combined loss across all active sessions (INR, default 50000)
 ```
 
 ### Perp Hedge State (if perp_hedge_enabled)
@@ -227,7 +230,7 @@ Every `interval` seconds the algo does a heartbeat. The interval is **adaptive**
 
 Instead of a fixed interval, the algo dynamically adjusts the check frequency based on how close premiums are to their triggers. This saves API calls when nothing is happening, and checks more frequently when action is imminent.
 
-**Tiers:**
+**v1 Tiers (0DTE sessions):**
 
 | Proximity to Trigger | Interval | Rationale |
 |---------------------|----------|----------|
@@ -236,6 +239,20 @@ Instead of a fixed interval, the algo dynamically adjusts the check frequency ba
 | ≥30% of trigger exceeded | 180s | Moderate movement — reasonable pace |
 | <30% of trigger exceeded | User-set interval (default 300s) | Normal — use configured interval |
 | Both premiums declining | 600–1200s (scales with distance) | Premiums moving favorably — relax |
+
+**v2 Tiers (multi-DTE sessions, `total_dte_hours > 36`):**
+
+Uses percentage-of-DTE remaining instead of absolute hour thresholds:
+
+| DTE Remaining | Multiplier | Example (base=900s, 5DTE) |
+|---------------|------------|---------------------------|
+| > 80% | 1.5× (slow) | 1350s |
+| 50–80% | 1.0× (normal) | 900s |
+| 20–50% | 0.7× (faster) | 630s |
+| 5–20% | 0.5× (fast) | 450s |
+| < 5% | 0.3× (rapid) | 270s |
+
+**Dispatch:** The monitor auto-selects v1 or v2 based on `total_dte_hours > 36 AND dte_category != '0DTE'`.
 
 **Formula:** The tier is determined by the maximum of `ce_excess / ce_threshold` and `pe_excess / pe_threshold`. If both premiums are below their entry triggers (i.e., decaying), the interval extends up to `adaptive_max_interval` (default 1200s = 20 minutes).
 
@@ -2016,3 +2033,128 @@ On tier escalation (severity increases), emits Telegram alert via `mmm_telegram.
 - At YELLOW+: blocks `mmm_executor.py` from placing new sell orders
 - At ORANGE: triggers wind-down regardless of time to expiry
 - At RED/CRITICAL: overrides all other logic — priority is capital preservation
+
+---
+
+## SECTION 26: MULTI-DTE SUPPORT (Added March 12, 2026)
+
+Expands MMM from 0DTE-only to multi-expiry operation. **All 0DTE behavior is unchanged** — v2 functions only activate for sessions where `total_dte_hours > 36`.
+
+### 26.1 DTE Presets
+
+Predefined parameter sets for different expiry durations:
+
+| Preset | Interval | Wind-down | Close-at | Max Adj |
+|--------|----------|-----------|----------|---------|
+| 0DTE | 300s | 2h | $5.0 | 20 |
+| 5DTE | 900s | 6h | $3.0 | 40 |
+
+Presets are defaults — user overrides always win:
+```
+apply_preset(preset_name, user_params):
+    merged = copy(DTE_PRESETS[preset_name])
+    merged.update(user_params)   # user always wins
+    return merged
+```
+
+### 26.2 Aggregate PnL Safety
+
+Before starting a new session, combined P&L across ALL active sessions is checked:
+
+$$\text{combined\_pnl} = \sum_{s \in \text{active\_sessions}} (\text{s.realized\_pnl} + \text{s.unrealized\_pnl})$$
+
+$$\text{pct\_used} = \frac{|\text{combined\_pnl}|}{\text{global\_max\_loss}} \times 100\%$$
+
+| Level | Condition | Action |
+|-------|-----------|--------|
+| OK | pct_used < 50% | Proceed |
+| WARNING | 50% ≤ pct_used < 80% | Proceed with caution |
+| DANGER | 80% ≤ pct_used < 100% | Proceed with alert |
+| BLOCKED | pct_used ≥ 100% | **New session start blocked** |
+
+### 26.3 Liquidity Gate
+
+For fresh-mode sessions, validate bid liquidity at the target strike before allowing creation:
+
+```
+check_chain_liquidity(chain, strike, min_bid=1.0, min_bid_size=0.01):
+    for each row in chain:
+        if row.strike == strike:
+            if row.call.bid < min_bid OR row.call.bid_size < min_bid_size:
+                return {liquid: false, reason: 'CE bid too low'}
+            if row.put.bid < min_bid OR row.put.bid_size < min_bid_size:
+                return {liquid: false, reason: 'PE bid too low'}
+            return {liquid: true}
+```
+
+### 26.4 v2 Adaptive Interval Formula
+
+```
+compute_adaptive_interval_v2(base, hours_to_expiry, total_dte_hours, enabled):
+    if not enabled: return base
+    pct_remaining = hours_to_expiry / total_dte_hours
+
+    if pct_remaining > 0.80: multiplier = 1.5
+    elif pct_remaining > 0.50: multiplier = 1.0
+    elif pct_remaining > 0.20: multiplier = 0.7
+    elif pct_remaining > 0.05: multiplier = 0.5
+    else: multiplier = 0.3
+
+    return max(60, base * multiplier)
+```
+
+### 26.5 v2 Theta Acceleration Formula
+
+Widens triggers near expiry. Window scales with total DTE:
+
+```
+apply_theta_acceleration_v2(session, minutes_to_expiry, total_dte_mins):
+    window = min(total_dte_mins * 0.02, 240)   # 2% of total DTE, capped at 4 hours
+
+    if minutes_to_expiry > window:
+        return   # too far from expiry, no acceleration
+
+    progress = 1.0 - (minutes_to_expiry / window)   # 0.0 at window start, 1.0 at expiry
+    multiplier = 1.0 + progress * 0.5               # 1.0x → 1.5x
+
+    # Widen triggers by multiplier
+    for side in ['ce', 'pe']:
+        session[side]['trigger_snapshot'] *= multiplier
+```
+
+Compare v1: fixed 30-min window (appropriate for 0DTE, too small for 5DTE+).
+
+### 26.6 v2 Near-Expiry Safety
+
+Three-tier near-expiry check for multi-DTE sessions:
+
+```
+check_near_expiry_v2(session, minutes_to_expiry):
+    # Tier 1: Absolute thresholds (same as v1)
+    if minutes_to_expiry ≤ auto_close_mins: return 'auto_close_all'
+    if minutes_to_expiry ≤ stop_adjustment_mins: return 'stop_adjustments'
+
+    # Tier 2: Wind-down zone
+    wind_down_hours = preset.wind_down_hours_before_expiry
+    if minutes_to_expiry ≤ wind_down_hours * 60: return 'wind_down'
+
+    # Tier 3: Percentage early warning (last 5% of total DTE)
+    if minutes_to_expiry / total_dte_mins < 0.05: return 'warn_near_expiry'
+
+    return 'ok'
+```
+
+### 26.7 Session Creation Flow
+
+```
+1. User selects DTE preset (e.g., "5DTE") in CreateSessionDialog
+2. Frontend auto-fills: interval=900, wind_down=6h, close_at=3.0, max_adj=40
+3. User overrides any field they want
+4. POST /api/mmm/sessions/create with dte_category="5DTE"
+5. Backend: check_aggregate_pnl() — blocks if combined loss ≥ global_max_loss
+6. Backend: check_chain_liquidity() — ensures bid/bid_size at target strike
+7. Backend: apply_preset("5DTE", user_params) — merges defaults
+8. Backend: compute_total_dte_hours(expiry) — stores in session.total_dte_hours
+9. Session created with all DTE-aware parameters
+10. Monitor heartbeat auto-dispatches v2 functions
+```

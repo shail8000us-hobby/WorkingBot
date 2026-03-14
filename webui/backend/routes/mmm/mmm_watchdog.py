@@ -305,6 +305,17 @@ class MMMWatchdog:
                         f"proceeding with restart anyway"
                     )
 
+            # Fix A4 (March 12 incident): Settlement delay — wait for any
+            # in-flight exchange orders to settle before reconciling.
+            # Without this, reconciliation sees mid-settlement exchange state
+            # and makes incorrect auto-corrections.
+            SETTLEMENT_DELAY_SECS = 30
+            log.info(
+                f"[{sid}] Watchdog: waiting {SETTLEMENT_DELAY_SECS}s for "
+                f"in-flight exchange orders to settle..."
+            )
+            time.sleep(SETTLEMENT_DELAY_SECS)
+
             # Import here to avoid circular import at module level
             from .mmm_storage import get_storage
             from .mmm_monitor import start_session_monitor, _monitors, _monitors_lock

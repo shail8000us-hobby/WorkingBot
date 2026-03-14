@@ -106,6 +106,9 @@
     "vite-plugin-compression": "^0.5.1"
   },
   "jest": {
+    "moduleNameMapper": {
+      "^axios$": "<rootDir>/__mocks__/axios.js"
+    },
     "collectCoverageFrom": [
       "src/**/*.{js,jsx,ts,tsx}",
       "!src/**/*.test.{js,jsx,ts,tsx}",

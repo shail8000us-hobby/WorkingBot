@@ -77,12 +77,11 @@ _load_auto_hedge_config_from_disk()
 def _get_portfolio_btc_delta() -> float:
     """
     Compute net BTC-equivalent delta from current options positions.
-    Reuses the same service + greeks functions as the dashboard.
+    Uses get_cached_positions() — no Flask app context required (safe for background threads).
     """
-    from .dashboard_service import fetch_options_positions_data
+    from .options_control import get_cached_positions
     from .dashboard import calculate_portfolio_greeks
-    pos_data = fetch_options_positions_data()
-    positions = pos_data.get('positions', [])
+    positions = get_cached_positions(max_age=60) or []
     greeks = calculate_portfolio_greeks(positions)
     return float(greeks.get('btcDelta', 0.0))
 

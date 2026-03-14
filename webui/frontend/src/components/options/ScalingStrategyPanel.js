@@ -28,6 +28,7 @@ const ScalingStrategyPanel = React.memo(function ScalingStrategyPanel({
   indexPrices = { BTC: 0, ETH: 0 },
   scalingStrategyCollapsed,
   setScalingStrategyCollapsed,
+  hideHeader = false,
 }) {
   const handleStrategyChange = (strategy) => {
     setScalingStrategy(strategy);
@@ -48,7 +49,7 @@ const ScalingStrategyPanel = React.memo(function ScalingStrategyPanel({
 
   return (
     <Box sx={{ mb: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
-      <Box
+      {!hideHeader && <Box
         sx={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -164,7 +165,7 @@ const ScalingStrategyPanel = React.memo(function ScalingStrategyPanel({
             )}
           </Box>
         )}
-      </Box>
+      </Box>}
 
       <Collapse in={!scalingStrategyCollapsed}>
         <Box

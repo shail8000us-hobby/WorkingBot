@@ -1343,7 +1343,8 @@ def test_tp_order(symbol):
                         side=close_side,
                         order_type='limit_order',
                         limit_price=take_profit_price,
-                        reduce_only=True
+                        reduce_only=False,
+                        post_only=True
                     )
                     
                     log.info(f"✅ TP order placed! Order ID: {order_result.get('id')}")
@@ -1383,6 +1384,7 @@ def test_tp_order(symbol):
 
 
 @options_bp.route('/sl-tp/set', methods=['POST'])
+@sealed
 def set_sl_tp():
     """
     Set stop-loss and take-profit for an options position.
@@ -1419,6 +1421,10 @@ def set_sl_tp():
         
         # Store SL/TP settings in database
         manager = get_sl_tp_manager()
+        
+        # Read existing tp_order_id BEFORE overwriting it in the DB below
+        existing_sl_tp = manager.get_sl_tp(symbol)
+        prev_tp_order_id = existing_sl_tp.get('tp_order_id') if existing_sl_tp else None
         result = manager.set_sl_tp(
             symbol=symbol,
             stop_loss_price=data.get('stop_loss_price'),
@@ -1486,31 +1492,23 @@ def set_sl_tp():
                         order_size = abs(position_size)
                         log.info(f"📊 Using full position size: {order_size}")
                     
-                    # Cancel any existing TP orders for this symbol first
-                    log.info(f"🔍 Checking for existing TP orders for {symbol}...")
-                    try:
-                        open_orders = await client.rest_client.get_open_orders_by_symbol(symbol)
-                        cancelled_orders = []
-                        
-                        for order in open_orders:
-                            # Check if it's a reduce-only order (likely a TP order)
-                            if order.get('reduce_only'):
-                                order_id = order.get('id')
-                                log.info(f"🗑️  Cancelling existing TP order: {order_id}")
-                                try:
-                                    await client.rest_client.cancel_order(order_id)
-                                    cancelled_orders.append(order_id)
-                                except Exception as e:
-                                    log.warning(f"Failed to cancel order {order_id}: {e}")
-                        
-                        if cancelled_orders:
-                            log.info(f"✅ Cancelled {len(cancelled_orders)} existing TP order(s)")
-                    except Exception as e:
-                        log.warning(f"Failed to check/cancel existing orders: {e}")
+                    # Cancel previously stored TP order by order ID first (more reliable than
+                    # scanning all orders by reduce_only flag which we no longer set).
+                    # prev_tp_order_id was read from DB BEFORE the initial set_sl_tp() write above.
+                    if prev_tp_order_id:
+                        log.info(f"🗑️  Cancelling existing TP order: {prev_tp_order_id}")
+                        try:
+                            await client.rest_client.cancel_order(prev_tp_order_id)
+                            log.info(f"✅ Cancelled previous TP order {prev_tp_order_id}")
+                        except Exception as e:
+                            log.warning(f"Failed to cancel previous TP order {prev_tp_order_id}: {e}")
                     
                     log.info(f"🎯 Placing TP limit order: {close_side} {order_size} {symbol} @ ${take_profit_price}")
                     
-                    # Place reduce-only limit order at take profit price
+                    # Place post-only limit order at take profit price.
+                    # NO reduce_only: Delta Exchange India rejects reduce_only+post_only
+                    # for options contracts. The close direction is enforced by close_side
+                    # (buy to close a short, sell to close a long).
                     order_result = await place_options_order(
                         client=client,
                         product_symbol=symbol,
@@ -1518,7 +1516,8 @@ def set_sl_tp():
                         side=close_side,
                         order_type='limit_order',
                         limit_price=take_profit_price,
-                        reduce_only=True
+                        reduce_only=False,
+                        post_only=True
                     )
                     
                     order_id = order_result.get('id')
@@ -1529,11 +1528,28 @@ def set_sl_tp():
                         'order_id': order_id,
                         'side': close_side,
                         'size': order_size,
-                        'price': take_profit_price
+                        'price': take_profit_price,
+                        'tp_order_id': order_id
                     }
                 
                 # Execute the async order placement with timeout
                 tp_order_result = _run_async(with_timeout(place_tp_order(), timeout_seconds=30))
+                # Store the exchange order ID in the DB so we can cancel it precisely on update
+                placed_order_id = tp_order_result.get('tp_order_id') or tp_order_result.get('order_id')
+                if placed_order_id:
+                    get_sl_tp_manager().set_sl_tp(
+                        symbol=symbol, tp_order_id=placed_order_id,
+                        # preserve all existing fields by re-reading from result
+                        take_profit_price=take_profit_price,
+                        take_profit_quantity=take_profit_quantity,
+                        stop_loss_price=data.get('stop_loss_price'),
+                        stop_loss_pct=data.get('stop_loss_pct'),
+                        take_profit_pct=data.get('take_profit_pct'),
+                        trailing_stop_enabled=data.get('trailing_stop_enabled', False),
+                        trailing_stop_pct=data.get('trailing_stop_pct'),
+                        auto_execute=data.get('auto_execute', True),
+                        alert_only=data.get('alert_only', False),
+                    )
                 result['tp_order'] = tp_order_result
                 tp_order_placed = True
                 log.info(f"✅ Take profit order placed on exchange: {tp_order_result}")
@@ -1601,42 +1617,27 @@ def remove_sl_tp(symbol):
     This will also cancel any existing TP orders on the exchange.
     """
     try:
-        # Cancel any existing TP orders first
+        # Cancel the stored TP order (identified by order_id in DB, not by reduce_only flag)
         async def cancel_tp_orders():
             client = get_unified_client()
             
             try:
-                log.info(f"🔍 Checking for TP orders to cancel for {symbol}...")
-                open_orders = await client.rest_client.get_open_orders_by_symbol(symbol)
-                cancelled_orders = []
+                manager = get_sl_tp_manager()
+                existing = manager.get_sl_tp(symbol)
+                tp_order_id = existing.get('tp_order_id') if existing else None
                 
-                for order in open_orders:
-                    # Check if it's a reduce-only order (likely a TP order)
-                    if order.get('reduce_only'):
-                        order_id = order.get('id')
-                        product_id = order.get('product_id')
-                        order_side = order.get('side', 'unknown')
-                        order_price = order.get('limit_price', 'N/A')
-                        log.info(f"🗑️  Cancelling TP order: {order_id} ({order_side} @ ${order_price})")
-                        try:
-                            # Cancel order requires both order_id and product_id
-                            await client.rest_client.cancel_order(order_id, product_id)
-                            cancelled_orders.append({
-                                'id': order_id,
-                                'side': order_side,
-                                'price': order_price
-                            })
-                            log.info(f"✅ Successfully cancelled TP order {order_id}")
-                        except Exception as e:
-                            log.error(f"❌ Failed to cancel order {order_id}: {e}")
+                if not tp_order_id:
+                    log.info(f"No stored TP order ID for {symbol}, nothing to cancel on exchange")
+                    return {'cancelled_orders': [], 'count': 0}
                 
-                if cancelled_orders:
-                    log.info(f"✅ Cancelled {len(cancelled_orders)} TP order(s)")
-                
-                return {
-                    'cancelled_orders': cancelled_orders,
-                    'count': len(cancelled_orders)
-                }
+                log.info(f"🗑️  Cancelling TP order {tp_order_id} for {symbol}...")
+                try:
+                    await client.rest_client.cancel_order(tp_order_id)
+                    log.info(f"✅ Cancelled TP order {tp_order_id}")
+                    return {'cancelled_orders': [{'id': tp_order_id}], 'count': 1}
+                except Exception as e:
+                    log.warning(f"Failed to cancel TP order {tp_order_id}: {e}")
+                    return {'cancelled_orders': [], 'error': str(e)}
             except Exception as e:
                 log.warning(f"Failed to cancel TP orders: {e}")
                 return {'error': str(e)}
@@ -2040,6 +2041,7 @@ def get_strike_take_profit():
 
 
 @options_bp.route('/take-profit/strike/set', methods=['POST'])
+@sealed
 def set_strike_take_profit():
     """Set take profit for a specific strike."""
     try:

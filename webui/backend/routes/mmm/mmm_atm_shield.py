@@ -206,6 +206,21 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
 
     # ── Step 1: CLOSE all active positions on endangered side ─────────
     side_state = session.get(endangered_side, {})
+
+    # Recovery: clear _being_closed on active positions that are stuck.
+    # A close order sets _being_closed=True before sending to exchange.
+    # If the state update then fails (bug), the flag is never cleared.
+    # Any _being_closed still set at a new heartbeat is definitively stuck
+    # (exchange orders resolve in < 1s, heartbeat interval is ≥ 15s).
+    for _p in side_state.get('positions', []):
+        if _p.get('status') == 'active' and _p.get('_being_closed'):
+            log.warning(
+                f"[{sid}] ATM Shield: clearing stuck _being_closed on "
+                f"{endangered_side.upper()} pos {_p.get('id')} "
+                f"@ {_p.get('strike')} ({_p.get('lots')} lots)"
+            )
+            _p.pop('_being_closed', None)
+
     positions_to_close = [
         p for p in side_state.get('positions', [])
         if p.get('status') == 'active' and not p.get('_being_closed')
@@ -219,6 +234,9 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
             result = await close_position(
                 monitor.executor, monitor.initializer, session, pos,
                 pnl_attribution_key='atm_shield',
+                hedge_guard=False,
+                mechanism='atm_shield',
+                side=endangered_side,
             )
             if result.get('success'):
                 close_prem = result.get('close_premium', 0)
@@ -256,8 +274,14 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
     if new_strike is None:
         log.warning(
             f"[{sid}] ATM Shield: no viable strike at {eff_target_otm:.1f}% OTM "
-            f"for {endangered_side.upper()} — close only (loss absorbed)"
+            f"for {endangered_side.upper()} — close only (loss absorbed). "
+            f"Activating wind-down as fallback."
         )
+        # No viable OTM strike exists → activate wind-down as the only safe response.
+        # This is the ONE case where wind-down is allowed when ATM Shield is active.
+        params['wind_down_enabled'] = True
+        session['_atm_wind_down_triggered'] = True
+        session['_atm_prev_wind_down_enabled'] = False
 
     # ── Step 3: RE-SELL — full position shift + loss recovery ────────
     from .mmm_engine import get_engine
@@ -277,8 +301,11 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         or gamma_regime in ('HARD', 'EMERGENCY')
     )
 
+    # ATM Shield is exempt from wind-down blocking on the endangered side re-sell.
+    # Wind-down may fire in the SAME beat (step 4) before the shield runs (step 5.5).
+    # The shield IS the answer to ATM proximity — it must be able to re-establish.
     sells_possible = not (
-        margin_blocks_sells or wind_down_active or near_stop or vol_gamma_blocked
+        margin_blocks_sells or near_stop or vol_gamma_blocked
     )
 
     lots_sold_endangered = 0
@@ -290,13 +317,15 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         # Base lots: re-establish original position at new strike
         base_lots = total_closed_lots
 
-        # Recovery lots: cover 30% of loss
+        # Recovery lots: cover 30% of loss (capped to closed lots to avoid
+        # disproportionate risk — selling 33 lots to recover $1.85 is insane)
         loss_share_agr = max(total_realized_loss, 0) * loss_split_agr
         recovery_lots = 0
         if loss_share_agr > 0 and new_premium > 0:
-            recovery_lots = max(math.ceil(
-                loss_share_agr / (new_premium * LOT_SIZE_BTC)
-            ), 0)
+            recovery_lots = min(
+                max(math.ceil(loss_share_agr / (new_premium * LOT_SIZE_BTC)), 0),
+                total_closed_lots,
+            )
 
         total_lots_agr = base_lots + recovery_lots
 
@@ -314,10 +343,19 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                 )
                 if result.get('success'):
                     lots_sold_endangered = total_lots_agr
+                    # Update active_strike to reflect new position location
+                    session[endangered_side]['active_strike'] = new_strike
+                    # Shield successfully repositioned — clear any pending wind-down
+                    # that may have fired in the same beat (step 4 runs before step 5.5)
+                    if session.get('_atm_wind_down_triggered'):
+                        session.pop('_atm_wind_down_triggered', None)
+                        params['wind_down_enabled'] = session.pop('_atm_prev_wind_down_enabled', False)
+                        log.info(f"[{sid}] ATM Shield repositioned — wind-down deactivated")
                     log.info(
                         f"[{sid}] ATM Shield re-sold {total_lots_agr} lots "
                         f"({base_lots} shifted + {recovery_lots} recovery) "
-                        f"on {endangered_side.upper()} @ {new_strike:.0f}"
+                        f"on {endangered_side.upper()} @ {new_strike:.0f} "
+                        f"(active_strike updated {endangered_strike:.0f} → {new_strike:.0f})"
                     )
             except Exception as e:
                 log.error(
@@ -341,6 +379,8 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                 lots_safe, _, _ = engine.calculate_lots_to_sell(
                     session, safe_side, loss_share_safe, safe_premium,
                 )
+                # Cap: never sell more recovery lots than we just closed
+                lots_safe = min(lots_safe, total_closed_lots)
                 if lots_safe > 0:
                     try:
                         result = await engine.execute_adjustment(

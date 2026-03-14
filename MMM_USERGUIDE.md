@@ -2,7 +2,7 @@
 
 > **Audience:** Traders running the MMM BTC options bot via the WebUI.
 > **Last Updated:** March 12, 2026
-> **Exchange:** Delta Exchange India | **Instrument:** BTC 0DTE / weekly options
+> **Exchange:** Delta Exchange India | **Instrument:** BTC 0DTE / multi-DTE options (5DTE, 10DTE, 20DTE+)
 > **Lot Size:** 0.001 BTC per lot
 
 ---
@@ -29,12 +29,13 @@
 18. [Settings Hot-Reload](#18-settings-hot-reload)
 19. [Common Scenarios & What to Do](#19-common-scenarios--what-to-do)
 20. [Parameters Reference Table](#20-parameters-reference-table)
+21. [Multi-DTE Sessions](#21-multi-dte-sessions)
 
 ---
 
 ## 1. What MMM Does
 
-MMM is a **premium decay harvesting strategy** on BTC 0DTE options. In plain terms:
+MMM is a **premium decay harvesting strategy** on BTC options (0DTE and multi-DTE). In plain terms:
 
 ```
 START: Sell CE at strike above spot + Sell PE at strike below spot
@@ -68,10 +69,13 @@ Navigate to **MMM → New Session** in the WebUI. Required fields:
 
 | Field | Description | Example |
 |---|---|---|
+| **DTE Preset** | Selects parameter defaults for expiry duration | `0DTE` or `5DTE` |
 | **Expiry** | Contract expiry date (DDMMYYYY) | `10032026` |
 | **Desired CE Premium** | Target premium for call sell | `100` USD |
 | **Desired PE Premium** | Target premium for put sell | `100` USD |
 | **Initial Lots** | Starting lots each side | `10` |
+
+Selecting a DTE Preset auto-fills interval, wind-down hours, close-at threshold, and max adjustments with appropriate defaults for that expiry duration. You can override any of these after preset selection.
 
 Click **Find Strikes** — the algo scans the options chain and shows the best OTM strikes near your target premium.
 
@@ -1145,6 +1149,64 @@ All positions on both CE and PE closed (decayed to close-at-5 or time expired). 
 | `wind_down_on_atm` | False | Activate wind-down when spot hits active strike |
 | `close_at_atm` | False | Emergency close all when spot hits active strike |
 
+### Multi-DTE Parameters
+
+| Parameter | Default | Hot-Reload | Description |
+|---|---|---|---|
+| `dte_category` | '' | No | DTE preset category (0DTE, 5DTE, etc.) |
+| `total_dte_hours` | 0.0 | No | Hours to expiry (computed at session creation) |
+| `global_max_loss` | 50000 | Yes | Max combined loss across all active sessions (INR) |
+
 ---
 
 *For code-level details and architecture, see [AI_MMM_CONTEXT.md](AI_MMM_CONTEXT.md). For the code quality audit, see [MMM_CODE_QUALITY_AUDIT.md](MMM_CODE_QUALITY_AUDIT.md).*
+
+---
+
+## 21. Multi-DTE Sessions
+
+MMM now supports options beyond 0DTE — you can run sessions on 5-day, 10-day, or 20-day expiries.
+
+### How It Works
+
+When you create a session and select a DTE preset (e.g., "5DTE"), the system:
+1. Auto-fills parameters appropriate for longer-dated options (longer intervals, higher max adjustments, wider wind-down window)
+2. Computes `total_dte_hours` from now to expiry
+3. Switches internal algorithms to v2 variants that scale proportionally to the total DTE
+
+### What Changes for Multi-DTE
+
+| Aspect | 0DTE | Multi-DTE (5DTE+) |
+|--------|------|---------------------|
+| Heartbeat interval | Fixed tiers: 60s/120s/300s/600s based on hours left | % of DTE tiers: 0.3×–1.5× base interval |
+| Theta acceleration | Fixed 30-min window near expiry | 2% of total DTE (capped at 240 min) |
+| Near-expiry warnings | Absolute minute thresholds | 3-tier: absolute + wind-down zone + 5% early warning |
+| Close-at threshold | 5 USD | 3 USD (lower — farther-dated options hold more time value) |
+
+### DTE Presets
+
+| Preset | Interval | Wind-Down | Close-at | Max Adjustments |
+|--------|----------|-----------|----------|-----------------|
+| 0DTE | 300s (5 min) | 2 hours | $5 | 20 |
+| 5DTE | 900s (15 min) | 6 hours | $3 | 40 |
+
+### Aggregate PnL Safety
+
+When running multiple sessions simultaneously, the system tracks combined P&L:
+- Block new sessions if combined loss ≥ `global_max_loss` (default ₹50,000)
+- Accessible via the dashboard's aggregate PnL indicator
+
+### Liquidity Gate
+
+For fresh-mode sessions, the system validates that the option chain has sufficient bid liquidity at the chosen strike before allowing session creation. This prevents selling into illiquid strikes where exits would be expensive.
+
+### DTE Category on Session Cards
+
+Non-0DTE sessions show a DTE category chip (e.g., "5DTE") on their session card in the left panel for easy identification.
+
+### Tips for Multi-DTE
+
+- **Start with fewer lots**: Multi-DTE options move more slowly but have higher absolute premium — position accordingly
+- **Expect fewer adjustments**: The 15-min interval (5DTE) means fewer but more significant adjustments
+- **Watch aggregate exposure**: With multiple sessions running, use the aggregate PnL check to stay within risk limits
+- **Wind-down is longer**: 5DTE sessions enter wind-down 6 hours before expiry vs 2 hours for 0DTE

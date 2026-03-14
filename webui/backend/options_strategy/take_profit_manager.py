@@ -25,17 +25,19 @@ from typing import Dict, List, Optional
 from pathlib import Path
 import logging
 
+from webui.backend.sealed import sealed
+
 logger = logging.getLogger(__name__)
 
 # Import order execution functions
 try:
-    from webui.backend.routes.options.options_control import place_smart_order, ORDER_TYPE_MAKER_FIRST
+    from webui.backend.routes.options.options_control import place_smart_order, ORDER_TYPE_MAKER_ONLY
     ORDER_EXECUTION_AVAILABLE = True
 except ImportError as e:
     logger.warning(f"⚠️ Order execution module not available - TP auto-close disabled: {e}")
     ORDER_EXECUTION_AVAILABLE = False
     place_smart_order = None
-    ORDER_TYPE_MAKER_FIRST = None
+    ORDER_TYPE_MAKER_ONLY = None
 
 # Singleton instance
 _take_profit_manager = None
@@ -700,6 +702,7 @@ class TakeProfitMonitor:
         except Exception as e:
             logger.error(f"Error checking take profit: {e}", exc_info=True)
     
+    @sealed
     def _close_position_with_retry(self, symbol: str, actual_profit: float, exit_quantity: int, target_profit: float, max_retries: int = 3) -> bool:
         """Close partial position with retry logic and exponential backoff"""
         print(f"🎯 DEBUG: _close_position_with_retry called for {symbol}, exit_qty={exit_quantity}", flush=True)
@@ -723,6 +726,7 @@ class TakeProfitMonitor:
                     print(f"🎯 DEBUG: All retries exhausted", flush=True)
                     return False
     
+    @sealed
     def _close_position(self, symbol: str, actual_pnl: float, exit_quantity: int, target_profit: float):
         """Close partial position due to take profit/loss limit - Delta Exchange API"""
         try:
@@ -792,7 +796,7 @@ class TakeProfitMonitor:
                                 symbol=symbol,
                                 size=close_size,
                                 side=close_side,
-                                order_preference=ORDER_TYPE_MAKER_FIRST,  # Limit at mid-price, post-only
+                                order_preference=ORDER_TYPE_MAKER_ONLY,  # Maker-only: limit at mid-price, never market
                                 reduce_only=True
                             )
                         )

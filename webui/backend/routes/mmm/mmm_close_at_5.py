@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
 from .mmm_constants import LOT_SIZE_BTC
+from webui.backend.sealed import sealed
 
 # Fix #19: Decimal precision helper — mirrors mmm_engine._D
 def _D(x) -> Decimal:
@@ -201,6 +202,9 @@ async def close_position(
     session: Dict,
     position: Dict,
     pnl_attribution_key: str = None,
+    hedge_guard: bool = True,
+    mechanism: str = 'close_at_5',
+    side: str = None,
 ) -> Dict[str, Any]:
     """
     §11: Buy back a single position at market/ask price.
@@ -209,7 +213,15 @@ async def close_position(
         executor: MMMExecutor instance
         initializer: MMMInitializer instance for symbol building
         session: Full session dict (mutated in place)
-        position: Position dict from scan_closeable_positions
+        position: Position dict from scan_closeable_positions or raw ledger
+        hedge_guard: Kept for backward compatibility. When True, the Strategy
+                 Observer's continuity check (CHECK 1) is enforced.
+                 Pass False only when both sides are closing together.
+        mechanism: Why this close is being requested. Passed to the Strategy
+               Observer for price-consistency and velocity checks.
+               Values: 'close_at_5' | 'harvest' | 'recycler' | 'atm_shield'
+                   | 'wind_down' | 'both_sides_close' | 'emergency'
+        side: Explicit side ('ce'/'pe'). Falls back to position['side'].
 
     Returns:
         {success, realized_pnl, close_premium, lots_closed}
@@ -221,13 +233,72 @@ async def close_position(
     the next heartbeat will NOT place a duplicate buy order on the exchange.
     On failure, the flag is cleared to allow retry on the next scan cycle.
     """
-    side = position['side']
+    side = side or position.get('side')
+    if not side:
+        log.error("close_position called without side — position dict has no 'side' key and no explicit side param")
+        return {'success': False, 'error': 'missing side'}
     strike = position['strike']
     lots = position['lots']
     entry_prem = position['entry_premium']
     pos_type = position['type']
-    pos_id = position.get('_pos_id')
+    pos_id = position.get('_pos_id') or position.get('id')
 
+    # ── GUARDIAN G1+G2: HEDGE INTEGRITY + BEAT VELOCITY ────────────────
+    # Look up the real guardian instance for this session (registered by
+    # the monitor). Falls back to a temporary instance for G1-only check
+    # if the registry lookup fails (e.g. standalone test).
+    _guardian = None
+    if hedge_guard:
+        try:
+            from .mmm_guardian import get_guardian, MMMGuardian
+            sid_for_lookup = session.get('session_id', '')
+            _guardian = get_guardian(sid_for_lookup)
+            if _guardian is None:
+                # Standalone call (no monitor) — temporary for G1 only
+                _guardian = MMMGuardian(sid_for_lookup)
+            _allowed, _g_reason = _guardian.check_close_allowed(
+                session, side, lots, mechanism,
+                both_sides_closing=False,
+            )
+            if not _allowed:
+                return {
+                    'success': False,
+                    'error': _g_reason,
+                    'hedge_guard_blocked': True,
+                }
+        except ImportError:
+            pass
+    # ── END GUARDIAN G1+G2 ──────────────────────────────────────────────
+
+    # ── STRATEGY OBSERVER ─────────────────────────────────────────────────
+    # Validate this BUY order against strategy logic BEFORE touching the
+    # exchange.  Runs 4 checks: strategy continuity, price consistency,
+    # close velocity, and ledger integrity.  hedge_guard=False means both
+    # sides are closing together (clean exit) — pass to observer via
+    # both_sides_closing flag so continuity check is exempt.
+    if hedge_guard:
+        try:
+            from .mmm_observer import get_observer
+            _obs_result = get_observer().validate_close(
+                session=session,
+                side=side,
+                lots=lots,
+                current_premium=position.get('current_premium', 0),
+                mechanism=mechanism,
+                entry_premium=entry_prem,
+                both_sides_closing=False,
+            )
+            if not _obs_result['allowed']:
+                _sid = session.get('session_id', '?')
+                return {
+                    'success': False,
+                    'error': _obs_result['reason'],
+                    'observer_blocked': True,
+                    'block_type': _obs_result.get('block_type'),
+                }
+        except ImportError:
+            pass  # Observer not available — fall through
+        # ── END STRATEGY OBSERVER ─────────────────────────────────────────────
     # Audit fix: Mark position as in-flight in the ledger BEFORE placing order.
     # This prevents a duplicate buy order if the state-removal crashes post-fill.
     side_state = session.get(side, {})
@@ -319,6 +390,21 @@ async def close_position(
                     # AUDIT FIX BUG5: Estimate realized PnL from last known premium
                     est_close = position.get('current_premium', 0)
                     est_pnl = float((_D(entry_prem) - _D(est_close)) * _D(lots) * _LOT) if est_close else 0.0
+                    
+                    # Record successful close for velocity tracking (externally closed)
+                    try:
+                        from .mmm_observer import get_observer
+                        session_id = session.get('session_id', '')
+                        if session_id:
+                            get_observer().record_close(session_id, side, lots)
+                    except Exception:
+                        pass
+                    if _guardian is not None:
+                        try:
+                            _guardian.record_close(side, lots)
+                        except Exception:
+                            pass
+                    
                     return {
                         'success': True,
                         'realized_pnl': est_pnl,
@@ -382,6 +468,20 @@ async def close_position(
             f"realized P&L: {realized_pnl:.2f}"
         )
 
+        # Record successful close for velocity tracking (observer + guardian)
+        try:
+            from .mmm_observer import get_observer
+            session_id = session.get('session_id', '')
+            if session_id:
+                get_observer().record_close(session_id, side, actual_lots)
+        except Exception:
+            pass
+        if _guardian is not None:
+            try:
+                _guardian.record_close(side, actual_lots)
+            except Exception:
+                pass
+
         return {
             'success': True,
             'realized_pnl': realized_pnl,
@@ -428,7 +528,7 @@ def _remove_closed_position(
     side_state = session.get(side, {})
     now = datetime.now(timezone.utc).isoformat()
 
-    pos_id = position.get('_pos_id')
+    pos_id = position.get('_pos_id') or position.get('id')
 
     # Fix #23: Primary path — ID-based lookup in positions[] (O(1), always correct)
     if pos_id:
@@ -506,6 +606,7 @@ def _remove_closed_position(
     session[side] = side_state
 
 
+@sealed
 def check_side_fully_closed(session: Dict, side: str) -> bool:
     """
     §11: Check if all positions on a side have been closed.
@@ -517,6 +618,7 @@ def check_side_fully_closed(session: Dict, side: str) -> bool:
     return side_state.get('total_lots', 0) == 0
 
 
+@sealed
 def check_both_sides_closed(session: Dict) -> bool:
     """
     §11: Check if both sides are fully closed.

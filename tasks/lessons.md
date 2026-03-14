@@ -1,5 +1,99 @@
 # MMM Lessons Learned
 
+## [2026-03-13] Portfolio Greeks delta/gamma were 1000× too large
+
+**What went wrong:**
+Delta showed -60.08 BTC (≈$4.3M exposure) on a portfolio with only ~2 BTC total notional. Gamma similarly inflated 1000×. Theta and Vega were correct.
+
+**Root cause:**
+Delta Exchange API returns greeks per **1 BTC of notional**. But 1 lot = 0.001 BTC, so every lot-weighted sum needs `× 0.001`. Theta and Vega already had the correction (`÷ 1000`). Delta and Gamma did not. `pnl_attribution.py` had a `CONTRACT_MULT = 0.001` that silently compensated for the wrong delta in PnL calculations — masking the bug.
+
+**Files fixed:**
+- `dashboard.py::calculate_portfolio_greeks()` — added `× 0.001` to delta, gamma, btcDelta, ethDelta (UNSEALED v1→v2, re-sealed)
+- `test_sealed_calculate_portfolio_greeks.py` — updated expected values (e.g. `-5.0` → `-0.005`)
+- `OptionsPanel.js::aggregatedGreeks` — same `× 0.001` fix
+- `OptionsPanel.js::calculateSmartScaling` — same fix
+- `pnl_attribution.py` — removed `CONTRACT_MULT` (was compensating for the bug; would double-apply after fix)
+
+**Prevention rule:**
+When writing any greek aggregation: delta per lot = `api_delta × lot_size (0.001)`. Theta and Vega on Delta Exchange are already in USD-per-day scaled to lot size (their internal unit requires ÷1000, same thing). If a downstream function applies a multiplier to "fix" greeks, that's a red flag — the source is wrong.
+
+---
+
+## [2026-03-13] Live bid/ask WebSocket — wrong field names + wrong channel
+
+**What went wrong:**
+Options bid/ask prices in the UI were only refreshing every 20+ seconds. The full WebSocket pipeline (Delta Exchange → subprocess → SocketIO → frontend) was already built and correctly wired, but bid/ask values were always emitting as `0`.
+
+**Root causes (3 bugs):**
+1. `_ws_subprocess_worker.py` extracted `best_bid_price` / `best_ask_price` from the `v2/ticker` message — fields that don't exist. Actual fields are nested: `data['quotes']['best_bid']` / `data['quotes']['best_ask']`. Every ticker emit carried `best_bid=0, best_ask=0`.
+2. `v2/ticker` channel only pushes on significant price change — quiet options can go 20+ seconds without an update. Wrong channel for real-time bid/ask.
+3. `read_commands()` in the worker: if a `subscribe` command arrived before WS connected (`ws_ref[0]` was None), the whole block was skipped including `subscribed_options.update()` — symbols were lost and never re-subscribed on reconnect.
+
+**Fixes applied:**
+- Switched channel from `v2/ticker` to `l1_orderbook` with category subscriptions (`"call_options"`, `"put_options"`) — pushes every ~500ms on quote change, no per-symbol tracking needed.
+- Fixed field extraction: `quotes = data.get('quotes', {}); float(quotes.get('best_bid', 0))`.
+- Removed `ping_interval=30` from `run_forever()` — was causing `kqueue` crashes on macOS (websocket-client bug).
+- Added `enable_heartbeat` + 35s watchdog thread to detect and recover from stale connections.
+- Added REST polling broadcaster in `app.py` (every 3s) as fallback for symbols with no quote changes.
+
+**Prevention rule:**
+When reading Delta Exchange WS message fields, always test the actual message structure first (`python3 -c "import websocket..."`) — field names differ between REST (`/v2/tickers`) and WS (`v2/ticker`) responses. For options bid/ask specifically: REST response has `quotes.best_bid`; WS `l1_orderbook` has top-level `best_bid`. Use `l1_orderbook` with category names for options — never `v2/ticker` (too slow) and never `l1ob` (forbidden for options).
+
+---
+
+## [2026-03-13] ATM Shield fired 6 times but never closed — `KeyError: 'side'` (CRITICAL)
+
+**What went wrong:**
+Session mmm15mar26-1: BTC spot moved from $72,048 → $72,506, approaching and then breaching CE active strike 72400. ATM Shield correctly detected the danger and fired 6 times between 14:07–16:21, but EVERY firing failed with `KeyError: 'side'` at `close_position()`. No positions were closed, no retreat happened. Worse, because ATM Shield was enabled with remaining capacity, both `close_at_atm` and `wind_down_on_atm` were **deferred** to the shield — the new safety system suppressed the old fallbacks but couldn't do its own job.
+
+**Root causes (2 bugs):**
+1. `close_position()` in `mmm_close_at_5.py` does `side = position['side']` — requires position dicts to carry a `'side'` key. The unified position ledger (session[side]['positions']) never stores `'side'` on individual positions — side is implicit from the parent dict. All other callers (close_at_5 scan, harvester, recycler, shift-recycle) build NEW dicts with `'side'` included. ATM Shield was the only caller passing raw ledger dicts.
+2. `pos_id = position.get('_pos_id')` — ledger positions use key `'id'`, not `'_pos_id'`. Even if the side bug were fixed, the ID-based position removal would have failed, falling through to unreliable content-match.
+
+**Fixes applied:**
+- `close_position()` now accepts an explicit `side` parameter (keyword arg, default None). Falls back to `position.get('side')` for backward compat. Errors gracefully if neither is available.
+- `pos_id` extraction now uses `position.get('_pos_id') or position.get('id')` to handle both constructed dicts and raw ledger positions.
+- ATM shield caller passes `side=endangered_side` explicitly.
+
+**Prevention rule:**
+When any new code path calls `close_position()` with raw ledger positions (from `session[side]['positions']`), it MUST pass `side=` explicitly. The ledger position schema does NOT include 'side' — it's always derived from the parent. Any new function receiving position dicts should use explicit parameters for context that's implicit in the data structure.
+
+---
+
+## [2026-03-12] Proactive Shift + Shift-Time Recycle cascade wiped PE then CE (CRITICAL)
+
+**What went wrong:**
+PE premium dropped to $46.85 (below shift_threshold $50). Proactive shift triggered, froze 167 PE lots, then shift_time_recycle bought back ALL 177 frozen lots via 9 serial BUY orders over 5+ minutes. Heartbeat was blocked the entire time. Watchdog killed the session at 450s timeout, but exchange orders already placed kept filling. The restarted monitor's reconciliation auto-corrected state from the mid-settlement exchange view (session=52 → 2 PE lots). PE went to 0, CE still had 126 → ONE-SIDE CLOSE. User manually restored PE positions, but the EXACT SAME cascade happened again 45 minutes later, wiping PE a second time. Then CE also went to 0.
+
+**Root causes (5 bugs):**
+1. Proactive shift runs at Step 1.5, BEFORE safety checks at Step 3 — bypasses lot_velocity, asymmetry, margin tier, regime blocks
+2. `_shift_time_recycle()` has no MAX_CLOSES_PER_HEARTBEAT cap (close_at_5 has one, shift_recycle doesn't)
+3. Serial BUY orders block heartbeat for >5 minutes — exceeds watchdog timeout
+4. Watchdog restarts immediately — reconciliation runs against mid-settlement exchange state
+5. Delta-neutral matching inflated lots from 81→126 (uncapped), amplifying the cascade
+
+**Fixes applied:**
+- A1: Moved proactive shift to Step 5.6 (after safety/regime/cooldown checks), gated behind `_skip_to_pnl`
+- A2: Added `shift_recycle_max_per_beat` param (default 10) to cap lots closed per heartbeat
+- A3: Added `guardian_max_beat_sec` wall-clock deadline (default 120s) checked inside recycle loop
+- A4: Added 30s settlement delay in watchdog before restarting monitor
+- A5: Added `shift_match_max_inflate_mult` (default 1.5) to cap delta-neutral inflation
+- Created MMMGuardian (heartbeat-level integrity monitor) with 4 invariant checks: G1 hedge integrity, G2 per-beat lot velocity, G3 side balance wipeout detection, G4 beat duration guard
+- Consolidated hedge integrity guard from 3 locations (close_position inline, wind_down_buyback inline, observer CHECK 1) into MMMGuardian G1
+
+**Post-fix audit (March 13):** Found guardian G2/G3 were dead code — `guardian.record_close()` was never called (only `observer.record_close()`), and `close_position()` created throwaway `MMMGuardian()` instances instead of using the monitor's real guardian. Fixed by:
+- Made guardian a per-session registry (`get_guardian(session_id)` / `register_guardian()` / `deregister_guardian()`)
+- `close_position()` now looks up the real guardian and calls `record_close()` after every successful close
+- Integrated G2 velocity check directly into `check_close_allowed()` (preventive, not just post-beat)
+- Shift_recycle loop breaks on guardian block (was `continue`)
+- Added `_should_stop()` check in shift_recycle loop (orders kept placing after watchdog kill)
+- Changed mechanism from `'close_at_5'` to `'shift_recycle'` with proper observer price check
+
+**Prevention rule:** Every code path that places exchange BUY orders MUST be gated behind safety checks AND have a per-beat lot cap. Every close mechanism MUST use its own mechanism label (never masquerade as another). The guardian registry (`get_guardian`) is the single source of truth for per-beat tracking — never create standalone MMMGuardian instances for tracking purposes.
+
+---
+
 ## [2026-03-10] One-sided exposure after CE fully closed via close-at-5
 
 **What went wrong:**
@@ -314,4 +408,94 @@ Any code that checks whether the market has approached our position MUST use
 `active_strike` (current exposure), not `original_strike` (historical entry,
 irrelevant after shifts). The `original_strike` field exists only for P&L
 attribution — it has no role in proximity/safety checks.
+
+### 2026-03-12: SL/TP set_sl_tp() UnboundLocalError
+**Bug:** `manager` variable used before `manager = get_sl_tp_manager()` assignment in `set_sl_tp()`.
+Previous AI moved the `manager = get_sl_tp_manager()` line BELOW the `manager.get_sl_tp(symbol)` call when adding tp_order_id lookup logic.
+**Prevention:** When reordering code to add a "read before write" pattern, always ensure the variable is initialized first. Run the endpoint manually after refactoring.
+
+### 2026-03-12: AUTO-ADOPT orphan positions catastrophic bug
+**Bug:** `_reconcile_exchange_positions()` had an AUTO-ADOPT feature that adopted exchange positions at unknown strikes as "orphan_adopted" positions. Combined with `_get_other_sessions_lots_at_symbol()` only checking RUNNING monitors (ignoring stopped/idle sessions from storage), it caused a new session to adopt ALL exchange positions from previous stopped sessions, manual trades, and other algos.
+**Impact:** Session mmm13mar26-2 adopted 8 extra lots per side within 6 minutes of starting. A subsequent strike shift placed REAL 18-lot orders (instead of correct 10) because the inflated lot count was used.
+**Fix:**
+1. Disabled AUTO-ADOPT entirely — sessions must NEVER claim positions they didn't create. UNTRACKED positions are now logged as warnings only.
+2. Fixed `_get_other_sessions_lots_at_symbol()` to check ALL sessions from storage (stopped/idle/historical), not just running monitors.
+3. Added one-time cleanup to close all `orphan_adopted` positions in existing sessions.
+**Prevention:** Never auto-add exchange positions to a session. Only auto-REMOVE phantom positions (session > exchange). A session should only track positions it explicitly created via sell orders.
+
+## [2026-03-12] Asymmetry 7:1 hard block wrongly blocked ALL sells including the light side
+
+**What went wrong:**
+When CE=126 lots and PE=2 lots (ratio 63:1), the asymmetry hard block fired `action: 'stop_adjustments'` which set `_skip_to_pnl = True` in the monitor. This skipped ALL trigger evaluation — including PE sells. But PE sells would REDUCE the asymmetry. Only CE sells should be blocked when CE is the heavy side.
+
+The Safety panel displayed: "ASYMMETRY HARD BLOCK: CE=126, PE=2 — all new sells blocked" which was factually wrong. The user saw orders blocked and correctly identified this as a bug.
+
+**Root cause:**
+`check_asymmetry()` in `mmm_safety.py` used `action: 'stop_adjustments'` — a blunt instrument that halts all trigger evaluation. The asymmetry block should be side-specific, not global.
+
+**Fix applied (`mmm_safety.py`, `mmm_monitor.py`):**
+1. Changed asymmetry 7:1 action from `'stop_adjustments'` to `'block_heavy_side_sells'`
+2. `should_block_adjustment()` does NOT recognize `'block_heavy_side_sells'` so trigger evaluation continues
+3. Monitor now stores `session['_asymmetry_blocked_side'] = heavy_side` after safety events
+4. `_process_adjustment()` checks `_asymmetry_blocked_side` and skips only if `hedge == blocked_side`
+5. Message updated: "CE sells blocked, PE sells allowed to rebalance"
+
+**Prevention rule:**
+Asymmetry protection must ALWAYS be side-specific. Blocking the light side when it's trying to rebalance directly worsens the asymmetry. Any safety event that is directional (one side is heavy, other is light) must use targeted block logic, not a global `stop_adjustments`.
+
+---
+
+## [2026-03-12] close_at_use_bid caused positions to close at 2× threshold due to wide bid-ask spread
+
+**What went wrong:**
+Session mmm13mar26-2: PE 67500 positions closed at $36-45.5 even though `close_at_threshold=20`. User said "premiums 36-45 should NOT trigger close_at_5". The asymmetry CE=126/PE=2 was caused by this spurious close of 167 PE lots.
+
+**Root cause:**
+`close_at_use_bid=True` uses the BID price to decide close eligibility: if `bid ≤ threshold`, position is marked closeable. On illiquid OTM options with wide bid-ask spreads (bid=$10-18, ask=$40-50, mark=$30-40), the bid drops below $20 but the mark price (fair value) and actual fill price (mid/ask) are $36-45. The `close_position()` call then executes `smart_execute` which places a limit order at MID price and fills at $36-45.
+
+**Investigation evidence:**
+- 8 PE positions show `status=closed, being_closed=True` — matches `close_at_5_count: 8`
+- Exchange: 9 close-buy orders at 17:03-17:06 UTC, fills at $36.0, $39.0, $40.5, $41.0, $41.5, $43.0, $43.0, $44.0, $45.5
+- Bid prices at those times were ≤ $20 (below threshold)
+- Mark prices at those times were $36-45 (well above threshold)
+
+**Fix applied (`mmm_monitor.py` `_process_close_at_5`):**
+Added WIDE-SPREAD GUARD immediately after `scan_closeable_positions()`: when `use_bid=True`, for each position the bid scan flagged as closeable, also check the mark price from `_make_fetch_fn()`. If `mark > effective_threshold`, skip the close and log. Only proceed if `mark ≤ threshold` (bid AND mark both confirm the position is cheap).
+
+**Prevention rule:**
+When using bid price for close-at-5 eligibility, ALWAYS also verify the mark price ≤ threshold before executing the buyback. Bid price alone is insufficient for illiquid options — the bid-ask spread can be 50-200% of the mid price on crypto option exchanges, causing severe overpays.
+
+---
+
+## [2026-03-12] HEDGE INTEGRITY GUARD — systemic fix for one-sided PE wipeout
+
+**What went wrong:**
+Session mmm13mar26-2: PE=101 active lots at 68000 were fully closed (BUY 1+30+50+20 @ $56-60) during a single 325.9s heartbeat. CE remained at 101 lots. PE was manually re-injected and wiped AGAIN.
+
+**Root cause (design flaw):**
+No mechanism prevented `close_position()` from closing the LAST position on a side while the other side had substantial positions. Multiple close mechanisms (close_at_5, harvest, shift_recycle, wind-down, ATM shield) all funnel through `close_position()` but none checked whether closing would leave the strategy one-sided.
+
+**Fix applied (SYSTEMIC — 3 files):**
+1. `mmm_close_at_5.py close_position()`: Added `hedge_guard` parameter (default True). Before placing exchange order, checks: if closing would reduce side's `total_lots` to ≤0 while other side has >0 `total_lots`, blocks close and returns `{success: False, hedge_guard_blocked: True}`.
+2. `mmm_monitor.py _process_close_at_5()`: Added both-sides-closing detection — if closeable list covers ALL lots on BOTH sides, sets `hedge_guard=False` to allow clean strategy exit. Also added early `break` on `hedge_guard_blocked` to stop wasted iterations.
+3. `mmm_monitor.py _process_wind_down_buyback()`: Added separate hedge check before `smart_execute` (bypasses `close_position`).
+
+**Prevention rule:**
+NEVER allow automated mechanisms to reduce one side to 0 lots while the other side has positions. The hedge integrity guard in `close_position()` is the chokepoint — all close mechanisms flow through it. Any new close mechanism MUST use `close_position()` (not direct `smart_execute`) to inherit this protection.
+
+---
+
+## [2026-03-13] Wrong margin utilization — portfolio_margin ≠ blocked margin in Delta Exchange UI
+
+**What went wrong:**
+WebUI showed 76.7% margin utilization ($1,343.33 / $1,750.47) while Delta Exchange's own UI showed 48% ($850.29 blocked as margin). The `mmm_margin_guardian.py` code prioritized `portfolio_margin` over `blocked_margin` when both are non-zero.
+
+**Root cause:**
+`portfolio_margin` in Delta's API wallet response is the **theoretical portfolio margin requirement** (a risk model value) — it can be higher than actual collateral locked. `blocked_margin` is what Delta Exchange actually freezes and what their UI labels "Blocked as Margin". The original code did `if portfolio > 0: total_used = portfolio` which picked the wrong field.
+
+**Fix:**
+Swapped priority in `mmm_margin_guardian.py` lines 176-185: now `blocked > portfolio > pos+order+cross`. The logic comment was updated to explain why.
+
+**Prevention rule:**
+For Delta Exchange wallet API: `blocked_margin` = actual locked collateral = what their UI shows. `portfolio_margin` = theoretical risk model value. Always prefer `blocked_margin` for utilization display. If you add a new margin calculation anywhere, verify it against the Delta Exchange UI "Blocked as Margin" field.
 

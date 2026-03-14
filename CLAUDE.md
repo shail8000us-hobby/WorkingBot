@@ -7,6 +7,13 @@
 
 ---
 
+## Before Starting Any Task
+- **MMM or options work**: Read `tasks/lessons.md` first — contains critical bugs already fixed with prevention rules. Real money was lost from these.
+- **Any backend change**: Run `curl http://localhost:5555/api/health` to confirm backend is up before and after.
+- **Ask before restarting backend** — live MMM sessions may be running.
+
+---
+
 ## CRITICAL RULES — NEVER VIOLATE
 
 ### 1. Port 5555 = Backend ONLY
@@ -15,8 +22,7 @@
 - **Never change port 5555 in `webui/backend/app.py`**
 - Port conflict? Kill the React dev server, NOT the backend:
   ```bash
-  lsof -ti:5555 | xargs kill -9
-  launchctl start com.gridbot.webui
+  pkill -f react-app-rewired
   ```
 
 ### 2. USD→INR Conversion: Exactly Once
@@ -29,13 +35,14 @@
 
 ### 3. macOS LaunchAgent — Not systemd/pm2
 ```bash
-launchctl start com.gridbot.webui
-launchctl stop com.gridbot.webui
-launchctl restart com.gridbot.webui
+kill -9 $(lsof -ti:5555)             # restart (KeepAlive auto-restarts after 30s ThrottleInterval)
+launchctl start com.gridbot.production.webui  # start if not running
 launchctl list | grep gridbot
 ```
-LaunchAgent plist: `~/Library/LaunchAgents/com.gridbot.webui.plist`
-Logs: `logs/launchagent_webui_error.log`
+LaunchAgent plist: `~/Library/LaunchAgents/com.gridbot.production.webui.plist`
+Logs: `logs/webui_production_error.log`
+
+> KeepAlive={SuccessfulExit:false} — launchd only auto-restarts on non-zero exit (crash/kill -9). `launchctl stop` causes clean exit (0) and does NOT auto-restart.
 
 ### 4. SocketIO Versions Must Match
 - Backend: `python-socketio 5.x`, `flask-socketio 5.x`
@@ -75,6 +82,50 @@ curl http://localhost:5555/api/health
 pip3 list | grep socketio
 cd webui/frontend && grep socket.io-client package.json
 ```
+
+---
+
+## Pre-Deploy Checklist (run before every backend restart)
+
+```bash
+# 1. All sealed tests pass — count must not drop
+python3 -m pytest webui/ bot/ -m sealed -v
+# Expected: N passed, 0 failed  (N = current total, check AI_ALREADY_SEALED.md)
+
+# 2. Backend health before touching anything
+curl http://localhost:5555/api/health
+
+# 3. Check for live MMM sessions — DO NOT restart if any session is RUNNING
+# Ask user or check dashboard before proceeding
+
+# 4. After restart: watch logs for 60s
+tail -f logs/webui_production_error.log
+
+# 5. Confirm positions still visible in options panel
+curl http://localhost:5555/api/positions
+```
+
+> **Rule:** If sealed test count drops (e.g. was 363, now 360), STOP. A sealed function was deleted or broken. Find and fix before deploying.
+
+---
+
+## MMM Restart Protocol (backend crashed while session was live)
+
+MMM automatically restores sessions and reconciles with exchange on restart — this is built in.
+But verify manually after every unplanned restart:
+
+```bash
+# 1. Check last known activity log
+tail -50 webui/backend/data/mmm_activity_log.json
+
+# 2. Confirm session was restored (not orphaned)
+curl http://localhost:5555/api/mmm/sessions
+
+# 3. Check reconciliation ran — look for 'reconciliation_autocorrect' in logs
+grep "reconciliation" logs/webui_production_error.log | tail -20
+```
+
+If positions mismatch after reconciliation: **pause the session, do NOT let it auto-trade. Reconcile manually.**
 
 ---
 
@@ -217,12 +268,12 @@ Events: `state_snapshot` (2s), `config_updated`, `bot_status`, `log_entry`, `vol
 
 ```bash
 # UI changes (hot reload)
-launchctl start com.gridbot.webui        # Backend on 5555
-cd webui/frontend && npm start           # Dev server on 3000
+launchctl start com.gridbot.production.webui  # Backend on 5555
+cd webui/frontend && npm start                # Dev server on 3000
 
 # Backend changes (production build)
 cd webui/frontend && npm run build
-launchctl restart com.gridbot.webui
+kill -9 $(lsof -ti:5555)  # launchd auto-restarts after ~30s (KeepAlive)
 
 # Tests
 pytest tests/test_refactored_code.py -v
@@ -245,6 +296,22 @@ grep "FILL\|Fill detected" bot_live.log
 | Config not reloading | File not saved | Re-save `grid_config.env` |
 | Orders not placing | `EXECUTE_ORDERS=false` | Check `grid_config.env` |
 | NameError after refactor | Missing `import logging` | Add `log = logging.getLogger(__name__)` |
+
+---
+
+## MMM Canary → Live Promotion Criteria
+
+MMM currently runs on canary account. Promote to live when ALL of these hold:
+
+| Criteria | What it means |
+|---|---|
+| All Tier 1 + Tier 2 MMM functions sealed | Core math and safety rules have contract tests |
+| Zero sealed test failures for 7 days | No regression in a week of active development |
+| 3+ complete canary sessions without manual intervention | Bot managed itself start-to-close without human fix |
+| All safety checks verified against real session data | Fixtures use real captured session state, not synthetic |
+| Reconciliation verified after at least 1 planned restart | Manual restart test while session was live |
+
+> This list lives here so promotion is a deliberate decision, not gradual drift.
 
 ---
 

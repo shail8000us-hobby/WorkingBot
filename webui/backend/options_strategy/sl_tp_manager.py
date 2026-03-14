@@ -72,6 +72,10 @@ class SLTPManager:
             logger.info("Adding missing take_profit_quantity column to sl_tp_settings table")
             cursor.execute("ALTER TABLE sl_tp_settings ADD COLUMN take_profit_quantity INTEGER")
             logger.info("Migration complete: take_profit_quantity column added")
+        if 'tp_order_id' not in columns:
+            logger.info("Adding tp_order_id column to sl_tp_settings table")
+            cursor.execute("ALTER TABLE sl_tp_settings ADD COLUMN tp_order_id TEXT")
+            logger.info("Migration complete: tp_order_id column added")
         
         conn.commit()
         conn.close()
@@ -94,7 +98,8 @@ class SLTPManager:
         trailing_stop_enabled: bool = False,
         trailing_stop_pct: Optional[float] = None,
         auto_execute: bool = True,
-        alert_only: bool = False
+        alert_only: bool = False,
+        tp_order_id: Optional[str] = None
     ) -> Dict:
         """
         Set stop-loss and take-profit for a position
@@ -137,6 +142,7 @@ class SLTPManager:
                         auto_execute = ?,
                         alert_only = ?,
                         updated_at = ?,
+                        tp_order_id = ?,
                         status = 'active'
                     WHERE symbol = ?
                 """, (
@@ -144,7 +150,7 @@ class SLTPManager:
                     take_profit_quantity,
                     1 if trailing_stop_enabled else 0, trailing_stop_pct,
                     1 if auto_execute else 0, 1 if alert_only else 0,
-                    now, symbol
+                    now, tp_order_id, symbol
                 ))
                 logger.info(f"Updated SL/TP for {symbol}")
             else:
@@ -153,14 +159,14 @@ class SLTPManager:
                     INSERT INTO sl_tp_settings (
                         symbol, stop_loss_price, stop_loss_pct, take_profit_price, take_profit_pct,
                         take_profit_quantity, trailing_stop_enabled, trailing_stop_pct, auto_execute, alert_only,
-                        created_at, updated_at, status
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
+                        tp_order_id, created_at, updated_at, status
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active')
                 """, (
                     symbol, stop_loss_price, stop_loss_pct, take_profit_price, take_profit_pct,
                     take_profit_quantity,
                     1 if trailing_stop_enabled else 0, trailing_stop_pct,
                     1 if auto_execute else 0, 1 if alert_only else 0,
-                    now, now
+                    tp_order_id, now, now
                 ))
                 logger.info(f"Created SL/TP for {symbol}")
             
@@ -179,7 +185,8 @@ class SLTPManager:
                     "trailing_stop_enabled": trailing_stop_enabled,
                     "trailing_stop_pct": trailing_stop_pct,
                     "auto_execute": auto_execute,
-                    "alert_only": alert_only
+                    "alert_only": alert_only,
+                    "tp_order_id": tp_order_id
                 }
             }
             
@@ -254,7 +261,7 @@ class SLTPManager:
             logger.error(f"Error removing SL/TP for {symbol}: {e}", exc_info=True)
             return {"success": False, "error": str(e)}
     
-    def check_triggers(self, symbol: str, current_price: float, entry_price: float, pnl_pct: float) -> Optional[Dict]:
+    def check_triggers(self, symbol: str, current_price: float, entry_price: float, pnl_pct: float, position_size: float = 0) -> Optional[Dict]:
         """
         Check if SL/TP should trigger for a position
         
@@ -263,6 +270,7 @@ class SLTPManager:
             current_price: Current mark/mid price
             entry_price: Entry price of position
             pnl_pct: Current P&L percentage
+            position_size: Position size (negative = short, positive = long)
             
         Returns:
             Dict with trigger info if triggered, None otherwise
@@ -271,9 +279,11 @@ class SLTPManager:
         if not settings:
             return None
         
+        is_short = position_size < 0
         trigger_result = None
         
         # Check Stop-Loss by percentage
+        # P&L% is directional: negative means loss regardless of side
         if settings.get('stop_loss_pct') is not None:
             sl_pct = settings['stop_loss_pct']
             # stop_loss_pct is stored as negative (e.g., -20 for 20% loss)
@@ -286,9 +296,12 @@ class SLTPManager:
                 }
         
         # Check Stop-Loss by price
+        # LONG: SL triggers when price FALLS to sl_price (current_price <= sl_price)
+        # SHORT: SL triggers when price RISES to sl_price (current_price >= sl_price)
         if not trigger_result and settings.get('stop_loss_price') is not None:
             sl_price = settings['stop_loss_price']
-            if current_price <= sl_price:
+            sl_hit = (current_price >= sl_price) if is_short else (current_price <= sl_price)
+            if sl_hit:
                 trigger_result = {
                     "type": "stop_loss",
                     "reason": f"Price (${current_price:.2f}) reached stop-loss (${sl_price:.2f})",
@@ -297,6 +310,7 @@ class SLTPManager:
                 }
         
         # Check Take-Profit by percentage
+        # P&L% is directional: positive means profit regardless of side
         if not trigger_result and settings.get('take_profit_pct') is not None:
             tp_pct = settings['take_profit_pct']
             if pnl_pct >= tp_pct:
@@ -308,9 +322,12 @@ class SLTPManager:
                 }
         
         # Check Take-Profit by price
+        # LONG: TP triggers when price RISES to tp_price (current_price >= tp_price)
+        # SHORT: TP triggers when price FALLS to tp_price (current_price <= tp_price)
         if not trigger_result and settings.get('take_profit_price') is not None:
             tp_price = settings['take_profit_price']
-            if current_price >= tp_price:
+            tp_hit = (current_price <= tp_price) if is_short else (current_price >= tp_price)
+            if tp_hit:
                 trigger_result = {
                     "type": "take_profit",
                     "reason": f"Price (${current_price:.2f}) reached target (${tp_price:.2f})",
@@ -319,26 +336,42 @@ class SLTPManager:
                 }
         
         # Check Trailing Stop
+        # LONG: track highest price, trigger when price falls trailing_pct% from peak
+        # SHORT: track lowest price, trigger when price rises trailing_pct% from trough
         if not trigger_result and settings.get('trailing_stop_enabled') and settings.get('trailing_stop_pct'):
             trailing_pct = settings['trailing_stop_pct']
-            highest_price = settings.get('trailing_stop_highest_price') or entry_price
+            ref_price = settings.get('trailing_stop_highest_price') or entry_price
             
-            # Update highest price if current is higher
-            if current_price > highest_price:
-                self._update_trailing_highest(symbol, current_price)
-                highest_price = current_price
-            
-            # Calculate trailing stop level
-            trailing_stop_price = highest_price * (1 - trailing_pct / 100)
-            
-            if current_price <= trailing_stop_price:
-                trigger_result = {
-                    "type": "trailing_stop",
-                    "reason": f"Price (${current_price:.2f}) hit trailing stop (${trailing_stop_price:.2f})",
-                    "current_price": current_price,
-                    "trigger_value": trailing_stop_price,
-                    "highest_price": highest_price
-                }
+            if is_short:
+                # For short: update reference if current price is LOWER (new trough)
+                if current_price < ref_price:
+                    self._update_trailing_highest(symbol, current_price)
+                    ref_price = current_price
+                # Trailing stop fires when price rises trailing_pct% above trough
+                trailing_stop_price = ref_price * (1 + trailing_pct / 100)
+                if current_price >= trailing_stop_price:
+                    trigger_result = {
+                        "type": "trailing_stop",
+                        "reason": f"Price (${current_price:.2f}) hit trailing stop (${trailing_stop_price:.2f})",
+                        "current_price": current_price,
+                        "trigger_value": trailing_stop_price,
+                        "lowest_price": ref_price
+                    }
+            else:
+                # For long: update reference if current price is HIGHER (new peak)
+                if current_price > ref_price:
+                    self._update_trailing_highest(symbol, current_price)
+                    ref_price = current_price
+                # Trailing stop fires when price falls trailing_pct% below peak
+                trailing_stop_price = ref_price * (1 - trailing_pct / 100)
+                if current_price <= trailing_stop_price:
+                    trigger_result = {
+                        "type": "trailing_stop",
+                        "reason": f"Price (${current_price:.2f}) hit trailing stop (${trailing_stop_price:.2f})",
+                        "current_price": current_price,
+                        "trigger_value": trailing_stop_price,
+                        "highest_price": ref_price
+                    }
         
         if trigger_result:
             trigger_result["symbol"] = symbol

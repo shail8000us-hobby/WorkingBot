@@ -28,6 +28,7 @@ from .mmm_state import recompute_side_lots, get_session_summary
 from .mmm_trigger import (
     evaluate_triggers, update_trigger_snapshots,
     apply_theta_acceleration, compute_adaptive_interval,
+    apply_theta_acceleration_v2, compute_adaptive_interval_v2,
     OUTCOME_NONE, OUTCOME_CE,
     OUTCOME_PE, OUTCOME_BOTH,
 )
@@ -140,6 +141,15 @@ class MMMMonitor:
 
         # Margin Guardian (P1 safety layer)
         self._margin_guardian = MarginGuardian(session_id)
+
+        # Strategy Guardian (heartbeat-level integrity checks)
+        try:
+            from .mmm_guardian import MMMGuardian, register_guardian
+            self._guardian = MMMGuardian(session_id)
+            register_guardian(session_id, self._guardian)
+        except Exception as e:
+            log.warning(f"[{session_id}] Guardian init failed (non-fatal): {e}")
+            self._guardian = None
 
         # Regime Engine (pre-adjustment risk controls)
         self._regime_engine = MMMRegimeEngine()
@@ -389,6 +399,13 @@ class MMMMonitor:
         except Exception as _we:
             pass
 
+        # Deregister guardian from registry
+        try:
+            from .mmm_guardian import deregister_guardian
+            deregister_guardian(self.session_id)
+        except Exception:
+            pass
+
     def pause(self, reason: str = 'User requested', resume_at: str = None):
         """Pause the heartbeat (monitoring continues but no adjustments).
 
@@ -619,10 +636,19 @@ class MMMMonitor:
                 minutes_to_expiry = self._get_minutes_to_expiry()
                 hours_to_expiry = minutes_to_expiry / 60.0 if minutes_to_expiry is not None else None
                 adaptive_enabled = params.get('adaptive_interval_enabled', True)
+                total_dte_hours = params.get('total_dte_hours', 0)
+                dte_category = params.get('dte_category', '')
 
-                adaptive_result = compute_adaptive_interval(
-                    interval, hours_to_expiry, enabled=adaptive_enabled,
-                )
+                # Use v2 percentage-based scaling for multi-DTE sessions
+                if total_dte_hours > 36 and dte_category and dte_category != '0DTE':
+                    adaptive_result = compute_adaptive_interval_v2(
+                        interval, hours_to_expiry, total_dte_hours,
+                        enabled=adaptive_enabled,
+                    )
+                else:
+                    adaptive_result = compute_adaptive_interval(
+                        interval, hours_to_expiry, enabled=adaptive_enabled,
+                    )
                 if adaptive_result['adaptive']:
                     interval = adaptive_result['effective_interval']
                     self.session['_adaptive_tier'] = adaptive_result['tier_label']
@@ -634,9 +660,16 @@ class MMMMonitor:
                 # Layer 2: Theta acceleration (last N minutes — trigger widening + sub-30s)
                 # Can only make interval SHORTER, never longer
                 if minutes_to_expiry is not None:
-                    accel = apply_theta_acceleration(
-                        self.session, minutes_to_expiry
-                    )
+                    # Use v2 for multi-DTE sessions
+                    if total_dte_hours > 36 and dte_category and dte_category != '0DTE':
+                        total_dte_mins = total_dte_hours * 60.0
+                        accel = apply_theta_acceleration_v2(
+                            self.session, minutes_to_expiry, total_dte_mins
+                        )
+                    else:
+                        accel = apply_theta_acceleration(
+                            self.session, minutes_to_expiry
+                        )
                     if accel.get('accelerated'):
                         interval = accel['effective_interval']
                         # Store effective trigger move in ephemeral session key
@@ -821,6 +854,19 @@ class MMMMonitor:
         session['_heartbeat_counter'] = session.get('_heartbeat_counter', 0) + 1
 
         beat_start_mono = time.monotonic()
+
+        # Fix A3 + Guardian: Set beat deadline and pre-beat snapshot
+        _guardian_snapshot = None
+        if hasattr(self, '_guardian') and self._guardian:
+            _guardian_snapshot = self._guardian.pre_beat_snapshot(session)
+            _beat_deadline = self._guardian.get_beat_deadline(
+                session, beat_start_mono,
+            )
+        else:
+            _beat_deadline = beat_start_mono + session.get('params', {}).get(
+                'guardian_max_beat_sec', 120,
+            )
+        session['_beat_deadline'] = _beat_deadline
 
         # Generate entry walkthrough on first heartbeat
         if session['_heartbeat_counter'] == 1:
@@ -1129,15 +1175,19 @@ class MMMMonitor:
                         _atm_wd_side = 'PE'
 
                     if _atm_wd_side:
-                        # ATM Shield deferral: let shield handle if it has capacity
+                        # ATM Shield takes priority: if enabled and has capacity,
+                        # suppress wind-down entirely — shield will reposition at Step 5.5.
+                        # Wind-down only fires if shield has no viable OTM strike
+                        # (the shield itself sets _atm_wind_down_triggered in that case).
                         if params.get('atm_shield_enabled', False):
                             _ws = _atm_wd_side.lower()
                             _sc = session.get(f'_atm_shield_count_{_ws}', 0)
                             _sm = params.get('atm_shield_max_per_session', 3)
                             if _sc < _sm:
-                                log.info(f"[{sid}] ATM wind-down deferred to ATM Shield "
-                                         f"(capacity: {_sm - _sc} fires remaining)")
-                                _atm_wd_side = None   # skip this beat — shield at Step 5.5
+                                log.info(f"[{sid}] ATM wind-down suppressed — ATM Shield active "
+                                         f"({_sm - _sc} fires remaining). "
+                                         f"Wind-down will auto-activate only if no viable OTM strike.")
+                                _atm_wd_side = None   # shield handles it at Step 5.5
 
                     if _atm_wd_side:
                         _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
@@ -1258,15 +1308,10 @@ class MMMMonitor:
                             log.error(f"[{sid}] Cleanup after ATM auto-close failed: {_cleanup_err}")
                         return
 
-        # Step 1.5: Proactive Shift Scanner (T3-1)
-        # Before close-at-5, check if either side's premium has decayed below
-        # shift_threshold while still having active lots. If so, trigger a shift
-        # proactively rather than waiting for the opposite side to trigger.
-        if session.get('params', {}).get('proactive_shift_enabled', True):
-            # T3-1 bug fix: clear per-beat flags so each heartbeat re-evaluates
-            session.pop('_proactive_shifted_ce', None)
-            session.pop('_proactive_shifted_pe', None)
-            await self._proactive_shift_scan(ce_now, pe_now)
+        # Step 1.5: Proactive Shift Scanner — MOVED to Step 5.6 (after safety checks)
+        # Fix A1 (March 12 incident): proactive shift was running BEFORE safety
+        # checks, bypassing lot_velocity, asymmetry, margin tier, and regime blocks.
+        # Now gated behind _skip_to_pnl so all safety mechanisms are respected.
 
         # Step 2: Close-at-5 scan (§11)
         # Fix #11: capture which sides had positions closed so we can re-evaluate
@@ -1473,6 +1518,24 @@ class MMMMonitor:
                              sid, 'warning',
                              {'reason': reason, 'action_type': action_type})
                 _skip_to_pnl = True
+
+        # Handle asymmetry side-specific block: store which side is blocked so
+        # _process_adjustment() can reject only heavy-side sells while still
+        # allowing light-side sells to rebalance the position.
+        _asym_block_event = next(
+            (e for e in safety_events if e.get('action') == 'block_heavy_side_sells'), None
+        )
+        if _asym_block_event:
+            _asym_heavy = _asym_block_event.get('details', {}).get('heavy_side', '')
+            session['_asymmetry_blocked_side'] = _asym_heavy
+            log_activity('asymmetry_side_block',
+                        f'⚖️ Asymmetry 7:1 — blocking {_asym_heavy.upper()} sells only '
+                        f'(light side may still sell to rebalance)',
+                        sid, 'warning',
+                        {'heavy_side': _asym_heavy,
+                         'ratio': _asym_block_event.get('details', {}).get('ratio', 0)})
+        else:
+            session.pop('_asymmetry_blocked_side', None)
 
         pause_needed, pause_reason = should_pause(safety_events)
         if pause_needed:
@@ -1747,6 +1810,15 @@ class MMMMonitor:
                     session['_atm_shield_fired'] = True
             except Exception as _shield_err:
                 log.error(f"[{sid}] ATM Shield error: {_shield_err}", exc_info=True)
+
+        # Step 5.6: Proactive Shift Scanner (T3-1) — MOVED HERE from Step 1.5
+        # Fix A1 (March 12 incident): proactive shift previously ran BEFORE safety
+        # checks, bypassing lot_velocity, asymmetry, margin tier, and regime blocks.
+        # Now gated behind _skip_to_pnl so all safety mechanisms are respected.
+        if not _skip_to_pnl and session.get('params', {}).get('proactive_shift_enabled', True):
+            session.pop('_proactive_shifted_ce', None)
+            session.pop('_proactive_shifted_pe', None)
+            await self._proactive_shift_scan(ce_now, pe_now)
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
@@ -2181,6 +2253,12 @@ class MMMMonitor:
         except Exception as e:
             log.warning(f'Walkthrough generation failed: {e}')
 
+        # Guardian post-beat check — detect invariant violations
+        if hasattr(self, '_guardian') and self._guardian and _guardian_snapshot:
+            _violations = self._guardian.post_beat_check(session, _guardian_snapshot)
+            if _violations:
+                self._guardian.handle_violations(self, _violations)
+
         # Save state
         self._save_my_session(session)
         
@@ -2408,6 +2486,56 @@ class MMMMonitor:
             group_wp_sum = group['wp_sum']
             group_avg_entry = group_wp_sum / group_lots if group_lots > 0 else 0
 
+            # ── GUARDIAN G1: HEDGE INTEGRITY GATE ─────────────────────────
+            # Centralized check via MMMGuardian (replaces inline hedge guard).
+            if hasattr(self, '_guardian') and self._guardian:
+                _allowed, _g_reason = self._guardian.check_close_allowed(
+                    session, aggressor, group_lots, 'wind_down',
+                    both_sides_closing=False,
+                )
+                if not _allowed:
+                    log.warning(
+                        f"[{sid}] GUARDIAN BLOCK (wind-down): {group_lots} "
+                        f"{aggressor.upper()} @ {strike_val} — {_g_reason}"
+                    )
+                    any_failed = True
+                    continue
+            # ── END GUARDIAN G1 ──────────────────────────────────────────────
+
+            # ── STRATEGY OBSERVER VALIDATION ─────────────────────────────────
+            # Validate wind-down buyback against strategy logic before smart_execute.
+            # Uses group's weighted average entry premium for price consistency check.
+            try:
+                from .mmm_observer import get_observer
+                current_premium = self._make_fetch_fn()(strike_val, option_type)
+                if current_premium is None:
+                    current_premium = 0  # Fallback if premium fetch fails
+                _obs_result = get_observer().validate_close(
+                    session=session,
+                    side=aggressor,
+                    lots=group_lots,
+                    current_premium=current_premium,
+                    mechanism='wind_down',
+                    entry_premium=group_avg_entry,
+                    both_sides_closing=False,
+                )
+                if not _obs_result['allowed']:
+                    log.warning(
+                        f"[{sid}] OBSERVER BLOCK (wind-down): {group_lots} "
+                        f"{aggressor.upper()} @ {strike_val} — {_obs_result['reason']}"
+                    )
+                    log_activity('wind_down',
+                                f'🌙 Wind-Down BLOCKED: {_obs_result["reason"]}',
+                                sid, 'warning',
+                                {'error': _obs_result['reason'], 'lots': group_lots, 
+                                 'strike': strike_val, 'block_type': _obs_result.get('block_type')})
+                    any_failed = True
+                    continue
+            except Exception as _obs_e:
+                log.warning(f"[{sid}] Observer validation failed (wind-down): {_obs_e}")
+                # Continue with buyback if observer fails (graceful degradation)
+            # ── END STRATEGY OBSERVER VALIDATION ─────────────────────────────
+
             symbol = self.initializer.build_symbol(
                 option_type, 'BTC', strike_val, expiry,
             )
@@ -2460,6 +2588,18 @@ class MMMMonitor:
                 group_realized = (avg_entry - close_price) * actual_filled * LOT_SIZE_BTC
                 total_realized += group_realized
                 session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
+
+                # Record successful close for velocity tracking (observer + guardian)
+                try:
+                    from .mmm_observer import get_observer
+                    get_observer().record_close(sid, aggressor, actual_filled)
+                except Exception:
+                    pass
+                if hasattr(self, '_guardian') and self._guardian:
+                    try:
+                        self._guardian.record_close(aggressor, actual_filled)
+                    except Exception:
+                        pass
 
                 log_activity('wind_down',
                             f'🌙 Wind-Down leg: Bought back {actual_filled} {aggressor.upper()} '
@@ -2677,6 +2817,17 @@ class MMMMonitor:
                 f"[{sid}] Pending order guard failed: {_guard_err} — proceeding with caution"
             )
         # ── END PENDING ORDER GUARD ───────────────────────────────────────────
+
+        # Asymmetry side-block: only block the heavy side — the light side is
+        # allowed to sell so it can rebalance the position toward symmetry.
+        _asym_blocked_side = session.get('_asymmetry_blocked_side', '')
+        if _asym_blocked_side and hedge == _asym_blocked_side:
+            log_activity('asymmetry_side_blocked',
+                        f'⚖️ {hedge.upper()} sell blocked: asymmetry 7:1 — '
+                        f'{hedge.upper()} is the heavy side',
+                        sid, 'warning',
+                        {'blocked_side': hedge})
+            return
 
         # §9: Check for reversal
         is_reversal = detect_reversal(session, aggressor)
@@ -2932,6 +3083,32 @@ class MMMMonitor:
                 )
                 if recycled:
                     return  # Recycling handled the adjustment
+
+                # §4.6 CAP-DRIVEN AUTO-SHIFT: M2 recycling failed (likely no
+                # frozen positions to recycle).  Freeze current active positions
+                # and shift to a new strike — this resets active_lots to 0 so
+                # the algo can continue selling.
+                log.info(
+                    f"[{sid}] CAP AUTO-SHIFT: {hedge.upper()} capped at "
+                    f"{session.get(hedge, {}).get('active_lots', 0)} lots, "
+                    f"M2 recycling failed — triggering strike shift"
+                )
+                log_activity('cap_auto_shift',
+                    f'🔄 CAP AUTO-SHIFT: {hedge.upper()} hit position cap, '
+                    f'M2 recycling unavailable — freezing {session.get(hedge, {}).get("active_lots", 0)} '
+                    f'lots and shifting to new strike',
+                    sid, 'warning',
+                    {'side': hedge.upper(), 'active_lots': session.get(hedge, {}).get('active_lots', 0)})
+                self._hb_wt['shift'] = {
+                    'side': hedge,
+                    'reason': 'cap_auto_shift',
+                    'hedge_premium': hedge_premium,
+                    'loss': loss,
+                }
+                await self._process_strike_shift(
+                    hedge, loss, ce_now, pe_now,
+                )
+                return
 
             log_activity('adjustment_skipped',
                         f'⏭️ Adjustment skipped: {hedge.upper()} lots=0 — {skip_reason}',
@@ -3314,7 +3491,11 @@ class MMMMonitor:
                     target = max(int(opposite_active * mult + 0.999), lots)
                 # Respect position cap (after freeze, active_lots for this side is 0)
                 max_per_side = params.get('max_lots_per_side', 100)
-                lots = min(target, max_per_side)
+                # Fix A5: Cap inflation — don't jump from formula lots to opposite lots
+                # uncapped. March 12 incident inflated 81→126 creating destructive cascade.
+                max_inflate = params.get('shift_match_max_inflate_mult', 1.5)
+                inflate_cap = int(pre_match_lots * max_inflate + 0.999)
+                lots = min(target, max_per_side, inflate_cap)
                 if lots > pre_match_lots:
                     if trend_tier >= 1 and params.get('trend_boost_enabled', False) and is_safe_side:
                         trend_note = f' (trend T{trend_tier} boost {boost_mult:.1f}x)'
@@ -3804,6 +3985,7 @@ class MMMMonitor:
             result = await close_position(
                 self.executor, self.initializer, session, pos,
                 pnl_attribution_key='pnl_harvest',
+                mechanism='harvest',
             )
 
             if result.get('success'):
@@ -4362,11 +4544,33 @@ class MMMMonitor:
         for close_payload in priced_frozen:
             if closed_lots >= max_closeable_lots:
                 break
+            # Stop check: abort if monitor was stopped mid-loop (March 12 fix —
+            # old monitor kept placing orders after watchdog killed the session)
+            if self._should_stop():
+                log.info(f"[{sid}] Shift recycle: stop requested, aborting remaining closes")
+                break
+            # Fix A2: Per-beat cap on shift-time recycle (March 12 incident fix)
+            max_per_beat = params.get('shift_recycle_max_per_beat', 10)
+            if closed_lots >= max_per_beat:
+                log.info(
+                    f"[{sid}] Shift recycle: per-beat cap reached "
+                    f"({max_per_beat} lots) — deferring remaining to next beat"
+                )
+                break
+            # Fix A3: Heartbeat wall-clock deadline (March 12 incident fix)
+            beat_deadline = session.get('_beat_deadline', 0)
+            if beat_deadline and time.monotonic() > beat_deadline:
+                log.warning(
+                    f"[{sid}] Shift recycle: heartbeat deadline exceeded "
+                    f"— deferring remaining closes to next beat"
+                )
+                break
             lots = close_payload['lots']
             live_premium = close_payload['current_premium']
             try:
                 result = await close_position(
                     self.executor, self.initializer, session, close_payload,
+                    mechanism='shift_recycle',
                 )
             except Exception as e:
                 log.warning(
@@ -4385,11 +4589,16 @@ class MMMMonitor:
                     f"(premium ${live_premium:.2f}, cost ${cost:.4f})"
                 )
             else:
+                _reject_reason = result.get('error', 'unknown')
                 log.warning(
                     f"[{sid}] Shift recycle: close rejected for "
                     f"{side.upper()} @ {close_payload['strike']}: "
-                    f"{result.get('error', 'unknown')}"
+                    f"{_reject_reason}"
                 )
+                # Guardian velocity/hedge block → stop trying (cap applies to all)
+                if result.get('hedge_guard_blocked'):
+                    log.info(f"[{sid}] Shift recycle: guardian blocked — stopping loop")
+                    break
 
         if closed_lots > 0:
             # Suggestion 3: Shift-time recycle ROI tracking
@@ -4461,6 +4670,33 @@ class MMMMonitor:
             threshold_override=wd_threshold if using_elevated else None,
         )
 
+        # ── WIDE-SPREAD GUARD ─────────────────────────────────────────────────
+        # When using bid price for the threshold check, the bid can fall below
+        # threshold while the mark price (fair value) is significantly higher
+        # due to wide bid-ask spreads common in illiquid, deep-OTM options.
+        # Guard: only execute a bid-triggered close if the mark price is ALSO
+        # ≤ threshold.  If mark > threshold the position still has real value
+        # and closing now would cause an overpay (e.g., bid=$15 but mark=$40).
+        if use_bid and closeable:
+            effective_threshold = wd_threshold if using_elevated else normal_threshold
+            mark_fn = self._make_fetch_fn()
+            guarded = []
+            for pos in closeable:
+                option_type = 'call' if pos['side'] == 'ce' else 'put'
+                mark = mark_fn(pos['strike'], option_type)
+                # Allow close if mark unavailable (cache miss) or mark ≤ threshold
+                if mark is not None and mark > effective_threshold:
+                    log.info(
+                        f"[{sid}] Close-at-5 wide-spread guard: skipping "
+                        f"{pos['side'].upper()} @ {pos['strike']} "
+                        f"(bid={pos['current_premium']:.2f} ≤ {effective_threshold:.2f} "
+                        f"but mark={mark:.2f} > threshold — wide bid-ask spread)"
+                    )
+                    continue
+                guarded.append(pos)
+            closeable = guarded
+        # ─────────────────────────────────────────────────────────────────────
+
         if closeable:
             threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
             bid_note = ' [using bid price]' if use_bid else ''
@@ -4481,6 +4717,27 @@ class MMMMonitor:
 
         closed_count = 0
         sides_closed: set = set()  # Fix #11: track which sides had successful closes
+
+        # ── HEDGE INTEGRITY: both-sides-closing detection ─────────────────
+        # If the closeable list covers ALL lots on BOTH sides, both sides are
+        # being wound down simultaneously → no one-sided exposure risk.
+        # In that case, bypass the hedge guard so the strategy can complete.
+        _ce_closeable_lots = sum(p['lots'] for p in closeable if p['side'] == 'ce')
+        _pe_closeable_lots = sum(p['lots'] for p in closeable if p['side'] == 'pe')
+        _ce_total = session.get('ce', {}).get('total_lots', 0)
+        _pe_total = session.get('pe', {}).get('total_lots', 0)
+        _both_sides_closing = (
+            _ce_closeable_lots >= _ce_total and _pe_closeable_lots >= _pe_total
+            and _ce_total > 0 and _pe_total > 0
+        )
+        if _both_sides_closing:
+            log.info(
+                f"[{sid}] Close-at-5: both sides fully closeable "
+                f"(CE={_ce_closeable_lots}/{_ce_total}, PE={_pe_closeable_lots}/{_pe_total}) "
+                f"— hedge guard bypassed for clean exit"
+            )
+        # ──────────────────────────────────────────────────────────────────
+
         for pos in closeable:
             # Cap: don't process more than MAX_CLOSES_PER_HEARTBEAT per beat
             if closed_count >= self.MAX_CLOSES_PER_HEARTBEAT:
@@ -4493,6 +4750,15 @@ class MMMMonitor:
             # Check if monitor was stopped while we were executing closes
             if self._should_stop():
                 log.info(f"[{sid}] Close-at-5: stop requested, aborting remaining closes")
+                break
+
+            # G4: Beat deadline — defer remaining closes to next heartbeat
+            beat_deadline = session.get('_beat_deadline', 0)
+            if beat_deadline and time.monotonic() > beat_deadline:
+                log.warning(
+                    f"[{sid}] Close-at-5: heartbeat deadline exceeded "
+                    f"— deferring {len(closeable) - closed_count} remaining closes"
+                )
                 break
 
             # ── SHIFT-BEFORE-CLOSE GUARD ──────────────────────────────────────
@@ -4547,6 +4813,8 @@ class MMMMonitor:
 
             result = await close_position(
                 self.executor, self.initializer, session, pos,
+                hedge_guard=not _both_sides_closing,
+                mechanism='close_at_5',
             )
 
             if result.get('success'):
@@ -4575,6 +4843,14 @@ class MMMMonitor:
                         f"[{sid}] {pos['side'].upper()} fully closed — "
                         f"one-side guard in heartbeat will evaluate."
                     )
+            elif result.get('hedge_guard_blocked'):
+                # Hedge integrity guard blocked this close — stop trying
+                # more positions on this side (they'll all be blocked too)
+                log.info(
+                    f"[{sid}] Close-at-5: hedge guard stopped further "
+                    f"{pos['side'].upper()} closes (preserving hedge)"
+                )
+                break
 
         return sides_closed  # Fix #11
 
@@ -5048,37 +5324,64 @@ class MMMMonitor:
 
     def _get_other_sessions_lots_at_symbol(self, symbol: str) -> int:
         """
-        Return the total lots that OTHER active MMM sessions claim at a
-        given exchange symbol.  Used during reconciliation to avoid
-        auto-syncing positions that belong to a different session.
+        Return the total lots that OTHER MMM sessions (running OR stopped)
+        claim at a given exchange symbol.  Used during reconciliation to
+        avoid auto-syncing positions that belong to a different session.
+
+        BUG FIX: Previously only checked running monitors. Stopped/idle
+        sessions from storage were invisible, causing orphan adoption of
+        positions that belonged to stopped sessions.
         """
         total = 0
+
+        # 1) Check running monitors (in-memory, most up-to-date)
+        checked_sids = {self.session_id}  # skip self
         for other_sid, other_mon in get_all_monitors().items():
             if other_sid == self.session_id:
                 continue
-            other = other_mon.session
-            other_expiry = other.get('params', {}).get('expiry', '')
-            for side_key in ['ce', 'pe']:
-                side = other.get(side_key, {})
-                opt = 'call' if side_key == 'ce' else 'put'
+            checked_sids.add(other_sid)
+            total += self._count_session_lots_at_symbol(other_mon.session, symbol)
 
-                # Active strike lots
-                active_strike = side.get('active_strike', 0)
-                if active_strike > 0:
-                    asym = self.initializer.build_symbol(opt, 'BTC', active_strike, other_expiry)
-                    if asym == symbol:
-                        total += side.get('original_lots', 0)
-                        for fill in side.get('adjustment_fills', []):
-                            if fill.get('strike', active_strike) == active_strike:
-                                total += fill.get('lots', 0)
+        # 2) Check ALL sessions from storage (catches stopped/idle/historical)
+        try:
+            from .mmm_storage import get_storage
+            storage = get_storage()
+            for stored in storage.list_sessions():
+                stored_sid = stored.get('session_id', '')
+                if stored_sid in checked_sids:
+                    continue  # already counted from monitor
+                checked_sids.add(stored_sid)
+                total += self._count_session_lots_at_symbol(stored, symbol)
+        except Exception as e:
+            log.warning(f"[{self.session_id}] Failed to check stored sessions: {e}")
 
-                # Frozen position lots
-                for frozen in side.get('frozen_positions', []):
-                    f_strike = frozen.get('strike', 0)
-                    if f_strike > 0:
-                        fsym = self.initializer.build_symbol(opt, 'BTC', f_strike, other_expiry)
-                        if fsym == symbol:
-                            total += frozen.get('lots', 0)
+        return total
+
+    def _count_session_lots_at_symbol(self, session_data: Dict, symbol: str) -> int:
+        """Count lots a session claims at a specific exchange symbol."""
+        total = 0
+        other_expiry = session_data.get('params', {}).get('expiry', '')
+        for side_key in ['ce', 'pe']:
+            side = session_data.get(side_key, {})
+            opt = 'call' if side_key == 'ce' else 'put'
+
+            # Active strike lots (from positions ledger — most accurate)
+            for pos in side.get('positions', []):
+                if pos.get('status') not in ('active', 'shifted'):
+                    continue
+                p_strike = pos.get('strike', 0)
+                if p_strike > 0:
+                    psym = self.initializer.build_symbol(opt, 'BTC', p_strike, other_expiry)
+                    if psym == symbol:
+                        total += pos.get('lots', 0)
+
+            # Frozen position lots
+            for frozen in side.get('frozen_positions', []):
+                f_strike = frozen.get('strike', 0)
+                if f_strike > 0:
+                    fsym = self.initializer.build_symbol(opt, 'BTC', f_strike, other_expiry)
+                    if fsym == symbol:
+                        total += frozen.get('lots', 0)
         return total
 
     # =========================================================================
@@ -5296,6 +5599,34 @@ class MMMMonitor:
                             _pos['closed_at'] = _now
                     from .mmm_state import recompute_side_lots
                     recompute_side_lots(side)
+
+        # ── One-time cleanup: remove ALL orphan_adopted positions.
+        #    Auto-adopt is now disabled — these are artifacts from the old
+        #    code that adopted other sessions'/algos'/manual positions. ──
+        if not session.get('_orphan_adopted_cleaned'):
+            session['_orphan_adopted_cleaned'] = True
+            from .mmm_state import recompute_side_lots as _recompute
+            for side_key in ['ce', 'pe']:
+                side = session.get(side_key, {})
+                _now = datetime.now(timezone.utc).isoformat()
+                removed_lots = 0
+                for _pos in side.get('positions', []):
+                    if _pos.get('type') == 'orphan_adopted' and _pos.get('status') in ('active', 'shifted'):
+                        removed_lots += _pos.get('lots', 0)
+                        _pos['status'] = 'closed'
+                        _pos['closed_at'] = _now
+                        _pos['close_reason'] = 'orphan_adopt_disabled_cleanup'
+                if removed_lots > 0:
+                    _recompute(side)
+                    log.warning(
+                        f"[{sid}] Cleanup: removed {removed_lots} orphan_adopted "
+                        f"{side_key.upper()} lots (auto-adopt disabled)"
+                    )
+                    log_activity('reconciliation_autocorrect',
+                        f'🧹 Cleanup: removed {removed_lots} orphan_adopted '
+                        f'{side_key.upper()} lots — auto-adopt is now disabled',
+                        sid, 'warning',
+                        {'side': side_key, 'removed_lots': removed_lots})
 
         # ── Build the set of symbols THIS session owns ──
         session_symbols = set()
@@ -5592,52 +5923,19 @@ class MMMMonitor:
                             'session_lots': 0,
                             'exchange_size': ex_size,
                             'other_sessions_lots': other_lots,
-                            'auto_corrected': True,
+                            'auto_corrected': False,
                         })
 
-                        # AUTO-ADOPT: Add orphaned position to session state.
-                        # This catches positions created by a dead monitor's
-                        # in-flight strike shift that couldn't persist state.
-                        # Safety: only adopts lots NOT owned by other sessions.
-                        adopt_lots = int(unowned)
-                        if adopt_lots > 0:
-                            from .mmm_state import recompute_side_lots
-                            now_ts = datetime.now(timezone.utc).isoformat()
-                            counter = side.get('_pos_counter', 0) + 1
-                            side['_pos_counter'] = counter
-                            # Use exchange entry_price as entry_premium
-                            # (best available proxy for original fill price)
-                            ex_entry = float(pos.get('entry_price', 0))
-                            side.setdefault('positions', []).append({
-                                'id': f"{side_key}_orphan_{counter:03d}",
-                                'strike': ex_strike,
-                                'lots': adopt_lots,
-                                'entry_premium': ex_entry,
-                                'premium': ex_entry,
-                                'type': 'orphan_adopted',
-                                'status': 'active',
-                                'created_at': now_ts,
-                                'shifted_at': None,
-                                'closed_at': None,
-                                'realized_pnl': None,
-                                'timestamp': now_ts,
-                                'adopted_reason': 'watchdog_restart_orphan',
-                            })
-                            side['active_strike'] = ex_strike
-                            # Update symbol to match adopted strike
-                            side['symbol'] = sym
-                            recompute_side_lots(side)
-                            log.warning(
-                                f"[{sid}] ORPHAN ADOPTED: {side_key.upper()} @ {ex_strike} "
-                                f"({adopt_lots} lots) — likely from crashed monitor's "
-                                f"in-flight strike shift"
-                            )
-                            log_activity('reconciliation_autocorrect',
-                                f'🔧 Orphan adopted: {side_key.upper()} @ {ex_strike} '
-                                f'({adopt_lots} lots) — watchdog restart recovery',
-                                sid, 'warning',
-                                {'side': side_key, 'strike': ex_strike,
-                                 'lots': adopt_lots, 'reason': 'orphan_from_dead_monitor'})
+                        # WARNING ONLY: Log untracked positions but do NOT
+                        # auto-adopt. Previous auto-adopt caused catastrophic
+                        # bugs — adopting positions from other stopped sessions,
+                        # manual trades, or other algos. A session must NEVER
+                        # claim positions it didn't create.
+                        log.warning(
+                            f"[{sid}] UNTRACKED POSITION: {side_key.upper()} @ {ex_strike} "
+                            f"({int(unowned)} lots on exchange, not in this session). "
+                            f"NOT auto-adopting — may belong to another algo/session/manual trade."
+                        )
 
             # §26.9b: Self-heal existing positions with entry_premium=0.
             # Orphan positions adopted before this fix may have entry_premium=0.

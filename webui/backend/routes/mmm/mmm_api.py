@@ -88,6 +88,53 @@ def _check_guardian_signal() -> str:
 
 
 # =============================================================================
+# DTE Presets
+# =============================================================================
+
+@mmm_bp.route('/dte-presets', methods=['GET'])
+def get_dte_presets():
+    """
+    List available DTE presets.
+
+    Returns:
+        {success: true, presets: [...]}
+    """
+    try:
+        from .mmm_dte_presets import list_presets, DTE_PRESETS
+        return jsonify({
+            'success': True,
+            'presets': list_presets(),
+            'preset_details': {k: v for k, v in DTE_PRESETS.items()},
+        })
+    except Exception as e:
+        log.exception("Failed to get DTE presets")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/aggregate-pnl', methods=['GET'])
+def get_aggregate_pnl():
+    """
+    Get aggregate PnL across all active sessions.
+
+    Returns:
+        {success: true, aggregate: {...}}
+    """
+    try:
+        from .mmm_dte_presets import check_aggregate_pnl
+        storage = get_storage()
+        all_sessions = storage.list_sessions(active_only=True)
+        # Filter to truly active sessions (RUNNING, PAUSED, BOTH_SIDES_UP)
+        active = [s for s in all_sessions
+                  if s.get('strategy_status') in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP',
+                                                  'STARTING', 'PARTIAL_ENTRY')]
+        result = check_aggregate_pnl(active)
+        return jsonify({'success': True, 'aggregate': result})
+    except Exception as e:
+        log.exception("Failed to get aggregate PnL")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # Session CRUD
 # =============================================================================
 
@@ -216,6 +263,23 @@ def create_session_endpoint():
                     'success': False,
                     'error': f"Invalid expiry format: '{expiry_str}'. Expected DDMMYYYY.",
                 }), 400
+
+        # Liquidity gate: check chain has enough liquid strikes (fresh mode only)
+        if mode == 'fresh' and expiry_str:
+            try:
+                from .mmm_initializer import MMMInitializer
+                from .mmm_dte_presets import check_chain_liquidity
+                initializer = MMMInitializer()
+                chain_result = initializer.get_full_chain(expiry_str)
+                if chain_result.get('success') and chain_result.get('chain'):
+                    liq = check_chain_liquidity(chain_result['chain'])
+                    if not liq['liquid']:
+                        return jsonify({
+                            'success': False,
+                            'error': liq['message'],
+                        }), 400
+            except Exception as e:
+                log.warning(f"Liquidity gate check failed (non-blocking): {e}")
 
         # Create session state
         session = create_session(mode=mode, params=validated)
@@ -392,6 +456,24 @@ def start_session(session_id: str):
         # IMP-8: Pre-entry regime checks — warnings only, do not block start
         pre_entry_warnings = _check_pre_entry_conditions(session)
 
+        # Phase 0: Aggregate PnL safety check across all active sessions
+        try:
+            from .mmm_dte_presets import check_aggregate_pnl
+            all_sessions = storage.list_sessions(active_only=True)
+            active = [s for s in all_sessions
+                      if s.get('strategy_status') in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP',
+                                                      'STARTING', 'PARTIAL_ENTRY')
+                      and s.get('session_id') != session_id]
+            global_max = session.get('params', {}).get('global_max_loss', 50000.0)
+            agg_check = check_aggregate_pnl(active, global_max)
+            if not agg_check['safe']:
+                return jsonify({
+                    'success': False,
+                    'error': agg_check['message'],
+                    'aggregate_pnl': agg_check,
+                }), 400
+        except Exception as e:
+            log.warning(f"Aggregate PnL check failed (non-blocking): {e}")
 
         # Check if session has been initialized (both sides have positions)
         ce_lots = session.get('ce', {}).get('original_lots', 0)
@@ -1128,8 +1210,14 @@ def resume_session(session_id: str):
             }), 404
 
         status = session.get('strategy_status', 'IDLE')
-        # M-10 fix: Only allow resume from PAUSED state (resuming RUNNING is a no-op
-        # that could trigger duplicate heartbeat registrations)
+        # M-10 fix: Only allow resume from PAUSED or RUNNING state
+        # RUNNING can happen due to heartbeat race — treat as success
+        if status == 'RUNNING':
+            return jsonify({
+                'success': True,
+                'message': f'Session {session_id} is already running',
+                'status': 'RUNNING',
+            })
         if status != 'PAUSED':
             return jsonify({
                 'success': False,

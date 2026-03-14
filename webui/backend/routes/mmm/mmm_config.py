@@ -169,6 +169,18 @@ PARAM_RULES = {
     'atm_shield_loss_split_aggressor': {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
     'atm_shield_max_per_session':      {'type': int,   'min': 1,    'max': 10,    'hot': True},
     'atm_shield_cooldown_mins':        {'type': int,   'min': 0,    'max': 60,    'hot': True},
+
+    # Multi-Expiry DTE Presets
+    'dte_category':                    {'type': str,   'min': None, 'max': None,  'hot': True},
+    'total_dte_hours':                 {'type': float, 'min': 0,    'max': 10000, 'hot': True},
+    'global_max_loss':                 {'type': float, 'min': 100,  'max': 1e9,   'hot': True},
+    # Guardian params
+    'guardian_enabled':                {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'guardian_max_close_per_beat':     {'type': int,   'min': 5,    'max': 500,   'hot': True},
+    'guardian_max_beat_sec':           {'type': int,   'min': 30,   'max': 600,   'hot': True},
+    'guardian_side_wipeout_floor':     {'type': int,   'min': 1,    'max': 100,   'hot': True},
+    'shift_recycle_max_per_beat':      {'type': int,   'min': 1,    'max': 100,   'hot': True},
+    'shift_match_max_inflate_mult':    {'type': float, 'min': 1.0,  'max': 10.0,  'hot': True},
 }
 
 

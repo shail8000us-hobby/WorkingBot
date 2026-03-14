@@ -64,9 +64,18 @@ class MMMSafety:
         events.extend(self.check_asymmetry(session))
 
         if minutes_to_expiry is not None:
-            events.extend(
-                self.check_near_expiry(session, minutes_to_expiry)
-            )
+            # Use v2 for multi-DTE sessions
+            params = session.get('params', {})
+            total_dte_hours = params.get('total_dte_hours', 0)
+            dte_cat = params.get('dte_category', '')
+            if total_dte_hours > 36 and dte_cat != '0DTE':
+                events.extend(
+                    self.check_near_expiry_v2(session, minutes_to_expiry)
+                )
+            else:
+                events.extend(
+                    self.check_near_expiry(session, minutes_to_expiry)
+                )
 
         events.extend(self.check_pnl_guardrail(session))
         events.extend(self.check_trailing_stop(session))
@@ -597,22 +606,29 @@ class MMMSafety:
         lot_reduction = params.get('asymmetry_5to1_lot_reduction', 0.5)
 
         if ratio >= 7 and hard_block_enabled:
-            # Tier 3: hard block all new sells
+            # Tier 3: block ONLY the heavy-side sells — allow the light side to
+            # rebalance.  Previously used 'stop_adjustments' which blocked ALL
+            # trigger evaluation via _skip_to_pnl, preventing PE sells when CE
+            # was the heavy side (e.g. CE=126, PE=2 → PE sells were forbidden
+            # even though they would reduce asymmetry).  Fix: use targeted block.
             session.pop('_asymmetry_lot_reduction_pct', None)
             session.pop('_asymmetry_heavy_side', None)
+            light_side = 'pe' if heavy_side == 'ce' else 'ce'
             events.append({
                 'type': 'asymmetry',
                 'level': 'critical',
                 'message': (
                     f"ASYMMETRY HARD BLOCK: CE={ce_lots}, PE={pe_lots} "
-                    f"(ratio: {ratio:.1f}:1 ≥ 7:1) — all new sells blocked"
+                    f"(ratio: {ratio:.1f}:1 ≥ 7:1) — "
+                    f"{heavy_side.upper()} sells blocked, {light_side.upper()} sells allowed to rebalance"
                 ),
-                'action': 'stop_adjustments',
+                'action': 'block_heavy_side_sells',
                 'details': {
                     'ce_lots': ce_lots,
                     'pe_lots': pe_lots,
                     'ratio': round(ratio, 1),
                     'heavy_side': heavy_side,
+                    'light_side': light_side,
                 },
             })
         elif ratio >= 5:
@@ -718,6 +734,104 @@ class MMMSafety:
                     'minutes_to_expiry': minutes_to_expiry,
                 },
             })
+
+        return events
+
+    def check_near_expiry_v2(
+        self,
+        session: Dict,
+        minutes_to_expiry: float,
+    ) -> List[Dict]:
+        """
+        DTE-aware near-expiry check for multi-expiry sessions.
+
+        Combines:
+        1. Absolute-minute thresholds (auto_close_mins, stop_adjustment_mins)
+           — always enforced, same as v1
+        2. Percentage-based soft wind-down warning based on total DTE
+
+        For 0DTE sessions, behaves identically to v1.
+        For 5DTE+ sessions, adds early warnings when entering the last X% of DTE.
+        """
+        events = []
+        params = session.get('params', {})
+        stop_mins = params.get('stop_adjustment_mins', 15)
+        close_mins = params.get('auto_close_mins', 5)
+        total_dte_hours = params.get('total_dte_hours', 0)
+        wind_down_hours = params.get('wind_down_hours_before_expiry', 1)
+
+        # 1. Absolute thresholds — always enforced (same as v1)
+        if minutes_to_expiry <= close_mins:
+            events.append({
+                'type': 'near_expiry',
+                'level': 'critical',
+                'message': (
+                    f"AUTO-CLOSE: {minutes_to_expiry:.1f} min to expiry "
+                    f"(threshold: {close_mins} min). Closing all positions."
+                ),
+                'action': 'auto_close',
+                'details': {
+                    'minutes_to_expiry': minutes_to_expiry,
+                    'threshold': close_mins,
+                },
+            })
+            return events  # Most critical — skip other checks
+
+        if minutes_to_expiry <= stop_mins:
+            events.append({
+                'type': 'near_expiry',
+                'level': 'alert',
+                'message': (
+                    f"STOP ADJUSTMENTS: {minutes_to_expiry:.1f} min to expiry "
+                    f"(threshold: {stop_mins} min). No more adjustments."
+                ),
+                'action': 'stop_adjustments',
+                'details': {
+                    'minutes_to_expiry': minutes_to_expiry,
+                    'threshold': stop_mins,
+                },
+            })
+            return events
+
+        # 2. Wind-down zone — from preset's wind_down_hours_before_expiry
+        wind_down_mins = wind_down_hours * 60
+        if minutes_to_expiry <= wind_down_mins:
+            events.append({
+                'type': 'near_expiry',
+                'level': 'warning',
+                'message': (
+                    f"WIND-DOWN ZONE: {minutes_to_expiry:.0f} min to expiry "
+                    f"(wind-down starts at {wind_down_mins:.0f} min). "
+                    f"Reducing activity."
+                ),
+                'action': 'wind_down',
+                'details': {
+                    'minutes_to_expiry': minutes_to_expiry,
+                    'wind_down_threshold_mins': wind_down_mins,
+                },
+            })
+            return events
+
+        # 3. Percentage-based early warning (last 5% of total DTE)
+        if total_dte_hours > 36:  # Only for multi-DTE sessions
+            total_dte_mins = total_dte_hours * 60
+            warning_pct = 0.05  # Last 5% of DTE
+            warning_mins = total_dte_mins * warning_pct
+            if minutes_to_expiry <= warning_mins:
+                events.append({
+                    'type': 'near_expiry',
+                    'level': 'info',
+                    'message': (
+                        f"Expiry approaching: {minutes_to_expiry:.0f} min "
+                        f"(last 5% of {total_dte_hours:.0f}h DTE)"
+                    ),
+                    'action': 'continue',
+                    'details': {
+                        'minutes_to_expiry': minutes_to_expiry,
+                        'warning_pct': warning_pct,
+                        'total_dte_hours': total_dte_hours,
+                    },
+                })
 
         return events
 

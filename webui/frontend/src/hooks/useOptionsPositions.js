@@ -439,6 +439,24 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         );
       });
 
+      // order_filled: a limit order was filled — refresh pending orders + positions
+      socketRef.current.on('order_filled', (data) => {
+        console.log('[useOptionsPositions] ⚡ Order filled:', data.symbol);
+        fetchPendingOrders();
+        // Small delay before fetching positions — exchange needs a moment to settle
+        setTimeout(() => fetchPositions(), 500);
+      });
+
+      // pending_orders_updated: any order state change (placed, cancelled)
+      socketRef.current.on('pending_orders_updated', () => {
+        fetchPendingOrders();
+      });
+
+      // positions_updated: position changed (size, entry price, etc.)
+      socketRef.current.on('positions_updated', () => {
+        fetchPositions();
+      });
+
       socketRef.current.on('disconnect', () => {
         console.log('[useOptionsPositions] WebSocket disconnected (will auto-reconnect)');
       });

@@ -92,3 +92,128 @@ class TestJestSealedGetOpenPositions:
             f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
             f"--testPathPattern=test_sealed_getOpenPositions"
         )
+
+
+class TestJestSealedPositionRowActions:
+    """
+    @sealed — PositionRow actions column (entry #65)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_position_row_actions.test.js
+    """
+
+    def test_all_position_row_actions_contracts_pass(self):
+        """
+        CONTRACT: PositionRow actions column (scale/roll/close/remove) must pass all Jest contract tests.
+        This test FAILS if any Jest test fails or if Jest cannot run.
+        """
+        result = _run_jest("test_sealed_position_row_actions")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed PositionRow actions tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_position_row_actions"
+        )
+
+
+class TestJestSealedSLTPDialog:
+    """
+    @sealed — SLTPDialog.handleSave + handleRemove (entry #66)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_sltp_dialog.test.js
+    """
+
+    def test_all_sltp_dialog_contracts_pass(self):
+        """
+        CONTRACT: SLTPDialog handleSave and handleRemove must pass all Jest contract tests.
+        This test FAILS if any Jest test fails or if Jest cannot run.
+        """
+        result = _run_jest("test_sealed_sltp_dialog")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed SLTPDialog tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_sltp_dialog"
+        )
+
+
+class TestJestSealedTakeProfitDialog:
+    """
+    @sealed — TakeProfitDialog.handleSave + handleRemove (entry #67)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_take_profit_dialog.test.js
+    """
+
+    def test_all_take_profit_dialog_contracts_pass(self):
+        """
+        CONTRACT: TakeProfitDialog handleSave and handleRemove must pass all Jest contract tests.
+        This test FAILS if any Jest test fails or if Jest cannot run.
+        """
+        result = _run_jest("test_sealed_take_profit_dialog")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed TakeProfitDialog tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_take_profit_dialog"
+        )
+
+
+class TestJestSealedMMMMarginPanel:
+    """
+    @sealed — MMMMarginGuardianPanel sub-components (entry #75)
+    Runs: webui/frontend/src/components/mmm/__tests__/test_sealed_mmm_margin_panel.test.js
+    """
+
+    def test_all_mmm_margin_panel_contracts_pass(self):
+        """
+        CONTRACT: Exchange Margin panel colors, tier labels, wallet rows, and
+        TierLadder action descriptions must pass all Jest contract tests.
+        """
+        result = _run_jest("test_sealed_mmm_margin_panel")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed MMMMarginPanel tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_mmm_margin_panel"
+        )
+
+
+class TestJestSealedMMMSessionCard:
+    """
+    @sealed — SessionCard (MMM Dashboard) (entry #74)
+    Runs: webui/frontend/src/components/mmm/__tests__/test_sealed_mmm_session_card.test.js
+    """
+
+    def test_all_mmm_session_card_contracts_pass(self):
+        """
+        CONTRACT: SessionCard action buttons and data display must pass all Jest contract tests.
+        This test FAILS if any Jest test fails or if Jest cannot run.
+        """
+        result = _run_jest("test_sealed_mmm_session_card")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed MMMSessionCard tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_mmm_session_card"
+        )

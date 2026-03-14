@@ -267,7 +267,7 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
             maxValue={5}
             displayText={`${asymmetryRatio.toFixed(1)}:1${rebalancingActive ? ' ⚖ M3' : ''}`}
             level={asymmetryRatio >= 5 ? 'alert' : asymmetryRatio >= 3 ? 'warning' : 'ok'}
-            tooltip={`CE has ${ceTotalLots} lots (${ceLots} active + ${ceFrozenLots} frozen), PE has ${peTotalLots} lots (${peLots} active + ${peFrozenLots} frozen). Ratio: ${asymmetryRatio.toFixed(1)}:1. Above 3:1 is concerning, above 5:1 is dangerous.${rebalancingActive ? ' ⚖ M3 rebalancing active — harvest thresholds relaxed on dominant side.' : ''}`}
+            tooltip={`CE has ${ceTotalLots} lots (${ceLots} active + ${ceFrozenLots} frozen), PE has ${peTotalLots} lots (${peLots} active + ${peFrozenLots} frozen). Ratio: ${asymmetryRatio.toFixed(1)}:1. Above 3:1 is concerning, above 5:1 is dangerous. Above 7:1 blocks the heavy side from selling more — the light side can still sell to rebalance.${rebalancingActive ? ' ⚖ M3 rebalancing active — harvest thresholds relaxed on dominant side.' : ''}`}
           />
         </Grid>
 

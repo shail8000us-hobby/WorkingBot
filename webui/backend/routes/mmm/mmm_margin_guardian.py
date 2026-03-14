@@ -30,6 +30,8 @@ import logging
 import time
 from typing import Dict, Any, Optional, List
 
+from webui.backend.sealed import sealed
+
 log = logging.getLogger('mmm_margin_guardian')
 
 
@@ -46,6 +48,7 @@ TIER_CRITICAL = 'CRITICAL'
 _TIER_ORDER = [TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL]
 
 
+@sealed
 def tier_severity(tier: str) -> int:
     """Return numeric severity (0=GREEN, 4=CRITICAL). Unknown → -1."""
     try:
@@ -174,13 +177,14 @@ async def fetch_margin_utilization(rest_client) -> Dict[str, Any]:
             net_equity = balance
 
         # Compute total margin used.
-        # In portfolio margin mode, position_margin and order_margin may be 0.
-        # The real margin is in blocked_margin / portfolio_margin.
-        # Use whichever is non-zero: portfolio > blocked > (pos + order + cross).
-        if portfolio > 0:
-            total_used = portfolio
-        elif blocked > 0:
+        # blocked_margin = what Delta Exchange UI shows as "Blocked as margin" — the
+        # actual collateral locked. Use this as primary source.
+        # portfolio_margin = theoretical portfolio-margin requirement (can be inflated
+        # vs actual blocked). Use as fallback only.
+        if blocked > 0:
             total_used = blocked
+        elif portfolio > 0:
+            total_used = portfolio
         else:
             total_used = pos_margin + order_margin + cross_pos + cross_order
 
@@ -219,6 +223,7 @@ async def fetch_margin_utilization(rest_client) -> Dict[str, Any]:
 # Tier evaluation
 # ─────────────────────────────────────────────────────────────────────
 
+@sealed
 def evaluate_margin_tier(
     utilization_pct: float,
     params: Dict[str, Any],
@@ -300,6 +305,7 @@ def evaluate_margin_tier(
 # Lots-to-close calculator for margin reduction
 # ─────────────────────────────────────────────────────────────────────
 
+@sealed
 def estimate_lots_to_close(
     session: Dict,
     current_util: float,

@@ -87,6 +87,64 @@ import MMMAnalyticsSummary from './MMMAnalyticsSummary';
 import MMMInstitutionalAnalytics from '../MMMInstitutionalAnalytics';
 import { HelpTooltip, SectionBlurb, StrategyExplainer } from './MMMEducation';
 import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
+import {
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar,
+  XAxis, YAxis, Tooltip as RechartsTooltip, ReferenceLine,
+} from 'recharts';
+
+// =============================================================================
+// Aggregate PnL Widget — shows combined P&L across all active sessions
+// =============================================================================
+
+const AGGREGATE_LEVEL_CONFIG = {
+  ok: { color: '#4caf50', bg: 'rgba(76,175,80,0.1)', icon: '🟢', label: 'OK' },
+  warning: { color: '#ff9800', bg: 'rgba(255,152,0,0.12)', icon: '🟡', label: 'WARNING' },
+  danger: { color: '#f44336', bg: 'rgba(244,67,54,0.12)', icon: '🔴', label: 'DANGER' },
+  blocked: { color: '#9c27b0', bg: 'rgba(156,39,176,0.12)', icon: '⛔', label: 'BLOCKED' },
+};
+
+const AggregatePnLWidget = () => {
+  const [data, setData] = useState(null);
+
+  const fetchAgg = useCallback(async () => {
+    try {
+      const result = await mmmService.getAggregatePnL();
+      if (result.success) setData(result);
+    } catch (_) { /* non-critical */ }
+  }, []);
+
+  useEffect(() => { fetchAgg(); }, [fetchAgg]);
+  useVisibilityAwarePolling(fetchAgg, 30000, 120000, true);
+
+  if (!data || data.active_sessions === 0) return null;
+
+  const cfg = AGGREGATE_LEVEL_CONFIG[data.level] || AGGREGATE_LEVEL_CONFIG.ok;
+  const pnl = data.combined_pnl ?? 0;
+  const pctUsed = data.pct_used ?? 0;
+
+  return (
+    <Box sx={{ mb: 1.5, p: 1, borderRadius: 1, border: `1px solid ${cfg.color}44`, backgroundColor: cfg.bg }}>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="caption" sx={{ fontWeight: 700, color: cfg.color, fontSize: '0.75rem' }}>
+          {cfg.icon} Combined P&amp;L
+        </Typography>
+        <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'monospace', color: pnl >= 0 ? '#4caf50' : '#f44336', fontSize: '0.8rem' }}>
+          ${pnl.toFixed(2)}
+        </Typography>
+      </Box>
+      {pctUsed > 30 && (
+        <Box sx={{ mt: 0.5 }}>
+          <Box sx={{ height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+            <Box sx={{ height: '100%', width: `${Math.min(pctUsed, 100)}%`, backgroundColor: cfg.color, borderRadius: 2, transition: 'width 0.5s ease' }} />
+          </Box>
+          <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.65rem' }}>
+            {pctUsed.toFixed(0)}% of max loss used ({data.active_sessions} session{data.active_sessions > 1 ? 's' : ''})
+          </Typography>
+        </Box>
+      )}
+    </Box>
+  );
+};
 
 // =============================================================================
 // Status color + label mapping
@@ -170,9 +228,26 @@ const computeExpiryInfo = (expiryTimeISO) => {
 };
 
 /**
+ * Compute DTE countdown color based on time remaining.
+ * Green (>4h) → Yellow (1-4h) → Orange (<1h) → Red (expired)
+ */
+const getCountdownColor = (expiryInfo) => {
+  if (!expiryInfo) return '#ff9800';
+  if (expiryInfo.countdown === 'EXPIRED') return '#f44336';
+  // Parse days:hours:minutes from "Xd:Yh:Zm" format
+  const match = expiryInfo.countdown.match(/(\d+)d:(\d+)h:(\d+)m/);
+  if (!match) return '#ff9800';
+  const totalMins = parseInt(match[1], 10) * 1440 + parseInt(match[2], 10) * 60 + parseInt(match[3], 10);
+  if (totalMins > 240) return '#4caf50';  // > 4 hours: green
+  if (totalMins > 60) return '#ff9800';   // 1-4 hours: yellow/amber
+  return '#f44336';                       // < 1 hour: red
+};
+
+/**
  * Session card condensed view
  */
-const SessionCard = ({ session, selected, onSelect, onControl }) => {
+// 🔒 SEALED #74 — test: test_sealed_mmm_session_card.test.js
+export const SessionCard = ({ session, selected, onSelect, onControl }) => {
   const status = session.status || 'IDLE';
   const cfg = getStatusConfig(status);
 
@@ -204,9 +279,36 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
     >
       <CardContent sx={{ py: 1.5, px: 2, '&:last-child': { pb: 1.5 } }}>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-          <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
-            {session.session_id}
-          </Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
+              {session.session_id}
+            </Typography>
+            {session.dte_category && session.dte_category !== '0DTE' && (
+              <Chip label={session.dte_category} size="small" color="info" variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />
+            )}
+            {/* Health Grade Badge */}
+            {session._health_grade && (
+              <Tooltip title={`Health: ${session._health_grade}`}>
+                <Box sx={{
+                  width: 18, height: 18, borderRadius: '50%', display: 'flex',
+                  alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 800,
+                  backgroundColor: ({ A: '#4caf50', B: '#8bc34a', C: '#ff9800', D: '#f44336' })[session._health_grade] || '#9e9e9e',
+                  color: '#fff',
+                }}>
+                  {session._health_grade}
+                </Box>
+              </Tooltip>
+            )}
+            {/* Gamma regime indicator */}
+            {session._gamma_regime && session._gamma_regime !== 'NORMAL' && (
+              <Tooltip title={`Gamma: ${session._gamma_regime}`}>
+                <Typography component="span" sx={{ fontSize: '0.7rem', fontWeight: 700, color: '#f44336' }}>
+                  ⚡{session._gamma_regime}
+                </Typography>
+              </Tooltip>
+            )}
+          </Box>
           <StatusChip status={status} />
         </Box>
 
@@ -214,26 +316,49 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
           <Grid item xs={6}>
             <Typography variant="caption" color="text.secondary">
               CE: {session.ce_active_lots || 0} lots @ {session.ce_strike || '—'}
+              {session.ce_frozen_lots > 0 && (
+                <span style={{ color: '#ff9800', fontWeight: 600 }}> (+{session.ce_frozen_lots}F)</span>
+              )}
             </Typography>
           </Grid>
           <Grid item xs={6}>
             <Typography variant="caption" color="text.secondary">
               PE: {session.pe_active_lots || 0} lots @ {session.pe_strike || '—'}
+              {session.pe_frozen_lots > 0 && (
+                <span style={{ color: '#ff9800', fontWeight: 600 }}> (+{session.pe_frozen_lots}F)</span>
+              )}
             </Typography>
           </Grid>
         </Grid>
 
         {session.net_pnl !== undefined && (
-          <Typography
-            variant="body2"
-            sx={{
-              mt: 0.5,
-              fontWeight: 700,
-              color: session.net_pnl >= 0 ? '#4caf50' : '#f44336',
-              fontFamily: 'monospace',
-            }}
-          >
-            P&L: ${session.net_pnl?.toFixed(2) || '0.00'}
+          <Box sx={{ mt: 0.5 }}>
+            <Typography
+              variant="body2"
+              sx={{
+                fontWeight: 700,
+                color: session.net_pnl >= 0 ? '#4caf50' : '#f44336',
+                fontFamily: 'monospace',
+              }}
+            >
+              P&L: ${session.net_pnl?.toFixed(2) || '0.00'}
+            </Typography>
+            {(session.realized_pnl !== 0 || session.unrealized_pnl !== 0) && (
+              <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.65rem' }}>
+                R: ${(session.realized_pnl || 0).toFixed(2)} &nbsp; U: ${(session.unrealized_pnl || 0).toFixed(2)}
+              </Typography>
+            )}
+          </Box>
+        )}
+
+        {/* Activity counters */}
+        {(session.adjustment_count > 0 || session.shift_count > 0 || session.close_at_5_count > 0) && (
+          <Typography variant="caption" sx={{ mt: 0.25, display: 'block', color: 'text.secondary', fontSize: '0.65rem', fontFamily: 'monospace' }}>
+            {session.adjustment_count > 0 && `⚙${session.adjustment_count} adj`}
+            {session.adjustment_count > 0 && (session.shift_count > 0 || session.close_at_5_count > 0) && ' · '}
+            {session.shift_count > 0 && `↗${session.shift_count} shift`}
+            {session.shift_count > 0 && session.close_at_5_count > 0 && ' · '}
+            {session.close_at_5_count > 0 && `🎯${session.close_at_5_count} close`}
           </Typography>
         )}
 
@@ -244,7 +369,7 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
             sx={{
               mt: 0.5,
               fontWeight: 600,
-              color: expiryInfo.countdown === 'EXPIRED' ? '#f44336' : '#ff9800',
+              color: getCountdownColor(expiryInfo),
               fontFamily: 'monospace',
               display: 'block',
             }}
@@ -252,6 +377,35 @@ const SessionCard = ({ session, selected, onSelect, onControl }) => {
             Expiry: {expiryInfo.expiryIST} IST &nbsp;|&nbsp; {expiryInfo.countdown}
           </Typography>
         )}
+
+        {/* Why Paused — show reason when session is paused */}
+        {status === 'PAUSED' && session._paused_reason && (
+          <Typography
+            variant="caption"
+            sx={{
+              mt: 0.5, display: 'block', fontStyle: 'italic',
+              color: '#ff9800', fontSize: '0.7rem',
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}
+          >
+            ⚠️ {session._paused_reason}
+          </Typography>
+        )}
+
+        {/* Last heartbeat alive indicator */}
+        {session.last_heartbeat && ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status) && (() => {
+          const ts = session.last_heartbeat;
+          const beatMs = new Date(ts.includes('+') || ts.endsWith('Z') ? ts : ts + 'Z').getTime();
+          const beatAge = Math.floor((Date.now() - beatMs) / 1000);
+          if (isNaN(beatAge)) return null;
+          const beatColor = beatAge < 60 ? '#4caf50' : beatAge < 300 ? '#ff9800' : '#f44336';
+          const beatLabel = beatAge < 60 ? `${beatAge}s ago` : beatAge < 3600 ? `${Math.floor(beatAge / 60)}m ago` : `${Math.floor(beatAge / 3600)}h ago`;
+          return (
+            <Typography variant="caption" sx={{ mt: 0.25, display: 'block', fontSize: '0.6rem', color: beatColor, fontFamily: 'monospace' }}>
+              ♥ {beatLabel}{session.adjustment_interval ? ` · interval ${Math.floor(session.adjustment_interval / 60)}m` : ''}
+            </Typography>
+          );
+        })()}
 
         {/* Control buttons */}
         <Box sx={{ display: 'flex', gap: 0.5, mt: 1, alignItems: 'center' }}>
@@ -403,6 +557,8 @@ const formatExpiry = (ddmmyyyy) => {
  */
 const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
   const [mode, setMode] = useState('fresh');
+  const [dtePreset, setDtePreset] = useState('');  // '' = Custom (no preset)
+  const [dtePresets, setDtePresets] = useState({});  // preset_details from API
   const [params, setParams] = useState({
     desired_ce_premium: 100,
     desired_pe_premium: 100,
@@ -424,7 +580,23 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch expiries and spot price when dialog opens
+  // Apply DTE preset when selection changes
+  const handlePresetChange = (presetName) => {
+    setDtePreset(presetName);
+    if (presetName && dtePresets[presetName]) {
+      const preset = dtePresets[presetName];
+      setParams(prev => ({
+        ...prev,
+        adjustment_interval: preset.adjustment_interval ?? prev.adjustment_interval,
+        close_at_threshold: preset.close_at_threshold ?? prev.close_at_threshold,
+        max_lots_per_side: preset.max_lots_per_side ?? prev.max_lots_per_side,
+        max_loss_amount: preset.max_loss_amount ?? prev.max_loss_amount,
+        min_trigger_move: preset.min_trigger_move ?? prev.min_trigger_move,
+      }));
+    }
+  };
+
+  // Fetch expiries, spot price, and DTE presets when dialog opens
   React.useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -432,9 +604,10 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     const fetchData = async () => {
       setExpiryLoading(true);
       try {
-        const [expResult, spotResult] = await Promise.all([
+        const [expResult, spotResult, presetResult] = await Promise.all([
           mmmService.getExpiries().catch(() => ({ success: false })),
           mmmService.getSpotPrice().catch(() => ({ success: false })),
+          mmmService.getDTEPresets().catch(() => ({ success: false })),
         ]);
 
         if (cancelled) return;
@@ -448,6 +621,9 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         }
         if (spotResult.success) {
           setSpotPrice(spotResult.spot_price);
+        }
+        if (presetResult.success && presetResult.preset_details) {
+          setDtePresets(presetResult.preset_details);
         }
       } catch (err) {
         console.error('Failed to fetch expiries/spot:', err);
@@ -506,7 +682,12 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     try {
       // For adopt mode, create as 'fresh' on backend — adoption happens in ConfigPanel
       const backendMode = mode === 'adopt' ? 'fresh' : mode;
-      const config = { mode: backendMode, params };
+      const sessionParams = { ...params };
+      // Attach DTE preset category if selected
+      if (dtePreset) {
+        sessionParams.dte_category = dtePreset;
+      }
+      const config = { mode: backendMode, params: sessionParams };
       if (mode === 'import') {
         config.import_data = {
           ce: {
@@ -570,20 +751,68 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
           </Alert>
         )}
 
-        {/* Mode selection */}
-        <FormControl fullWidth sx={{ mb: 3, mt: 1 }}>
-          <InputLabel>Mode</InputLabel>
-          <Select value={mode} label="Mode" onChange={(e) => setMode(e.target.value)}>
-            <MenuItem value="fresh">Fresh — Auto-find strikes</MenuItem>
-            <MenuItem value="import">Import — Use existing positions</MenuItem>
-            <MenuItem value="adopt">
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                Adopt — Scan exchange for open positions
-                <Chip label="NEW" size="small" color="secondary" sx={{ height: 18, fontSize: '0.65rem' }} />
-              </Box>
-            </MenuItem>
-          </Select>
-        </FormControl>
+        {/* DTE Preset + Mode selection */}
+        <Grid container spacing={2} sx={{ mb: 3, mt: 1 }}>
+          <Grid item xs={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>DTE Preset</InputLabel>
+              <Select
+                value={dtePreset}
+                label="DTE Preset"
+                onChange={(e) => handlePresetChange(e.target.value)}
+              >
+                <MenuItem value="">Custom (no preset)</MenuItem>
+                {Object.keys(dtePresets).map((name) => (
+                  <MenuItem key={name} value={name}>
+                    {name}
+                    {dtePresets[name]?.max_loss_amount && (
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{ ml: 1, color: 'text.secondary' }}
+                      >
+                        — Max Loss ${dtePresets[name].max_loss_amount.toLocaleString()}
+                      </Typography>
+                    )}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+          </Grid>
+          <Grid item xs={6}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Mode</InputLabel>
+              <Select value={mode} label="Mode" onChange={(e) => setMode(e.target.value)}>
+                <MenuItem value="fresh">Fresh — Auto-find strikes</MenuItem>
+                <MenuItem value="import">Import — Use existing positions</MenuItem>
+                <MenuItem value="adopt">
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    Adopt — Scan exchange for open positions
+                    <Chip label="NEW" size="small" color="secondary" sx={{ height: 18, fontSize: '0.65rem' }} />
+                  </Box>
+                </MenuItem>
+              </Select>
+            </FormControl>
+          </Grid>
+        </Grid>
+
+        {/* DTE preset info */}
+        {dtePreset && dtePresets[dtePreset] && (
+          <Alert severity="info" sx={{ mb: 2 }} icon={false}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+              {dtePreset} Preset Applied
+            </Typography>
+            <Typography variant="body2">
+              Interval: {dtePresets[dtePreset].adjustment_interval}s
+              {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
+              {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
+              {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              You can override any parameter below. The preset provides defaults.
+            </Typography>
+          </Alert>
+        )}
 
         {/* Core parameters */}
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>Core Parameters</Typography>
@@ -1884,6 +2113,89 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
             />
           </Paper>
 
+          {/* Why Paused — prominent banner in detail view */}
+          {status === 'PAUSED' && session._paused_reason && (
+            <Alert severity="warning" sx={{ mb: 2 }} icon={false}>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.25 }}>
+                ⏸️ Session Paused
+              </Typography>
+              <Typography variant="body2">
+                {session._paused_reason}
+              </Typography>
+              {session._paused_at && (
+                <Typography variant="caption" color="text.secondary">
+                  Since {new Date(session._paused_at.endsWith('Z') ? session._paused_at : session._paused_at + 'Z').toLocaleTimeString()}
+                </Typography>
+              )}
+            </Alert>
+          )}
+
+          {/* Live Safety & System Status Summary */}
+          {isLive && heartbeat && (
+            <Paper elevation={0} sx={{ p: 2, mb: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                🛡️ System Status
+              </Typography>
+              <Grid container spacing={1}>
+                {/* Margin Tier */}
+                <Grid item xs={6} sm={3}>
+                  <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.75rem' }}>Margin</Typography>
+                    <Typography variant="body2" sx={{
+                      fontWeight: 700, fontFamily: 'monospace',
+                      color: ({ GREEN: '#4caf50', YELLOW: '#ff9800', ORANGE: '#ff5722', RED: '#f44336', CRITICAL: '#9c27b0' })[heartbeat.margin?.tier] || '#9e9e9e',
+                    }}>
+                      {heartbeat.margin?.tier || 'N/A'}
+                    </Typography>
+                    {heartbeat.margin?.utilization_pct != null && (
+                      <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.65rem' }}>
+                        {heartbeat.margin.utilization_pct.toFixed(0)}% used
+                      </Typography>
+                    )}
+                  </Box>
+                </Grid>
+                {/* Regime Action */}
+                <Grid item xs={6} sm={3}>
+                  <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.75rem' }}>Regime</Typography>
+                    <Typography variant="body2" sx={{
+                      fontWeight: 700, fontFamily: 'monospace',
+                      color: (() => {
+                        const action = heartbeat.regime?.action || 'NORMAL';
+                        if (action === 'NORMAL') return '#4caf50';
+                        if (action.startsWith('BLOCK')) return '#f44336';
+                        return '#ff9800';
+                      })(),
+                    }}>
+                      {heartbeat.regime?.action || 'NORMAL'}
+                    </Typography>
+                  </Box>
+                </Grid>
+                {/* Wind-Down */}
+                <Grid item xs={6} sm={3}>
+                  <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.75rem' }}>Wind-Down</Typography>
+                    <Typography variant="body2" sx={{
+                      fontWeight: 700, fontFamily: 'monospace',
+                      color: heartbeat.wind_down_active ? '#ff9800' : '#4caf50',
+                    }}>
+                      {heartbeat.wind_down_active ? 'ACTIVE' : 'Off'}
+                    </Typography>
+                  </Box>
+                </Grid>
+                {/* Adaptive Tier */}
+                <Grid item xs={6} sm={3}>
+                  <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                    <Typography variant="caption" color="text.secondary" display="block" sx={{ fontSize: '0.75rem' }}>Interval</Typography>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', color: '#78909c' }}>
+                      {heartbeat.adaptive_tier || 'normal'}
+                    </Typography>
+                  </Box>
+                </Grid>
+              </Grid>
+            </Paper>
+          )}
+
           {/* Heartbeat Health Panel */}
           <HeartbeatHealthPanel sessionId={session.session_id} status={status} />
 
@@ -1917,6 +2229,119 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
               ))}
             </Grid>
           </Paper>
+
+          {/* P&L Attribution — breakdown by source */}
+          {(session.pnl_initial || session.pnl_adjustment || session.pnl_harvest || session.pnl_recycle || session.pnl_perp) ? (
+            <Paper elevation={0} sx={{ p: 2, mt: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
+              <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                💰 P&L Attribution
+              </Typography>
+              <Grid container spacing={1}>
+                {[
+                  { label: 'Initial', value: session.pnl_initial || 0, color: '#2196f3' },
+                  { label: 'Adjustments', value: session.pnl_adjustment || 0, color: '#ff9800' },
+                  { label: 'Harvest', value: session.pnl_harvest || 0, color: '#4caf50' },
+                  { label: 'Recycle', value: session.pnl_recycle || 0, color: '#ab47bc' },
+                  { label: 'Perp Hedge', value: session.pnl_perp || 0, color: '#00bcd4' },
+                ].filter(({ value }) => value !== 0).map(({ label, value, color }) => (
+                  <Grid item xs={4} sm={2} key={label}>
+                    <Box sx={{ textAlign: 'center', p: 1, borderRadius: 1, backgroundColor: 'rgba(255,255,255,0.03)' }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.75rem' }}>
+                        {label}
+                      </Typography>
+                      <Typography variant="body2" sx={{
+                        fontWeight: 700, fontFamily: 'monospace',
+                        color: value >= 0 ? color : '#f44336',
+                      }}>
+                        ${value.toFixed(2)}
+                      </Typography>
+                    </Box>
+                  </Grid>
+                ))}
+              </Grid>
+            </Paper>
+          ) : null}
+
+          {/* P&L Trend Mini-Chart */}
+          {(() => {
+            const history = session?.pnl_history || [];
+            if (history.length < 3) return null;
+            const chartData = history.map(h => ({
+              t: new Date(h.timestamp.includes('+') || h.timestamp.endsWith('Z') ? h.timestamp : h.timestamp + 'Z')
+                .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              pnl: h.total_pnl,
+              r: h.realized,
+              u: h.unrealized,
+            }));
+            const lastPnl = chartData[chartData.length - 1]?.pnl || 0;
+            const gradColor = lastPnl >= 0 ? '#4caf50' : '#f44336';
+            return (
+              <Paper elevation={0} sx={{ p: 2, mt: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                  📈 P&L Trend
+                </Typography>
+                <ResponsiveContainer width="100%" height={120}>
+                  <AreaChart data={chartData}>
+                    <defs>
+                      <linearGradient id="pnlMiniGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={gradColor} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={gradColor} stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <XAxis dataKey="t" tick={{ fontSize: 9 }} interval="preserveStartEnd" />
+                    <YAxis tick={{ fontSize: 9 }} width={45} tickFormatter={v => `$${v.toFixed(1)}`} />
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333', fontSize: 11 }}
+                      formatter={(v, name) => [`$${Number(v).toFixed(3)}`, name === 'pnl' ? 'Net' : name === 'r' ? 'Realized' : 'Unrealized']}
+                    />
+                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                    <Area type="monotone" dataKey="pnl" stroke={gradColor} fill="url(#pnlMiniGrad)" strokeWidth={1.5} dot={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </Paper>
+            );
+          })()}
+
+          {/* Position Strike Map — lot distribution across strikes */}
+          {(() => {
+            const ce = session?.ce || {};
+            const pe = session?.pe || {};
+            const strikeMap = new Map();
+            const addStrike = (strike, field, lots) => {
+              if (!strike || !lots) return;
+              const k = String(strike);
+              const row = strikeMap.get(k) || { strike, ceActive: 0, ceFrozen: 0, peActive: 0, peFrozen: 0 };
+              row[field] += lots;
+              strikeMap.set(k, row);
+            };
+            addStrike(ce.active_strike, 'ceActive', ce.active_lots);
+            addStrike(pe.active_strike, 'peActive', pe.active_lots);
+            (ce.frozen_positions || []).forEach(fp => addStrike(fp.strike, 'ceFrozen', fp.lots));
+            (pe.frozen_positions || []).forEach(fp => addStrike(fp.strike, 'peFrozen', fp.lots));
+            const mapData = Array.from(strikeMap.values()).sort((a, b) => a.strike - b.strike);
+            if (mapData.length === 0) return null;
+            return (
+              <Paper elevation={0} sx={{ p: 2, mt: 2, borderRadius: 2, border: '1px solid rgba(255,255,255,0.12)' }}>
+                <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
+                  🗺️ Position Strike Map
+                </Typography>
+                <ResponsiveContainer width="100%" height={Math.max(80, mapData.length * 36 + 30)}>
+                  <BarChart data={mapData} layout="vertical" barGap={0} barCategoryGap={6}>
+                    <XAxis type="number" tick={{ fontSize: 10 }} />
+                    <YAxis dataKey="strike" type="category" width={60} tick={{ fontSize: 10 }} tickFormatter={v => Number(v).toLocaleString()} />
+                    <RechartsTooltip
+                      contentStyle={{ backgroundColor: '#1e1e1e', border: '1px solid #333', fontSize: 11 }}
+                      formatter={(v, name) => [v, name]}
+                    />
+                    <Bar dataKey="ceActive" name="CE Active" fill="#4caf50" stackId="ce" />
+                    <Bar dataKey="ceFrozen" name="CE Frozen" fill="rgba(76,175,80,0.35)" stackId="ce" />
+                    <Bar dataKey="peActive" name="PE Active" fill="#f44336" stackId="pe" />
+                    <Bar dataKey="peFrozen" name="PE Frozen" fill="rgba(244,67,54,0.35)" stackId="pe" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Paper>
+            );
+          })()}
         </Box>
       )}
 
@@ -2206,10 +2631,11 @@ const MMMDashboard = () => {
     }
   }, [selectedSessionId, selectSession]);
 
-  // Clear full session when no session is selected
+  // On session switch: clear stale data immediately, then fetch new session
   useEffect(() => {
-    if (!selectedSessionId) setFullSession(null);
-  }, [selectedSessionId]);
+    setFullSession(null);
+    if (selectedSessionId) fetchFullSession();
+  }, [selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll full session details — pauses when tab is hidden
   useVisibilityAwarePolling(fetchFullSession, 15000, 60000, !!selectedSessionId);
@@ -2373,7 +2799,7 @@ const MMMDashboard = () => {
             💰 MMM — Money Mind &amp; Method
           </Typography>
           <Chip
-            label="BTC 0DTE"
+            label="BTC Options"
             size="small"
             variant="outlined"
             color="primary"
@@ -2439,6 +2865,73 @@ const MMMDashboard = () => {
           {/* Left panel: session list */}
           <Grid item xs={12} md={4} lg={3}>
             <Paper sx={{ p: 1.5, height: '100%', overflow: 'auto' }}>
+              {/* Aggregate PnL across all sessions */}
+              <AggregatePnLWidget />
+
+              {/* Multi-session comparison — shows when 2+ active sessions */}
+              {activeSessions.length >= 2 && (
+                <Paper elevation={0} sx={{ p: 1, mb: 1, borderRadius: 1, border: '1px solid rgba(255,255,255,0.08)', backgroundColor: 'rgba(255,255,255,0.02)' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5, color: 'text.secondary', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    📊 Session Comparison
+                  </Typography>
+                  <Box sx={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.65rem', fontFamily: 'monospace' }}>
+                      <thead>
+                        <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.12)' }}>
+                          <th style={{ textAlign: 'left', padding: '2px 4px', color: '#999', fontWeight: 600 }}>Session</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', color: '#999', fontWeight: 600 }}>CE/PE</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', color: '#999', fontWeight: 600 }}>P&L</th>
+                          <th style={{ textAlign: 'right', padding: '2px 4px', color: '#999', fontWeight: 600 }}>Adj</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {activeSessions.map(s => (
+                          <tr key={s.session_id}
+                            style={{
+                              borderBottom: '1px solid rgba(255,255,255,0.05)',
+                              backgroundColor: s.session_id === selectedSessionId ? 'rgba(33,150,243,0.08)' : 'transparent',
+                              cursor: 'pointer',
+                            }}
+                            onClick={() => selectSession(s.session_id)}
+                          >
+                            <td style={{ padding: '3px 4px', whiteSpace: 'nowrap', maxWidth: 70, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                              {s.session_id.length > 10 ? s.session_id.slice(-8) : s.session_id}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '3px 4px', color: '#90caf9' }}>
+                              {s.ce_active_lots || 0}/{s.pe_active_lots || 0}
+                            </td>
+                            <td style={{
+                              textAlign: 'right', padding: '3px 4px',
+                              color: (s.net_pnl || 0) >= 0 ? '#4caf50' : '#f44336',
+                              fontWeight: 600,
+                            }}>
+                              ${(s.net_pnl || 0).toFixed(2)}
+                            </td>
+                            <td style={{ textAlign: 'right', padding: '3px 4px', color: '#b0bec5' }}>{s.adjustment_count || 0}</td>
+                          </tr>
+                        ))}
+                        {/* Totals row */}
+                        <tr style={{ borderTop: '1px solid rgba(255,255,255,0.15)' }}>
+                          <td style={{ padding: '3px 4px', fontWeight: 700, color: '#fff' }}>Total</td>
+                          <td style={{ textAlign: 'right', padding: '3px 4px', fontWeight: 700, color: '#90caf9' }}>
+                            {activeSessions.reduce((s, x) => s + (x.ce_active_lots || 0), 0)}/{activeSessions.reduce((s, x) => s + (x.pe_active_lots || 0), 0)}
+                          </td>
+                          <td style={{
+                            textAlign: 'right', padding: '3px 4px', fontWeight: 700,
+                            color: activeSessions.reduce((s, x) => s + (x.net_pnl || 0), 0) >= 0 ? '#4caf50' : '#f44336',
+                          }}>
+                            ${activeSessions.reduce((s, x) => s + (x.net_pnl || 0), 0).toFixed(2)}
+                          </td>
+                          <td style={{ textAlign: 'right', padding: '3px 4px', fontWeight: 700, color: '#b0bec5' }}>
+                            {activeSessions.reduce((s, x) => s + (x.adjustment_count || 0), 0)}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </Box>
+                </Paper>
+              )}
+
               <Tabs
                 value={tabValue}
                 onChange={(e, v) => setTabValue(v)}

@@ -222,6 +222,7 @@ class OptionsChainAPI {
    *   7. Symbol absent from map → no highlight (not in active trading).
    * DO NOT CHANGE without UNSEAL: getOpenPositions in AI_SEAL.md
    */
+  // 🔒 SEALED #44 — test: test_sealed_getOpenPositions.test.js
   async getOpenPositions() {
     try {
       // Pass symbol= (empty) to bypass the default BTCUSD filter and get ALL positions

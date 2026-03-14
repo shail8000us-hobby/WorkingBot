@@ -10,6 +10,9 @@
  * when its own position data or settings change.
  *
  * Created: February 26, 2026 (ARCH-2 refactor)
+ *
+ * @sealed — Actions column (C+/P+ scale, Roll, Close/Remove buttons)
+ * Sealed: Mar 12, 2026 — Test: src/components/options/__tests__/test_sealed_position_row_actions.test.js
  */
 
 import React from 'react';
@@ -79,6 +82,7 @@ const getPositionType = (symbol) => {
  *
  * Props are intentionally flat to enable React.memo shallow comparison.
  */
+// 🔒 SEALED #65 — test: test_sealed_position_row_actions.test.js
 function PositionRow({
     pos,
     index,

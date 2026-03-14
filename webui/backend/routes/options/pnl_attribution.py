@@ -58,17 +58,14 @@ def _take_snapshot(positions, portfolio_greeks, spot_price):
 
 
 def _compute_attribution(baseline, current_spot, current_iv_avg, current_total_pnl):
-    # BTC contract multiplier: 1 lot = 0.001 BTC.
-    # portfolio_greeks delta/gamma are sum(per_contract_greek * size) — raw contract
-    # units.  Theta/vega are already divided by 1000 in calculate_portfolio_greeks().
-    CONTRACT_MULT = 0.001
-
+    # calculate_portfolio_greeks() now applies the 0.001 lot multiplier internally,
+    # so delta/gamma are already in BTC terms. No CONTRACT_MULT needed here.
     dS = current_spot - baseline['spot']
     dIV = current_iv_avg - baseline['iv_avg']
     elapsed_hours = (time.time() - baseline['timestamp']) / 3600.0
 
-    delta_pnl = baseline['delta'] * CONTRACT_MULT * dS
-    gamma_pnl = 0.5 * baseline['gamma'] * CONTRACT_MULT * dS * dS
+    delta_pnl = baseline['delta'] * dS
+    gamma_pnl = 0.5 * baseline['gamma'] * dS * dS
     theta_pnl = baseline['theta'] * (elapsed_hours / 24.0)
     vega_pnl = baseline['vega'] * dIV * 100  # vega per vol-pt; dIV in decimal
     total_change = current_total_pnl - baseline['total_pnl']

@@ -481,7 +481,11 @@ class MMMStorage:
                     json_extract(data_json, '$.next_heartbeat')           AS next_heartbeat,
                     json_extract(data_json, '$.expiry_time')              AS expiry_time,
                     json_extract(params_json, '$.adjustment_interval')    AS adjustment_interval,
-                    json_extract(params_json, '$.expiry')                 AS expiry
+                    json_extract(params_json, '$.expiry')                 AS expiry,
+                    json_extract(params_json, '$.dte_category')           AS dte_category,
+                    json_extract(data_json, '$._health_grade')            AS _health_grade,
+                    json_extract(data_json, '$._gamma_regime')            AS _gamma_regime,
+                    json_extract(data_json, '$._paused_reason')           AS _paused_reason
                 FROM mmm_sessions
                 {where}
                 ORDER BY created_at DESC
@@ -524,6 +528,10 @@ class MMMStorage:
                     'next_heartbeat': r['next_heartbeat'],
                     'expiry': r['expiry'] or '',
                     'expiry_time': r['expiry_time'],
+                    'dte_category': r['dte_category'] or '',
+                    '_health_grade': r['_health_grade'] or '',
+                    '_gamma_regime': r['_gamma_regime'] or 'NORMAL',
+                    '_paused_reason': r['_paused_reason'] or '',
                 })
             return summaries
         except Exception as e:
@@ -575,6 +583,9 @@ class MMMStorage:
             'next_heartbeat': session.get('next_heartbeat'),
             'expiry': session.get('params', {}).get('expiry', ''),
             'expiry_time': session.get('expiry_time'),
+            '_health_grade': session.get('_health_grade', ''),
+            '_gamma_regime': session.get('_gamma_regime', 'NORMAL'),
+            '_paused_reason': session.get('_paused_reason', ''),
         }
 
     def get_session_count(self) -> int:

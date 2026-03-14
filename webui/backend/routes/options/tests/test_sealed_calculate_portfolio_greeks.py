@@ -62,23 +62,23 @@ def test_empty_positions_all_zeros():
 # ---------------------------------------------------------------------------
 
 def test_delta_scaled_by_signed_size():
-    """Portfolio delta = per_contract_delta * size (signed)."""
+    """Portfolio delta = per_contract_delta * size * 0.001 (1 lot = 0.001 BTC)."""
     positions = [_pos('C-BTC-66000-300126', size=-10, delta=0.5)]
     result = calculate_portfolio_greeks(positions)
-    # 0.5 * -10 = -5.0
-    assert abs(result['delta'] - (-5.0)) < 0.001
+    # 0.5 * -10 * 0.001 = -0.005
+    assert abs(result['delta'] - (-0.005)) < 1e-9
 
 
 # ---------------------------------------------------------------------------
-# CONTRACT TEST 4 — Gamma uses abs(size)
+# CONTRACT TEST 4 — Gamma uses abs(size) * 0.001
 # ---------------------------------------------------------------------------
 
 def test_gamma_uses_abs_size():
-    """Portfolio gamma = per_contract_gamma * abs(size)."""
+    """Portfolio gamma = per_contract_gamma * abs(size) * 0.001 (1 lot = 0.001 BTC)."""
     positions = [_pos('C-BTC-66000-300126', size=-10, gamma=0.002)]
     result = calculate_portfolio_greeks(positions)
-    # 0.002 * abs(-10) = 0.02
-    assert abs(result['gamma'] - 0.02) < 0.00001
+    # 0.002 * abs(-10) * 0.001 = 0.00002
+    assert abs(result['gamma'] - 0.00002) < 1e-10
 
 
 # ---------------------------------------------------------------------------
@@ -100,12 +100,12 @@ def test_theta_divided_by_1000():
 def test_btc_eth_delta_separation():
     """btcDelta and ethDelta must only sum contributions from their respective underlying."""
     positions = [
-        _pos('C-BTC-66000-300126', size=2, delta=0.5),   # btcDelta += 0.5 * 2 = +1
-        _pos('C-ETH-3000-300126',  size=-5, delta=0.4),  # ethDelta += 0.4 * -5 = -2
+        _pos('C-BTC-66000-300126', size=2, delta=0.5),   # btcDelta += 0.5 * 2 * 0.001 = +0.001
+        _pos('C-ETH-3000-300126',  size=-5, delta=0.4),  # ethDelta += 0.4 * -5 * 0.001 = -0.002
     ]
     result = calculate_portfolio_greeks(positions)
-    assert abs(result['btcDelta'] - 1.0)  < 0.001
-    assert abs(result['ethDelta'] - (-2.0)) < 0.001
+    assert abs(result['btcDelta'] - 0.001)  < 1e-9
+    assert abs(result['ethDelta'] - (-0.002)) < 1e-9
 
 
 # ---------------------------------------------------------------------------

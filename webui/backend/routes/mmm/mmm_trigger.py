@@ -389,3 +389,153 @@ def compute_adaptive_interval(
         'tier_label': 'unknown',
         'multiplier': 1.0,
     }
+
+
+# =========================================================================
+# Multi-Expiry v2 Functions — Percentage-Based Scaling
+# =========================================================================
+# These functions use percentage-of-total-DTE instead of absolute hours.
+# Used for 5DTE+ sessions. 0DTE continues using the original functions.
+
+# v2 Tier table: (pct_lower, pct_upper, multiplier, label)
+ADAPTIVE_INTERVAL_V2_TIERS = [
+    (0.80, float('inf'), 1.50,  '>80% remaining'),    # First 80% of life — relaxed
+    (0.50, 0.80,         1.00,  '50-80% remaining'),   # Normal
+    (0.20, 0.50,         0.70,  '20-50% remaining'),   # Faster
+    (0.05, 0.20,         0.50,  '5-20% remaining'),    # Rapid
+    (0.00, 0.05,         0.30,  '<5% remaining'),      # Very rapid (last 5%)
+]
+
+
+def compute_adaptive_interval_v2(
+    base_interval: int,
+    hours_to_expiry: float,
+    total_dte_hours: float,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    """
+    Multi-DTE adaptive interval: scales based on % of total DTE remaining.
+
+    For 0DTE (24h total), this produces similar behavior to v1.
+    For 5DTE (120h), intervals stay relaxed for the first ~96h, then
+    gradually accelerate as expiry approaches.
+
+    The key difference from v1: a 20DTE session won't be stuck in the
+    ">30h" tier for its entire life.
+
+    Args:
+        base_interval: User's configured adjustment_interval in seconds
+        hours_to_expiry: Hours remaining until expiry
+        total_dte_hours: Total hours from session creation to expiry
+        enabled: If False, returns base_interval unchanged
+
+    Returns:
+        Same format as compute_adaptive_interval()
+    """
+    if not enabled or hours_to_expiry is None or hours_to_expiry <= 0:
+        return {
+            'adaptive': False,
+            'effective_interval': base_interval,
+            'tier_label': 'manual',
+            'multiplier': 1.0,
+        }
+
+    # Guard against zero total hours
+    if total_dte_hours <= 0:
+        total_dte_hours = max(hours_to_expiry, 24.0)
+
+    pct_remaining = hours_to_expiry / total_dte_hours
+
+    # For the last 30 minutes, hand off to theta_acceleration (same as v1)
+    if hours_to_expiry < 0.5:
+        return {
+            'adaptive': True,
+            'effective_interval': ADAPTIVE_INTERVAL_FLOOR,
+            'tier_label': '<30m (theta zone)',
+            'multiplier': 0,
+        }
+
+    for pct_lower, pct_upper, multiplier, label in ADAPTIVE_INTERVAL_V2_TIERS:
+        if pct_lower <= pct_remaining < pct_upper:
+            effective = max(ADAPTIVE_INTERVAL_FLOOR, int(base_interval * multiplier))
+            return {
+                'adaptive': True,
+                'effective_interval': effective,
+                'tier_label': label,
+                'multiplier': multiplier,
+            }
+
+    return {
+        'adaptive': False,
+        'effective_interval': base_interval,
+        'tier_label': 'unknown',
+        'multiplier': 1.0,
+    }
+
+
+def apply_theta_acceleration_v2(
+    session: Dict,
+    minutes_to_expiry: float,
+    total_dte_mins: float = None,
+) -> Dict[str, Any]:
+    """
+    Multi-DTE theta acceleration: scales the acceleration window with DTE.
+
+    Interval acceleration in the last 30 minutes is kept universal (gamma
+    protection applies regardless of DTE).
+
+    Trigger widening scales with a configurable percentage of total DTE
+    instead of a fixed minute window.
+
+    Args:
+        session: Session dict with params
+        minutes_to_expiry: Minutes remaining until expiry
+        total_dte_mins: Total minutes from creation to expiry. If None,
+                        falls back to params['theta_acceleration_window']
+
+    Returns:
+        Same format as apply_theta_acceleration()
+    """
+    params = session.get('params', {})
+    base_trigger_move = params.get('min_trigger_move', 10.0)
+    base_interval = params.get('adjustment_interval', 300)
+
+    if minutes_to_expiry <= 0:
+        return {
+            'accelerated': False,
+            'effective_min_trigger_move': base_trigger_move,
+            'effective_interval': base_interval,
+        }
+
+    # Compute the theta acceleration window based on DTE
+    if total_dte_mins and total_dte_mins > 0:
+        theta_accel_window_pct = 0.02  # last 2% of total DTE
+        theta_window = max(30, total_dte_mins * theta_accel_window_pct)
+        # Cap at reasonable maximum (4 hours)
+        theta_window = min(theta_window, 240)
+    else:
+        theta_window = params.get('theta_acceleration_window', 120)
+
+    if minutes_to_expiry > theta_window:
+        return {
+            'accelerated': False,
+            'effective_min_trigger_move': base_trigger_move,
+            'effective_interval': base_interval,
+        }
+
+    # Interval tiers (universal — gamma protection near expiry)
+    if minutes_to_expiry <= 5:
+        effective_interval = 5
+    elif minutes_to_expiry <= 15:
+        effective_interval = 10
+    elif minutes_to_expiry <= 30:
+        effective_interval = 20
+    else:
+        effective_interval = max(30, base_interval // 2)
+
+    return {
+        'accelerated': True,
+        'effective_min_trigger_move': min(base_trigger_move * 2, 80.0),
+        'effective_interval': effective_interval,
+    }
+

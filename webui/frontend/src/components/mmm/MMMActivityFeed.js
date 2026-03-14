@@ -438,7 +438,15 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
     }
   }, [sessionId]);
 
-  // Initial load + reduced polling — pauses when tab is hidden
+  // Clear stale data when session changes, then refetch
+  useEffect(() => {
+    setHeartbeatSummary(null);
+    setActivities([]);
+    setLoading(true);
+    fetchActivities();
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reduced polling — pauses when tab is hidden
   useVisibilityAwarePolling(fetchActivities, 30000, 120000);
 
   // WebSocket: real-time activity events

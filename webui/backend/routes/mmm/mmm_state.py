@@ -17,6 +17,7 @@ from dataclasses import dataclass, field, asdict
 from copy import deepcopy
 
 from .mmm_constants import strike_key as strike_key_fn
+from webui.backend.sealed import sealed
 
 log = logging.getLogger('mmm_state')
 
@@ -204,6 +205,7 @@ def create_side_state(
     }
 
 
+@sealed
 def recompute_side_lots(side_state: Dict) -> Dict:
     """
     Recompute all position counts and backward-compatible views from positions[].
@@ -510,10 +512,28 @@ DEFAULT_PARAMS = {
     'atm_shield_loss_split_aggressor': 0.3,
     'atm_shield_max_per_session': 3,
     'atm_shield_cooldown_mins': 10,
+
+    # Guardian — heartbeat-level integrity checks
+    'guardian_enabled': True,              # master switch for MMM Guardian
+    'guardian_max_close_per_beat': 50,     # max lots bought back per single heartbeat (all mechanisms combined)
+    'guardian_max_beat_sec': 120,          # max wall-clock seconds for a single heartbeat
+    'guardian_side_wipeout_floor': 10,     # side must have >N lots before guardian flags a side-to-0 wipeout
+
+    # Shift-Time Recycle per-beat cap
+    'shift_recycle_max_per_beat': 10,      # max lots to close per heartbeat during shift-time recycle
+
+    # Delta-neutral lot matching inflation cap
+    'shift_match_max_inflate_mult': 1.5,   # cap inflation: lots = min(opposite_lots, formula_lots × this)
+
+    # Multi-Expiry DTE Presets
+    'dte_category': '',                    # '0DTE', '5DTE' — set at session creation
+    'total_dte_hours': 0.0,                # total hours from creation to expiry (computed)
+    'global_max_loss': 50000.0,            # aggregate max loss across all active sessions ($)
 }
 
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
+    'dte_category', 'total_dte_hours',
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
     'shift_cooldown_sec',
@@ -595,6 +615,15 @@ HOT_RELOAD_PARAMS = {
     'atm_shield_enabled', 'atm_shield_proximity_pct', 'atm_shield_target_otm_pct',
     'atm_shield_loss_split_aggressor', 'atm_shield_max_per_session',
     'atm_shield_cooldown_mins',
+    # Multi-Expiry
+    'global_max_loss',
+    # Guardian
+    'guardian_enabled', 'guardian_max_close_per_beat', 'guardian_max_beat_sec',
+    'guardian_side_wipeout_floor',
+    # Shift-Time Recycle per-beat cap
+    'shift_recycle_max_per_beat',
+    # Delta-neutral lot matching inflation cap
+    'shift_match_max_inflate_mult',
 }
 
 
@@ -622,6 +651,28 @@ def create_session(
     merged_params = {**DEFAULT_PARAMS}
     if params:
         merged_params.update(params)
+
+    # Multi-Expiry: Apply DTE preset if specified
+    dte_category = merged_params.get('dte_category', '')
+    if dte_category:
+        from .mmm_dte_presets import apply_preset
+        # Preserve user overrides: extract explicit user params, re-apply on top of preset
+        user_params = params or {}
+        merged_params = {**DEFAULT_PARAMS}
+        merged_params = apply_preset(merged_params, dte_category)
+        merged_params.update(user_params)
+        merged_params['dte_category'] = dte_category
+
+    # Multi-Expiry: Compute total_dte_hours at creation time
+    expiry_str = merged_params.get('expiry', '')
+    if expiry_str and not merged_params.get('total_dte_hours'):
+        from .mmm_dte_presets import compute_total_dte_hours
+        total_dte_hours = compute_total_dte_hours(
+            expiry_str,
+            merged_params.get('expiry_hour_utc', 12),
+            merged_params.get('expiry_minute_utc', 0),
+        )
+        merged_params['total_dte_hours'] = max(0.0, total_dte_hours)
 
     # C-4 fix: enforce expiry is present — a session without expiry is a zombie
     if not merged_params.get('expiry'):
@@ -961,4 +1012,12 @@ def get_session_summary(session: Dict) -> Dict:
         # Expiry info
         'expiry': session.get('params', {}).get('expiry', ''),   # DDMMYYYY
         'expiry_time': session.get('expiry_time'),                # ISO UTC string
+        'dte_category': session.get('params', {}).get('dte_category', ''),
+
+        # Pause context (if paused)
+        '_paused_reason': session.get('_paused_reason', ''),
+
+        # Health & regime (for card badges)
+        '_health_grade': session.get('_health_grade', ''),
+        '_gamma_regime': session.get('_gamma_regime', 'NORMAL'),
     }

@@ -9,6 +9,9 @@
  * - Auto-execute or alert-only modes
  *
  * Created: January 14, 2026
+ *
+ * @sealed — handleSave() + handleRemove()
+ * Sealed: Mar 12, 2026 — Test: src/components/options/__tests__/test_sealed_sltp_dialog.test.js
  */
 
 import React, { useState, useEffect } from 'react';
@@ -175,6 +178,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     setAlertOnly(false);
   };
 
+  // 🔒 SEALED #66 — test: test_sealed_sltp_dialog.test.js
   const handleSave = async () => {
     if (!position?.product_symbol) return;
 
@@ -245,6 +249,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
     }
   };
 
+  // 🔒 SEALED #66 — test: test_sealed_sltp_dialog.test.js
   const handleRemove = async () => {
     if (!position?.product_symbol) return;
 
@@ -283,12 +288,17 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
   const getStopLossPreview = () => {
     if (!stopLossEnabled) return null;
     if (stopLossType === 'price' && stopLossPrice) {
-      const pct = (((parseFloat(stopLossPrice) - entryPrice) / entryPrice) * 100).toFixed(1);
-      return { price: parseFloat(stopLossPrice), pct };
+      const slPriceNum = parseFloat(stopLossPrice);
+      const pct = (((slPriceNum - entryPrice) / entryPrice) * 100).toFixed(1);
+      // SHORT: SL should be ABOVE current price; LONG: SL should be BELOW current price
+      const wouldTriggerImmediately = isShort
+        ? slPriceNum <= currentPrice
+        : slPriceNum >= currentPrice;
+      return { price: slPriceNum, pct, wouldTriggerImmediately };
     }
     if (stopLossType === 'percentage' && stopLossPct) {
       const price = entryPrice * (1 - parseFloat(stopLossPct) / 100);
-      return { price: price.toFixed(2), pct: `-${stopLossPct}%` };
+      return { price: price.toFixed(2), pct: `-${stopLossPct}%`, wouldTriggerImmediately: false };
     }
     return null;
   };
@@ -296,18 +306,24 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
   const getTakeProfitPreview = () => {
     if (!takeProfitEnabled) return null;
     if (takeProfitType === 'price' && takeProfitPrice) {
-      const pct = (((parseFloat(takeProfitPrice) - entryPrice) / entryPrice) * 100).toFixed(1);
-      return { price: parseFloat(takeProfitPrice), pct: `+${pct}%` };
+      const tpPriceNum = parseFloat(takeProfitPrice);
+      const pct = (((tpPriceNum - entryPrice) / entryPrice) * 100).toFixed(1);
+      // SHORT: TP should be BELOW current price (price must fall); LONG: TP should be ABOVE current price
+      const wouldTriggerImmediately = isShort
+        ? tpPriceNum >= currentPrice
+        : tpPriceNum <= currentPrice;
+      return { price: tpPriceNum, pct: `+${pct}%`, wouldTriggerImmediately };
     }
     if (takeProfitType === 'percentage' && takeProfitPct) {
       const price = entryPrice * (1 + parseFloat(takeProfitPct) / 100);
-      return { price: price.toFixed(2), pct: `+${takeProfitPct}%` };
+      return { price: price.toFixed(2), pct: `+${takeProfitPct}%`, wouldTriggerImmediately: false };
     }
     return null;
   };
 
   const slPreview = getStopLossPreview();
   const tpPreview = getTakeProfitPreview();
+  const hasInvalidPrice = (slPreview?.wouldTriggerImmediately) || (tpPreview?.wouldTriggerImmediately);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
@@ -315,6 +331,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <ShowChart color="primary" />
           <Typography variant="h6">Stop-Loss / Target</Typography>
+          <Chip label="🔒 SEALED" size="small" sx={{ fontSize: '0.6rem', height: 16, bgcolor: 'action.selected', color: 'text.secondary', ml: 0.5 }} />
         </Box>
         <IconButton onClick={onClose} size="small">
           <Close />
@@ -441,8 +458,20 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                   )}
 
                   {slPreview && (
-                    <Alert severity="warning" sx={{ mt: 2 }} icon={<TrendingDown />}>
-                      Will close at <strong>${slPreview.price}</strong> ({slPreview.pct} from entry)
+                    <Alert
+                      severity={slPreview.wouldTriggerImmediately ? 'error' : 'warning'}
+                      sx={{ mt: 2 }}
+                      icon={<TrendingDown />}
+                    >
+                      {slPreview.wouldTriggerImmediately ? (
+                        <>
+                          <strong>Invalid price!</strong> For a {isShort ? 'SHORT' : 'LONG'} position,
+                          SL must be {isShort ? 'above' : 'below'} current price (${currentPrice.toFixed(2)}).
+                          This would execute immediately.
+                        </>
+                      ) : (
+                        <>Will close at <strong>${slPreview.price}</strong> ({slPreview.pct} from entry)</>
+                      )}
                     </Alert>
                   )}
 
@@ -542,8 +571,20 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
                   )}
 
                   {tpPreview && (
-                    <Alert severity="success" sx={{ mt: 2 }} icon={<TrendingUp />}>
-                      Will close at <strong>${tpPreview.price}</strong> ({tpPreview.pct} from entry)
+                    <Alert
+                      severity={tpPreview.wouldTriggerImmediately ? 'error' : 'success'}
+                      sx={{ mt: 2 }}
+                      icon={<TrendingUp />}
+                    >
+                      {tpPreview.wouldTriggerImmediately ? (
+                        <>
+                          <strong>Invalid price!</strong> For a {isShort ? 'SHORT' : 'LONG'} position,
+                          TP must be {isShort ? 'below' : 'above'} current price (${currentPrice.toFixed(2)}).
+                          This would execute immediately.
+                        </>
+                      ) : (
+                        <>Will close at <strong>${tpPreview.price}</strong> ({tpPreview.pct} from entry)</>
+                      )}
                     </Alert>
                   )}
 
@@ -680,7 +721,7 @@ export default function SLTPDialog({ open, onClose, position, onSave }) {
           onClick={handleSave}
           variant="contained"
           color="primary"
-          disabled={saving || (!stopLossEnabled && !takeProfitEnabled)}
+          disabled={saving || (!stopLossEnabled && !takeProfitEnabled) || hasInvalidPrice}
           startIcon={saving ? <CircularProgress size={16} /> : <CheckCircle />}
         >
           {saving ? 'Saving...' : 'Save'}

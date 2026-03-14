@@ -401,6 +401,7 @@ async def execute_lot_recycling(
             result = await close_position(
                 executor, initializer, session, pos,
                 pnl_attribution_key='pnl_recycle',
+                mechanism='recycler',
             )
             if result.get('success'):
                 phase_a_pnl += result.get('realized_pnl', 0)

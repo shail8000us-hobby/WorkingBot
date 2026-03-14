@@ -373,6 +373,8 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         price_source = quotes['source']
 
         if best_bid == 0 or best_ask == 0:
+            if order_preference == ORDER_TYPE_MAKER_ONLY:
+                raise Exception(f"No quotes for {symbol} (source: {price_source}) — refusing market fallback for MAKER_ONLY order")
             log.warning(f"No quotes for {symbol} (source: {price_source}), using market order")
             order = await place_options_order(
                 client, symbol, size, side,
@@ -418,6 +420,9 @@ async def place_smart_order(client, symbol: str, size: float, side: str,
         return limit_order
 
     except Exception as e:
+        if order_preference == ORDER_TYPE_MAKER_ONLY:
+            log.error(f"MAKER_ONLY order failed for {symbol} — refusing market fallback: {e}")
+            raise
         log.exception(f"Smart order failed, falling back to market")  # Full traceback
         order = await place_options_order(
             client, symbol, size, side,

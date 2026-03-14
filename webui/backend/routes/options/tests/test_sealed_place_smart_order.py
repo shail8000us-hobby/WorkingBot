@@ -14,6 +14,7 @@ Contracts:
   - On any unrecoverable error falls back to market order with execution_type starting with 'market'
 """
 import asyncio
+import selectors
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +24,13 @@ BASE = "webui.backend.routes.options.order_executor"
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run async coroutine using SelectSelector to avoid eventlet kqueue conflict on macOS."""
+    selector = selectors.SelectSelector()
+    loop = asyncio.SelectorEventLoop(selector)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 from webui.backend.routes.options.options_control import place_smart_order

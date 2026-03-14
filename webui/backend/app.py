@@ -1520,6 +1520,81 @@ if __name__ == '__main__':
             print("   📡 Connected to wss://socket.india.delta.exchange\n")
         except Exception as e:
             print(f"⚠️  Price WebSocket failed: {e}\n")
+            price_ws = None
+
+        # --- Delta Private WebSocket (authenticated: orders + positions) ---
+        try:
+            print("🔐 Starting Delta Private WebSocket (orders + positions feed)...")
+            from webui.backend.services.delta_private_websocket import start_private_ws_service
+            creds = get_api_credentials()
+            start_private_ws_service(sio_ref, creds.get('api_key', ''), creds.get('api_secret', ''))
+            print("✅ Delta Private WebSocket started (order fills + position updates)\n")
+        except Exception as e:
+            print(f"⚠️  Private WebSocket failed: {e}\n")
+
+        # --- Options Ticker Broadcaster (REST poll every 3s) ---
+        # Delta WS only pushes v2/ticker on price *change* — quiet options can go
+        # 20+ seconds without an update.  This thread polls the bulk REST ticker
+        # every 3 seconds and broadcasts any subscribed symbols so the UI always
+        # stays fresh regardless of market activity.
+        def _options_ticker_broadcaster():
+            import time as _time
+            _INTERVAL = 3.0
+            while True:
+                try:
+                    _time.sleep(_INTERVAL)
+                    # Get subscribed symbols from the WS service
+                    if price_ws is None:
+                        continue
+                    with price_ws.subscribed_options_lock:
+                        symbols = list(price_ws.subscribed_options.keys())
+                    if not symbols:
+                        continue
+
+                    # Use the bulk tickers cache from options_control (free if fresh)
+                    from webui.backend.routes.options.options_control import (
+                        _run_async, get_unified_client, _tickers_cache, TICKERS_CACHE_SECONDS
+                    )
+                    import time as _t2
+
+                    async def _fetch_tickers():
+                        client = get_unified_client()
+                        age = _t2.time() - _tickers_cache['time']
+                        if _tickers_cache['data'] is not None and age < TICKERS_CACHE_SECONDS:
+                            return _tickers_cache['data']
+                        tickers = await client.rest_client.get_all_tickers()
+                        _tickers_cache['data'] = tickers
+                        _tickers_cache['time'] = _t2.time()
+                        return tickers
+
+                    all_tickers = _run_async(_fetch_tickers())
+                    ticker_map = {t.get('symbol'): t for t in all_tickers if t.get('symbol')}
+
+                    for sym in symbols:
+                        raw = ticker_map.get(sym)
+                        if not raw:
+                            continue
+                        quotes = raw.get('quotes', {})
+                        best_bid = float(quotes.get('best_bid', 0) or 0)
+                        best_ask = float(quotes.get('best_ask', 0) or 0)
+                        mark_price = float(raw.get('mark_price', 0) or 0)
+                        if best_bid > 0 or best_ask > 0:
+                            sio_ref.emit('options_ticker_update', {
+                                'symbol': sym,
+                                'best_bid': best_bid,
+                                'best_ask': best_ask,
+                                'mark_price': mark_price,
+                                'timestamp': _t2.time(),
+                            })
+                except Exception as _e:
+                    log.debug(f"[TickerBroadcast] {_e}")
+
+        _threading.Thread(
+            target=_options_ticker_broadcaster,
+            daemon=True,
+            name='options-ticker-broadcaster'
+        ).start()
+        print("✅ Options ticker broadcaster started (3s REST poll)\n")
 
         # --- Pre-warm API caches ---
         try:

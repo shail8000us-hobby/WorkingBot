@@ -29,6 +29,7 @@ export const CONTRACT_MULTIPLIERS = {
  * @param {string} symbol - e.g. "C-BTC-65000-240226" or "ETH-PERP"
  * @returns {number} 0.001 for BTC, 0.01 for ETH
  */
+// 🔒 SEALED #45 — test: test_sealed_payoffCalculator.test.js
 export const getContractMultiplier = (symbol) => {
   if (!symbol) return CONTRACT_MULTIPLIERS.BTC;
   const upper = symbol.toUpperCase();
@@ -45,6 +46,7 @@ export const getContractMultiplier = (symbol) => {
  * Abramowitz & Stegun approximation (5-term, accuracy ~1e-7).
  * @sealed
  */
+// 🔒 SEALED #46 — test: test_sealed_payoffCalculator.test.js
 export const normalCDF = (x) => {
   if (x === 0) return 0.5;
   const a1 = 0.254829592,
@@ -64,6 +66,7 @@ export const normalCDF = (x) => {
  * Probability density function for standard normal distribution.
  * @sealed
  */
+// 🔒 SEALED #47 — test: test_sealed_payoffCalculator.test.js
 export const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
 
 // ============================================================================
@@ -82,6 +85,7 @@ export const normalPDF = (x) => Math.exp(-0.5 * x * x) / Math.sqrt(2 * Math.PI);
  * @param {string} type - 'call' or 'put'
  * @returns {number} Theoretical option price
  */
+// 🔒 SEALED #48 — test: test_sealed_payoffCalculator.test.js
 export const blackScholesPrice = (S, K, T, r, sigma, type) => {
   if (T <= 0) return type === 'call' ? Math.max(0, S - K) : Math.max(0, K - S);
   if (sigma <= 0 || S <= 0 || K <= 0)
@@ -115,6 +119,7 @@ export const blackScholesPrice = (S, K, T, r, sigma, type) => {
  * @param {string} type - 'call' or 'put'
  * @returns {number} Implied volatility (e.g. 0.8 for 80%)
  */
+// 🔒 SEALED #49 — test: test_sealed_payoffCalculator.test.js
 export const calculateImpliedVolatility = (marketPrice, S, K, T, r, type) => {
   if (T <= 0 || marketPrice <= 0) return 0.8;
 
@@ -161,6 +166,7 @@ export const calculateImpliedVolatility = (marketPrice, S, K, T, r, type) => {
  * @param {number} r - Risk-free rate
  * @returns {number} Portfolio delta
  */
+// 🔒 SEALED #50 — test: test_sealed_payoffCalculator.test.js
 export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r = RISK_FREE_RATE) => {
   let totalDelta = 0;
   positions.forEach((pos) => {
@@ -198,6 +204,7 @@ export const calculatePortfolioDelta = (S, positions, targetDaysFromNow = 0, r =
  * @param {number} r - Risk-free rate
  * @returns {number} Portfolio theta ($/day)
  */
+// 🔒 SEALED #51 — test: test_sealed_payoffCalculator.test.js
 export const calculatePortfolioTheta = (S, positions, targetDaysFromNow = 0, r = RISK_FREE_RATE) => {
   let totalTheta = 0;
   positions.forEach((pos) => {
@@ -231,6 +238,7 @@ export const calculatePortfolioTheta = (S, positions, targetDaysFromNow = 0, r =
  * @param {number} r - Risk-free rate
  * @returns {number} Portfolio gamma
  */
+// 🔒 SEALED #52 — test: test_sealed_payoffCalculator.test.js
 export const calculatePortfolioGamma = (S, positions, targetDaysFromNow = 0, r = RISK_FREE_RATE) => {
   let totalGamma = 0;
   positions.forEach((pos) => {
@@ -265,6 +273,7 @@ export const calculatePortfolioGamma = (S, positions, targetDaysFromNow = 0, r =
  * @param {Array} chartData - The computed chart data array [{price, expiry, ...}]
  * @returns {number} Probability of profit 0-100 (%)
  */
+// 🔒 SEALED #53 — test: test_sealed_payoffCalculator.test.js
 export const calculateProbabilityOfProfit = (spotPrice, weightedIV, yearsToExpiry, chartData) => {
   if (!chartData || chartData.length === 0 || yearsToExpiry <= 0 || weightedIV <= 0) return null;
 
@@ -310,6 +319,7 @@ export const calculateProbabilityOfProfit = (spotPrice, weightedIV, yearsToExpir
  * @param {number} T - Time horizon in years
  * @returns {Function} price → density (raw PDF value)
  */
+// 🔒 SEALED #54 — test: test_sealed_payoffCalculator.test.js
 export const createPriceDistribution = (spot, volatility, T) => {
   if (T <= 0 || volatility <= 0 || spot <= 0) return () => 0;
 
@@ -335,6 +345,7 @@ export const createPriceDistribution = (spot, volatility, T) => {
  * @param {Array} positions - Parsed positions array
  * @returns {number} Weighted average IV (fallback 0.8)
  */
+// 🔒 SEALED #55 — test: test_sealed_payoffCalculator.test.js
 export const calculateWeightedIV = (positions) => {
   if (!positions || positions.length === 0) return 0.8;
 
@@ -362,6 +373,7 @@ export const calculateWeightedIV = (positions) => {
  * Format date for display in payoff diagram.
  * @sealed
  */
+// 🔒 SEALED #56 — test: test_sealed_payoffCalculator.test.js
 export const formatDate = (date) => {
   const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

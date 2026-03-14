@@ -343,6 +343,22 @@ const mmmService = {
   },
 
   /**
+   * Get available DTE presets for multi-expiry support
+   */
+  async getDTEPresets() {
+    const { data } = await api.get(`${BASE_URL}/dte-presets`);
+    return data;
+  },
+
+  /**
+   * Get aggregate PnL across all active sessions
+   */
+  async getAggregatePnL() {
+    const { data } = await api.get(`${BASE_URL}/aggregate-pnl`);
+    return data;
+  },
+
+  /**
    * Get current parameters for a session
    * @param {string} sessionId
    */

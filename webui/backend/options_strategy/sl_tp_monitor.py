@@ -123,6 +123,7 @@ class SLTPMonitor:
                 current_price = position.get('mid_price') or position.get('mark_price', 0)
                 entry_price = position.get('entry_price', 0)
                 pnl_pct = position.get('pnl_percentage', 0)
+                position_size = position.get('size', 0)
                 
                 if current_price <= 0 or entry_price <= 0:
                     continue
@@ -132,7 +133,8 @@ class SLTPMonitor:
                     symbol=symbol,
                     current_price=current_price,
                     entry_price=entry_price,
-                    pnl_pct=pnl_pct
+                    pnl_pct=pnl_pct,
+                    position_size=position_size
                 )
                 
                 if trigger:
@@ -185,7 +187,17 @@ class SLTPMonitor:
         
         # Execute if auto_execute and not alert_only
         if auto_execute and not alert_only:
-            self._execute_close(symbol, position, trigger)
+            if trigger_type == 'take_profit':
+                # TP is handled by the post_only limit order already placed on the exchange
+                # at the time the user pressed Save. The exchange fills it automatically.
+                # Never place a market order here — that would bypass the limit order intent.
+                logger.info(
+                    f"ℹ️ TP trigger detected for {symbol} but NOT executing market order — "
+                    f"post_only limit order on exchange will fill when price is reached."
+                )
+            else:
+                # SL and trailing-stop: execute market close immediately for safety
+                self._execute_close(symbol, position, trigger)
     
     def _execute_close(self, symbol: str, position: Dict, trigger: Dict):
         """Execute position close"""

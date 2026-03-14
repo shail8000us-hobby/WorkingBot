@@ -52,7 +52,7 @@ def calculate_portfolio_greeks(positions):
     Calculate aggregated portfolio Greeks from positions.
     This offloads calculation from frontend to backend for better performance.
 
-    SEALED — v1.0.0 — March 4, 2026
+    SEALED — v2.0.0 — March 13, 2026
     Do not modify without UNSEAL command in AI_SEAL.md
     
     Args:
@@ -89,24 +89,23 @@ def calculate_portfolio_greeks(positions):
         per_contract_theta = float(pos_greeks.get('theta', 0))
         per_contract_vega = float(pos_greeks.get('vega', 0))
         
-        # Aggregate position Greeks
-        # Delta: signed by position size
-        greeks['delta'] += per_contract_delta * size
-        greeks['gamma'] += per_contract_gamma * abs(size)
-        
-        # Theta and Vega: Delta Exchange uses internal units (divide by 1000 for USD)
-        # Short positions (size < 0) earn theta (option loses value = our profit)
+        # Aggregate position Greeks.
+        # 1 lot = 0.001 BTC — API returns greeks per 1 BTC notional, so multiply by 0.001.
+        # Theta/vega already divide by 1000 (equivalent to × 0.001) for USD conversion.
+        LOT_MULT = 0.001
+        greeks['delta'] += per_contract_delta * size * LOT_MULT
+        greeks['gamma'] += per_contract_gamma * abs(size) * LOT_MULT
         greeks['theta'] += (per_contract_theta / 1000) * size
         greeks['vega'] += (per_contract_vega / 1000) * abs(size)
         greeks['count'] += 1
-        
+
         # Separate delta by underlying for futures equivalent
         symbol = pos.get('product_symbol', '')
         parts = symbol.split('-')
         if len(parts) >= 2:
             underlying = parts[1]  # BTC or ETH
-            delta_contribution = per_contract_delta * size
-            
+            delta_contribution = per_contract_delta * size * LOT_MULT
+
             if underlying == 'BTC':
                 greeks['btcDelta'] += delta_contribution
             elif underlying == 'ETH':

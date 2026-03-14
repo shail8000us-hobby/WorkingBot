@@ -21,15 +21,29 @@ def fetch_options_positions_data() -> dict:
     """
     Fetch options positions as a plain dict.
     
+    Safe to call from background threads — uses the shared positions cache
+    directly when available (no Flask app context required). Falls back to
+    calling the route handler only when a Flask app context is already active.
+    
     Returns:
         dict: { 'success': bool, 'positions': list, 'count': int, ... }
     """
     try:
-        from .options_control import get_options_positions
+        from .options_control import get_cached_positions, get_options_positions
+        # Fast path: use the in-process cache (no app context needed).
+        positions = get_cached_positions(max_age=30)
+        if positions is not None:
+            return {'success': True, 'positions': positions, 'count': len(positions)}
+        # Slow path: fetch fresh data — only works when app context is active.
+        from flask import current_app  # raises RuntimeError outside app context
+        _ = current_app._get_current_object()  # will raise if no context
         response = get_options_positions()
         response = response[0] if isinstance(response, tuple) else response
         data = response.get_json() if hasattr(response, 'get_json') else response
         return data if isinstance(data, dict) else {'success': False, 'positions': [], 'error': 'Invalid response type'}
+    except RuntimeError:
+        # No app context and no cached data — return empty rather than crash.
+        return {'success': False, 'positions': [], 'error': 'No cached positions and no app context'}
     except Exception as e:
         log.error(f"Service: fetch positions failed: {e}")
         return {'success': False, 'positions': [], 'error': str(e)}

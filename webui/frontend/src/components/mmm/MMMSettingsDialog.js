@@ -367,6 +367,41 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     fetchSessionData();
   }, [open, sessionId]);
 
+  // Conflict rules: [condition, message]
+  // Checked live as user edits — shown as warnings on conflicting params.
+  const CONFLICTS = [
+    {
+      params: ['atm_shield_enabled', 'wind_down_on_atm'],
+      check: (v) => v.atm_shield_enabled && v.wind_down_on_atm,
+      message: 'ATM Shield and Wind-Down-on-ATM conflict. When ATM Shield is ON it handles all ATM approaches — Wind-Down-on-ATM will be automatically suppressed. Wind-down only activates as a last resort if no viable OTM strike is found. You do not need to enable both.',
+      params_affected: ['wind_down_on_atm'],
+    },
+    {
+      params: ['atm_shield_enabled', 'wind_down_enabled'],
+      check: (v) => v.atm_shield_enabled && v.wind_down_enabled,
+      message: 'ATM Shield and Wind-Down (manual) are both enabled. Wind-down will block ATM Shield re-sells, preventing position re-establishment. Disable Wind-Down while ATM Shield is active, or the shield will close positions but cannot re-open them.',
+      params_affected: ['wind_down_enabled'],
+    },
+    {
+      params: ['atm_shield_enabled', 'close_at_atm'],
+      check: (v) => v.atm_shield_enabled && v.close_at_atm,
+      message: 'ATM Shield and Close-at-ATM conflict. Both handle ATM approaches but differently: ATM Shield repositions (close + re-sell farther OTM), Close-at-ATM just closes. Enable only one. ATM Shield is preferred — it maintains premium collection capacity.',
+      params_affected: ['close_at_atm'],
+    },
+  ];
+
+  const getConflictWarnings = (values) => {
+    const warnings = {};
+    for (const rule of CONFLICTS) {
+      if (rule.check(values)) {
+        for (const p of rule.params_affected) {
+          warnings[p] = rule.message;
+        }
+      }
+    }
+    return warnings;
+  };
+
   // Handle value change with validation
   const handleChange = (paramName, value, paramType) => {
     const params = paramsInfo?.params || {};
@@ -406,6 +441,13 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       return;
     }
 
+    // Check for setting conflicts
+    const conflictWarnings = getConflictWarnings(formValues);
+    if (Object.keys(conflictWarnings).length > 0) {
+      setServerError('Conflicting settings detected (highlighted in yellow above). Please resolve conflicts before saving.');
+      return;
+    }
+
     if (!sessionData) {
       setServerError('Session data not loaded');
       return;
@@ -419,32 +461,17 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const sessionStatus = (sessionData.strategy_status || sessionData.status || 'IDLE').toUpperCase();
       const isRunning = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(sessionStatus);
 
-      // Filter out unchanged and non-hot params if session is running
+      // Filter out unchanged params
       const changedParams = {};
-      const nonHotChanges = [];
-      const params = paramsInfo?.params || {};
 
       for (const [key, value] of Object.entries(formValues)) {
         if (value !== currentParams[key]) {
           changedParams[key] = value;
-          const info = params[key] || {};
-          if (isRunning && !info.hot_reload) {
-            nonHotChanges.push(key);
-          }
         }
       }
 
       if (Object.keys(changedParams).length === 0) {
         setServerError('No changes detected');
-        setSaving(false);
-        return;
-      }
-
-      if (nonHotChanges.length > 0) {
-        setServerError(
-          `Cannot change non-hot parameters (${nonHotChanges.join(', ')}) while session is ${sessionStatus}. ` +
-          'Stop the session first, then update.'
-        );
         setSaving(false);
         return;
       }
@@ -540,34 +567,44 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     }
 
     if (type === 'bool') {
+      const conflictWarnings = getConflictWarnings(formValues);
+      const conflictMsg = conflictWarnings[paramName];
       return (
         <Grid item xs={12} key={paramName}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <FormControlLabel
-              control={
-                <Switch
-                  checked={Boolean(value)}
-                  onChange={(e) => handleChange(paramName, e.target.checked, type)}
-                  size="small"
-                />
-              }
-              label={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                  <Typography variant="body2">{info.description || paramName}</Typography>
-                  {!isHot && (
-                    <Tooltip title="Requires session restart">
-                      <LockIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                    </Tooltip>
-                  )}
-                  {isHot && (
-                    <Tooltip title="Hot-reloadable">
-                      <HotIcon sx={{ fontSize: 14, color: '#ff9800' }} />
-                    </Tooltip>
-                  )}
-                  {renderHelpIcon(paramName)}
-                </Box>
-              }
-            />
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <FormControlLabel
+                control={
+                  <Switch
+                    checked={Boolean(value)}
+                    onChange={(e) => handleChange(paramName, e.target.checked, type)}
+                    size="small"
+                    color={conflictMsg ? 'warning' : 'primary'}
+                  />
+                }
+                label={
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography variant="body2">{info.description || paramName}</Typography>
+                    {!isHot && (
+                      <Tooltip title="Requires session restart">
+                        <LockIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
+                      </Tooltip>
+                    )}
+                    {isHot && (
+                      <Tooltip title="Hot-reloadable">
+                        <HotIcon sx={{ fontSize: 14, color: '#ff9800' }} />
+                      </Tooltip>
+                    )}
+                    {renderHelpIcon(paramName)}
+                  </Box>
+                }
+              />
+            </Box>
+            {conflictMsg && (
+              <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.75rem' }} icon={<WarningIcon fontSize="small" />}>
+                ⚠️ <strong>Conflict:</strong> {conflictMsg}
+              </Alert>
+            )}
           </Box>
         </Grid>
       );

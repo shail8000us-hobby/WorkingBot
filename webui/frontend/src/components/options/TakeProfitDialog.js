@@ -5,6 +5,9 @@
  * Allows user to set target profit amount and quantity to exit.
  *
  * Created: February 3, 2026
+ *
+ * @sealed — handleSave() + handleRemove()
+ * Sealed: Mar 12, 2026 — Test: src/components/options/__tests__/test_sealed_take_profit_dialog.test.js
  */
 
 import React, { useState, useEffect } from 'react';
@@ -51,6 +54,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
     setError('');
   }, [settings, open]);
 
+  // 🔒 SEALED #67 — test: test_sealed_take_profit_dialog.test.js
   const handleSave = async () => {
     setError('');
 
@@ -100,6 +104,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
     }
   };
 
+  // 🔒 SEALED #67 — test: test_sealed_take_profit_dialog.test.js
   const handleRemove = async () => {
     setSaving(true);
     try {
@@ -127,6 +132,7 @@ export default function TakeProfitDialog({ open, onClose, position, settings, on
         <Box display="flex" alignItems="center" gap={1}>
           <TrendingUp color="success" />
           <Typography variant="h6">Target P&L Settings</Typography>
+          <Chip label="🔒 SEALED" size="small" sx={{ fontSize: '0.6rem', height: 16, bgcolor: 'action.selected', color: 'text.secondary', ml: 0.5 }} />
         </Box>
       </DialogTitle>
 

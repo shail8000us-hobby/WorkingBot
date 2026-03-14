@@ -67,7 +67,8 @@ const TIER_CONFIG = {
 
 const TIER_ORDER = ['GREEN', 'YELLOW', 'ORANGE', 'RED', 'CRITICAL'];
 
-function TierBadge({ tier }) {
+// 🔒 SEALED #75 — test: test_sealed_mmm_margin_panel.test.js
+export function TierBadge({ tier }) {
   const config = TIER_CONFIG[tier] || TIER_CONFIG.GREEN;
   const Icon = config.icon;
   return (
@@ -87,7 +88,8 @@ function TierBadge({ tier }) {
 }
 
 // Determine visual tier from utilization (independent of Guardian thresholds)
-function getUtilizationColor(util) {
+// 🔒 SEALED #75 — test: test_sealed_mmm_margin_panel.test.js
+export function getUtilizationColor(util) {
   if (util >= 90) return '#b71c1c';
   if (util >= 80) return '#f44336';
   if (util >= 70) return '#ff9800';
@@ -95,7 +97,8 @@ function getUtilizationColor(util) {
   return '#4caf50';
 }
 
-function UtilizationGauge({ utilization, tier, thresholds }) {
+// 🔒 SEALED #75 — test: test_sealed_mmm_margin_panel.test.js
+export function UtilizationGauge({ utilization, tier, thresholds }) {
   const barColor = getUtilizationColor(utilization);
   const clampedUtil = Math.min(utilization, 100);
 
@@ -186,7 +189,8 @@ function UtilizationGauge({ utilization, tier, thresholds }) {
   );
 }
 
-function WalletBreakdown({ marginData }) {
+// 🔒 SEALED #75 — test: test_sealed_mmm_margin_panel.test.js
+export function WalletBreakdown({ marginData }) {
   if (!marginData || Object.keys(marginData).length === 0) return null;
 
   const items = [
@@ -348,7 +352,8 @@ function PositionsTable({ positions }) {
   );
 }
 
-function TierLadder({ currentTier, thresholds, utilization }) {
+// 🔒 SEALED #75 — test: test_sealed_mmm_margin_panel.test.js
+export function TierLadder({ currentTier, thresholds, utilization }) {
   return (
     <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>

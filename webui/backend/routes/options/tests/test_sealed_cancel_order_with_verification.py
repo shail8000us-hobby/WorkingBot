@@ -16,6 +16,7 @@ Contracts:
   - All retries fail → state='unknown', safe_to_place_market=False (safe=False!)
 """
 import asyncio
+import selectors
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
@@ -25,7 +26,13 @@ from webui.backend.routes.options.options_control import cancel_order_with_verif
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run async coroutine using SelectSelector to avoid eventlet kqueue conflict on macOS."""
+    selector = selectors.SelectSelector()
+    loop = asyncio.SelectorEventLoop(selector)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
 
 
 def _make_client(states: list):

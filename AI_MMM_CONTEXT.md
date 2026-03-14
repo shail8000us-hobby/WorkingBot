@@ -3,19 +3,20 @@
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
 > **Last Updated:** March 12, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** Production-ready.
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** **Multi-DTE Support (0DTE → 5DTE+) — DTE presets, aggregate PnL safety, liquidity gate, v2 adaptive interval, v2 theta acceleration, v2 near-expiry — see §17.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
 > **ATM Shield:** Proactive close + full position shift + loss recovery when spot approaches active strike — see §2.20.
 > **Operator Strike Controls:** Set Active Strike, Close Strike (manual buyback + re-establish farther OTM), Operator Position Inject — see §16.
+> **Multi-DTE:** DTE presets (0DTE/5DTE), aggregate PnL safety, chain liquidity gate, v2 adaptive/theta/near-expiry scaling — see §17.
 > **Remaining Hardening:** See `MMM_10_OF_10_PRODUCTION_PLAN.md` for 19 additional issues found in post-robustv2 audit.
 
 ---
 
 ## 1. WHAT IS MMM?
 
-MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustment. It:
+MMM is a **BTC options premium selling algorithm** (0DTE and multi-DTE) with automatic adjustment. It:
 
 1. **Sells** both CE (call) and PE (put) options on BTC at OTM strikes
 2. **Monitors** premiums adaptively (60s–1200s depending on trigger proximity)
@@ -38,6 +39,7 @@ MMM is a **BTC 0DTE options premium selling algorithm** with automatic adjustmen
     - **Operator Position Inject (💉):** Sell new lots at any strike and register them in the algo ledger
     - Enables the operator workflow: close a near-ATM risk strike → inject at a safer far-OTM strike → reduces perp futures usage
 17. **ATM Shield** — automated proactive defense: when spot approaches within `atm_shield_proximity_pct` of an active strike, the algo pre-emptively closes all active positions on that side and re-establishes them at a safer OTM strike. Full position shift (original lots preserved) + loss recovery lots + sympathetic rebalance of the safe side.
+18. **Multi-DTE support** — DTE presets (0DTE, 5DTE) auto-configure parameters for different expiry horizons. Aggregate PnL safety prevents combined losses across sessions from exceeding a global limit. Liquidity gate blocks session creation on illiquid expiry chains. Adaptive interval v2 and theta acceleration v2 scale by percentage-of-DTE instead of absolute hours. Near-expiry v2 adds wind-down zone warnings for multi-DTE sessions.
     - **Set Active Strike (📌):** Switch the algo's monitoring focal point to any open strike without placing any order
     - **Close Strike (🔴):** Buy back ALL lots at a chosen strike (exchange order), remove from ledger; if active_strike is closed, the remaining open strike with most lots auto-promotes
     - **Operator Position Inject (💉):** Sell new lots at any strike and register them in the algo ledger
@@ -677,8 +679,9 @@ webui/
 │           ├── mmm_harvester.py              ← M1 Profit Harvesting + M3 Asymmetry scanner (~246 lines, added Mar 3, 2026)
 │           ├── mmm_recycler.py               ← M2 Lot Recycling two-phase execution (~514 lines, added Mar 3, 2026)
 │           ├── mmm_atm_shield.py             ← ATM Shield proactive close & retreat (~450 lines, added Mar 12, 2026)
+│           ├── mmm_dte_presets.py             ← Multi-DTE presets, aggregate PnL safety, liquidity gate (~306 lines, added Mar 12, 2026)
 │           ├── mmm_sessions.db               ← SQLite session data (replaces mmm_sessions.json)
-│           └── tests/                        ← Unit tests (12 files)
+│           └── tests/                        ← Unit tests (13 files)
 │
 ├── frontend/
 │   └── src/
@@ -866,7 +869,14 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 | `POST` | `/api/mmm/session/<id>/hedge/toggle` | Enable/disable perp hedge |
 | `POST` | `/api/mmm/session/<id>/hedge/close` | Close perp hedge position immediately |
 
-### 4.12 WebSocket Events (22 total)
+### 4.12 Multi-DTE / Aggregate Safety
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/mmm/dte-presets` | Available DTE presets with full parameter details |
+| `GET` | `/api/mmm/aggregate-pnl` | Combined P&L across all active sessions with safety level |
+
+### 4.13 WebSocket Events (22 total)
 
 | Event | When | Key Payload Fields |
 |-------|------|-------------------|
@@ -975,14 +985,17 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 
 ### 6.1 mmm_state.py (~839 lines)
 - `create_session(mode, params)` → creates session dict with all state fields
+  - If `dte_category` is set in params, applies DTE preset via `apply_preset()` from `mmm_dte_presets.py`
+  - Computes `total_dte_hours` from expiry via `compute_total_dte_hours()` and stores in params
 - `initialize_side_from_entry(session, side, strike, premium, lots)` → sets per-side state
-- `get_session_summary(session)` → compact summary for WebSocket/API
-- `DEFAULT_PARAMS` includes all Split Ledger params: `max_total_exposure`, `shift_recycle_enabled`, `shift_recycle_premium_floor`, `shift_recycle_max_pct`, `shift_recycle_floor_ratio`
-- `HOT_RELOAD_PARAMS` includes all Split Ledger params for live tuning
+- `get_session_summary(session)` → compact summary for WebSocket/API (includes `dte_category`)
+- `DEFAULT_PARAMS` includes all Split Ledger params + DTE params: `dte_category`, `total_dte_hours`, `global_max_loss`
+- `HOT_RELOAD_PARAMS` includes `global_max_loss`
 
-### 6.2 mmm_config.py (~438 lines)
-- `PARAM_RULES` dict with all 30+ parameters (including adaptive + wind-down + Split Ledger)
+### 6.2 mmm_config.py (~443 lines)
+- `PARAM_RULES` dict with all 30+ parameters (including adaptive + wind-down + Split Ledger + DTE)
 - Split Ledger PARAM_RULES: `max_total_exposure`, `shift_recycle_enabled`, `shift_recycle_premium_floor`, `shift_recycle_max_pct`, `shift_recycle_floor_ratio`
+- DTE PARAM_RULES: `dte_category` (str, not hot), `total_dte_hours` (float [0, 10000], not hot), `global_max_loss` (float [100, 1e9], hot)
 - `validate_params(user_params)` → validates types, ranges, returns (validated, errors)
 - `get_param_info()` → returns descriptions for all params for WebUI tooltips
 
@@ -1019,10 +1032,13 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Auto-reprice cycle if not filled
 - Handles both entry orders and adjustment orders
 
-### 6.8 mmm_trigger.py (~348 lines)
+### 6.8 mmm_trigger.py (~530 lines)
 - `evaluate_triggers(session, ce_now, pe_now)` → returns which sides triggered
 - Percentage-based `min_trigger_move_pct` filter (3% of trigger level)
-- `compute_adaptive_interval()` → dynamic interval based on trigger proximity
+- `compute_adaptive_interval()` → dynamic interval based on hours-to-expiry (v1: absolute thresholds for 0DTE)
+- `compute_adaptive_interval_v2()` → percentage-of-DTE tiers for multi-DTE (>80%→1.5×, 50-80%→1.0×, 20-50%→0.7×, 5-20%→0.5×, <5%→0.3×)
+- `apply_theta_acceleration()` → near-expiry trigger widening (v1: absolute 30-min window)
+- `apply_theta_acceleration_v2()` → DTE-scaled window (2% of total DTE, capped at 240 min)
 - Theta acceleration: widens triggers near expiry
 
 ### 6.9 mmm_engine.py (~763 lines)
@@ -1049,9 +1065,11 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - `close_position(session, position)` → records realized P&L
 - Handles side fully closed, both sides closed
 
-### 6.13 mmm_safety.py (~739 lines)
+### 6.13 mmm_safety.py (~850 lines)
 - `MMMSafety` class with all 9+ safety checks
-- Methods: `check_position_cap`, `check_total_exposure`, `check_max_adjustments`, `check_max_loss`, `check_whipsaw`, `check_asymmetry`, `check_near_expiry`, `check_trailing_profit`, `check_pnl_guardrail`
+- Methods: `check_position_cap`, `check_total_exposure`, `check_max_adjustments`, `check_max_loss`, `check_whipsaw`, `check_asymmetry`, `check_near_expiry`, `check_near_expiry_v2`, `check_trailing_profit`, `check_pnl_guardrail`
+- **`check_near_expiry_v2()`:** DTE-aware near-expiry for multi-DTE sessions. Three tiers: (1) absolute auto-close/stop-adjustment (same as v1), (2) wind-down zone from preset's `wind_down_hours_before_expiry`, (3) percentage-based early warning (last 5% of total DTE)
+- **Dispatch:** `run_all_checks()` auto-dispatches v2 when `total_dte_hours > 36` and `dte_category != '0DTE'`
 - **Split Ledger:** `check_position_cap` uses `active_lots` (not `total_lots`)
 - **`check_total_exposure()`:** Warning-only check on `active + frozen` vs `max_total_exposure`. Action='warn' (does not block). Asymmetry check uses `total_lots` (unchanged)
 - **`check_whipsaw()` (Mar 2026 rewrite):** Adaptive Whipsaw Guard — score-based graduated response (NORMAL/CAUTION/RESTRICT/COOLDOWN). Auto-migrates old binary pause state on first call. See T3-3 in §15.
@@ -1061,7 +1079,8 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - `start_session_monitor(session_id)`, `stop_session_monitor(session_id)`
 - `pause_session(session_id)`, `resume_session(session_id)`
 - Each heartbeat: fetch prices (circuit breaker) → close-at-5 → wind-down check → regime check → margin guardian → safety → pending order guard → triggers → adjust → walkthrough log → activity log → WebSocket emit
-- Adaptive interval: selects next interval based on `compute_adaptive_interval()`
+- Adaptive interval: selects next interval based on `compute_adaptive_interval()` (v1) or `compute_adaptive_interval_v2()` (multi-DTE)
+- **Multi-DTE dispatch (~lines 620-660):** If `total_dte_hours > 36` AND `dte_category != '0DTE'`, uses v2 functions for adaptive interval and theta acceleration; otherwise uses v1
 - Wind-down integration: calls `_process_wind_down_buyback()` before normal adjustment logic
 - Prefetches all premiums in parallel for multi-strike sessions
 - **Shift-Time Recycle:** `_shift_time_recycle()` method (~lines 3392-3534) hooks into strike-shift flow. Scans frozen positions at old strike, applies dynamic premium floor (`shift_recycle_floor_ratio`), caps at `shift_recycle_max_pct`, folds buyback cost into `total_loss_to_cover`. ROI tracked in `session['shift_recycle_stats']`
@@ -1244,6 +1263,17 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
   - Only boosts on the heavier side
 - Called from `mmm_monitor.py: _process_harvest()` (~line 3129)
 
+### 6.33 mmm_dte_presets.py (Added March 12, 2026, ~306 lines)
+- Central module for multi-expiry (multi-DTE) support
+- `DTE_PRESETS` dict: `0DTE` and `5DTE` presets (each defines `interval`, `wind_down_hours_before_expiry`, `close_at_threshold`, `max_adjustments`, `description`, `dte_range`)
+- `apply_preset(preset_name, user_params)` → merges preset defaults with user overrides (user always wins)
+- `list_presets()` → returns list of preset names + descriptions + details
+- `check_aggregate_pnl(sessions, global_max_loss)` → checks combined realized + unrealized P&L across all active sessions, returns `{safe, level, combined_pnl, global_max_loss, pct_used, detail}`
+- `check_chain_liquidity(chain, strike, min_bid, min_bid_size)` → validates nested chain format `{strike, call:{bid, bid_size}, put:{bid, bid_size}}`
+- `compute_total_dte_hours(expiry_str)` → hours from now to expiry
+- `infer_dte_category(total_dte_hours)` → `'0DTE'` if ≤36h, `'5DTE'` if ≤168h, `'20DTE'` otherwise
+- Standalone module — imported by `mmm_state.py`, `mmm_api.py`
+
 ### 6.32 mmm_recycler.py (Added March 3, 2026, ~514 lines)
 - `select_recyclable_positions(session, hedge_side)` → filters frozen adjustment positions
   - Excludes `_being_closed`, original positions (if `recycle_protect_original=True`), zero-lot positions
@@ -1266,18 +1296,20 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 ## 7. FRONTEND COMPONENT DETAILS
 
 ### 7.1 MMMDashboard.js (Main Container)
-- **Header:** Title, BTC 0DTE badge, health indicator, connection status, New Session + Refresh buttons
-- **Left Panel:** Session list with 3 tabs (Active/Idle/History), session cards with controls
+- **Header:** Title, BTC Options badge, health indicator, connection status, New Session + Refresh buttons
+- **Left Panel:** Session list with 3 tabs (Active/Idle/History), session cards with controls + DTE category chip (non-0DTE sessions)
 - **Right Panel:** Session detail with multiple tabs (Overview/Positions/Triggers/Adjustments/P&L/Safety/Strike Map/Algo Calculations/Consolidated/Greeks & IV/Activity/Regime/Margin/Perp Hedge/Analytics)
-- **Dialogs:** CreateSessionDialog (expiry dropdown, mode: Fresh/Import/Adopt), BothSidesAlert, MMMSettingsDialog
+- **Dialogs:** CreateSessionDialog (expiry dropdown, DTE preset dropdown, mode: Fresh/Import/Adopt), BothSidesAlert, MMMSettingsDialog
 - **State:** Uses `useMMM()` from MMMContext + `useMMMWebSocket(sessionId)` for live data
 
 ### 7.2 CreateSessionDialog (inside MMMDashboard.js)
 - Fetches expiries from `/api/mmm/expiries` on open → shows as Select dropdown
+- Fetches DTE presets from `/api/mmm/dte-presets` on open → shows as DTE Preset dropdown
+- Selecting a preset auto-fills interval, wind-down, close-at threshold, max adjustments from preset defaults
 - Shows BTC spot price from `/api/mmm/spot-price`
 - Mode dropdown: Fresh (auto-find), Import (existing positions), or Adopt (from exchange)
 - Core Parameters: desired CE/PE premium, initial lots, expiry (dropdown), interval, max loss
-- Creates session via `mmmService.createSession(config)`
+- Creates session via `mmmService.createSession(config)` with `dte_category` included
 
 ### 7.3 MMMConfigPanel.js (~866 lines)
 - Shown for IDLE/STOPPED sessions in the detail panel
@@ -1654,6 +1686,7 @@ Test files in `webui/backend/routes/mmm/tests/`:
 | `test_mmm_harvester.py` | M1 profit harvest scanning, M3 asymmetry boosting (24 tests) |
 | `test_mmm_recycler.py` | M2 position selection, viability checks, two-phase execution, Split Ledger active_lots (31 tests) |
 | `test_mmm_lot_lifecycle_integration.py` | All 15 lot lifecycle params in DEFAULT_PARAMS, HOT_RELOAD_PARAMS, PARAM_RULES (12 tests) |
+| `test_mmm_dte_presets.py` | DTE presets, aggregate PnL, liquidity gate, DTE computation, v2 near-expiry, v2 adaptive interval/theta (30 tests) |
 
 **Note:** Tests use `--import-mode=importlib` (via `pytest.ini`) and direct module loading via `importlib.util` to bypass `routes/__init__.py` Flask dependencies. The `tests/__init__.py` must NOT exist — its presence causes pytest to walk up the package chain and trigger Flask imports.
 
@@ -1700,14 +1733,15 @@ mmm_api.py (REST layer — 3398 lines)
 mmm_watchdog.py (supervisor thread, started by __init__.py)
   └── monitors all MMMMonitor instances; restarts on death/timeout/inconsistency
 
-mmm_constants.py ← imported by: engine, adopter, walkthrough, regime, perp_hedge, harvester, recycler
-mmm_state.py     ← imported by: api, monitor, initializer (~839 lines)
-mmm_config.py    ← imported by: api, state, engine, perp_hedge (~438 lines)
+mmm_constants.py     ← imported by: engine, adopter, walkthrough, regime, perp_hedge, harvester, recycler
+mmm_state.py         ← imported by: api, monitor, initializer (~839 lines)
+mmm_config.py        ← imported by: api, state, engine, perp_hedge (~443 lines)
+mmm_dte_presets.py   ← imported by: state, api (~306 lines)
 ```
 
 ---
 
-*This document is the single source of truth for any AI agent working on the MMM algorithm. All file paths, module names, API endpoints, WebSocket events, and state fields above have been verified against the actual codebase as of March 4, 2026. Backend: 32 Python files (31 modules + 1 DB). Frontend: 28 React components + 2 hooks + 2 utils. Reference `MONEY_POWER_CALCULATION_LOGIC.md` for the sealed mathematical logic. Reference `MMM_SPLIT_LEDGER_INSTRUCTIONS.md` and `MMM_SPLIT_LEDGER_PLAN.md` for Split Ledger design rationale. Reference `MMM_10_OF_10_PRODUCTION_PLAN.md` for the remaining hardening tasks.*
+*This document is the single source of truth for any AI agent working on the MMM algorithm. All file paths, module names, API endpoints, WebSocket events, and state fields above have been verified against the actual codebase as of March 12, 2026. Backend: 33 Python files (32 modules + 1 DB). Frontend: 28 React components + 2 hooks + 2 utils. Reference `MONEY_POWER_CALCULATION_LOGIC.md` for the sealed mathematical logic. Reference `MMM_SPLIT_LEDGER_INSTRUCTIONS.md` and `MMM_SPLIT_LEDGER_PLAN.md` for Split Ledger design rationale. Reference `MMM_10_OF_10_PRODUCTION_PLAN.md` for the remaining hardening tasks.*
 
 ---
 
@@ -1948,4 +1982,103 @@ When the algo performs a strike shift (§2.5), it now optionally matches the num
 **After:** With `shift_match_opposite_lots=True`, the shifted side targets `max(opposite_active_lots, original_lots, lots_to_sell)` — so CE and PE stay balanced through shifts.
 
 **Files:** `mmm_state.py` (DEFAULT_PARAMS + HOT_RELOAD_PARAMS), `mmm_monitor.py` (`_process_strike_shift()` + `_process_shift_fallback()`), `mmm_config.py`, `MMMSettingsDialog.js` (PARAM_RULES + UI).
+
+---
+
+## 17. MULTI-DTE SUPPORT (implemented March 12, 2026)
+
+Expands MMM from 0DTE-only to multi-expiry operation (5DTE, 10DTE, 20DTE+). Core principle: 0DTE behavior is **completely untouched** — all new logic runs through v2 functions that only activate for sessions with `total_dte_hours > 36`.
+
+### 17.1 DTE Presets (`mmm_dte_presets.py`)
+
+Predefined parameter sets for different expiry durations:
+
+| Preset | Interval | Wind-down Hours | Close Threshold | Max Adjustments |
+|--------|----------|-----------------|-----------------|------------------|
+| 0DTE | 300s (5min) | 2h | 5.0 | 20 |
+| 5DTE | 900s (15min) | 6h | 3.0 | 40 |
+
+Presets are **defaults** — user overrides always win via `apply_preset(preset_name, user_params)`.
+
+### 17.2 Aggregate PnL Safety
+
+Before starting a new session, the system checks combined realized + unrealized P&L across ALL active sessions:
+- **OK** (<50% of `global_max_loss`): proceed
+- **WARNING** (50–80%): proceed with caution
+- **DANGER** (80–100%): proceed with alert
+- **BLOCKED** (≥100%): new session start blocked
+
+Default `global_max_loss` = ₹50,000. Hot-reloadable.
+
+API: `GET /api/mmm/aggregate-pnl` returns `{safe, level, combined_pnl, global_max_loss, pct_used}`.
+
+### 17.3 Liquidity Gate
+
+For **fresh mode** session creation, the system fetches the option chain via `MMMInitializer.get_full_chain()` and validates liquidity near the chosen strike:
+- `check_chain_liquidity(chain, strike, min_bid=1.0, min_bid_size=0.01)` → checks that both CE and PE at the nearest strike have sufficient bid and bid_size
+- Blocks session creation if liquidity is insufficient
+
+### 17.4 v2 Adaptive Interval
+
+`compute_adaptive_interval_v2(base_interval, hours_to_expiry, total_dte_hours, enabled)` uses percentage-of-DTE tiers instead of absolute hour thresholds:
+
+| DTE Remaining | Multiplier | Example (base=900s, 5DTE) |
+|---------------|------------|---------------------------|
+| > 80% | 1.5× (slow) | 1350s |
+| 50–80% | 1.0× (normal) | 900s |
+| 20–50% | 0.7× (faster) | 630s |
+| 5–20% | 0.5× (fast) | 450s |
+| < 5% | 0.3× (rapid) | 270s |
+
+Dispatched automatically by `mmm_monitor.py` for sessions with `total_dte_hours > 36`.
+
+### 17.5 v2 Theta Acceleration
+
+`apply_theta_acceleration_v2(session, minutes_to_expiry, total_dte_mins)` scales the theta acceleration window proportionally:
+- Window = 2% of total DTE in minutes (capped at 240 min max)
+- Example: 5DTE (7200 min) → window = 144 min
+- Example: 20DTE (28800 min) → window = 240 min (capped)
+
+Compare with v1: fixed 30-minute window (appropriate for 0DTE but too small for 5DTE+).
+
+### 17.6 v2 Near-Expiry Safety
+
+`check_near_expiry_v2()` in `mmm_safety.py` has three tiers:
+1. **Absolute thresholds** (same as v1): `auto_close_minutes_before_expiry` triggers auto-close, `stop_adjustments_minutes_before_expiry` stops new adjustments
+2. **Wind-down zone**: preset's `wind_down_hours_before_expiry` triggers wind-down mode
+3. **Percentage early warning**: last 5% of total DTE triggers a warning alert
+
+Dispatched automatically for sessions with `total_dte_hours > 36 && dte_category != '0DTE'`.
+
+### 17.7 Frontend Changes
+
+- **CreateSessionDialog:** DTE Preset dropdown fetches from `/api/mmm/dte-presets`, auto-fills form fields on preset selection
+- **Session cards:** DTE category Chip displayed next to session ID (only for non-0DTE sessions, e.g., "5DTE")
+- **Header:** Changed from "BTC 0DTE" badge to "BTC Options"
+- **mmmService.js:** Added `getDTEPresets()` and `getAggregatePnL()` API calls
+
+### 17.8 State & Config Changes
+
+**New DEFAULT_PARAMS:** `dte_category` (str), `total_dte_hours` (float), `global_max_loss` (float, ₹50,000)
+
+**New HOT_RELOAD_PARAMS:** `global_max_loss`
+
+**New PARAM_RULES:** `dte_category` (str, not hot), `total_dte_hours` (float [0, 10000], not hot), `global_max_loss` (float [100, 1e9], hot)
+
+**Session creation flow:**
+1. User selects DTE preset in dialog → auto-fills params
+2. `create_session()` calls `apply_preset()` to merge preset defaults with user overrides
+3. `compute_total_dte_hours()` calculates hours to expiry and stores in `total_dte_hours`
+4. `infer_dte_category()` infers category from DTE hours if not explicitly set
+5. Aggregate PnL check runs before session start (blocks if combined loss ≥ `global_max_loss`)
+6. Liquidity gate check runs for fresh-mode sessions
+
+### 17.9 v1 vs v2 Dispatch Summary
+
+| Component | v1 (0DTE) | v2 (multi-DTE) | Dispatch condition |
+|-----------|-----------|----------------|--------------------|
+| Adaptive interval | Absolute hour tiers | % of DTE tiers | `total_dte_hours > 36 && dte_category != '0DTE'` |
+| Theta acceleration | Fixed 30-min window | 2% of total DTE (max 240 min) | Same |
+| Near-expiry safety | Absolute minutes | 3-tier (absolute + wind-down + % warning) | Same |
+| All other modules | Unchanged | Unchanged | N/A |
 
