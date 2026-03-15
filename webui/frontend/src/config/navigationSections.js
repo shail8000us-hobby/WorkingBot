@@ -128,6 +128,13 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       group: 'Algorithms',
     },
     {
+      id: 'patience',
+      label: '🎯 Patience',
+      icon: Timer,
+      description: 'Scenario card engine — conditional entry, GCD lot execution, IV gating',
+      group: 'Algorithms',
+    },
+    {
       id: 'ssr_algo',
       label: '🦋 SSR ALGO',
       icon: Zap,

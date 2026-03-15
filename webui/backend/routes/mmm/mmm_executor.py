@@ -182,9 +182,11 @@ class MMMExecutor:
         reduce_only: bool = False,
         session_id: str = None,
         max_reprice_attempts: int = None,  # Override default MAX_REPRICE_ATTEMPTS
+        use_bid_entry: bool = False,       # Start BUY orders at best_bid (maker, cheaper)
     ) -> Dict[str, Any]:
         """
-        Place order at mid-price, wait 60s for fill, reprice if needed.
+        Place order at mid-price (or bid for buys when use_bid_entry=True),
+        wait 60s for fill, reprice if needed.
 
         This is the main entry point for all MMM order execution.
 
@@ -195,6 +197,8 @@ class MMMExecutor:
             reduce_only: If True, only reduces position
             session_id: Session ID for activity logging
             max_reprice_attempts: Override global MAX_REPRICE_ATTEMPTS (default=4)
+            use_bid_entry: If True and side=='buy', start at best_bid instead of mid.
+                           Use for close_at_5 buybacks — pays less, maker order.
 
         Repricing strategy:
             - First half of attempts: limit order at mid-price (best fill)
@@ -238,14 +242,24 @@ class MMMExecutor:
                 session_id=session_id, severity='error', details={'symbol': symbol})
             return self._failure('Cannot fetch orderbook quotes', symbol, side, size)
 
-        mid_price = self._calculate_mid_price(quotes)
+        # For close_at_5 buybacks (use_bid_entry=True), start at best_bid — pays less,
+        # still a passive maker order. For all other orders, start at mid-price.
+        if use_bid_entry and side.lower() == 'buy':
+            mid_price = quotes.get('best_bid', 0)
+            if mid_price <= 0:
+                mid_price = self._calculate_mid_price(quotes)
+            tick = quotes.get('tick_size', 0.01)
+            if tick > 0:
+                mid_price = round(round(mid_price / tick) * tick, 2)
+        else:
+            mid_price = self._calculate_mid_price(quotes)
         if mid_price <= 0:
             _log_activity('order_failed',
                 f"{side.upper()} {symbol}: Invalid mid-price (bid={quotes.get('best_bid', 0)}, ask={quotes.get('best_ask', 0)})",
                 session_id=session_id, severity='error', details={'symbol': symbol, 'quotes': quotes})
             return self._failure('Invalid mid-price (no bid/ask)', symbol, side, size)
 
-        # Place initial limit order at mid-price — with retry on failure
+        # Place initial limit order at bid/mid-price — with retry on failure
         order_result = None
         last_error = 'Order placement failed'
         for placement_try in range(1, INITIAL_PLACEMENT_RETRIES + 1):

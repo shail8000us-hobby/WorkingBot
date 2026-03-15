@@ -12,6 +12,7 @@ Created: February 15, 2026
 """
 
 import logging
+import time
 from decimal import Decimal
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
@@ -26,7 +27,28 @@ def _D(x) -> Decimal:
 
 _LOT = _D(LOT_SIZE_BTC)
 
+# Auto-clear _being_closed flag if stuck longer than this — prevents permanent lock-out (March 11 incident)
+_BEING_CLOSED_TTL = 180  # seconds
+
 log = logging.getLogger('mmm_close_at_5')
+
+
+def _check_stale_being_closed(pos: dict, label: str) -> bool:
+    """Return True if position is legitimately in-flight (caller should skip).
+    Auto-clears the flag if it has been set for longer than _BEING_CLOSED_TTL seconds.
+    """
+    if not pos.get('_being_closed'):
+        return False
+    set_at = pos.get('_being_closed_at', 0)
+    if set_at and time.monotonic() - set_at > _BEING_CLOSED_TTL:
+        log.warning(
+            f"Auto-cleared stale _being_closed on {label} "
+            f"(stuck >{_BEING_CLOSED_TTL}s — previous close attempt likely crashed)"
+        )
+        pos.pop('_being_closed', None)
+        pos.pop('_being_closed_at', None)
+        return False
+    return True
 
 
 def scan_closeable_positions(
@@ -63,7 +85,9 @@ def scan_closeable_positions(
         for _p in side_state.get('positions', []):
             if _p.get('type') == 'original' and _p.get('status') == 'active':
                 orig_pos_id = _p.get('id')
-                orig_being_closed = _p.get('_being_closed', False)
+                orig_being_closed = _check_stale_being_closed(
+                    _p, f"{side_key} original id={_p.get('id')}"
+                )
                 break
 
         # Check original lots at original strike (Fix #9: use original_strike, not
@@ -99,8 +123,7 @@ def scan_closeable_positions(
         # Check adjustment fills at active strike
         # Fix #8: removal is content-match based (with Fix #23 ID fallback)
         for fill in side_state.get('adjustment_fills', []):
-            # AUDIT FIX: Skip positions already being closed
-            if fill.get('_being_closed'):
+            if _check_stale_being_closed(fill, f"{side_key} adjustment @ {fill.get('strike')}"):
                 continue
             lots = fill.get('lots', 0)
             prem = fill.get('premium', 0)
@@ -128,8 +151,7 @@ def scan_closeable_positions(
         # Check frozen positions
         # Fix #8: removal is content-match based (with Fix #23 ID fallback)
         for frozen in side_state.get('frozen_positions', []):
-            # AUDIT FIX: Skip positions already being closed
-            if frozen.get('_being_closed'):
+            if _check_stale_being_closed(frozen, f"{side_key} frozen @ {frozen.get('strike')}"):
                 continue
             lots = frozen.get('lots', 0)
             prem = frozen.get('entry_premium', 0)
@@ -317,6 +339,7 @@ async def close_position(
                         'error': 'Position already being closed (in-flight guard)',
                     }
                 pos['_being_closed'] = True
+                pos['_being_closed_at'] = time.monotonic()
                 break
     else:
         # AUDIT FIX BUG4: Content-match guard for pre-migration (no pos_id) positions
@@ -339,6 +362,7 @@ async def close_position(
                             'error': 'Position already being closed (content-match guard)',
                         }
                     entry['_being_closed'] = True
+                    entry['_being_closed_at'] = time.monotonic()
                     _content_match_view = entry
                     break
 
@@ -358,6 +382,7 @@ async def close_position(
             side='buy',
             size=lots,
             reduce_only=True,
+            use_bid_entry=(mechanism == 'close_at_5'),  # Bid-entry for close_at_5: cheaper maker fill
         )
 
         if not result.get('success'):
@@ -434,10 +459,27 @@ async def close_position(
         # Fix #19: Decimal arithmetic to prevent float rounding accumulation
         realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(actual_lots) * _LOT)
 
-        # Update state: remove the closed position
-        # Note: _being_closed flag is removed by _remove_closed_position since it
-        # sets status='closed' on the position or removes it entirely.
-        _remove_closed_position(session, side, position, pos_type)
+        # Update state: remove or reduce the closed position.
+        # Partial fill: reduce remaining lots in-state instead of removing entirely.
+        # Full fill:    mark position closed (original behaviour).
+        # Note: _being_closed flag is cleared by _remove_closed_position / _partial_close_position.
+        if actual_lots < lots:
+            _partial_close_position(session, side, position, pos_type, actual_lots)
+        else:
+            _remove_closed_position(session, side, position, pos_type)
+
+        # Register this close for post-close verification.
+        # The exchange positions API takes 1-5 s to reflect a fill; without this
+        # registry the very-next-heartbeat reconciliation sees the position still
+        # on the exchange but no longer in session state and raises a spurious
+        # UNTRACKED_EXCHANGE_POSITION warning.
+        _pcv = session.setdefault('_pending_close_verification', {})
+        _pcv[symbol] = {
+            'side': side,
+            'strike': strike,
+            'lots_closed': actual_lots,
+            'grace_beats': 3,          # skip mismatch for up to 3 reconciliation cycles
+        }
 
         # Record realized P&L
         session['realized_pnl'] = session.get('realized_pnl', 0) + realized_pnl
@@ -467,6 +509,23 @@ async def close_position(
             f"Close-at-5 success: {actual_lots} {side.upper()} @ {strike}, "
             f"realized P&L: {realized_pnl:.2f}"
         )
+
+        # Persistent audit trail (activity log)
+        try:
+            from .mmm_activity import log_activity as _log_activity
+            _log_activity(
+                'close_at_5',
+                f'{actual_lots} {side.upper()} @ {strike} | entry={entry_prem:.2f} close={close_price:.2f} pnl={realized_pnl:.4f}',
+                session.get('session_id', ''),
+                'info',
+                {
+                    'side': side, 'strike': strike, 'lots': actual_lots,
+                    'entry_premium': entry_prem, 'close_premium': close_price,
+                    'realized_pnl': realized_pnl, 'mechanism': mechanism,
+                },
+            )
+        except Exception:
+            pass
 
         # Record successful close for velocity tracking (observer + guardian)
         try:
@@ -511,6 +570,71 @@ async def close_position(
         }
 
 
+
+
+def _partial_close_position(
+    session: Dict,
+    side: str,
+    position: Dict,
+    pos_type: str,
+    closed_lots: int,
+):
+    """
+    Reduce a position's lot count after a partial fill.
+
+    Called instead of _remove_closed_position when smart_execute returns
+    filled_size < requested lots.  The unfilled remainder stays in session
+    state so that:
+      (a) reconciliation can track the remaining exchange position, and
+      (b) the next close-at-5 scan can attempt to buy back the remainder.
+
+    Does NOT mark the position as closed — only mutates the 'lots' field
+    on the position record in positions[] and calls recompute_side_lots.
+    """
+    side_state = session.get(side, {})
+    pos_id = position.get('_pos_id') or position.get('id')
+    remaining = max(0, position.get('lots', 0) - closed_lots)
+
+    if pos_id:
+        for pos in side_state.get('positions', []):
+            if pos.get('id') == pos_id:
+                pos['lots'] = remaining
+                pos.pop('_being_closed', None)
+                if remaining <= 0:
+                    # Edge-case: became 0 through rounding — treat as fully closed
+                    pos['status'] = 'closed'
+                    pos['closed_at'] = datetime.now(timezone.utc).isoformat()
+                break
+    else:
+        # Content-match fallback (pre-migration sessions)
+        if pos_type == 'original':
+            side_state['original_lots'] = remaining
+            if remaining <= 0:
+                for pos in side_state.get('positions', []):
+                    if pos.get('type') == 'original' and pos.get('status') == 'active':
+                        pos['status'] = 'closed'
+                        pos['closed_at'] = datetime.now(timezone.utc).isoformat()
+                        break
+        elif pos_type in ('adjustment', 'frozen'):
+            view_key = 'adjustment_fills' if pos_type == 'adjustment' else 'frozen_positions'
+            prem_key = 'premium' if pos_type == 'adjustment' else 'entry_premium'
+            target_lots = position.get('lots', 0)
+            target_prem = position.get('entry_premium', 0)
+            target_strike = position.get('strike', 0)
+            for entry in side_state.get(view_key, []):
+                if (entry.get('lots') == target_lots
+                        and abs(entry.get(prem_key, 0) - target_prem) < 0.01
+                        and abs(entry.get('strike', 0) - target_strike) < 1):
+                    entry['lots'] = remaining
+                    entry.pop('_being_closed', None)
+                    break
+
+    recompute_side_lots(side_state)
+    session[side] = side_state
+    log.info(
+        f"Partial close: {side.upper()} @ {position.get('strike')} "
+        f"closed={closed_lots}, remaining={remaining} lots in state"
+    )
 
 
 def _remove_closed_position(

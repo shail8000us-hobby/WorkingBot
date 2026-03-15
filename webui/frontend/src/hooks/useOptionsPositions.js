@@ -386,9 +386,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (!socketRef.current) {
       socketRef.current = io({
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
-        upgrade: true,
-        rememberUpgrade: true,
+        transports: ['polling'],
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 10,

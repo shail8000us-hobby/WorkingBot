@@ -287,7 +287,10 @@ def _update_gamma_cap(
 
     # ── Compute dollar gamma (Section B.1.3) ──
     # $Γ = |Γ_portfolio| × S² × 0.01
-    # This gives P&L impact of a 1% spot move from gamma
+    # This is the change in dollar-delta for a 1% spot move:
+    #   d(delta_BTC × S) / dS × (S × 0.01) ≈ Γ_portfolio × S² × 0.01
+    # NOT gamma P&L (which would be ½ × Γ × (0.01S)² = Γ × S² × 0.00005).
+    # Limits (soft/hard/emergency) are calibrated to this formula.
     if spot_price > 0:
         dollar_gamma = abs(portfolio_gamma) * (spot_price ** 2) * 0.01
     else:

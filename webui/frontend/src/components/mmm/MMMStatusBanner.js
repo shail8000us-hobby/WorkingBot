@@ -183,15 +183,10 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction,
   const closeCount = session.close_at_5_count || 0;
   const elapsed = formatElapsed(session.entry_time);
   const countdown = formatCountdown(
-    heartbeat?.timestamp
-      ? new Date(
-        parseUTC(heartbeat.timestamp).getTime() +
-        (session.params?.adjustment_interval || 300) * 1000
-      ).toISOString()
-      : session.next_heartbeat
+    heartbeat?.next_heartbeat || session.next_heartbeat
   );
 
-  const interval = session.params?.adjustment_interval || 300;
+  const interval = heartbeat?.effective_interval || session.params?.adjustment_interval || 300;
   const isBothSidesUp = status === 'BOTH_SIDES_UP';
   const isPartialEntry = status === 'PARTIAL_ENTRY';
   const partialInfo = session?.partial_entry || {};

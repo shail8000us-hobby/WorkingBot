@@ -187,5 +187,12 @@
     "completed": false,
     "createdAt": "2026-03-12T10:07:42.026447",
     "updatedAt": "2026-03-12T10:07:42.026455"
+  },
+  {
+    "id": "1773558940457",
+    "text": "kill -9 $(lsof -ti:5555); sleep 2; cd /Users/ssr/Projects/WorkingBot && .venv/bin/python3 webui/backend/app.py &",
+    "completed": false,
+    "createdAt": "2026-03-15T12:45:40.457384",
+    "updatedAt": "2026-03-15T12:45:40.457391"
   }
 ]

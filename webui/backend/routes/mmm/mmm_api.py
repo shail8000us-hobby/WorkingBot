@@ -795,6 +795,8 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
     session['actual_total_premium'] = actual_premium
     session['total_premium_collected'] = actual_premium
+    session['ce_premium_collected'] = ce_fill * lots * LOT_SIZE_BTC
+    session['pe_premium_collected'] = pe_fill * lots * LOT_SIZE_BTC
     session['execution_timestamp'] = datetime.now(timezone.utc).isoformat()
 
     # Transition to RUNNING
@@ -914,6 +916,8 @@ def resolve_partial_entry(session_id: str):
         actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
         session['actual_total_premium'] = actual_premium
         session['total_premium_collected'] = actual_premium
+        session['ce_premium_collected'] = ce_fill * lots * LOT_SIZE_BTC
+        session['pe_premium_collected'] = pe_fill * lots * LOT_SIZE_BTC
 
         # Clear partial entry state
         session.pop('partial_entry', None)
@@ -1102,6 +1106,8 @@ def _retry_partial_leg_background(
     actual_premium = (ce_fill + pe_fill) * lots_count * LOT_SIZE_BTC
     session['actual_total_premium'] = actual_premium
     session['total_premium_collected'] = actual_premium
+    session['ce_premium_collected'] = ce_fill * lots_count * LOT_SIZE_BTC
+    session['pe_premium_collected'] = pe_fill * lots_count * LOT_SIZE_BTC
 
     # Update trigger snapshots on both sides from their fill prices
     ce_strike_key = strike_key(session['ce'].get('active_strike', 0))
@@ -1156,6 +1162,14 @@ def pause_session(session_id: str):
             }), 404
 
         status = session.get('strategy_status', 'IDLE')
+        # Handle heartbeat race: storage may show PAUSED while monitor is mid-heartbeat.
+        # Treat as success — same pattern as resume_session M-10 fix.
+        if status == 'PAUSED':
+            return jsonify({
+                'success': True,
+                'message': f'Session {session_id} is already paused',
+                'status': 'PAUSED',
+            })
         if status not in ('RUNNING', 'BOTH_SIDES_UP'):
             return jsonify({
                 'success': False,
@@ -3357,6 +3371,8 @@ def inject_position(session_id: str):
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
         )
+        _spk = 'ce_premium_collected' if side_param.lower() == 'ce' else 'pe_premium_collected'
+        session[_spk] = session.get(_spk, 0) + premium_collected
 
         # Audit trail entry (no adjustment_count increment — this is not an algo decision)
         session.setdefault('adjustment_history', []).append({
@@ -3434,6 +3450,15 @@ def inject_position(session_id: str):
             f'[{session_id}] Inject complete: {side_param.upper()} '
             f'{lots_param} lots @ {strike_val} fill=${fill_price:.2f}'
         )
+
+        # Breakeven + gamma cache invalidation — positions changed after inject fill
+        try:
+            from .mmm_breakeven_engine import get_breakeven_engine
+            from .mmm_gamma_detector import get_gamma_detector
+            get_breakeven_engine().invalidate_cache(session_id)
+            get_gamma_detector().invalidate_cache(session_id)
+        except Exception:
+            pass
 
         return jsonify({
             'success': True,
@@ -3516,7 +3541,15 @@ def set_active_strike(session_id: str):
 
         old_strike = side_state.get('active_strike', 0)
         if abs(old_strike - strike_val) < 1:
-            return jsonify({'success': False, 'error': 'That strike is already active'}), 400
+            # Allow the operation if all positions at this strike are shifted (frozen) —
+            # user needs to un-shift them even though active_strike already points here.
+            active_lots_here = sum(
+                p.get('lots', 0) for p in positions
+                if p.get('status') == 'active'
+                and abs(float(p.get('strike', 0)) - strike_val) < 1
+            )
+            if active_lots_here > 0:
+                return jsonify({'success': False, 'error': 'That strike is already active'}), 400
 
         params = session.get('params', {})
         expiry = params.get('expiry', '')
@@ -3524,7 +3557,17 @@ def set_active_strike(session_id: str):
         executor = get_executor()
         initializer = get_initializer()
 
+        # Un-shift positions at the new active strike so they become active again
+        # (positions may be 'shifted'/frozen from a previous strike shift)
+        for _pos in side_state.get('positions', []):
+            if _pos.get('status') == 'shifted' and abs(float(_pos.get('strike', 0)) - strike_val) < 1:
+                _pos['status'] = 'active'
+                _pos['shifted_at'] = None
+
         side_state['active_strike'] = strike_val
+        side_state['active_strike_pinned'] = True  # User explicitly chose — disable auto-ATM
+        from .mmm_state import recompute_side_lots as _recompute_sas
+        side_state = _recompute_sas(side_state)
         session[side_param] = side_state
 
         log_activity(
@@ -4304,6 +4347,63 @@ def get_safety_status(session_id: str):
 
     except Exception as e:
         log.exception(f"Failed to get safety status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/breakeven', methods=['GET'])
+def get_breakeven(session_id: str):
+    """
+    GET /api/mmm/session/<session_id>/breakeven
+
+    Returns the latest breakeven analysis result for the session.
+    Reads from session state (_breakeven_result) set by the heartbeat.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        result = session.get('_breakeven_result')
+        if result is None:
+            # Session exists but no breakeven computed yet
+            return jsonify({
+                'success': True,
+                'breakeven': None,
+                'message': 'No breakeven data yet — session may not have started heartbeats',
+            })
+
+        return jsonify({'success': True, 'breakeven': result})
+
+    except Exception as e:
+        log.exception(f"Failed to get breakeven for session {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/gamma', methods=['GET'])
+def get_gamma(session_id: str):
+    """
+    GET /api/mmm/session/<session_id>/gamma
+    Returns latest gamma detector result for the session.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        result = session.get('_gamma_result')
+        if result is None:
+            return jsonify({
+                'success': True,
+                'gamma': None,
+                'message': 'No gamma data yet — session may not have started heartbeats',
+            })
+
+        return jsonify({'success': True, 'gamma': result})
+
+    except Exception as e:
+        log.exception(f"Failed to get gamma for session {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

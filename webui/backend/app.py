@@ -593,6 +593,17 @@ except Exception as e:
     print(f"⚠️ Could not register options_ai_engine blueprint: {e}")
     log.warning(f"Options AI Engine routes not available: {e}")
 
+# Register Patience blueprint (MAR 2026: Scenario card execution engine for BTC options)
+try:
+    from webui.backend.routes.patience import patience_bp, init_patience
+    app.register_blueprint(patience_bp)
+    print(f"✅ Registered patience blueprint (Scenario Card Engine — /api/patience)")
+    init_patience()
+    print(f"✅ Patience trigger daemon started")
+except Exception as e:
+    print(f"⚠️ Could not register patience blueprint: {e}")
+    log.warning(f"Patience routes not available: {e}")
+
 # Initialize monitoring system wiring
 from webui.backend.routes.monitoring import set_bot_instance
 

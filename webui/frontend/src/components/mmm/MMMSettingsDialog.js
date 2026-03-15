@@ -176,6 +176,55 @@ const PARAM_GROUPS = {
       'atm_shield_max_per_session', 'atm_shield_cooldown_mins',
     ],
   },
+  lotVelocity: {
+    title: '🚦 Lot Velocity Limiter',
+    color: '#ff9800',
+    blurb: 'Caps how many lots can be sold within a rolling time window. Prevents runaway accumulation during fast markets. When the limit is hit, all adjustments are blocked until the window rolls forward.',
+    params: [
+      'lot_velocity_enabled',
+      'lot_velocity_limit',
+      'lot_velocity_window_mins',
+    ],
+  },
+  closeAt5Watcher: {
+    title: '⚡ Close-at-5 Watcher',
+    color: '#4caf50',
+    blurb: 'Proactive scanner that polls bid prices and forces a heartbeat when any position hits the close-at-5 threshold. Default: activates only in the last 3 hours before expiry to save API resources. Force-enable it anytime via the toggle.',
+    params: [
+      'close_at_watcher_force_enabled',
+      'close_at_watch_hours_before_expiry',
+      'close_at_watch_near_expiry_interval',
+      'close_at_watch_interval',
+      'close_at_max_per_beat',
+    ],
+  },
+  breakevenEngine: {
+    title: '🎯 Breakeven Engine',
+    color: '#1565c0',
+    blurb: 'Real-time portfolio breakeven awareness. Calculates the BTC spot prices where your total portfolio becomes unprofitable and boosts hedge lot counts as spot approaches those boundaries. Uses intrinsic-only P&L (no live premium fetches) for fast, reliable calculation.',
+    sections: [
+      {
+        header: null, // No header for the enable toggle
+        params: ['breakeven_control_enabled'],
+      },
+      {
+        header: 'Zone Thresholds (% distance from spot to nearest breakeven)',
+        params: ['breakeven_warning_pct', 'breakeven_danger_pct', 'breakeven_critical_pct'],
+      },
+      {
+        header: 'Aggression',
+        params: ['breakeven_aggression_max', 'max_combined_lot_multiplier'],
+      },
+      {
+        header: 'Diagnostics',
+        params: ['breakeven_narrow_band_threshold'],
+      },
+      {
+        header: 'Advanced',
+        params: ['breakeven_scan_range_pct'],
+      },
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)
@@ -204,6 +253,12 @@ const PARAM_TOOLTIPS = {
   auto_close_mins: 'Auto-close ALL positions N minutes before expiry. This is the absolute final safety net. Default 5 = close everything 5 minutes before expiry, regardless of P&L.',
   stop_adjustment_mins: HELP.near_expiry || 'Stop making new adjustments N minutes before expiry. Let theta decay do the final work instead of adding risky late adjustments.',
   close_at_threshold: HELP.close_at_5 || 'Close any position whose premium drops to this level or below. Default 5 = when an option is worth $5 or less, buy it back to lock in ~95% profit.',
+  close_at_watcher_force_enabled: 'Force the close-at-5 watcher ON regardless of expiry timing. Useful when you want fast close detection early in the session. The watcher polls every close_at_watch_interval seconds when force-enabled.',
+  close_at_watch_hours_before_expiry: 'Watcher auto-activates when this many hours remain until expiry. Default 3 = watcher turns on in last 3 hours automatically. Set to 0 to always run (old behavior — wastes API calls).',
+  close_at_watch_near_expiry_interval: 'Polling interval (seconds) when the watcher is auto-activated by the expiry window. Use a smaller value for 0DTE — faster detection in the last few hours. Default 10s. Must be ≥ 5.',
+  close_at_watch_interval: 'Polling interval (seconds) when watcher is force-enabled. Default 30s. Set to 0 to disable force-enabled mode entirely.',
+  close_at_max_per_beat: 'Maximum positions to close per heartbeat. Prevents the heartbeat from stalling when many positions hit threshold simultaneously (near expiry). Default 3. Increase to 10 near expiry if needed.',
+  close_at_use_bid: 'Use bid price (not mark price) to detect when a position is eligible for close-at-5. Bid is more accurate for illiquid options — mark price can be much higher than what you actually get. Always leave ON.',
   theta_acceleration_window: 'Minutes before expiry to activate theta acceleration. Within this window, the algo widens trigger thresholds (allows more premium move before adjusting) because time decay is rapidly working in your favor.',
   adaptive_interval_enabled: HELP.adaptive_interval_enabled || 'Auto-scale heartbeat frequency based on time-to-expiry.',
   wind_down_on_atm: 'Auto-trigger wind-down mode if any original strike becomes ATM (spot ≈ strike). Instead of closing all positions immediately (like close_at_atm), this switches the algo into gradual LIFO buyback mode. The original strike is the entry strike — real danger territory. Activates once and stays active for the rest of the session.',
@@ -303,6 +358,19 @@ const PARAM_TOOLTIPS = {
   atm_shield_loss_split_aggressor: 'Fraction of buyback loss recovered from endangered-side re-sell. Remaining fraction from safe-side. 0.3 = 30% from CE (if CE retreated), 70% from PE. Default 0.3.',
   atm_shield_max_per_session: 'Maximum shield fires per side per session. After exhaustion, Trend Guard reverts to original behavior and close_at_ATM resumes. Default 3.',
   atm_shield_cooldown_mins: 'Minimum minutes between shield fires on the same side. Prevents rapid-fire whipsaw. Default 10 minutes.',
+  // Lot Velocity Limiter
+  lot_velocity_enabled: 'Master switch for the lot velocity limiter. When ON, the algo counts how many lots have been sold in the rolling window and blocks further adjustments once the limit is reached. When OFF, no velocity check is performed — the algo can sell unlimited lots in any time period.',
+  lot_velocity_limit: 'Maximum lots that can be sold across both CE and PE sides within the rolling window. When this count is reached, adjustments are blocked until enough time passes that older sales fall outside the window. OPERATOR (manual) injections are excluded from the count. Default 30.',
+  lot_velocity_window_mins: 'Rolling window in minutes for the velocity count. Lots sold more than this many minutes ago no longer count towards the limit. Smaller window = more responsive but allows short bursts. Default 30 minutes.',
+  // Breakeven Engine
+  breakeven_control_enabled: 'Enable real-time breakeven band tracking and defensive aggression. When enabled, the algo calculates where spot would make the portfolio unprofitable and boosts hedging as spot approaches that boundary. Non-directional — applies to any triggered adjustment. Safe to enable: defaults to 1x (no change) until spot enters Warning zone.',
+  breakeven_warning_pct: 'Distance from nearest breakeven (as % of spot) that triggers Warning zone. At 2% with BTC at $87k, Warning fires when spot is within ~$1,740 of breakeven. Multiplier ramps from 1.0× to 1.3×. Must be greater than Danger threshold.',
+  breakeven_danger_pct: 'Distance from nearest breakeven that triggers Danger zone. Multiplier ramps from 1.3× to 2.0×. At $87k, 1% ≈ $870 buffer. Must be less than Warning and greater than Critical threshold.',
+  breakeven_critical_pct: 'Distance from nearest breakeven that triggers Critical zone. Multiplier ramps from 2.0× to Max Multiplier. At $87k, 0.5% ≈ $435 — imminent breach. Must be less than Danger threshold.',
+  breakeven_aggression_max: 'Maximum lot multiplier applied at the Critical zone boundary (distance ≤ critical_pct). A value of 3.0 means up to 3× normal hedge lots. Still capped by max_lots_per_side, max_total_exposure, and combined multiplier ceiling. Min 1.5.',
+  max_combined_lot_multiplier: 'Caps the combined effect of ALL lot multipliers (gamma-aware × breakeven × trend boost). Prevents compound runaway. A value of 3.0 means the total multiplier never exceeds 3×, even if individual systems each want more. Applied after all individual multipliers, before position caps.',
+  breakeven_narrow_band_threshold: 'Diagnostic threshold for narrow band warning. When the breakeven band width (upper − lower, as % of spot) falls below this, the UI displays an amber warning and an activity log is emitted. Does not trigger automatic responses — operator decides corrective action. Default 5% warns when both breakevens are within ~2.5% of spot.',
+  breakeven_scan_range_pct: 'Minimum scan width from spot (% of spot). The engine auto-expands the range to cover all open strikes (120% of furthest strike distance). This parameter acts as a floor. Default 5% is sufficient for most sessions.',
 };
 
 // =============================================================================
@@ -461,12 +529,15 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const sessionStatus = (sessionData.strategy_status || sessionData.status || 'IDLE').toUpperCase();
       const isRunning = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(sessionStatus);
 
-      // Filter out unchanged params
+      // Filter out unchanged params; when running, skip non-hot params to avoid 400
       const changedParams = {};
+      const hotParams = new Set(paramsInfo?.hot_reload_params || []);
 
       for (const [key, value] of Object.entries(formValues)) {
         if (value !== currentParams[key]) {
-          changedParams[key] = value;
+          if (!isRunning || hotParams.has(key)) {
+            changedParams[key] = value;
+          }
         }
       }
 
@@ -727,9 +798,41 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   </Typography>
                 )}
 
-                <Grid container spacing={2}>
-                  {group.params.map((paramName) => renderParam(paramName))}
-                </Grid>
+                {/* Render params - either flat list or sectioned */}
+                {group.sections ? (
+                  // Sectioned layout (e.g., Breakeven Engine with Zone Thresholds, Aggression, etc.)
+                  group.sections.map((section, sectionIdx) => (
+                    <Box key={sectionIdx}>
+                      {sectionIdx > 0 && <Divider sx={{ my: 2.5, borderStyle: 'dashed', opacity: 0.3 }} />}
+                      {section.header && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            display: 'block',
+                            fontWeight: 600,
+                            color: group.color || 'text.secondary',
+                            mb: 1.5,
+                            mt: sectionIdx > 0 ? 1 : 0,
+                            letterSpacing: '0.5px',
+                            textTransform: 'uppercase',
+                            fontSize: '0.7rem',
+                            opacity: 0.8,
+                          }}
+                        >
+                          {section.header}
+                        </Typography>
+                      )}
+                      <Grid container spacing={2}>
+                        {section.params.map((paramName) => renderParam(paramName))}
+                      </Grid>
+                    </Box>
+                  ))
+                ) : (
+                  // Flat layout (all other param groups)
+                  <Grid container spacing={2}>
+                    {group.params.map((paramName) => renderParam(paramName))}
+                  </Grid>
+                )}
               </Box>
             ))}
           </>

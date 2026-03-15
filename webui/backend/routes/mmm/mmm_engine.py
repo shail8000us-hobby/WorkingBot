@@ -176,12 +176,12 @@ class MMMEngine:
                     )
 
         zero = _D(0)
-        total_loss = max(active_loss, zero) + shifted_loss
+        total_loss = active_loss + shifted_loss
 
         if shifted_loss > zero:
             log.info(
                 f"TOTAL standard loss (active + shifted): "
-                f"${float(max(active_loss, zero)):.4f} + ${float(shifted_loss):.4f} "
+                f"${float(active_loss):.4f} + ${float(shifted_loss):.4f} "
                 f"= ${float(total_loss):.4f}"
             )
 
@@ -344,6 +344,7 @@ class MMMEngine:
         # sell proportionally more lots to cover the accelerating loss.
         # Read aggressor excess_pct from session (set by evaluate_triggers).
         constraint_msg = ''
+        gamma_mult = 1.0  # initialized before T3-2 block for combined ceiling
         if params.get('gamma_aware_enabled', True):
             trigger_res = session.get('_last_trigger_result', {})
             # hedge_side is opposite to aggressor: CE hedge → PE aggressor
@@ -366,6 +367,21 @@ class MMMEngine:
                     f"{pre_gamma} → {lots_to_sell} lots"
                 )
         # ── END T3-2 ──────────────────────────────────────────────────────
+
+        # ── Breakeven Aggression Multiplier ──────────────────────────────
+        # Non-directional: applies to ANY triggered adjustment when spot approaches
+        # portfolio breakeven. Multiplier is pre-computed by BreakevenEngine and
+        # stored in session by the monitor at Step 5.7.
+        breakeven_mult = session.get('_breakeven_multiplier', 1.0)
+        if breakeven_mult > 1.0:
+            pre_be = lots_to_sell
+            lots_to_sell = max(math.ceil(lots_to_sell * breakeven_mult), 1)
+            be_msg = (
+                f"Breakeven {breakeven_mult:.2f}x ({session.get('_breakeven_zone', 'UNKNOWN')} zone): "
+                f"{pre_be} → {lots_to_sell} lots"
+            )
+            constraint_msg = f"{constraint_msg}; {be_msg}" if constraint_msg else be_msg
+        # ── END Breakeven Multiplier ──────────────────────────────────────
 
         # ── IMP-2 + Trend Boost: Directional lot adjustment ──────────────
         # When a trend is detected, the dangerous side (CE in uptrend) gets
@@ -426,6 +442,28 @@ class MMMEngine:
             session['_trend_boost_active'] = False
             session['_trend_boost_mult'] = 1.0
         # ── END IMP-2 + Trend Boost ───────────────────────────────────────
+
+        # ── Combined Multiplier Ceiling ───────────────────────────────────
+        # After all multiplicative amplifiers, before hard caps and reductions.
+        # Prevents gamma × breakeven × trend compound runaway.
+        # Does NOT include asymmetry or OTM scaling (those are reductive, not amplifiers).
+        max_combined = params.get('max_combined_lot_multiplier', 3.0)
+        if max_combined > 0 and (gamma_mult > 1.0 or breakeven_mult > 1.0 or
+                                  session.get('_trend_boost_active')):
+            boost_mult = session.get('_trend_boost_mult', 1.0)
+            combined = gamma_mult * breakeven_mult * (boost_mult if session.get('_trend_boost_active') else 1.0)
+            if combined > max_combined:
+                # Scale back proportionally
+                overshoot = combined / max_combined
+                pre_ceil = lots_to_sell
+                lots_to_sell = max(math.ceil(lots_to_sell / overshoot), 1)
+                if lots_to_sell < pre_ceil:
+                    ceil_msg = (
+                        f"Combined mult cap {max_combined:.1f}x (was {combined:.2f}x): "
+                        f"{pre_ceil} → {lots_to_sell} lots"
+                    )
+                    constraint_msg = f"{constraint_msg}; {ceil_msg}" if constraint_msg else ceil_msg
+        # ── END Combined Multiplier Ceiling ──────────────────────────────
 
         # §13.1: Position cap — Split Ledger: only active_lots count against cap
         hedge_state = session.get(hedge_side, {})
@@ -732,6 +770,8 @@ class MMMEngine:
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
         )
+        side_prem_key = 'ce_premium_collected' if hedge_side.lower() == 'ce' else 'pe_premium_collected'
+        session[side_prem_key] = session.get(side_prem_key, 0) + premium_collected
 
         session.setdefault('adjustment_history', []).append({
             'side': hedge_side.upper(),

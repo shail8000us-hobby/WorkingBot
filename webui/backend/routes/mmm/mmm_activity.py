@@ -118,6 +118,15 @@ ACTIVITY_TYPES = {
     'whipsaw_guard': 'Whipsaw Guard',
     'atm_shield': 'ATM Shield',
 
+    # Breakeven Engine
+    'breakeven_zone_change': 'Breakeven Zone Change',
+    'breakeven_band_contracting': 'Breakeven Band Contracting',
+    'breakeven_narrow_band': 'Narrow Breakeven Band',
+
+    # Gamma Detector Engine
+    'gamma_zone_change': 'Gamma Zone Change',
+    'gamma_danger_detected': 'Gamma Danger Detected',
+
     # FSU: Favorable Scale-Up
     'scale_up_triggered': 'Scale-Up Triggered',
     'scale_up_complete': 'Scale-Up Complete',
@@ -152,7 +161,9 @@ ACTIVITY_CATEGORIES = {
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',
-               'whipsaw_guard'},
+               'whipsaw_guard',
+               'breakeven_zone_change', 'breakeven_band_contracting', 'breakeven_narrow_band',
+               'gamma_zone_change', 'gamma_danger_detected'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
                'info', 'warning', 'error'},

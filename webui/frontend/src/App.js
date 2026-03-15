@@ -73,6 +73,7 @@ const EmergencyPage = React.lazy(() => import('./pages/EmergencyPage'));
 const MonitoringPage = React.lazy(() => import('./pages/MonitoringPage'));
 const ConfigPage = React.lazy(() => import('./pages/ConfigPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
+const PatiencePage = React.lazy(() => import('./pages/PatiencePage'));
 
 // Lazy components still used directly in App.js
 const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
@@ -280,16 +281,12 @@ function App() {
 
   // Navigation handler — sidebar clicks navigate via router
   const handleSectionSelect = useCallback((sectionId) => {
-    startTransition(() => {
-      navigate('/' + sectionId);
-    });
+    navigate('/' + sectionId);
   }, [navigate]);
 
   // Navigation with params — used by Strategy Builder to pass buildYourOwnMode etc.
   const handleNavigateToTab = useCallback((tabId, params) => {
-    startTransition(() => {
-      navigate('/' + tabId, { state: params || null });
-    });
+    navigate('/' + tabId, { state: params || null });
   }, [navigate]);
 
 
@@ -378,6 +375,7 @@ function App() {
                   <Route path="/guardian" element={<GuardianPage guardianEnabled={guardianEnabled} />} />
                   <Route path="/zero_dte" element={<ZeroDTEPage />} />
                   <Route path="/portfolio_margin" element={<PortfolioMarginPage />} />
+                  <Route path="/patience" element={<PatiencePage />} />
                   <Route path="/experimental" element={<ExperimentalPage />} />
                   <Route path="/advanced_features" element={<AdvancedFeaturesPage />} />
                   <Route path="/monitoring" element={<MonitoringPage isMobile={isMobile} botIsRunning={botIsRunning} botStatus={botStatus} config={config} />} />

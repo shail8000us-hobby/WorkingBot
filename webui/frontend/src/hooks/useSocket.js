@@ -22,14 +22,13 @@ export const useSocket = () => {
     // Create new socket connection — try WebSocket first, fall back to polling
     const newSocket = io({
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
+      transports: ['polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: 10,
       timeout: 20000,
       autoConnect: true,
-      upgrade: true,
     });
 
     newSocket.on('connect', () => {

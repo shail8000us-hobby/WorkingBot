@@ -452,12 +452,17 @@ export default function MMMPositionsTable({ session, heartbeat, onSetActiveStrik
                   </TableCell>
                   {/* Actions column */}
                   <TableCell align="center" sx={{ whiteSpace: 'nowrap', p: 0.5 }}>
-                    {canOperate && !isFrozen && !row.isActiveFocalPoint && onSetActiveStrike && (
-                      <Tooltip title={`Set ${row.side} active strike to ${Number(row.strike).toLocaleString()} — algo will monitor this strike`} arrow>
+                    {canOperate && !row.isActiveFocalPoint && onSetActiveStrike && (
+                      <Tooltip
+                        title={isFrozen
+                          ? `Promote ${row.side} ${Number(row.strike).toLocaleString()} to active strike — re-activates this frozen position for monitoring`
+                          : `Set ${row.side} active strike to ${Number(row.strike).toLocaleString()} — algo will monitor this strike`}
+                        arrow
+                      >
                         <IconButton
                           size="small"
                           onClick={() => onSetActiveStrike(row.sideKey, row.strike)}
-                          sx={{ color: '#42a5f5', p: 0.5 }}
+                          sx={{ color: isFrozen ? '#ff9800' : '#42a5f5', p: 0.5 }}
                         >
                           <PushPinOutlinedIcon sx={{ fontSize: '1rem' }} />
                         </IconButton>

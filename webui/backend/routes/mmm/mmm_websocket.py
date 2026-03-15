@@ -100,7 +100,11 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    portfolio_delta: float = 0,
                    margin_data: Dict = None,
                    regime_data: Dict = None,
-                   perp_hedge_data: Dict = None):
+                   perp_hedge_data: Dict = None,
+                   effective_interval: int = None,
+                   next_heartbeat: str = None,
+                   breakeven_data: Dict = None,
+                   gamma_data: Dict = None):
     """Emit heartbeat data every interval. Section 4.
 
     Args:
@@ -113,6 +117,10 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         margin_data: Optional margin guardian snapshot (tier, utilization_pct, etc.)
         regime_data: Optional regime controls snapshot (vol/gamma/trend regimes + action)
         perp_hedge_data: Optional perp delta hedge snapshot (lots, pnl, last_delta, etc.)
+        effective_interval: Actual heartbeat interval in seconds (after adaptive/theta scaling)
+        next_heartbeat: ISO timestamp of next scheduled heartbeat
+        breakeven_data: Optional breakeven band snapshot (zone, distances, multiplier, etc.)
+        gamma_data: Optional gamma detector snapshot (zone, boundaries, severity, etc.)
     """
     payload = {
         'session_id': session_id,
@@ -127,6 +135,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         'adaptive_tier': adaptive_tier,
         'wind_down_active': wind_down_active,
         'portfolio_delta': portfolio_delta,
+        'effective_interval': effective_interval,
+        'next_heartbeat': next_heartbeat,
     }
     if margin_data:
         payload['margin'] = margin_data
@@ -134,6 +144,10 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         payload['regime'] = regime_data
     if perp_hedge_data:
         payload['perp_hedge'] = perp_hedge_data
+    if breakeven_data:
+        payload['breakeven'] = breakeven_data
+    if gamma_data:
+        payload['gamma'] = gamma_data
     _emit('mmm_heartbeat', payload)
 
 
@@ -454,4 +468,20 @@ def emit_manual_injection(session_id: str, side: str, lots: int,
         'strike': strike,
         'fill_price': fill_price,
         'order_id': order_id,
+    })
+
+
+def emit_breakeven(session_id: str, breakeven_data: Dict):
+    """Emit breakeven band status for real-time UI updates."""
+    _emit('mmm_breakeven', {
+        'session_id': session_id,
+        **breakeven_data,
+    })
+
+
+def emit_gamma(session_id: str, gamma_data: Dict):
+    """Emit gamma detector result as standalone event."""
+    _emit('mmm_gamma', {
+        'session_id': session_id,
+        **gamma_data,
     })

@@ -810,6 +810,104 @@ In the last hour, the threshold is 3× wider (ATM is more dangerous near expiry)
 
 ---
 
+## 12.5 Breakeven Engine — Risk-Aware Lot Scaling
+
+Real-time portfolio breakeven awareness that increases hedge aggression when spot approaches the portfolio's profit/loss boundary.
+
+**Enable:** `breakeven_control_enabled = True`
+
+### What It Does
+
+The Breakeven Engine computes the lower and upper BTC spot prices where your portfolio's total P&L = 0, then scales hedge lot sizes based on how close spot is to those boundaries.
+
+**Core features:**
+- **Intrinsic-only P&L model** — No live premium fetches needed. Conservative (narrower bands = earlier warnings).
+- **Dynamic scan range** — Auto-expands to 120% beyond furthest strike to catch distant frozen positions.
+- **Position-change caching** — Breakeven prices recomputed only when positions change (~1ms), distance recomputed every heartbeat (~0.01ms).
+- **Four risk zones** — SAFE (multiplier 1.0×) → WARNING (1.0–1.3×) → DANGER (1.3–2.0×) → CRITICAL (2.0–3.0× max).
+- **Non-directional** — Multiplier applies to ALL triggered adjustments (core trigger system already determines correct hedge direction).
+- **Stacking protection** — Combined ceiling caps gamma × breakeven × trend to prevent compound runaway.
+
+### Zone Classification
+
+| Zone | Distance from Spot | Multiplier Ramp | Zone Color |
+|------|-------------------|-----------------|------------|
+| SAFE | > `breakeven_warning_pct` | 1.0× (no boost) | Green |
+| WARNING | `breakeven_danger_pct` – `breakeven_warning_pct` | 1.0× → 1.3× | Amber |
+| DANGER | `breakeven_critical_pct` – `breakeven_danger_pct` | 1.3× → 2.0× | Red |
+| CRITICAL | < `breakeven_critical_pct` | 2.0× → `breakeven_aggression_max` | Deep red |
+
+**Example:** If spot is 1.2% from lower breakeven and `breakeven_danger_pct = 1.0%`, you're in DANGER zone. If you enter at exactly 1.0%, multiplier = 1.3×. As spot moves from 1.0% to 0.5% (critical threshold), multiplier ramps linearly from 1.3× to 2.0×.
+
+**Linear interpolation** prevents lot-count flip-flops at zone boundaries — smooth continuous ramp.
+
+### Multiplier Chain & Combined Ceiling
+
+The breakeven multiplier is applied at **Step 4** of the lot calculation chain (after gamma-aware, before trend boost):
+
+```
+raw_lots = loss / (premium × 0.001) × 1.05
+
+Step 3: gamma_mult (1.0–1.3×) applied
+Step 4: breakeven_mult (1.0–3.0×) applied  ← NEW
+Step 5: trend_mult (0.7–2.0×) applied
+
+Step 5a: Combined ceiling enforced  ← NEW
+  combined = gamma_mult × breakeven_mult × trend_mult
+  if combined > max_combined_lot_multiplier (default 3.0):
+    scale back proportionally
+
+Step 6: Position cap, exposure ceiling, asymmetry, OTM scaling
+```
+
+**Why the ceiling?** Worst case without it: gamma(1.3) × breakeven(3.0) × trend(2.0) = 7.8× amplification. The combined ceiling (default 3.0×) caps the compound product of amplifier multipliers, while allowing defensive modifiers (asymmetry, OTM scaling) to still apply.
+
+### Gate Checks
+
+Breakeven computation runs at **Step 5.7** of the heartbeat (between ATM Shield and trigger evaluation), but the multiplier only applies when:
+- `breakeven_control_enabled = True`
+- Session has at least 1 open position
+- Valid spot price from regime module
+- A trigger fires and adjustment is calculated
+
+If disabled or no positions, multiplier = 1.0× (no effect).
+
+### Dashboard Panel
+
+The **Breakeven Panel** appears on live session dashboards when `breakeven_control_enabled = True`:
+
+**Compact view:**
+- Horizontal band bar showing lower BE / spot marker / upper BE
+- Zone color on panel border and spot marker
+- Distance percentages below bar
+
+**Expanded view (click arrow):**
+- Full table: both breakeven prices, nearest side, distance %, band width, aggression multiplier, P&L at spot, positions count
+- **Band contracting warning** (orange chip) — band width shrunk >30% since last position change
+- **Narrow band warning** (yellow chip) — band width < `breakeven_narrow_band_threshold` (default 5% of spot). Diagnostic only, no automatic response. Consider reducing exposure.
+
+**Data sources:** Embedded in `mmm_heartbeat` WebSocket payload (`heartbeat.breakeven`) and standalone `mmm_breakeven` event.
+
+### When to Use
+
+**Enable when:**
+- You want earlier defensive hedging as spot approaches breakeven (reduces risk of turning profitable sessions into losers)
+- Large directional moves threaten portfolio (breakeven multiplier adds to trend boost for compound defense)
+- Multi-session portfolios where one session's breakeven matters to overall P&L
+
+**Disable when:**
+- You prefer manual control over lot sizes
+- Gamma-aware + trend boost already provide sufficient amplification
+- Testing in canary mode and want to isolate one variable
+
+**Interaction with other multipliers:**
+- **Gamma-aware** — Stacks with breakeven (combined ceiling caps the product)
+- **Trend boost/reduction** — Stacks with breakeven (combined ceiling caps the product)
+- **Whipsaw halving** (0.5×) — Applied AFTER combined ceiling (not part of product)
+- **Consecutive direction limiter** (25% cap) — Applied last, reduces but doesn't block
+
+---
+
 ## 13. Margin Guardian
 
 Real-time margin utilization monitoring from Delta Exchange.
@@ -1137,6 +1235,21 @@ All positions on both CE and PE closed (decayed to close-at-5 or time expired). 
 | `atm_shield_proximity_pct` | 0.5 | % of spot for trigger proximity |
 | `atm_shield_target_otm_pct` | 1.0 | Target OTM % for retreat strike |
 | `atm_shield_max_per_session` | 3 | Max fires per session |
+
+### 20.8 Breakeven Engine Parameters
+
+| Parameter | Default | Range | Description |
+|---|---|---|---|
+| `breakeven_control_enabled` | False | bool | Enable real-time portfolio breakeven awareness |
+| `breakeven_warning_pct` | 2.0 | 0.5–10.0 | Distance % from spot to breakeven → WARNING zone (1.0–1.3× ramp) |
+| `breakeven_danger_pct` | 1.0 | 0.2–5.0 | Distance % from spot to breakeven → DANGER zone (1.3–2.0× ramp) |
+| `breakeven_critical_pct` | 0.5 | 0.1–2.0 | Distance % from spot to breakeven → CRITICAL zone (2.0–max ramp) |
+| `breakeven_aggression_max` | 3.0 | 1.5–5.0 | Maximum lot multiplier at deepest CRITICAL zone |
+| `breakeven_scan_range_pct` | 5.0 | 2.0–15.0 | Minimum scan width as % of spot (auto-expands to 120% beyond furthest strike) |
+| `max_combined_lot_multiplier` | 3.0 | 1.5–5.0 | Cap on combined gamma × breakeven × trend multiplier product |
+| `breakeven_narrow_band_threshold` | 5.0 | 1.0–10.0 | Warn operator when band width < this % of spot |
+
+**Validation:** `breakeven_critical_pct < breakeven_danger_pct < breakeven_warning_pct` (enforced on hot-reload).
 
 ### March 2026 Parameters
 

@@ -64,17 +64,15 @@ class ConnectionManager {
 
     const connectionOptions = {
       path: '/socket.io',
-      // Backend uses async_mode='eventlet' (via gunicorn) which supports WebSocket.
-      // Prefer WebSocket for low-latency real-time updates; fall back to polling.
-      transports: ['websocket', 'polling'],
+      // Backend uses threading mode; WebSocket upgrade returns HTTP 500 (Werkzeug 3.x compat issue).
+      // Polling works correctly and delivers all real-time data without the repeated upgrade errors.
+      transports: ['polling'],
       // We handle reconnection manually for better control
       reconnection: false,
       // Mobile-optimized: increased timeout for high-latency networks (Tailscale/cellular)
       timeout: 60000, // Increased from 20s to 60s for mobile networks
-      upgrade: true,
-      rememberUpgrade: true,
       // NOTE: Do NOT set withCredentials or custom extraHeaders —
-      // they trigger CORS preflight and block WebSocket upgrades
+      // they trigger CORS preflight and block connections
       ...socketIOConfig,
     };
 

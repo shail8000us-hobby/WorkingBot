@@ -317,6 +317,8 @@ def activate_new_strike(
     side_state = session.get(side, {})
 
     side_state['active_strike'] = new_strike
+    # Clear user pin — algo auto-shifted, re-enable auto-ATM selection
+    side_state.pop('active_strike_pinned', None)
 
     # AUDIT FIX: Preserve initial hedge premium for dynamic threshold across shifts
     if '_initial_hedge_premium' not in side_state or side_state.get('_initial_hedge_premium', 0) == 0:

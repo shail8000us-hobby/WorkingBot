@@ -66,9 +66,11 @@ from .mmm_websocket import (
     emit_heartbeat, emit_adjustment, emit_reversal,
     emit_strike_shift, emit_close_at_5, emit_both_sides_alert,
     emit_safety, emit_pnl_update, emit_status_change,
-    emit_harvest, emit_recycle, emit_scale_up,
+    emit_harvest, emit_recycle, emit_scale_up, emit_breakeven, emit_gamma,
 )
 from .mmm_atm_shield import execute_atm_shield
+from .mmm_breakeven_engine import get_breakeven_engine
+from .mmm_gamma_detector import get_gamma_detector
 from .mmm_harvester import scan_harvestable_positions
 from .mmm_recycler import execute_lot_recycling
 from .mmm_perp_hedge import (
@@ -286,6 +288,7 @@ class MMMMonitor:
             daemon=True,
         )
         self._thread.start()
+        self._start_close_watcher()
 
         # M-3 fix: emit correct restored status, not always 'RUNNING'
         restored_status = 'PAUSED' if self._paused else 'RUNNING'
@@ -671,7 +674,7 @@ class MMMMonitor:
                             self.session, minutes_to_expiry
                         )
                     if accel.get('accelerated'):
-                        interval = accel['effective_interval']
+                        interval = min(interval, accel['effective_interval'])
                         # Store effective trigger move in ephemeral session key
                         # so evaluate_triggers reads it WITHOUT corrupting params.
                         # (Bug #1 fix: never modify params['min_trigger_move'])
@@ -943,6 +946,14 @@ class MMMMonitor:
                 # GREEN: clear any stale flags
                 session.pop('_margin_wind_down', None)
                 session.pop('_margin_block_sells', None)
+
+        # Step 0.75: Auto-promote the open strike closest to ATM as the active strike.
+        # Runs before premium fetch so _fetch_premiums uses the correct new active strike.
+        # Skipped when the user has manually pinned a strike (active_strike_pinned=True).
+        try:
+            await self._auto_promote_atm_strike()
+        except Exception as _atm_promo_err:
+            log.warning(f"[{sid}] Auto-ATM promotion error: {_atm_promo_err}")
 
         # Step 1: Fetch current premiums — with circuit breaker + fallback
         ce_now, pe_now, fetch_ok = await self._fetch_premiums_with_fallback()
@@ -1820,6 +1831,103 @@ class MMMMonitor:
             session.pop('_proactive_shifted_pe', None)
             await self._proactive_shift_scan(ce_now, pe_now)
 
+        # Step 5.7: Breakeven Engine — compute portfolio breakeven awareness
+        # Runs regardless of _skip_to_pnl so UI data stays fresh.
+        # No API calls — intrinsic-only model uses in-memory data only.
+        if params.get('breakeven_control_enabled', False):
+            try:
+                be_engine = get_breakeven_engine()
+                be_spot = session.get('_regime_spot_price', 0) or 0
+                if be_spot > 0:
+                    be_result = be_engine.compute_breakeven(session, be_spot)
+                    session['_breakeven_result'] = be_result
+                    session['_breakeven_multiplier'] = be_engine.get_aggression_multiplier(be_result)
+                    session['_breakeven_zone'] = be_result.get('zone', 'SAFE')
+
+                    # Log zone transitions
+                    prev_zone = session.get('_breakeven_zone_prev', 'SAFE')
+                    new_zone = be_result.get('zone', 'SAFE')
+                    if new_zone != prev_zone:
+                        log_activity(
+                            'breakeven_zone_change',
+                            f'Breakeven zone: {prev_zone} → {new_zone} | '
+                            f'nearest={be_result.get("nearest_distance_pct") or "N/A"}% | '
+                            f'multiplier={be_result.get("multiplier", 1.0):.2f}x',
+                            sid, 'warning' if new_zone in ('DANGER', 'CRITICAL') else 'info',
+                            {'prev_zone': prev_zone, 'new_zone': new_zone,
+                             'nearest_pct': be_result.get('nearest_distance_pct'),
+                             'multiplier': be_result.get('multiplier', 1.0)},
+                        )
+                    session['_breakeven_zone_prev'] = new_zone
+
+                    # Log band contraction
+                    if be_result.get('band_contracting'):
+                        log_activity(
+                            'breakeven_band_contracting',
+                            f'Breakeven band contracting: '
+                            f'{be_result.get("band_width_prev_pct", 0):.1f}% → '
+                            f'{be_result.get("band_width_pct", 0):.1f}%',
+                            sid, 'warning',
+                            {'band_width_pct': be_result.get('band_width_pct'),
+                             'band_width_prev_pct': be_result.get('band_width_prev_pct')},
+                        )
+
+                    # Log narrow band
+                    if be_result.get('is_narrow_band'):
+                        log_activity(
+                            'breakeven_narrow_band',
+                            f'Narrow Breakeven Band: {be_result.get("band_width_pct", 0):.1f}% — '
+                            f'Consider reducing exposure',
+                            sid, 'warning',
+                            {'band_width_pct': be_result.get('band_width_pct'),
+                             'threshold': params.get('breakeven_narrow_band_threshold', 5.0)},
+                        )
+            except Exception as _be_err:
+                log.error(f"[{sid}] Breakeven engine error: {_be_err}", exc_info=True)
+
+        # Step 5.8: Gamma Detector — portfolio curvature scanning
+        # Runs regardless of _skip_to_pnl so UI data stays fresh.
+        # Observation-only: stored in session, does NOT influence lot sizing (Phases 1-8).
+        if params.get('gamma_detector_enabled', False):
+            try:
+                gd = get_gamma_detector()
+                gd_spot = session.get('_regime_spot_price', 0) or 0
+                if gd_spot > 0:
+                    gd_result = gd.compute_gamma(
+                        session, gd_spot,
+                        be_engine=get_breakeven_engine()
+                    )
+                    session['_gamma_result'] = gd_result
+
+                    # Log zone transitions
+                    prev_gamma_zone = session.get('_gamma_zone_prev', 'SAFE')
+                    new_gamma_zone = gd_result.get('gamma_zone', 'SAFE')
+                    if new_gamma_zone != prev_gamma_zone:
+                        log_activity(
+                            'gamma_zone_change',
+                            f'Gamma zone: {prev_gamma_zone} → {new_gamma_zone} | '
+                            f'nearest={gd_result.get("nearest_distance_pct") or "N/A"}% | '
+                            f'lower_boundary={gd_result.get("lower_gamma_boundary")} | '
+                            f'upper_boundary={gd_result.get("upper_gamma_boundary")}',
+                            sid,
+                            'warning' if new_gamma_zone == 'DANGER' else 'info',
+                            {'prev_zone': prev_gamma_zone, 'new_zone': new_gamma_zone,
+                             'nearest_pct': gd_result.get('nearest_distance_pct'),
+                             'lower_boundary': gd_result.get('lower_gamma_boundary'),
+                             'upper_boundary': gd_result.get('upper_gamma_boundary')},
+                        )
+                        if new_gamma_zone == 'DANGER':
+                            log_activity(
+                                'gamma_danger_detected',
+                                f'Gamma DANGER — losses will accelerate rapidly near '
+                                f'lower={gd_result.get("lower_gamma_boundary")} / '
+                                f'upper={gd_result.get("upper_gamma_boundary")}',
+                                sid, 'warning', gd_result,
+                            )
+                    session['_gamma_zone_prev'] = new_gamma_zone
+            except Exception as _gd_err:
+                log.warning(f'[{sid}] Gamma detector error (non-fatal): {_gd_err}')
+
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
         # skip directly to P&L update so peak_pnl decays and session saves.
@@ -2550,6 +2658,18 @@ class MMMMonitor:
                         sid, 'info',
                         {'side': aggressor.upper(), 'strike': strike_val, 'lots': group_lots})
 
+            # Fix F1.2 (wind-down): Pre-mark _being_closed on positions to prevent
+            # concurrent close by close-at-5 or recycler during async smart_execute.
+            _wd_marked_ids = []
+            for rec in group_records:
+                _pid = rec.get('_pos_id')
+                if _pid:
+                    for p in side_state.get('positions', []):
+                        if p.get('id') == _pid:
+                            p['_being_closed'] = True
+                            _wd_marked_ids.append(_pid)
+                            break
+
             try:
                 _reprice_max = self.session.get('params', {}).get('max_reprice_attempts', None)
                 result = await self.executor.smart_execute(
@@ -2561,6 +2681,12 @@ class MMMMonitor:
                 )
 
                 if not result.get('success'):
+                    # Clear _being_closed flags on failure so positions can be retried
+                    for _pid in _wd_marked_ids:
+                        for p in side_state.get('positions', []):
+                            if p.get('id') == _pid:
+                                p.pop('_being_closed', None)
+                                break
                     log_activity('wind_down',
                                 f'🌙 Wind-Down FAILED: Could not buy back {group_lots} '
                                 f'{aggressor.upper()} @ {strike_val} — {result.get("error", "unknown")}',
@@ -2612,6 +2738,12 @@ class MMMMonitor:
                              'realized_pnl': round(group_realized, 2)})
 
             except Exception as e:
+                # Clear _being_closed flags on exception so positions can be retried
+                for _pid in _wd_marked_ids:
+                    for p in side_state.get('positions', []):
+                        if p.get('id') == _pid:
+                            p.pop('_being_closed', None)
+                            break
                 log.exception(f"[{sid}] Wind-down buyback @ {strike_val} failed: {e}")
                 log_activity('wind_down',
                             f'🌙 Wind-Down ERROR @ {strike_val}: {str(e)}',
@@ -2714,6 +2846,8 @@ class MMMMonitor:
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
         )
+        _side_prem_key = 'ce_premium_collected' if side.lower() == 'ce' else 'pe_premium_collected'
+        session[_side_prem_key] = session.get(_side_prem_key, 0) + premium_collected
 
         session.setdefault('adjustment_history', []).append({
             'side': side.upper(),
@@ -3179,6 +3313,13 @@ class MMMMonitor:
                 loss, adj_type,
                 session.get('adjustment_count', 0),
             )
+            # Breakeven + gamma cache invalidation — positions changed after fill
+            try:
+                get_breakeven_engine().invalidate_cache(sid)
+                get_gamma_detector().invalidate_cache(sid)
+            except Exception:
+                pass
+
             # Trend Boost: log when boost multiplier was applied
             if session.get('_trend_boost_active'):
                 boost_mult = session.get('_trend_boost_mult', 1.0)
@@ -3254,7 +3395,7 @@ class MMMMonitor:
 
         # Cap lot size after limit consecutive adjustments
         if count >= limit:
-            initial_lots = session.get('lots', 1) or 1
+            initial_lots = session.get('params', {}).get('initial_lots', 10) or 1
             max_allowed = max(1, int(initial_lots * lot_cap_pct))
             if lots > max_allowed:
                 msg = (
@@ -3660,6 +3801,8 @@ class MMMMonitor:
                 session['total_premium_collected'] = (
                     session.get('total_premium_collected', 0) + premium_collected
                 )
+                _spk = 'ce_premium_collected' if side.lower() == 'ce' else 'pe_premium_collected'
+                session[_spk] = session.get(_spk, 0) + premium_collected
             except Exception as _e:
                 _shift_errors.append(f'tracking_update: {_e}')
                 log.exception(f"[{sid}] tracking update failed after strike shift: {_e}")
@@ -3761,6 +3904,13 @@ class MMMMonitor:
                             {'errors': _shift_errors, 'side': side.upper(),
                              'old_strike': old_strike, 'new_strike': new_strike})
 
+            # Breakeven + gamma cache invalidation — positions changed after strike shift
+            try:
+                get_breakeven_engine().invalidate_cache(sid)
+                get_gamma_detector().invalidate_cache(sid)
+            except Exception:
+                pass
+
             log.info(
                 f"Strike shift complete: {side.upper()} "
                 f"{old_strike} → {new_strike}"
@@ -3818,7 +3968,6 @@ class MMMMonitor:
             if opposite_active > lots:
                 pre_match_lots = lots
                 target = opposite_active
-                trend_tier = session.get('_trend_tier', 0)
                 trend_tier = session.get('_trend_tier', 0)
                 trend_direction = session.get('_trend_direction', 'none')
                 is_safe_side = (
@@ -3924,15 +4073,16 @@ class MMMMonitor:
                 loss, 'shift_fallback',
                 session.get('adjustment_count', 0),
             )
+            # Breakeven + gamma cache invalidation — positions changed after shift fallback fill
+            try:
+                get_breakeven_engine().invalidate_cache(sid)
+                get_gamma_detector().invalidate_cache(sid)
+            except Exception:
+                pass
 
     # =========================================================================
     # §11: Close-at-5 Processing
     # =========================================================================
-
-    # Maximum positions to close per heartbeat to prevent heartbeat stalling.
-    # Each close involves smart_execute (up to 60s wait + reprices), so
-    # closing N positions can block the heartbeat for N * 60+ seconds.
-    MAX_CLOSES_PER_HEARTBEAT = 3
 
     # =========================================================================
     # §3: M1 Profit Harvesting
@@ -4029,6 +4179,13 @@ class MMMMonitor:
                         'asymmetry_boosted': asymmetry_boosted,
                     },
                 )
+
+                # Breakeven + gamma cache invalidation — positions changed after harvest fill
+                try:
+                    get_breakeven_engine().invalidate_cache(sid)
+                    get_gamma_detector().invalidate_cache(sid)
+                except Exception:
+                    pass
 
                 # Log rebalance boost once per side per heartbeat for activity feed clarity
                 if asymmetry_boosted and pos['side'] not in _boost_logged:
@@ -4290,6 +4447,8 @@ class MMMMonitor:
         premium_collected_pe = pe_fill * lots * LOT_SIZE_BTC if pe_result.get('success') else 0
         total_premium = premium_collected_ce + premium_collected_pe
         session['total_premium_collected'] = session.get('total_premium_collected', 0) + total_premium
+        session['ce_premium_collected'] = session.get('ce_premium_collected', 0) + premium_collected_ce
+        session['pe_premium_collected'] = session.get('pe_premium_collected', 0) + premium_collected_pe
 
         record_scale_event(session, ce_target, pe_target, lots)
 
@@ -4448,6 +4607,12 @@ class MMMMonitor:
                     'recycle_count': session.get('recycle_count', 0),
                 },
             )
+            # Breakeven + gamma cache invalidation — positions changed after lot recycling
+            try:
+                get_breakeven_engine().invalidate_cache(sid)
+                get_gamma_detector().invalidate_cache(sid)
+            except Exception:
+                pass
             return True
 
         # Recycling failed or not viable — log and let caller handle
@@ -4633,6 +4798,13 @@ class MMMMonitor:
             except Exception as _e:
                 log.warning(f"[{sid}] Shift recycle: emit_recycle failed: {_e}")
 
+            # Breakeven + gamma cache invalidation — positions changed after shift-time recycle
+            try:
+                get_breakeven_engine().invalidate_cache(sid)
+                get_gamma_detector().invalidate_cache(sid)
+            except Exception:
+                pass
+
         return total_buyback
 
     async def _process_close_at_5(
@@ -4655,6 +4827,8 @@ class MMMMonitor:
         """
         session = self.session
         sid = self.session_id
+        params = session.get('params', {})
+        max_closes = params.get('close_at_max_per_beat', 3)
 
         # During wind-down, elevate the close threshold for opportunity harvest
         wd_threshold = get_wind_down_close_threshold(session)
@@ -4670,50 +4844,22 @@ class MMMMonitor:
             threshold_override=wd_threshold if using_elevated else None,
         )
 
-        # ── WIDE-SPREAD GUARD ─────────────────────────────────────────────────
-        # When using bid price for the threshold check, the bid can fall below
-        # threshold while the mark price (fair value) is significantly higher
-        # due to wide bid-ask spreads common in illiquid, deep-OTM options.
-        # Guard: only execute a bid-triggered close if the mark price is ALSO
-        # ≤ threshold.  If mark > threshold the position still has real value
-        # and closing now would cause an overpay (e.g., bid=$15 but mark=$40).
-        if use_bid and closeable:
-            effective_threshold = wd_threshold if using_elevated else normal_threshold
-            mark_fn = self._make_fetch_fn()
-            guarded = []
-            for pos in closeable:
-                option_type = 'call' if pos['side'] == 'ce' else 'put'
-                mark = mark_fn(pos['strike'], option_type)
-                # Allow close if mark unavailable (cache miss) or mark ≤ threshold
-                if mark is not None and mark > effective_threshold:
-                    log.info(
-                        f"[{sid}] Close-at-5 wide-spread guard: skipping "
-                        f"{pos['side'].upper()} @ {pos['strike']} "
-                        f"(bid={pos['current_premium']:.2f} ≤ {effective_threshold:.2f} "
-                        f"but mark={mark:.2f} > threshold — wide bid-ask spread)"
-                    )
-                    continue
-                guarded.append(pos)
-            closeable = guarded
-        # ─────────────────────────────────────────────────────────────────────
+        # Wide-spread guard removed: if bid is ≤ threshold we close unconditionally.
+        # Execution uses bid-entry (maker limit at bid), so the fill price ≤ threshold
+        # regardless of mark price. Carrying the position is unnecessary risk.
 
         if closeable:
             threshold_note = f' (wind-down elevated threshold: {wd_threshold})' if using_elevated else ''
             bid_note = ' [using bid price]' if use_bid else ''
             closeable_summary = ', '.join([f"{p['side'].upper()} @ {p['strike']}" for p in closeable])
-            capped_note = ''
-            if len(closeable) > self.MAX_CLOSES_PER_HEARTBEAT:
-                capped_note = (f' [processing {self.MAX_CLOSES_PER_HEARTBEAT} of '
-                              f'{len(closeable)} this heartbeat]')
             log_activity('info',
                         f'Close-at-5 Scan: {len(closeable)} position(s) ready to close'
-                        f'{threshold_note}{bid_note}{capped_note} - {closeable_summary}',
+                        f'{threshold_note}{bid_note} - {closeable_summary}',
                         sid, 'info',
                         {'closeable_count': len(closeable), 'positions': closeable_summary,
                          'wind_down_elevated': using_elevated,
                          'using_bid_price': use_bid,
-                         'threshold_used': wd_threshold if using_elevated else normal_threshold,
-                         'capped_at': self.MAX_CLOSES_PER_HEARTBEAT})
+                         'threshold_used': wd_threshold if using_elevated else normal_threshold})
 
         closed_count = 0
         sides_closed: set = set()  # Fix #11: track which sides had successful closes
@@ -4739,17 +4885,17 @@ class MMMMonitor:
         # ──────────────────────────────────────────────────────────────────
 
         for pos in closeable:
-            # Cap: don't process more than MAX_CLOSES_PER_HEARTBEAT per beat
-            if closed_count >= self.MAX_CLOSES_PER_HEARTBEAT:
-                log.info(
-                    f"[{sid}] Close-at-5: capped at {self.MAX_CLOSES_PER_HEARTBEAT} "
-                    f"closes this heartbeat ({len(closeable) - closed_count} deferred)"
-                )
-                break
-
             # Check if monitor was stopped while we were executing closes
             if self._should_stop():
                 log.info(f"[{sid}] Close-at-5: stop requested, aborting remaining closes")
+                break
+
+            # close_at_max_per_beat cap — defer remainder to next heartbeat
+            if closed_count >= max_closes:
+                log.info(
+                    f"[{sid}] Close-at-5: reached close_at_max_per_beat={max_closes}, "
+                    f"deferring {len(closeable) - closed_count} position(s) to next heartbeat"
+                )
                 break
 
             # G4: Beat deadline — defer remaining closes to next heartbeat
@@ -4761,55 +4907,6 @@ class MMMMonitor:
                 )
                 break
 
-            # ── SHIFT-BEFORE-CLOSE GUARD ──────────────────────────────────────
-            # In normal (non-wind-down) mode, do NOT close an ACTIVE position
-            # whose mark premium is below shift_threshold while the other side
-            # still has open lots.
-            #
-            # Rationale: when a position's mark premium is below shift_threshold,
-            # it means that if the other side triggers an adjustment, a strike
-            # SHIFT will fire — moving this side to a fresh OTM strike with
-            # better premium and restoring full hedge coverage.  Closing the
-            # position first eliminates that hedge opportunity and leaves the
-            # other side exposed.
-            #
-            # Using MARK price (ce_now/pe_now) is intentional — it is also what
-            # check_shift_needed uses inside _process_adjustment, so the guard
-            # fires under exactly the same conditions as a real shift would.
-            #
-            # Does NOT apply to:
-            #   - frozen positions (already shifted away; not the active hedge)
-            #   - wind-down mode (using_elevated = True) — wind-down has its own
-            #     close/buyback logic; the one-side guard handles asymmetry there
-            if not using_elevated and pos.get('type') in ('original', 'adjustment', 'strike_shift'):
-                _sbc_pos_side = pos['side']
-                _sbc_other_side = 'pe' if _sbc_pos_side == 'ce' else 'ce'
-                _sbc_other_lots = session.get(_sbc_other_side, {}).get('total_lots', 0)
-                _sbc_mark = ce_now if _sbc_pos_side == 'ce' else pe_now
-                if _sbc_other_lots > 0 and check_shift_needed(session, _sbc_pos_side, _sbc_mark):
-                    log.info(
-                        f"[{sid}] SHIFT-GUARD: Holding {_sbc_pos_side.upper()} "
-                        f"@ {pos['strike']} (mark ${_sbc_mark:.2f} < shift_threshold — "
-                        f"{_sbc_other_side.upper()} has {_sbc_other_lots} lots open). "
-                        f"Preserving for trigger-based shift."
-                    )
-                    log_activity(
-                        'close_skipped',
-                        f'⏸️ SHIFT-GUARD: Held {_sbc_pos_side.upper()} @ {pos["strike"]} '
-                        f'— mark ${_sbc_mark:.2f} < shift_threshold. '
-                        f'{_sbc_other_side.upper()} has {_sbc_other_lots} lots: '
-                        f'preserving for strike shift.',
-                        sid, 'info',
-                        {
-                            'side': _sbc_pos_side,
-                            'strike': pos['strike'],
-                            'mark_premium': _sbc_mark,
-                            'other_side': _sbc_other_side,
-                            'other_lots': _sbc_other_lots,
-                        },
-                    )
-                    continue
-            # ── END SHIFT-BEFORE-CLOSE GUARD ─────────────────────────────────
 
             result = await close_position(
                 self.executor, self.initializer, session, pos,
@@ -4835,6 +4932,13 @@ class MMMMonitor:
                     'scan_premium': pos.get('current_premium', 0),    # mid at scan time
                     'threshold_used': pos.get('threshold_used', 5.0),  # actual threshold
                 })
+
+                # Breakeven + gamma cache invalidation — positions changed after close-at-5 fill
+                try:
+                    get_breakeven_engine().invalidate_cache(sid)
+                    get_gamma_detector().invalidate_cache(sid)
+                except Exception:
+                    pass
 
                 # Check if side fully closed — heartbeat will detect and PAUSE
                 # (one-side close guard runs after _process_close_at_5 returns)
@@ -4928,6 +5032,21 @@ class MMMMonitor:
             f"(now={pe_now:.2f}, trigger={pe_trigger:.2f}, lots={pe_active_lots}, "
             f"incl. frozen)"
         )
+
+        # BUG-9 FIX: Update _last_trigger_result so gamma-aware multiplier in
+        # calculate_lots_to_sell uses current excess data, not stale values from
+        # the previous heartbeat's evaluate_triggers call.
+        ce_base = max(ce_trigger, 1.0)  # matches TRIGGER_PCT_FLOOR in mmm_trigger
+        pe_base = max(pe_trigger, 1.0)
+        ce_excess_pct = ((ce_now - ce_trigger) / ce_base) * 100 if ce_active_lots > 0 else 0
+        pe_excess_pct = ((pe_now - pe_trigger) / pe_base) * 100 if pe_active_lots > 0 else 0
+        params = session.get('params', {})
+        session['_last_trigger_result'] = {
+            'ce_excess_pct': round(ce_excess_pct, 2),
+            'pe_excess_pct': round(pe_excess_pct, 2),
+            'min_trigger_move': params.get('min_trigger_move', 10.0),
+            'outcome': 'both_triggered',
+        }
 
         if ce_excess <= 0 and pe_excess <= 0:
             # Neither has uncovered loss → skip
@@ -5570,6 +5689,19 @@ class MMMMonitor:
         if not force_recon and recon_counter % 5 != 1:  # Every 5th heartbeat (first, 6th, 11th, ...)
             return
 
+        # ── Tick down grace-period counters for pending close-at-5 verifications.
+        # Entries with grace_beats <= 0 are purged so that genuinely stale
+        # positions (never confirmed closed by the exchange) eventually surface.
+        _pcv = session.get('_pending_close_verification', {})
+        if _pcv:
+            expired_keys = [k for k, v in _pcv.items() if v.get('grace_beats', 0) <= 0]
+            for k in expired_keys:
+                log.warning(
+                    f"[{sid}] close_at_5 verification: grace expired for {k} "
+                    f"— any remaining exchange position will now surface as a mismatch"
+                )
+                del _pcv[k]
+
         # ── One-time cleanup: remove ALL exchange_sync frozen positions.
         #    Auto-sync is now disabled — these are artifacts from the old
         #    code that imported other sessions'/algos' positions. ──
@@ -5911,6 +6043,23 @@ class MMMMonitor:
 
                         if unowned <= 0:
                             continue  # fully owned by other sessions
+
+                        # ── close_at_5 grace period ──────────────────────────────────────
+                        # If this session just closed this position via close_at_5, the
+                        # exchange positions API may still reflect the old lot count for
+                        # 1-5 s after the fill is confirmed.  Skip the mismatch report
+                        # for up to 3 reconciliation cycles (grace_beats) so we don't
+                        # raise a spurious UNTRACKED_EXCHANGE_POSITION warning.
+                        _pcv = session.get('_pending_close_verification', {})
+                        if sym in _pcv:
+                            _pcv[sym]['grace_beats'] = _pcv[sym].get('grace_beats', 1) - 1
+                            log.debug(
+                                f"[{sid}] Reconciliation grace: {sym} recently closed by "
+                                f"close_at_5 — suppressing UNTRACKED mismatch "
+                                f"({_pcv[sym]['grace_beats']} beats remaining)"
+                            )
+                            continue  # Do NOT add to discrepancies this beat
+                        # ── end grace period ─────────────────────────────────────────────
 
                         discrepancies.append({
                             'side': side_key.upper(),
@@ -6323,6 +6472,149 @@ class MMMMonitor:
             testnet=testnet,
         )
 
+    # ── Proactive Close-at-5 Watcher ──────────────────────────────────────────
+    # Runs independently of the main heartbeat on a shorter interval.
+    # Detects when any position's bid drops to close_at_threshold and immediately
+    # forces a heartbeat, making close-at-5 near-real-time instead of waiting
+    # up to adjustment_interval seconds.
+
+    def _start_close_watcher(self):
+        """Start a background thread that proactively polls for close-at-5 conditions."""
+        try:
+            from eventlet.patcher import original as _ep_original
+            _RealThread = _ep_original('threading').Thread
+        except (ImportError, AttributeError):
+            _RealThread = threading.Thread
+        t = _RealThread(
+            target=self._run_close_watcher,
+            name=f"mmm-close-watcher-{self.session_id}",
+            daemon=True,
+        )
+        t.start()
+        log.warning(f"[{self.session_id}] Close-watcher started (interval={self.session.get('params', {}).get('close_at_watch_interval', 30)}s)")
+
+    def _run_close_watcher(self):
+        """
+        Background close-at-5 watcher loop.
+
+        Default: activates only within close_at_watch_hours_before_expiry hours of expiry (default 3h).
+        Override: set close_at_watcher_force_enabled=True to run at any time.
+        Near-expiry: uses close_at_watch_near_expiry_interval (default 10s) for faster response.
+        Force-enabled: uses close_at_watch_interval (default 30s).
+        Setting close_at_watch_interval=0 and close_at_watch_near_expiry_interval=0 disables watcher entirely.
+        """
+        while self._running and not self._stop_event.is_set():
+            params = self.session.get('params', {})
+            try:
+                normal_interval = int(params.get('close_at_watch_interval', 30) or 30)
+            except (TypeError, ValueError):
+                normal_interval = 30
+            try:
+                near_expiry_interval = int(params.get('close_at_watch_near_expiry_interval', 10) or 10)
+            except (TypeError, ValueError):
+                near_expiry_interval = 10
+
+            force_enabled = bool(params.get('close_at_watcher_force_enabled', False))
+            try:
+                hours_before = float(params.get('close_at_watch_hours_before_expiry', 3.0) or 3.0)
+            except (TypeError, ValueError):
+                hours_before = 3.0
+
+            # Check if we're within the auto-activate window
+            mins_to_exp = self._get_minutes_to_expiry()
+            in_window = (
+                hours_before > 0
+                and mins_to_exp is not None
+                and mins_to_exp <= hours_before * 60
+            )
+
+            if not force_enabled and not in_window:
+                # Neither force-enabled nor in expiry window — sleep and recheck in 60s
+                self._stop_event.wait(timeout=60)
+                continue
+
+            # Use faster interval when in expiry window
+            interval = near_expiry_interval if in_window else normal_interval
+            if interval <= 0:
+                self._stop_event.wait(timeout=60)
+                continue
+
+            self._stop_event.wait(timeout=interval)
+            if self._stop_event.is_set() or not self._running:
+                break
+            if self._heartbeat_in_progress:
+                # Heartbeat is running now — it will call _process_close_at_5 anyway
+                continue
+            try:
+                breached = asyncio.run(self._watcher_check_close_threshold())
+                if breached:
+                    mode = f"near-expiry {mins_to_exp:.0f}min left" if in_window else "force-enabled"
+                    log.warning(
+                        f"[{self.session_id}] Close-watcher [{mode}]: premium at/below threshold "
+                        f"— forcing heartbeat"
+                    )
+                    self.force_heartbeat()
+            except Exception as _we:
+                log.warning(f"[{self.session_id}] Close-watcher check error (non-fatal): {_we}")
+        log.warning(f"[{self.session_id}] Close-watcher stopped")
+
+    async def _watcher_check_close_threshold(self) -> bool:
+        """
+        Fetch bid prices for all open positions.
+        Returns True if ANY position is at or below close_at_threshold.
+        """
+        session = self.session
+        params = session.get('params', {})
+        threshold = params.get('close_at_threshold', 5.0)
+        use_bid = params.get('close_at_use_bid', True)
+        expiry = params.get('expiry', '')
+
+        # Collect all open (strike, option_type) pairs — skip _being_closed
+        strike_pairs: set = set()
+        for side_key in ['ce', 'pe']:
+            side = session.get(side_key, {})
+            opt = 'call' if side_key == 'ce' else 'put'
+            orig_lots = side.get('original_lots', 0)
+            orig_strike = side.get('original_strike', side.get('active_strike', 0))
+            if orig_lots > 0 and orig_strike:
+                strike_pairs.add((float(orig_strike), opt))
+            for fill in side.get('adjustment_fills', []):
+                if fill.get('lots', 0) > 0 and fill.get('strike') and not fill.get('_being_closed'):
+                    strike_pairs.add((float(fill['strike']), opt))
+            for frozen in side.get('frozen_positions', []):
+                if frozen.get('lots', 0) > 0 and frozen.get('strike') and not frozen.get('_being_closed'):
+                    strike_pairs.add((float(frozen['strike']), opt))
+
+        if not strike_pairs:
+            return False
+
+        rest = self._create_heartbeat_rest_client()
+
+        async def _check_one(strike, opt):
+            try:
+                symbol = self.initializer.build_symbol(opt, 'BTC', strike, expiry)
+                if use_bid:
+                    ob_resp = await rest._request_with_retry(
+                        method="GET", path=f"/v2/orderbook/{symbol}",
+                        params={"depth": 1},
+                    )
+                    bids = ob_resp.get('result', ob_resp).get('buy', [])
+                    if bids:
+                        return float(bids[0][0]) <= threshold
+                # Fallback: mark price from ticker
+                tick = await rest._request_with_retry(
+                    method="GET", path=f"/v2/tickers/{symbol}",
+                )
+                mark = float(tick.get('result', tick).get('mark_price', 0) or 0)
+                return 0 < mark <= threshold
+            except Exception:
+                return False
+
+        results = await asyncio.gather(*[_check_one(s, o) for s, o in strike_pairs])
+        return any(results)
+
+    # ── End Proactive Close-at-5 Watcher ──────────────────────────────────────
+
     async def _prefetch_all_premiums(self, ce_now: float, pe_now: float):
         """Pre-fetch mark prices for all strikes the engine may query.
 
@@ -6411,6 +6703,119 @@ class MMMMonitor:
         self._premium_cache = cache
         # AUDIT FIX: Replace bid_cache fresh each beat to prevent stale entries
         self._bid_cache = bid_cache
+
+    async def _auto_promote_atm_strike(self) -> None:
+        """
+        Step 0.75: Auto-promote the open strike closest to ATM as the active strike.
+
+        For PE (puts): the highest OTM strike (closest to spot from below) carries the
+        most gamma risk and should be actively monitored.
+        For CE (calls): the lowest OTM strike (closest to spot from above) carries the
+        most gamma risk and should be actively monitored.
+
+        Skipped when:
+        - Session is not RUNNING or PAUSED
+        - Wind-down is active
+        - User has explicitly pinned the active strike (active_strike_pinned=True)
+        - Only one open strike exists for that side
+        """
+        session = self.session
+        sid = self.session_id
+
+        status = session.get('strategy_status', 'IDLE').upper()
+        if status not in ('RUNNING', 'PAUSED'):
+            return
+
+        if session.get('_wind_down_active') or session.get('_atm_wind_down_triggered'):
+            return
+
+        spot_price = await self._fetch_spot_price()
+        if spot_price <= 0:
+            return
+
+        from .mmm_constants import strike_key as _sk
+        from .mmm_state import recompute_side_lots
+        from .mmm_activity import log_activity
+
+        changed = False
+        for side in ('ce', 'pe'):
+            side_state = session.get(side, {})
+            if not side_state:
+                continue
+
+            # Skip if user explicitly pinned the active strike via the 📌 button
+            if side_state.get('active_strike_pinned'):
+                continue
+
+            current_active = side_state.get('active_strike', 0)
+            positions = side_state.get('positions', [])
+
+            # Collect all open strikes (active + shifted) with lots > 0
+            open_strikes = {}  # strike → lots
+            for pos in positions:
+                if pos.get('status') in ('active', 'shifted') and pos.get('lots', 0) > 0:
+                    s = float(pos.get('strike', 0))
+                    if s > 0:
+                        open_strikes[s] = open_strikes.get(s, 0) + pos.get('lots', 0)
+
+            if len(open_strikes) <= 1:
+                continue  # Only one open strike, nothing to promote
+
+            # Find the OTM strike closest to ATM
+            best_strike = None
+            best_dist = float('inf')
+            for s in open_strikes:
+                if side == 'pe' and s >= spot_price:
+                    continue  # Must be below spot for OTM put
+                if side == 'ce' and s <= spot_price:
+                    continue  # Must be above spot for OTM call
+                dist = abs(spot_price - s)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_strike = s
+
+            if best_strike is None or abs(best_strike - current_active) < 1:
+                continue  # Already monitoring the closest-to-ATM strike
+
+            # Promote best_strike: un-shift its positions, set as active, recompute
+            for pos in positions:
+                pos_strike = float(pos.get('strike', 0))
+                if pos.get('status') == 'shifted' and abs(pos_strike - best_strike) < 1:
+                    pos['status'] = 'active'
+                    pos['shifted_at'] = None
+            side_state['active_strike'] = best_strike
+            recompute_side_lots(side_state)
+            session[side] = side_state
+            changed = True
+
+            log.info(
+                f"[{sid}] AUTO-ATM: {side.upper()} active strike "
+                f"{int(current_active)} → {int(best_strike)} "
+                f"(spot=${spot_price:.0f}, dist=${best_dist:.0f})"
+            )
+            log_activity(
+                'auto_atm_promote',
+                f'📌 Auto-ATM: {side.upper()} active strike '
+                f'{int(current_active)} → {int(best_strike)} '
+                f'(spot ${spot_price:.0f}, OTM dist ${best_dist:.0f})',
+                sid, 'info',
+                {'side': side.upper(), 'old_strike': current_active,
+                 'new_strike': best_strike, 'spot': spot_price},
+            )
+            try:
+                from .mmm_websocket import emit_to_session
+                emit_to_session(sid, 'mmm_active_strike_changed', {
+                    'session_id': sid,
+                    'side': side.upper(),
+                    'old_strike': current_active,
+                    'new_strike': best_strike,
+                    'reason': 'auto_atm',
+                })
+            except Exception:
+                pass
+
+        if changed:
+            self._save_my_session(session)
 
     async def _fetch_spot_price(self) -> float:
         """Fetch current BTC spot price."""
@@ -6812,7 +7217,27 @@ class MMMMonitor:
             margin_data=getattr(self, '_last_margin_snapshot', None),
             regime_data=regime_data,
             perp_hedge_data=get_perp_summary(session),
+            effective_interval=getattr(self, '_effective_interval', session.get('params', {}).get('adjustment_interval', 300)),
+            next_heartbeat=session.get('next_heartbeat', ''),
+            breakeven_data=session.get('_breakeven_result'),
+            gamma_data=session.get('_gamma_result'),
         )
+
+        # Also emit as standalone breakeven event for subscribers
+        be_result = session.get('_breakeven_result')
+        if be_result:
+            try:
+                emit_breakeven(self.session_id, be_result)
+            except Exception:
+                pass
+
+        # Also emit as standalone gamma event for subscribers
+        gd_result = session.get('_gamma_result')
+        if gd_result:
+            try:
+                emit_gamma(self.session_id, gd_result)
+            except Exception:
+                pass
 
 
 # =============================================================================

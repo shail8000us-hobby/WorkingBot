@@ -535,14 +535,23 @@ def build_adopted_session_state(
 
     # Calculate total premium collected across all positions
     total_premium = 0.0
+    ce_premium = 0.0
+    pe_premium = 0.0
     for side_key in ('ce', 'pe'):
         s = session.get(side_key, {})
-        total_premium += s.get('original_premium', 0) * s.get('original_lots', 0) * LOT_SIZE_BTC
+        side_prem = s.get('original_premium', 0) * s.get('original_lots', 0) * LOT_SIZE_BTC
         for fp in s.get('frozen_positions', []):
-            total_premium += fp.get('entry_premium', 0) * fp.get('lots', 0) * LOT_SIZE_BTC
+            side_prem += fp.get('entry_premium', 0) * fp.get('lots', 0) * LOT_SIZE_BTC
+        total_premium += side_prem
+        if side_key == 'ce':
+            ce_premium = side_prem
+        else:
+            pe_premium = side_prem
 
     session['initial_total_premium'] = round(total_premium, 6)
     session['total_premium_collected'] = round(total_premium, 6)
+    session['ce_premium_collected'] = round(ce_premium, 6)
+    session['pe_premium_collected'] = round(pe_premium, 6)
 
     # Store adoption snapshot for audit
     session['adoption_snapshot'] = {

@@ -157,7 +157,7 @@ def compute_required_hedge(
     # Switch from incremental rebalancing to full delta neutralization to provide
     # meaningful protection during the most dangerous phase of a session.
     if _position_cap_hit and params.get('perp_full_delta_on_cap', True):
-        initial_lots = session.get('lots', 1) or 1
+        initial_lots = session.get('params', {}).get('initial_lots', 10) or 1
         configured_max = params.get('perp_hedge_max_lots', 50)
         full_delta_max_cfg = params.get('perp_full_delta_max_lots', 0)
         if full_delta_max_cfg and full_delta_max_cfg > 0:

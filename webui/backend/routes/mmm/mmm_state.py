@@ -236,6 +236,24 @@ def recompute_side_lots(side_state: Dict) -> Dict:
         positions = []
         side_state['positions'] = []
 
+    # Auto-normalize: active positions at non-active strikes should be shifted.
+    # Handles the case where set_active_strike (📌) or operator inject (💉) at a
+    # different strike left positions at old strikes still marked 'active'.
+    _active_strike = side_state.get('active_strike', 0)
+    if _active_strike > 0:
+        _now_str = datetime.now(timezone.utc).isoformat()
+        for _pos in positions:
+            if _pos.get('status') == 'active':
+                _pos_strike = float(_pos.get('strike', 0))
+                if _pos_strike > 0 and abs(_pos_strike - _active_strike) >= 1:
+                    _pos['status'] = 'shifted'
+                    if not _pos.get('shifted_at'):
+                        _pos['shifted_at'] = _now_str
+                    log.info(
+                        f"recompute_side_lots: auto-shifted pos {_pos.get('id', '?')} "
+                        f"at strike {int(_pos_strike)} (active_strike={int(_active_strike)})"
+                    )
+
     # Partition by lifecycle status
     active_positions = [p for p in positions if p.get('status') == 'active']
     shifted_positions = [p for p in positions if p.get('status') == 'shifted']
@@ -334,6 +352,11 @@ DEFAULT_PARAMS = {
     'shift_target_premium': 100.0,      # target premium for new strike on shift
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'close_at_use_bid': True,           # use bid price (not mark) for close_at_5 checks — more accurate for illiquid options
+    'close_at_watch_interval': 30,      # seconds between proactive close-at-5 watcher checks (0 = disabled)
+    'close_at_max_per_beat': 3,         # max positions to close per heartbeat (prevents heartbeat stall on mass-close)
+    'close_at_watcher_force_enabled': False,  # UI toggle: force watcher on regardless of expiry window
+    'close_at_watch_hours_before_expiry': 3.0,  # watcher auto-activates within this many hours of expiry (0 = always on)
+    'close_at_watch_near_expiry_interval': 10,  # watcher interval (seconds) when inside expiry window — faster for 0DTE
     'premium_buffer_pct': 0.05,         # 5% extra lots for slippage
     'max_lots_per_side': 100,           # maximum total lots per CE or PE
     # Split Ledger Phase 1
@@ -513,6 +536,25 @@ DEFAULT_PARAMS = {
     'atm_shield_max_per_session': 3,
     'atm_shield_cooldown_mins': 10,
 
+    # Breakeven Engine — real-time portfolio breakeven awareness
+    'breakeven_control_enabled': False,   # master switch
+    'breakeven_warning_pct': 2.0,         # distance % → Warning zone (multiplier ramps 1.0→1.3)
+    'breakeven_danger_pct': 1.0,          # distance % → Danger zone (multiplier ramps 1.3→2.0)
+    'breakeven_critical_pct': 0.5,        # distance % → Critical zone (multiplier ramps 2.0→max)
+    'breakeven_aggression_max': 3.0,      # max multiplier at Critical zone boundary
+    'breakeven_scan_range_pct': 5.0,      # min scan width as % of spot (floor; auto-expands)
+    'max_combined_lot_multiplier': 3.0,   # cap on combined gamma × breakeven × trend multiplier
+    'breakeven_narrow_band_threshold': 5.0,  # warn when band width < this % of spot
+
+    # Gamma Detector Engine — portfolio curvature scanning (observation-only until Phase 9)
+    'gamma_detector_enabled': False,           # master switch
+    'gamma_step_pct': 0.5,                    # step size as % of spot for second-difference
+    'gamma_scan_steps': 40,                   # steps to scan outward in each direction
+    'gamma_warning_distance_pct': 3.0,        # nearest gamma boundary within 3% → WARNING
+    'gamma_danger_distance_pct': 1.5,         # nearest gamma boundary within 1.5% → DANGER
+    'gamma_detect_epsilon': 0.3,              # abs threshold for detecting a kink (USD)
+    'gamma_severity_multiplier_enabled': False,  # Phase 9 gate — requires restart when toggled
+
     # Guardian — heartbeat-level integrity checks
     'guardian_enabled': True,              # master switch for MMM Guardian
     'guardian_max_close_per_beat': 50,     # max lots bought back per single heartbeat (all mechanisms combined)
@@ -537,7 +579,8 @@ HOT_RELOAD_PARAMS = {
     'adjustment_interval', 'min_trigger_move', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
     'shift_cooldown_sec',
-    'close_at_threshold',
+    'close_at_threshold', 'close_at_watch_interval', 'close_at_max_per_beat',
+    'close_at_watcher_force_enabled', 'close_at_watch_hours_before_expiry', 'close_at_watch_near_expiry_interval',
     'premium_buffer_pct', 'max_lots_per_side',
     # Split Ledger
     'max_total_exposure',
@@ -624,6 +667,13 @@ HOT_RELOAD_PARAMS = {
     'shift_recycle_max_per_beat',
     # Delta-neutral lot matching inflation cap
     'shift_match_max_inflate_mult',
+    # Breakeven Engine
+    'breakeven_control_enabled', 'breakeven_warning_pct', 'breakeven_danger_pct',
+    'breakeven_critical_pct', 'breakeven_aggression_max', 'breakeven_scan_range_pct',
+    'max_combined_lot_multiplier', 'breakeven_narrow_band_threshold',
+    # Gamma Detector Engine (gamma_severity_multiplier_enabled is NOT hot-reloadable)
+    'gamma_detector_enabled', 'gamma_step_pct', 'gamma_scan_steps',
+    'gamma_warning_distance_pct', 'gamma_danger_distance_pct', 'gamma_detect_epsilon',
 }
 
 
@@ -752,6 +802,8 @@ def create_session(
         'adjustment_history': [],   # [{side, lots_sold, premium, strike, timestamp, type}]
         'realized_pnl': 0.0,
         'total_premium_collected': 0.0,
+        'ce_premium_collected': 0.0,
+        'pe_premium_collected': 0.0,
         'total_fees': 0.0,
         'strategy_status': 'IDLE',  # IDLE → RUNNING → PAUSED/BOTH_SIDES_UP → STOPPED
 
@@ -908,7 +960,12 @@ def create_session(
     if expiry_str:
         try:
             d, m, y_full = int(expiry_str[0:2]), int(expiry_str[2:4]), int(expiry_str[4:8])
-            session['expiry_time'] = datetime(y_full, m, d, 15, 30, 0, tzinfo=timezone.utc).isoformat()
+            session['expiry_time'] = datetime(
+                y_full, m, d,
+                merged_params.get('expiry_hour_utc', 12),
+                merged_params.get('expiry_minute_utc', 0),
+                0, tzinfo=timezone.utc
+            ).isoformat()
         except (ValueError, IndexError) as _e:
             log.warning(f"Failed to parse expiry string '{expiry_str}' into expiry_time: {_e}")
 
@@ -958,6 +1015,34 @@ def initialize_side_from_entry(
     return session
 
 
+def _backfill_side_premiums(session: Dict):
+    """
+    Compute ce_premium_collected / pe_premium_collected from existing session data
+    when they were not tracked (sessions created before this feature).
+
+    Sources (in order of addition to total_premium_collected):
+      1. Initial entry:  ce.entry_fill_price * original_lots * 0.001
+      2. Adjustments:    adjustment_history entries (side + premium_collected)
+    """
+    LOT = 0.001
+    ce = session.get('ce', {})
+    pe = session.get('pe', {})
+    original_lots = session.get('lots', 0) or ce.get('original_lots', 0) or 0
+
+    ce_prem = (ce.get('entry_fill_price') or ce.get('original_premium', 0)) * original_lots * LOT
+    pe_prem = (pe.get('entry_fill_price') or pe.get('original_premium', 0)) * original_lots * LOT
+
+    for entry in session.get('adjustment_history', []):
+        side = (entry.get('side') or '').upper()
+        collected = entry.get('premium_collected', 0) or 0
+        if side == 'CE':
+            ce_prem += collected
+        elif side == 'PE':
+            pe_prem += collected
+
+    return round(ce_prem, 6), round(pe_prem, 6)
+
+
 def get_session_summary(session: Dict) -> Dict:
     """
     Get a compact summary of the session for WebUI display.
@@ -967,6 +1052,11 @@ def get_session_summary(session: Dict) -> Dict:
     """
     ce = session.get('ce', {})
     pe = session.get('pe', {})
+
+    _ce_prem_stored = session.get('ce_premium_collected') or 0
+    _pe_prem_stored = session.get('pe_premium_collected') or 0
+    if not _ce_prem_stored and not _pe_prem_stored and session.get('total_premium_collected', 0) > 0:
+        _ce_prem_stored, _pe_prem_stored = _backfill_side_premiums(session)
 
     return {
         'session_id': session.get('session_id'),
@@ -998,6 +1088,8 @@ def get_session_summary(session: Dict) -> Dict:
 
         # P&L
         'total_premium_collected': session.get('total_premium_collected', 0),
+        'ce_premium_collected': _ce_prem_stored,
+        'pe_premium_collected': _pe_prem_stored,
         'realized_pnl': session.get('realized_pnl', 0),
         'unrealized_pnl': session.get('unrealized_pnl', 0),
         'total_fees': session.get('total_fees', 0),

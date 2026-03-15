@@ -322,6 +322,7 @@ MMM currently runs on canary account. Promote to live when ALL of these hold:
 | `AI_CONTEXT.md` | Full project context |
 | `AI_MMM_CONTEXT.md` | MMM/options module context |
 | `AI_Options_context.md` | Options trading context |
+| `AI_PATIENCE_CONTEXT.md` | Patience scenario card engine context |
 | `tasks/todo.md` | Current task list |
 | `tasks/lessons.md` | Accumulated lessons — update after every correction |
 | `grid_config.env` | All 171 configuration parameters |

@@ -162,7 +162,38 @@ class MMMStorage:
         session = json.loads(row['data_json'])
         # Authoritative params always come from params_json column
         session['params'] = json.loads(row['params_json'])
+        # Backfill side premiums if missing — ensures restart doesn't reset to 0
+        self._backfill_session_side_premiums(session)
         return session
+
+    def _backfill_session_side_premiums(self, session: Dict) -> None:
+        """
+        Backfill ce_premium_collected / pe_premium_collected from adjustment_history.
+
+        Uses whichever is larger: the stored value or the history-derived value.
+        This handles two cases:
+          1. Field missing/zero after a fresh session or first run → backfill from history
+          2. Field was partially reset by a restart (e.g., stored=0.14 but history=2.38)
+             → history-derived value wins
+
+        Called on every session load so that post-restart engine updates accumulate
+        on top of the correct historical total, not from 0.
+        """
+        LOT = 0.001
+        history = session.get('adjustment_history', []) or []
+        lots = session.get('lots', 0) or 0
+        for side in ('ce', 'pe'):
+            key = f'{side}_premium_collected'
+            stored = session.get(key) or 0
+            side_data = session.get(side) or {}
+            entry_fill = side_data.get('entry_fill_price', 0) or 0
+            prem = entry_fill * lots * LOT
+            for entry in history:
+                if (entry.get('side') or '').upper() == side.upper():
+                    prem += entry.get('premium_collected', 0) or 0
+            # Use whichever is larger — history-derived is authoritative if stored < history
+            if prem > stored:
+                session[key] = round(prem, 6)
 
     def _calculate_checksum(self, session: Dict) -> str:
         """
@@ -473,6 +504,12 @@ class MMMStorage:
                     json_extract(data_json, '$.shift_count')              AS shift_count,
                     json_extract(data_json, '$.close_at_5_count')         AS close_at_5_count,
                     json_extract(data_json, '$.total_premium_collected')  AS total_premium_collected,
+                    json_extract(data_json, '$.ce_premium_collected')     AS ce_premium_collected,
+                    json_extract(data_json, '$.pe_premium_collected')     AS pe_premium_collected,
+                    json_extract(data_json, '$.ce.entry_fill_price')      AS ce_entry_fill,
+                    json_extract(data_json, '$.pe.entry_fill_price')      AS pe_entry_fill,
+                    json_extract(data_json, '$.lots')                     AS lots,
+                    json_extract(data_json, '$.adjustment_history')       AS adjustment_history_json,
                     json_extract(data_json, '$.realized_pnl')             AS realized_pnl,
                     json_extract(data_json, '$.unrealized_pnl')           AS unrealized_pnl,
                     json_extract(data_json, '$.total_fees')               AS total_fees,
@@ -518,6 +555,8 @@ class MMMStorage:
                     'shift_count': r['shift_count'] or 0,
                     'close_at_5_count': r['close_at_5_count'] or 0,
                     'total_premium_collected': r['total_premium_collected'] or 0,
+                    'ce_premium_collected': self._get_side_premium(r, 'ce'),
+                    'pe_premium_collected': self._get_side_premium(r, 'pe'),
                     'realized_pnl': realized,
                     'unrealized_pnl': unrealized,
                     'total_fees': fees,
@@ -543,6 +582,46 @@ class MMMStorage:
             ]
         finally:
             conn.close()
+
+    def _get_side_premium(self, r, side: str) -> float:
+        """
+        Return ce/pe_premium_collected from a SQL summary row.
+
+        Always derives the history-based total from entry_fill + adjustment_history,
+        then returns whichever is larger: stored vs history-derived. This handles:
+          - NULL stored (session predates this feature) → use history-derived
+          - Partial stored (reset by a backend restart) → history-derived wins
+          - Correct stored (normal operation) → stored wins if larger
+        """
+        LOT = 0.001
+        stored = r[f'{side}_premium_collected'] or 0
+
+        # History-derived total: initial entry leg
+        try:
+            fill = r[f'{side}_entry_fill'] or 0
+        except (IndexError, KeyError):
+            fill = 0
+        try:
+            lots = r['lots'] or r['ce_original_lots'] or 0
+        except (IndexError, KeyError):
+            lots = 0
+        prem = fill * lots * LOT
+
+        # History-derived total: sum adjustment_history for this side
+        try:
+            adj_json = r['adjustment_history_json']
+        except (IndexError, KeyError):
+            adj_json = None
+        if adj_json:
+            try:
+                history = json.loads(adj_json) if isinstance(adj_json, str) else adj_json
+                for entry in history:
+                    if (entry.get('side') or '').upper() == side.upper():
+                        prem += entry.get('premium_collected', 0) or 0
+            except Exception:
+                pass
+
+        return round(max(stored, prem), 6)
 
     def _row_to_summary_fallback(self, session: Dict) -> Dict:
         """Fallback: extract summary from fully deserialized session."""

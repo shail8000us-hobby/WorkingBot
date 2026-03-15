@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
-> **Last Updated:** March 12, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** **Multi-DTE Support (0DTE → 5DTE+) — DTE presets, aggregate PnL safety, liquidity gate, v2 adaptive interval, v2 theta acceleration, v2 near-expiry — see §17.** Production-ready.
+> **Last Updated:** March 15, 2026
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** **Multi-DTE Support (0DTE → 5DTE+) — DTE presets, aggregate PnL safety, liquidity gate, v2 adaptive interval, v2 theta acceleration, v2 near-expiry — see §17.** **Breakeven Engine (risk-aware lot scaling by portfolio P&L boundary distance) fully implemented — see §2.21.** **Gamma Detector Engine (portfolio curvature boundary scanning, observation-only) fully implemented — see §2.22.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
@@ -115,6 +115,12 @@ If opposing premium < `shift_threshold` → Strike Shift (Section 10)
 
 **Step 4 — Lots calculation:**
 $$N_{sell} = \left\lceil \frac{L}{P_{hedge}} \times (1 + buffer) \right\rceil$$
+
+**Step 4a — Breakeven multiplier (if enabled, added Mar 15, 2026):**
+- Compute portfolio breakeven points (cached, recomputed only on position change)
+- Classify current spot into zone: SAFE / WARNING / DANGER / CRITICAL
+- Apply aggression multiplier: 1.0× / 1.0–1.3× / 1.3–2.0× / 2.0–3.0×
+- Combined multiplier ceiling enforced: max 3.0× total (gamma × breakeven × trend)
 
 **Step 5 — Execute sell, record fill, update BOTH trigger snapshots**
 
@@ -248,6 +254,14 @@ Replaces the old binary whipsaw pause (`_whipsaw_paused_at` → manual resume) w
 | `atm_shield_loss_split_aggressor` | 0.3 | **Yes** |
 | `atm_shield_max_per_session` | 3 | **Yes** |
 | `atm_shield_cooldown_mins` | 10 | **Yes** |
+| `breakeven_control_enabled` | false | **Yes** |
+| `breakeven_warning_pct` | 2.0 | **Yes** |
+| `breakeven_danger_pct` | 1.0 | **Yes** |
+| `breakeven_critical_pct` | 0.5 | **Yes** |
+| `breakeven_aggression_max` | 3.0 | **Yes** |
+| `breakeven_scan_range_pct` | 5.0 | **Yes** |
+| `max_combined_lot_multiplier` | 3.0 | **Yes** |
+| `breakeven_narrow_band_threshold` | 5.0 | **Yes** |
 
 "Hot Reload = Yes" means the parameter can be changed via WebUI while the algo is running and takes effect on the next heartbeat interval.
 
@@ -637,6 +651,408 @@ All 6 parameters are **hot-reloadable**.
 
 ---
 
+### 2.21 Breakeven Engine — Risk-Aware Lot Scaling (Implemented March 15, 2026)
+
+**New File:** `mmm_breakeven_engine.py` (~605 lines)
+
+Real-time portfolio breakeven awareness that increases hedge aggression when spot approaches the portfolio's profit/loss boundary. Computes the lower and upper BTC spot prices where total portfolio P&L = 0, classifies risk zones, and provides an aggression multiplier applied during lot calculation.
+
+#### How It Works
+
+**Phase 1: Compute Breakeven Prices (Position-Change Caching)**
+
+Called at **Step 5.7** of the heartbeat loop (after ATM Shield, before trigger evaluation):
+
+1. **Position collection** — Gather all open positions (active + frozen) from both CE and PE sides, including:
+   - Original lots at active strike
+   - Adjustment fills at active strike
+   - Frozen positions at old strikes (from prior shifts)
+   - Perp hedge position (if exists)
+
+2. **Check cache** — Hash all position factors: (`strike`, `lots`, `entry_premium`) for each position + `realized_pnl` + perp (`lots`, `avg_entry`, `direction`). If hash matches cached hash, reuse cached breakeven prices (skip scan).
+
+3. **Dynamic scan range** — If cache miss or positions changed:
+   ```python
+   furthest_strike_distance = max(abs(spot - p['strike']) for p in positions)
+   min_range_from_strikes = furthest_strike_distance * 1.2  # 20% beyond furthest
+   min_range_from_param = spot * (breakeven_scan_range_pct / 100)
+   scan_range = max(min_range_from_strikes, min_range_from_param)
+   ```
+   Auto-expands to catch distant frozen positions from prior shifts.
+
+4. **Intrinsic-only P&L model** at hypothetical spot `spot_h`:
+   ```python
+   for each short call at strike K, entry_premium P, lots N:
+       intrinsic = max(spot_h - K, 0)
+       pnl += (P - intrinsic) * N * 0.001
+
+   for each short put at strike K, entry_premium P, lots N:
+       intrinsic = max(K - spot_h, 0)
+       pnl += (P - intrinsic) * N * 0.001
+
+   pnl += realized_pnl  # vertical shift
+
+   if perp hedge exists:
+       signed_lots = perp_lots if direction == 'long' else -perp_lots
+       pnl += (spot_h - perp_avg_entry) * signed_lots * 0.001
+   ```
+   **Conservative bias:** Ignores remaining extrinsic value → narrower breakeven band → earlier warnings. Correct direction for a risk tool.
+
+5. **Breakeven scan** (coarse + binary search):
+   - **Lower breakeven** (walk down from spot):
+     - Coarse scan with ~80 sample points (step = spot × 0.002)
+     - Detect sign change (P&L goes from positive to negative)
+     - Binary search to converge within $10 precision (max 20 iterations)
+   - **Upper breakeven** (walk up from spot):
+     - Same coarse + binary search process
+   - If no sign change found in scan range → return `None` (portfolio profitable in that direction)
+
+6. **Cache result**:
+   ```python
+   cache[session_id] = {
+       'lower_breakeven': lower,
+       'upper_breakeven': upper,
+       'positions_hash': hash,
+       'band_width_pct': (upper - lower) / spot * 100,
+       'computed_at': timestamp,
+   }
+   ```
+
+**Performance:** Full scan+bisection ~1ms. Cached read ~0.01ms. Runs ~50-100x less frequently than every heartbeat.
+
+---
+
+**Phase 2: Distance & Zone Classification (Every Heartbeat)**
+
+7. **Compute distances**:
+   ```python
+   if lower and lower < spot:
+       distance_lower_pct = (spot - lower) / spot * 100
+   if upper and upper > spot:
+       distance_upper_pct = (upper - spot) / spot * 100
+
+   nearest_distance_pct = min(distance_lower_pct, distance_upper_pct)
+   nearest_side = 'lower' if distance_lower_pct < distance_upper_pct else 'upper'
+   ```
+
+8. **Classify zone**:
+   ```python
+   if nearest_distance_pct > breakeven_warning_pct:    zone = 'SAFE'
+   elif nearest_distance_pct > breakeven_danger_pct:   zone = 'WARNING'
+   elif nearest_distance_pct > breakeven_critical_pct: zone = 'DANGER'
+   else:                                                zone = 'CRITICAL'
+   ```
+
+9. **Compute continuous multiplier** (linear interpolation prevents flip-flops):
+   ```python
+   if zone == 'SAFE':
+       multiplier = 1.0
+
+   elif zone == 'WARNING':
+       progress = (warning_pct - nearest_distance_pct) / (warning_pct - danger_pct)
+       multiplier = 1.0 + progress * 0.3  # 1.0 → 1.3
+
+   elif zone == 'DANGER':
+       progress = (danger_pct - nearest_distance_pct) / (danger_pct - critical_pct)
+       multiplier = 1.3 + progress * 0.7  # 1.3 → 2.0
+
+   elif zone == 'CRITICAL':
+       progress = (critical_pct - nearest_distance_pct) / critical_pct
+       multiplier = 2.0 + progress * (breakeven_aggression_max - 2.0)  # 2.0 → max
+   ```
+
+10. **Band diagnostics**:
+    - **Band contraction** — Band width shrunk >30% since last position change → orange warning
+    - **Narrow band** — Band width < `breakeven_narrow_band_threshold` (default 5% of spot) → yellow warning
+
+11. **Store result on session**:
+    ```python
+    session['_breakeven_result'] = BreakevenResult dict (23 fields)
+    session['_breakeven_multiplier'] = multiplier
+    session['_breakeven_zone'] = zone
+    ```
+
+---
+
+**Phase 3: Apply Multiplier in Lot Calculation**
+
+In `mmm_engine.py` → `calculate_lots_to_sell()`, the multiplier is read from session at **Step 4** (after gamma-aware, before trend boost):
+
+```python
+# Step 3: Gamma-aware multiplier
+gamma_mult = 1.0  # initialized before T3-2 block for combined ceiling scope
+if gamma_aware_enabled and excess_pct > 10%:
+    gamma_mult = 1.0 + min((excess_pct - 10) / 40, 0.3)  # 1.0–1.3×
+    lots_to_sell *= gamma_mult
+
+# Step 4: Breakeven multiplier (NEW)
+breakeven_mult = session.get('_breakeven_multiplier', 1.0)
+if breakeven_mult > 1.0:
+    lots_to_sell = max(ceil(lots_to_sell * breakeven_mult), 1)
+
+# Step 5: Trend boost/reduction
+if trend_boost_active:
+    lots_to_sell *= boost_mult  # 1.3–2.0×
+
+# Step 5a: Combined multiplier ceiling (NEW)
+max_combined = params.get('max_combined_lot_multiplier', 3.0)
+combined = gamma_mult * breakeven_mult * (boost_mult if trend_boost_active else 1.0)
+if combined > max_combined:
+    overshoot = combined / max_combined
+    lots_to_sell = max(ceil(lots_to_sell / overshoot), 1)
+```
+
+**Non-directional:** Multiplier applies to ALL triggered adjustments. Core trigger system already determines correct hedge direction (CE vs PE), so there's no need for directional filtering here.
+
+**Stacking protection:** Combined ceiling prevents gamma(1.3) × breakeven(3.0) × trend(2.0) = 7.8× runaway. Caps compound product at `max_combined_lot_multiplier` (default 3.0×).
+
+---
+
+#### Cache Invalidation (Critical)
+
+Cache must be invalidated after EVERY position-changing event so next heartbeat triggers a full scan+bisection:
+
+| Event | Location | Invalidation Added |
+|-------|----------|-------------------|
+| Adjustment fill | `mmm_monitor.py` `_process_adjustment` | Line 3273 |
+| Strike shift fill | `mmm_monitor.py` `_process_strike_shift` | Line 3863 |
+| Shift fallback fill | `mmm_monitor.py` `_shift_fallback_sell` | Line 4031 |
+| Close-at-5 fill | `mmm_monitor.py` `_process_close_at_5` | Line 4947 (audit fix) |
+| M1 Harvest fill | `mmm_monitor.py` `_process_harvest` | Line 4139 (audit fix) |
+| M2 Lot Recycle fill | `mmm_monitor.py` `_process_lot_recycling` | Line 4560 (audit fix) |
+| Shift-time recycle | `mmm_monitor.py` `_shift_time_recycle` | Line 4744 (audit fix) |
+| Operator inject | `mmm_api.py` `inject_position` | Line 3453 (audit fix) |
+
+**Pattern:**
+```python
+try:
+    get_breakeven_engine().invalidate_cache(session_id)
+except Exception:
+    pass
+```
+
+**Note:** Audit on March 15, 2026 found 5 missing invalidation calls (close-at-5, harvest, recycle, shift-time-recycle, inject). All fixed.
+
+---
+
+#### Parameters
+
+| Parameter | Type | Default | Range | Hot | Description |
+|-----------|------|---------|-------|-----|-------------|
+| `breakeven_control_enabled` | bool | False | — | Yes | Master switch |
+| `breakeven_warning_pct` | float | 2.0 | 0.5–10.0 | Yes | Distance % → WARNING zone (1.0–1.3× ramp) |
+| `breakeven_danger_pct` | float | 1.0 | 0.2–5.0 | Yes | Distance % → DANGER zone (1.3–2.0× ramp) |
+| `breakeven_critical_pct` | float | 0.5 | 0.1–2.0 | Yes | Distance % → CRITICAL zone (2.0–max ramp) |
+| `breakeven_aggression_max` | float | 3.0 | 1.5–5.0 | Yes | Max multiplier at deepest CRITICAL zone |
+| `breakeven_scan_range_pct` | float | 5.0 | 2.0–15.0 | Yes | Minimum scan width as % of spot |
+| `max_combined_lot_multiplier` | float | 3.0 | 1.5–5.0 | Yes | Cap on gamma × breakeven × trend product |
+| `breakeven_narrow_band_threshold` | float | 5.0 | 1.0–10.0 | Yes | Warn when band width < this % of spot |
+
+**Interdependency validation:** `breakeven_critical_pct < breakeven_danger_pct < breakeven_warning_pct` (enforced in `mmm_config.py` `_interdependency_checks()`).
+
+---
+
+#### Session State Keys
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `_breakeven_result` | dict | Full BreakevenResult (23 fields) from last computation |
+| `_breakeven_multiplier` | float | Aggression multiplier (1.0–max) for lot calculation |
+| `_breakeven_zone` | str | Current zone: 'SAFE' / 'WARNING' / 'DANGER' / 'CRITICAL' |
+| `_breakeven_zone_prev` | str | Previous zone (for transition detection) |
+
+**BreakevenResult dict fields (23):**
+- `enabled` (bool), `lower_breakeven` (float | None), `upper_breakeven` (float | None), `spot_price` (float)
+- `distance_lower_pct` (float | None), `distance_upper_pct` (float | None)
+- `nearest_distance_pct` (float | None), `nearest_side` (str: 'lower'/'upper'/'none')
+- `zone` (str), `multiplier` (float), `pnl_at_spot` (float)
+- `band_width_pct` (float | None), `band_width_prev_pct` (float | None), `band_contracting` (bool), `is_narrow_band` (bool)
+- `computed_at` (ISO timestamp), `positions_included` (int), `perp_included` (bool), `from_cache` (bool)
+
+---
+
+#### Files Modified
+
+| File | Change |
+|------|--------|
+| `mmm_breakeven_engine.py` | NEW — 605 lines, `BreakevenEngine` class with singleton pattern |
+| `mmm_monitor.py` | Step 5.7: `compute_breakeven()` call, 8 `invalidate_cache()` calls |
+| `mmm_engine.py` | Step 4: breakeven multiplier applied, Step 5a: combined ceiling |
+| `mmm_state.py` | 8 new parameters in `DEFAULT_PARAMS` and `HOT_RELOAD_PARAMS` |
+| `mmm_config.py` | `PARAM_RULES` entries, interdependency validation, param descriptions |
+| `mmm_websocket.py` | `emit_breakeven()` function, embedded in `mmm_heartbeat` payload |
+| `mmm_api.py` | GET `/api/mmm/session/<id>/breakeven` endpoint, inject invalidation |
+| `mmm_activity.py` | 3 activity types: `breakeven_zone_change`, `breakeven_band_contracting`, `breakeven_narrow_band` |
+| `MMMBreakevenPanel.js` | NEW — 317 lines, horizontal bar, zone colors, expanded table |
+| `MMMSettingsDialog.js` | 8 parameters with tooltips in "Breakeven Engine" section |
+| `MMMDashboard.js` | Panel import + conditional render |
+
+**WebSocket events:**
+- `mmm_breakeven` — standalone event with full BreakevenResult payload
+- `mmm_heartbeat` — breakeven data embedded in `heartbeat.breakeven` field
+
+**Activity types:** `breakeven_zone_change` (info/warning), `breakeven_band_contracting` (warning), `breakeven_narrow_band` (warning) — all categorized under 'safety'.
+
+---
+
+### 2.22 Gamma Detector Engine — Portfolio Curvature Boundaries (Implemented March 15, 2026)
+
+**New File:** `mmm_gamma_detector.py` (~293 lines)
+
+Companion to the Breakeven Engine. Identifies the nearest BTC spot prices where the portfolio's **loss rate begins to accelerate** — i.e., kink points in the piecewise-linear intrinsic P&L curve. These kinks occur at option strikes. Observation-only by default (zero trading impact until Phase 9 is enabled via `gamma_severity_multiplier_enabled=True`).
+
+- **Breakeven Engine answers:** "Where does the portfolio start losing money?"
+- **Gamma Detector answers:** "Where does the portfolio start losing money *faster*?"
+
+#### How It Works
+
+**Second-Difference Formula:**
+
+```python
+γ(s) = PnL(s − step) − 2 × PnL(s) + PnL(s + step)
+```
+
+Applied to the intrinsic-only piecewise-linear model, `γ(s)` is exactly **0** everywhere except at option strike prices (kink points). At a kink, `γ` spikes to a negative value:
+
+```
+spike = −(step_USD × N_lots × LOT_SIZE_BTC)
+# e.g. 10 lots, $450 step: −(450 × 10 × 0.001) = −4.5 USD
+```
+
+**Boundary Scan (`_run_boundary_scan`):**
+
+1. Walk **strictly below** current spot (i=1..scan_steps): compute second-diff at each step. First point where `γ < -epsilon` is the lower gamma boundary (nearest put kink).
+2. Walk **strictly above** current spot (i=1..scan_steps): same logic for upper gamma boundary (nearest call kink).
+3. `scan_steps=40`, `step=spot × (gamma_step_pct / 100)` (default 0.5%), `epsilon=0.3`.
+
+**Important:** Scans start at i=1 (not i=0). Starting at i=0 would evaluate the current spot in both scans, causing both boundaries to be set to the same kink when spot is near a strike.
+
+**Position-Change Caching:**
+
+Same cache strategy as Breakeven Engine. Positions are hashed (`_hash_positions()`). If hash unchanged → reuse cached boundaries. Cache invalidated at the same 8 events as the Breakeven Engine.
+
+**Zone Classification (Distance-Based):**
+
+```python
+nearest_distance_pct = min(lower_distance_pct, upper_distance_pct)
+if nearest_distance_pct > gamma_warning_distance_pct:  zone = 'SAFE'
+elif nearest_distance_pct > gamma_danger_distance_pct: zone = 'WARNING'
+else:                                                   zone = 'DANGER'
+```
+
+No CRITICAL zone (3-tier: SAFE / WARNING / DANGER). Zone by distance to nearest boundary — NOT by severity score at current spot (which is always ~0 unless sitting directly on a strike).
+
+**Severity Normalization:**
+
+Raw second-diff value scales with portfolio size. Stored as a diagnostic field:
+```python
+severity = raw_second_diff / (total_lots × LOT_SIZE_BTC)
+```
+Portfolio-size-independent. Used for display/Phase 9 only, not for zone classification.
+
+**Result stored at:** `session['_gamma_result']` (GammaResult dict, 19 fields).
+
+---
+
+#### GammaResult Dict (19 fields)
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `enabled` | bool | False if gamma_detector_enabled=False |
+| `spot_price` | float | BTC spot at computation time |
+| `lower_gamma_boundary` | float \| None | Nearest downside kink price |
+| `upper_gamma_boundary` | float \| None | Nearest upside kink price |
+| `gamma_severity_lower` | float \| None | Normalized severity at lower boundary |
+| `gamma_severity_upper` | float \| None | Normalized severity at upper boundary |
+| `gamma_zone` | str | 'SAFE' / 'WARNING' / 'DANGER' |
+| `lower_distance_pct` | float \| None | % distance from spot to lower boundary |
+| `upper_distance_pct` | float \| None | % distance from spot to upper boundary |
+| `nearest_distance_pct` | float \| None | Minimum of lower/upper distance |
+| `nearest_side` | str | 'lower' / 'upper' / 'none' |
+| `from_cache` | bool | True if boundaries served from cache |
+| `positions_included` | int | Number of positions scanned |
+| `perp_included` | bool | True if perp hedge was in scan |
+| `observation_only` | bool | True until gamma_severity_multiplier_enabled |
+| `computed_at` | str | ISO timestamp |
+
+---
+
+#### Parameters
+
+| Parameter | Type | Default | Range | Hot | Description |
+|-----------|------|---------|-------|-----|-------------|
+| `gamma_detector_enabled` | bool | False | — | Yes | Master switch |
+| `gamma_step_pct` | float | 0.5 | 0.1–5.0 | Yes | Step size for scan as % of spot |
+| `gamma_scan_steps` | int | 40 | 10–200 | Yes | Number of steps in each direction |
+| `gamma_warning_distance_pct` | float | 3.0 | 0.1–20.0 | Yes | Distance % → WARNING zone |
+| `gamma_danger_distance_pct` | float | 1.5 | 0.1–10.0 | Yes | Distance % → DANGER zone |
+| `gamma_detect_epsilon` | float | 0.3 | 0.01–50.0 | Yes | Min |γ| to classify as a kink |
+| `gamma_severity_multiplier_enabled` | bool | False | — | **No** | Phase 9 gate — enables trading impact |
+
+**Note:** `gamma_severity_multiplier_enabled` is NOT hot-reloadable. Requires restart to enable. This prevents accidental live activation.
+
+---
+
+#### Cache Invalidation
+
+All 8 invalidation calls are paired with Breakeven Engine invalidation at the same locations:
+
+| Event | Location |
+|-------|----------|
+| Adjustment fill | `mmm_monitor.py` `_process_adjustment` |
+| Strike shift fill | `mmm_monitor.py` `_process_strike_shift` |
+| Shift fallback fill | `mmm_monitor.py` `_shift_fallback_sell` |
+| Close-at-5 fill | `mmm_monitor.py` `_process_close_at_5` |
+| M1 Harvest fill | `mmm_monitor.py` `_process_harvest` |
+| M2 Lot Recycle fill | `mmm_monitor.py` `_process_lot_recycling` |
+| Shift-time recycle | `mmm_monitor.py` `_shift_time_recycle` |
+| Operator inject | `mmm_api.py` `inject_position` |
+
+**Pattern:**
+```python
+get_breakeven_engine().invalidate_cache(session_id)
+get_gamma_detector().invalidate_cache(session_id)
+```
+
+---
+
+#### Heartbeat Integration
+
+Called at **Step 5.8** of the heartbeat loop (immediately after Step 5.7 Breakeven Engine):
+
+```python
+gamma_result = get_gamma_detector().compute_gamma(session, spot_price, be_engine=be_engine)
+session['_gamma_result'] = gamma_result
+```
+
+The `be_engine` instance is passed to avoid a second singleton lookup.
+
+---
+
+#### Files Modified
+
+| File | Change |
+|------|--------|
+| `mmm_gamma_detector.py` | NEW — 293 lines, `GammaDetector` class with singleton pattern |
+| `mmm_monitor.py` | Step 5.8: `compute_gamma()` call, 7 `invalidate_cache()` calls paired with breakeven |
+| `mmm_state.py` | 7 new parameters in `DEFAULT_PARAMS`; 6 in `HOT_RELOAD_PARAMS` (not `gamma_severity_multiplier_enabled`) |
+| `mmm_config.py` | 7 `PARAM_RULES` entries |
+| `mmm_websocket.py` | `emit_gamma()` function, `gamma_data` param added to `emit_heartbeat()` |
+| `mmm_api.py` | GET `/api/mmm/session/<id>/gamma` endpoint, inject invalidation paired |
+| `mmm_activity.py` | 2 activity types: `gamma_zone_change`, `gamma_danger_detected` — categorized under 'safety' |
+| `MMMGammaPanel.js` | NEW — collapsible panel, zone colors (SAFE/WARNING/DANGER), "Observation Only" chip |
+| `MMMDashboard.js` | Panel import + conditional render (after MMMBreakevenPanel) |
+
+**WebSocket events:**
+- `mmm_gamma` — standalone event with full GammaResult payload
+- `mmm_heartbeat` — gamma data embedded in `heartbeat.gamma` field
+
+**Activity types:** `gamma_zone_change`, `gamma_danger_detected` — both categorized under 'safety'.
+
+**Zero changes to `mmm_breakeven_engine.py`** — Python's single-underscore convention allows direct access to `_collect_open_positions()`, `_compute_pnl_at_spot()`, `_hash_positions()` without any modification to the sealed file.
+
+---
+
 ## 3. ARCHITECTURE
 
 ### 3.1 File Structure (Complete — Verified March 12, 2026)
@@ -652,7 +1068,7 @@ webui/
 │           ├── mmm_config.py                 ← Parameter validation, defaults (~438 lines)
 │           ├── mmm_constants.py              ← Shared constants (LOT_SIZE_BTC = 0.001)
 │           ├── mmm_storage.py                ← SQLite persistence (mmm_sessions.db, ~398 lines)
-│           ├── mmm_websocket.py              ← 17 WebSocket event emitters (~240 lines)
+│           ├── mmm_websocket.py              ← 19 WebSocket event emitters (~490 lines, +emit_breakeven, +emit_gamma)
 │           ├── mmm_initializer.py            ← Strike selection, chain data, expiries (~733 lines)
 │           ├── mmm_executor.py               ← Smart execution, mid-price, reprice (~1199 lines)
 │           ├── mmm_trigger.py                ← Trigger evaluation, theta acceleration (~348 lines)
@@ -679,6 +1095,8 @@ webui/
 │           ├── mmm_harvester.py              ← M1 Profit Harvesting + M3 Asymmetry scanner (~246 lines, added Mar 3, 2026)
 │           ├── mmm_recycler.py               ← M2 Lot Recycling two-phase execution (~514 lines, added Mar 3, 2026)
 │           ├── mmm_atm_shield.py             ← ATM Shield proactive close & retreat (~450 lines, added Mar 12, 2026)
+│           ├── mmm_breakeven_engine.py       ← Breakeven scan + risk-aware lot scaling (~605 lines, added Mar 15, 2026)
+│           ├── mmm_gamma_detector.py         ← Gamma boundary scan, curvature detection (~293 lines, added Mar 15, 2026)
 │           ├── mmm_dte_presets.py             ← Multi-DTE presets, aggregate PnL safety, liquidity gate (~306 lines, added Mar 12, 2026)
 │           ├── mmm_sessions.db               ← SQLite session data (replaces mmm_sessions.json)
 │           └── tests/                        ← Unit tests (13 files)
@@ -715,6 +1133,8 @@ webui/
 │               ├── MMMMarginGuardianPanel.js ← Margin utilization & tier display
 │               ├── MMMRegimePanel.js         ← Regime status (vol/gamma/trend)
 │               ├── MMMPerpHedgePanel.js      ← Perpetual futures delta hedge UI (added Feb 22, 2026)
+│               ├── MMMBreakevenPanel.js      ← Breakeven boundary display, zone colors, band metrics (added Mar 15, 2026)
+│               ├── MMMGammaPanel.js          ← Gamma boundary display, observation-only (added Mar 15, 2026)
 │               ├── MMMSettingsDialog.js      ← Hot-reload params dialog, Split Ledger settings (~669 lines)
 │               ├── hooks/
 │               │   ├── useMMMParams.js       ← Parameter dirty tracking
@@ -1291,6 +1711,43 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Called from `mmm_monitor.py: _process_adjustment()` (~line 2610) when "Position cap reached"
 - Also called from `mmm_monitor.py: _process_lot_recycling()` (~line 3247)
 
+### 6.34 mmm_breakeven_engine.py (Added March 15, 2026, ~605 lines)
+
+Real-time portfolio breakeven awareness module. Computes lower and upper BTC spot prices where total portfolio P&L = 0, classifies risk zones, and provides aggression multipliers for lot calculation.
+
+**Key class:** `BreakevenEngine` (singleton via `get_breakeven_engine()`)
+
+**Public methods:**
+- `compute_breakeven(session, spot_price)` → `BreakevenResult` dict (23 fields)
+  - Intrinsic-only P&L model: `(entry_premium - max(intrinsic, 0)) × lots × 0.001`
+  - Includes all positions (active + frozen) + perp hedge + realized_pnl
+  - Position-change caching with MD5 hash — full scan+bisection ~1ms, cached read ~0.01ms
+  - Dynamic scan range: auto-expands to 120% beyond furthest strike
+  - Coarse scan (~80 points) + binary search ($10 precision convergence)
+  - Returns: `lower_breakeven`, `upper_breakeven`, `nearest_distance_pct`, `zone`, `multiplier`, `band_width_pct`, `band_contracting`, `is_narrow_band`, etc.
+- `get_aggression_multiplier(result)` → float (1.0–`breakeven_aggression_max`)
+  - Non-directional: applies to ALL triggered adjustments
+  - Zones: SAFE (1.0×) → WARNING (1.0–1.3×) → DANGER (1.3–2.0×) → CRITICAL (2.0–max×)
+  - Linear interpolation prevents lot-count flip-flops at zone boundaries
+- `invalidate_cache(session_id)` → None
+  - Called after position-changing events to force next scan+bisection
+  - 8 call sites: adjustment fill, strike shift fill, shift fallback fill, close-at-5, harvest, lot recycle, shift-time recycle, operator inject
+
+**Integration points:**
+- `mmm_monitor.py` Step 5.7: Calls `compute_breakeven()` every heartbeat (when enabled)
+- `mmm_engine.py` Step 4: Reads `session['_breakeven_multiplier']` and applies to raw_lots
+- `mmm_engine.py` Step 5a: Combined ceiling caps `gamma_mult × breakeven_mult × trend_mult`
+- `mmm_websocket.py`: Standalone `mmm_breakeven` event + embedded in `mmm_heartbeat` payload
+- `mmm_api.py`: GET `/api/mmm/session/<id>/breakeven` endpoint
+
+**Session state keys:**
+- `_breakeven_result` (dict): Full BreakevenResult from last computation
+- `_breakeven_multiplier` (float): Aggression multiplier for lot calculation
+- `_breakeven_zone` (str): 'SAFE' / 'WARNING' / 'DANGER' / 'CRITICAL'
+- `_breakeven_zone_prev` (str): Previous zone for transition detection
+
+**Activity types:** `breakeven_zone_change`, `breakeven_band_contracting`, `breakeven_narrow_band`
+
 ---
 
 ## 7. FRONTEND COMPONENT DETAILS
@@ -1420,6 +1877,35 @@ LOT_SIZE_BTC = 0.001  # 1 BTC option lot = 0.001 BTC on Delta Exchange
 - Adaptive tier badge (`⚡ 10-20h`) showing current heartbeat interval range
 - Wind-down badge (`🌙 Wind-Down`) when wind-down mode is active
 - Regime warning badge when regime action is WARN or BLOCK
+
+### 7.19 MMMBreakevenPanel.js (Added March 15, 2026, ~317 lines)
+
+Displays real-time portfolio breakeven awareness with visual band representation and risk zone classification.
+
+**Compact view:**
+- **Horizontal band bar** — Gray track showing lower breakeven, spot marker, upper breakeven
+- **Zone-colored band** — Region between breakevens colored by zone (green/amber/red/deep-red)
+- **Spot marker** — White circle with zone-colored border, positioned proportionally within band
+- **Price labels** — USD prices for lower BE, spot, upper BE below the bar
+- **Distance indicators** — `"Lower: X% ($Y)"` and `"Upper: X% ($Y)"` showing distance percentages
+
+**Expanded view (click expand arrow):**
+- **8-field details table:** Lower BE, Upper BE, Nearest Side, Nearest Distance, Band Width, Aggression Multiplier, P&L at Spot, Positions Count
+- **Band contracting warning** (orange chip) — Band width shrunk >30% since last position change
+- **Narrow band warning** (yellow chip) — Band width < `breakeven_narrow_band_threshold` (default 5% of spot)
+- **Cached indicator** — Shows when data is from cache vs freshly computed
+
+**Zone colors:**
+- SAFE: `#4caf50` (green) — Distance > `breakeven_warning_pct`
+- WARNING: `#ff9800` (amber) — Distance ≤ warning, > danger
+- DANGER: `#f44336` (red) — Distance ≤ danger, > critical
+- CRITICAL: `#d32f2f` (deep red) — Distance ≤ `breakeven_critical_pct`
+
+**Data source:** Props-driven from `MMMDashboard`, receives `heartbeat?.breakeven || session._breakeven_result`
+
+**Conditional render:** Only shown when `session.params?.breakeven_control_enabled || heartbeat?.breakeven?.enabled`
+
+**Integration:** Imported by `MMMDashboard.js`, rendered after positions table on live session dashboards
 
 ---
 

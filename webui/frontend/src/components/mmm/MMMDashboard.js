@@ -75,6 +75,8 @@ import MMMStrikeMap from './MMMStrikeMap';
 import MMMAlgoCalculations from './MMMAlgoCalculations';
 import MMMPnLChart from './MMMPnLChart';
 import MMMBothSidesAlert from './MMMBothSidesAlert';
+import MMMBreakevenPanel from './MMMBreakevenPanel';
+import MMMGammaPanel from './MMMGammaPanel';
 import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMRegimePanel from './MMMRegimePanel';
@@ -1668,13 +1670,20 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   // Moved ABOVE early return so useMemo below can reference it (React hooks rule).
   const heartbeat = wsData?.heartbeat || null;
 
+  const [activeStrikeSnack, setActiveStrikeSnack] = useState({ open: false, message: '', severity: 'success' });
+
   // --- Set Active Strike ---
   const handleSetActiveStrike = async (sideKey, strike) => {
     try {
       const res = await mmmService.setActiveStrike(session.session_id, sideKey, strike);
-      if (!res.success) console.warn('[SetActiveStrike]', res.error);
+      if (!res.success) {
+        setActiveStrikeSnack({ open: true, message: res.error || 'Cannot set active strike', severity: 'warning' });
+      } else {
+        setActiveStrikeSnack({ open: true, message: `Active strike set to ${Number(strike).toLocaleString()} ${sideKey.toUpperCase()}`, severity: 'success' });
+      }
     } catch (e) {
-      console.error('[SetActiveStrike] failed:', e.message);
+      const msg = e.response?.data?.error || e.message || 'Request failed';
+      setActiveStrikeSnack({ open: true, message: msg, severity: 'error' });
     }
   };
 
@@ -1752,6 +1761,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   const fees = session.total_fees ?? 0;
   const netPnl = realized + unrealized - fees;
   const totalPremium = session.total_premium_collected ?? 0;
+  const cePremiumCollected = session.ce_premium_collected ?? 0;
+  const pePremiumCollected = session.pe_premium_collected ?? 0;
   const peakPnl = session.peak_pnl ?? 0;
   // L-11: Compute drawdown from peak for display
   const peakDrawdown = peakPnl - netPnl;
@@ -1867,6 +1878,8 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                 label: 'Total Premium',
                 help: 'total_premium',
                 value: `$${totalPremium.toFixed(2)}`,
+                sub: `CE $${cePremiumCollected.toFixed(2)} | PE $${pePremiumCollected.toFixed(2)}`,
+                subColor: 'text.secondary',
                 color: '#2196f3',
                 bg: 'rgba(33,150,243,0.08)',
                 border: 'rgba(33,150,243,0.3)',
@@ -1905,7 +1918,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                 bg: 'rgba(120,144,156,0.08)',
                 border: 'rgba(120,144,156,0.3)',
               },
-            ].map(({ label, help, value, sub, color, bg, border }) => (
+            ].map(({ label, help, value, sub, subColor, color, bg, border }) => (
               <Grid item xs={4} sm={2} key={label}>
                 <Paper
                   elevation={0}
@@ -1933,7 +1946,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                   </Typography>
                   {/* L-11: Show sub-label (e.g., drawdown from peak) */}
                   {sub && (
-                    <Typography variant="caption" sx={{ color: '#ef5350', display: 'block', mt: 0.25, fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ color: subColor || '#ef5350', display: 'block', mt: 0.25, fontSize: '0.7rem' }}>
                       {sub}
                     </Typography>
                   )}
@@ -2112,6 +2125,20 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
               triggerData={heartbeat}
             />
           </Paper>
+
+          {/* Breakeven Band Panel */}
+          {isLive && (session.params?.breakeven_control_enabled || heartbeat?.breakeven?.enabled) && (
+            <MMMBreakevenPanel
+              breakeven={heartbeat?.breakeven || session._breakeven_result}
+            />
+          )}
+
+          {/* Gamma Detector Panel */}
+          {isLive && (session.params?.gamma_detector_enabled || heartbeat?.gamma?.enabled) && (
+            <MMMGammaPanel
+              gamma={heartbeat?.gamma || session._gamma_result}
+            />
+          )}
 
           {/* Why Paused — prominent banner in detail view */}
           {status === 'PAUSED' && session._paused_reason && (
@@ -2542,6 +2569,16 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
         />
       )}
 
+      <Snackbar
+        open={activeStrikeSnack.open}
+        autoHideDuration={4000}
+        onClose={() => setActiveStrikeSnack(s => ({ ...s, open: false }))}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={activeStrikeSnack.severity} onClose={() => setActiveStrikeSnack(s => ({ ...s, open: false }))}>
+          {activeStrikeSnack.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

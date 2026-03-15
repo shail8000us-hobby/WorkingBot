@@ -26,6 +26,11 @@ PARAM_RULES = {
     'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
     'shift_target_premium':    {'type': float, 'min': 10,   'max': 5000,  'hot': True},
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
+    'close_at_watch_interval': {'type': int,   'min': 0,    'max': 300,   'hot': True},
+    'close_at_max_per_beat':   {'type': int,   'min': 1,    'max': 50,    'hot': True},
+    'close_at_watcher_force_enabled':         {'type': bool,  'min': None, 'max': None, 'hot': True},
+    'close_at_watch_hours_before_expiry':     {'type': float, 'min': 0,    'max': 24,   'hot': True},
+    'close_at_watch_near_expiry_interval':    {'type': int,   'min': 5,    'max': 300,  'hot': True},
     'premium_buffer_pct':      {'type': float, 'min': 0,    'max': 0.5,   'hot': True},
     'max_lots_per_side':       {'type': int,   'min': 1,    'max': 10000, 'hot': True},
     # Split Ledger Phase 1
@@ -181,6 +186,23 @@ PARAM_RULES = {
     'guardian_side_wipeout_floor':     {'type': int,   'min': 1,    'max': 100,   'hot': True},
     'shift_recycle_max_per_beat':      {'type': int,   'min': 1,    'max': 100,   'hot': True},
     'shift_match_max_inflate_mult':    {'type': float, 'min': 1.0,  'max': 10.0,  'hot': True},
+    # Breakeven Engine
+    'breakeven_control_enabled':        {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'breakeven_warning_pct':            {'type': float, 'min': 0.5,  'max': 10.0,  'hot': True},
+    'breakeven_danger_pct':             {'type': float, 'min': 0.2,  'max': 5.0,   'hot': True},
+    'breakeven_critical_pct':           {'type': float, 'min': 0.1,  'max': 2.0,   'hot': True},
+    'breakeven_aggression_max':         {'type': float, 'min': 1.5,  'max': 5.0,   'hot': True},
+    'breakeven_scan_range_pct':         {'type': float, 'min': 2.0,  'max': 15.0,  'hot': True},
+    'max_combined_lot_multiplier':      {'type': float, 'min': 1.5,  'max': 5.0,   'hot': True},
+    'breakeven_narrow_band_threshold':  {'type': float, 'min': 1.0,  'max': 10.0,  'hot': True},
+    # Gamma Detector Engine
+    'gamma_detector_enabled':           {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'gamma_step_pct':                   {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
+    'gamma_scan_steps':                 {'type': int,   'min': 10,   'max': 200,   'hot': True},
+    'gamma_warning_distance_pct':       {'type': float, 'min': 0.1,  'max': 20.0,  'hot': True},
+    'gamma_danger_distance_pct':        {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
+    'gamma_detect_epsilon':             {'type': float, 'min': 0.01, 'max': 50.0,  'hot': True},
+    'gamma_severity_multiplier_enabled': {'type': bool, 'min': None, 'max': None,  'hot': True},
 }
 
 
@@ -202,7 +224,9 @@ def validate_params(params: Dict[str, Any], hot_only: bool = False) -> Tuple[Dic
 
     for key, value in params.items():
         if key not in PARAM_RULES:
-            errors.append(f"Unknown parameter: {key}")
+            # Skip silently — DEFAULT_PARAMS contains internal/non-editable params
+            # (e.g. close_at_use_bid, shift_cooldown_sec) that don't need UI validation.
+            # Old sessions merge new defaults on dialog open, causing unknown keys to appear.
             continue
 
         rule = PARAM_RULES[key]
@@ -357,6 +381,17 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             "normal exchange latency spikes will constantly trip the breaker"
         )
 
+    # Breakeven zone threshold ordering: critical_pct < danger_pct < warning_pct
+    if all(k in validated for k in ('breakeven_critical_pct', 'breakeven_danger_pct', 'breakeven_warning_pct')):
+        c = validated['breakeven_critical_pct']
+        d = validated['breakeven_danger_pct']
+        w = validated['breakeven_warning_pct']
+        if not (c < d < w):
+            errors.append(
+                f"Breakeven thresholds must satisfy critical < danger < warning "
+                f"(got critical={c}, danger={d}, warning={w})"
+            )
+
     # Trend Boost: multiplier ordering tier1 <= tier2 <= tier3
     boost_keys = ['trend_boost_tier1_mult', 'trend_boost_tier2_mult', 'trend_boost_tier3_mult']
     boost_vals = [(k, validated.get(k)) for k in boost_keys]
@@ -391,6 +426,11 @@ def get_param_info() -> Dict[str, Dict]:
         'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
         'shift_target_premium': 'Target premium for new strike when shifting (picks strike closest to this premium)',
         'close_at_threshold': 'Close positions at this premium or below',
+        'close_at_watch_interval': 'Watcher polling interval (seconds) when force-enabled. 0 = disable force-enabled mode.',
+        'close_at_max_per_beat': 'Max positions to close per heartbeat. Prevents heartbeat stall when many positions hit threshold near expiry.',
+        'close_at_watcher_force_enabled': 'Force close-at-5 watcher ON regardless of expiry timing. Polls every close_at_watch_interval seconds.',
+        'close_at_watch_hours_before_expiry': 'Watcher auto-activates within this many hours of expiry. Default 3h. Set 0 = always on.',
+        'close_at_watch_near_expiry_interval': 'Watcher polling interval (seconds) inside the expiry window. Smaller = faster detection. Default 10s.',
         'premium_buffer_pct': 'Extra lots percentage for slippage protection',
         'max_lots_per_side': 'Maximum total lots allowed per side (CE or PE)',
         # Split Ledger
@@ -497,6 +537,15 @@ def get_param_info() -> Dict[str, Dict]:
         'rebalance_enabled': 'M3: Enable asymmetry-aware harvest threshold relaxation on the dominant side',
         'rebalance_asymmetry_threshold': 'M3: CE/PE lot ratio that triggers relaxed harvest thresholds on the dominant side',
         'rebalance_pressure_threshold': 'M3: Minimum capacity pressure on dominant side required for threshold relaxation',
+        # Breakeven Engine
+        'breakeven_control_enabled': 'Enable real-time portfolio breakeven awareness and defensive aggression',
+        'breakeven_warning_pct': 'Distance % from spot to breakeven that triggers WARNING zone (multiplier ramps 1.0→1.3)',
+        'breakeven_danger_pct': 'Distance % from spot to breakeven that triggers DANGER zone (multiplier ramps 1.3→2.0)',
+        'breakeven_critical_pct': 'Distance % from spot to breakeven that triggers CRITICAL zone (multiplier ramps 2.0→max)',
+        'breakeven_aggression_max': 'Maximum lot multiplier at deepest CRITICAL zone (caps the breakeven ramp)',
+        'breakeven_scan_range_pct': 'Minimum scan width as % of spot for breakeven search (auto-expands to 120% beyond furthest strike)',
+        'max_combined_lot_multiplier': 'Cap on combined gamma × breakeven × trend multiplier product (prevents compound runaway)',
+        'breakeven_narrow_band_threshold': 'Warn operator when breakeven band width falls below this % of spot',
     }
 
     info = {}

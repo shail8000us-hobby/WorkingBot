@@ -1,5 +1,142 @@
 # MMM Lessons Learned
 
+## [2026-03-15] WIDE-SPREAD GUARD silently skipped close-at-5 when bid ≤ threshold but mark > threshold
+
+**What went wrong:**
+`_process_close_at_5` had a "wide-spread guard" that fetched the mark price AFTER bid-price detection.
+If `bid ≤ threshold` but `mark > threshold`, the position was silently skipped and never closed.
+Example: bid=$13, mark=$17, threshold=$15 → skipped indefinitely. Watcher kept triggering heartbeats
+but every heartbeat skipped the position. No log line said "position blocked"; it just wasn't in closeable.
+
+**Why it's wrong:**
+Close_at_5 execution uses `use_bid_entry=True` — the order goes to the exchange at bid price.
+We always pay ≤ bid ≤ threshold. The mark price is irrelevant to whether we should close.
+Carrying the position is the risk; mark > threshold doesn't change that.
+
+**Fix applied:**
+Removed the wide-spread guard entirely from `_process_close_at_5` in `mmm_monitor.py`.
+If bid ≤ threshold, close it. No secondary mark-price check.
+
+**Prevention rule:**
+Never gate close-at-5 on mark price when using bid-price detection. If we're willing to close
+at bid, the mark price is not a blocker — it's just a reference.
+
+---
+
+## [2026-03-15] close-at-5 was placing orders at mid-price instead of bid
+
+**What went wrong:**
+`smart_execute` always started at mid-price. For close_at_5 buybacks (BUY orders),
+mid-price is worse than bid — we pay more than necessary. The option market is illiquid;
+paying mid instead of bid costs real money at scale (430 lots × $0.25 spread = $10+ extra per close).
+
+**Fix applied:**
+Added `use_bid_entry=True` parameter to `smart_execute`. When True and side=='buy',
+the initial limit order is placed at `best_bid` instead of mid-price.
+`close_position()` passes `use_bid_entry=(mechanism == 'close_at_5')` to smart_execute.
+
+**Prevention rule:**
+For close_at_5 buys: always start at bid. For sells (adjustments): always start at mid then bid.
+Never pay mid for a buyback when we can join the bid queue.
+
+---
+
+## [2026-03-15] SHIFT-BEFORE-CLOSE GUARD silently blocked all close-at-5 orders
+
+**What went wrong:**
+A guard added to `_process_close_at_5` in `mmm_monitor.py` prevented close-at-5 from executing
+when a position's mark premium was below `shift_threshold` AND the other side had open lots.
+The rationale was "preserve hedge for a trigger-based shift". In practice, this blocked every
+close-at-5 indefinitely — e.g. PE @ 71400 at $10.14 was never closed because CE had 119 lots.
+
+**Why it's wrong:**
+When a position hits `close_at_threshold`, the profit-taking decision is final. Holding it
+carries unnecessary risk (the position can reverse and rise back above threshold). The shift
+guard was over-engineering — if a shift fires later, it sells fresh lots at a new strike.
+Closing the cheap position first is always safe.
+
+**Fix applied:**
+Removed the SHIFT-BEFORE-CLOSE GUARD entirely from `_process_close_at_5` in `mmm_monitor.py`.
+Close-at-5 now executes unconditionally when premium hits threshold.
+
+**Prevention rule:**
+Never add guards to close-at-5 that defer execution based on other-side state. If premium
+hits threshold, close it. No exceptions.
+
+## [2026-03-15] Gamma Detector: wrong perp state key `perp_hedge` vs `_perp_state`
+
+**What went wrong:**
+`mmm_gamma_detector.py` line 236 used `session.get('perp_hedge', {})` to check whether
+a perp hedge was included in the scan. The actual session key for perp state is `_perp_state`
+(used consistently everywhere else including `mmm_breakeven_engine.py`). Result: `perp_included`
+was always `False` even when a perp hedge was active.
+
+**Fix applied:**
+Changed to `session.get('_perp_state', {})` with the same `lots != 0` check.
+
+**Prevention rule:**
+The perp hedge position lives at `session['_perp_state']`, NOT `session['perp_hedge']`.
+Fields: `lots`, `avg_entry`, `direction` ('long'/'short'). Always verify against
+`mmm_breakeven_engine.py` `_collect_open_positions()` when accessing perp state.
+
+---
+
+## [2026-03-15] Gamma Detector: boundary scan starting at i=0 caused both boundaries to collapse to same kink
+
+**What went wrong:**
+`mmm_gamma_detector.py` `_run_boundary_scan()` used `range(scan_steps)` (starting at i=0)
+for both the lower and upper scans. When i=0, `test_spot = spot - 0 * step = spot` and
+`test_spot = spot + 0 * step = spot`. When spot was near a strike kink, both scans detected
+the kink at i=0 (current spot), setting both `lower_gamma_boundary` and `upper_gamma_boundary`
+to the same price (current spot). Zone and distance calculations then produced nonsense.
+
+**Fix applied:**
+Changed both loops to `range(1, scan_steps + 1)`. Lower scan starts strictly below current
+spot; upper scan starts strictly above current spot.
+
+**Prevention rule:**
+Boundary scan loops that walk outward from spot must start at i=1, not i=0. Starting at i=0
+evaluates the current spot in both directions, which is both logically wrong (spot can't be
+simultaneously a lower and upper boundary) and produces degenerate results when spot sits
+near a strike.
+
+---
+
+## [2026-03-15] close_at_5 caused spurious UNTRACKED_EXCHANGE_POSITION reconciliation mismatch
+
+**What went wrong:**
+Session mmm15mar26-2 showed recurring reconciliation mismatch errors after close_at_5 fired.
+Two root causes:
+
+1. **Race condition (primary):** After `close_position` successfully closes a position (fill confirmed
+   by executor), `_remove_closed_position` immediately removes the position from session state.
+   The exchange positions API takes 1–5 s to reflect the fill. Reconciliation runs in the very
+   next heartbeat, sees the position still on the exchange but no longer in `known_strikes`,
+   and raises a spurious `UNTRACKED_EXCHANGE_POSITION` warning.
+
+2. **Partial fill (secondary):** If `smart_execute` returns `filled_size < requested_lots`,
+   `_remove_closed_position` still removed the ENTIRE position from session state. Exchange
+   retained the unfilled lots at that strike, causing a persistent mismatch.
+
+**Fix applied:**
+- `mmm_close_at_5.py`: `close_position` now registers every successful close in
+  `session['_pending_close_verification'][symbol]` with `grace_beats=3`.
+- `mmm_close_at_5.py`: `_partial_close_position` added — for partial fills the position's `lots`
+  field is reduced rather than the position being marked closed entirely.
+- `mmm_monitor.py` (`_reconcile_exchange_positions`): Before flagging `UNTRACKED_EXCHANGE_POSITION`,
+  reconciliation checks `_pending_close_verification`. If the symbol is in the registry, the
+  mismatch is suppressed and `grace_beats` decremented. Once grace runs out, a genuine stale
+  position surfaces as a real mismatch. Expired entries (grace_beats ≤ 0) are purged at the
+  top of each reconciliation run.
+
+**Prevention rule:**
+Any code that removes a position from session state based on an exchange order confirmation
+MUST also register the symbol in `_pending_close_verification` with a 3-beat grace period.
+The exchange positions API is not instantaneously consistent with order fills — never treat
+fill confirmation as proof that the positions API already reflects the change.
+
+---
+
 ## [2026-03-13] Portfolio Greeks delta/gamma were 1000× too large
 
 **What went wrong:**
@@ -499,3 +636,133 @@ Swapped priority in `mmm_margin_guardian.py` lines 176-185: now `blocked > portf
 **Prevention rule:**
 For Delta Exchange wallet API: `blocked_margin` = actual locked collateral = what their UI shows. `portfolio_margin` = theoretical risk model value. Always prefer `blocked_margin` for utilization display. If you add a new margin calculation anywhere, verify it against the Delta Exchange UI "Blocked as Margin" field.
 
+
+---
+
+## [2026-03-15] Theta acceleration overriding adaptive interval (SILENT BUG)
+
+**What went wrong:**
+The monitor loop (Layer 1 = adaptive, Layer 2 = theta) had the comment "Can only make interval SHORTER, never longer" but no enforcement. Layer 2 blindly assigned `interval = accel['effective_interval']`. The theta `apply_theta_acceleration()` function computes its "transition zone" interval as `max(30, base_interval // 2)` — reading the RAW `params['adjustment_interval']`, not the already-reduced `interval`.
+
+Concrete example: `base_interval=300`, `theta_window=120min`, `hours_to_expiry=1.5h (90min)`:
+- Adaptive (Layer 1): tier `1-3h`, 0.10x → 30s  
+- Theta (Layer 2): 90min is inside window, > 30min → `max(30, 300//2) = 150s`  
+- Line 674: `interval = 150s` — **undid adaptive's 30s, tripling the actual interval**
+
+This means for the entire 30–120 minute window before expiry, the adaptive tier's work was silently reversed by theta's "halve the base" formula.
+
+**Fix (mmm_monitor.py line 674):**
+```python
+# Before (wrong):
+interval = accel['effective_interval']
+# After (correct):
+interval = min(interval, accel['effective_interval'])
+```
+
+**Prevention rule:**
+Any time a downstream layer is documented as "can only shrink X, never grow", enforce it with `min()` (or `max()` if the direction is reversed). Never use plain assignment for a "can only tighten" constraint — comments don't run.
+
+---
+
+## [2026-03-15] Three hidden bugs in MMM algo — lot cap, loss floor, stale gamma trigger
+
+### Bug A: `_apply_consecutive_dir_limit` lot cap always = 1
+
+**What went wrong:**
+`session.get('lots', 1)` was used to read "initial lot count" but `session['lots']` is only set during entry initialization in mmm_api.py — not present in create_session(). Always fell back to 1, making lot_cap_pct produce `max(1, int(1 * 0.25)) = 1`. The consecutive-direction lot cap was permanently non-functional. Same bug existed in `mmm_perp_hedge.py` (full-delta mode).
+
+**Fix:**
+Changed to `session.get('params', {}).get('initial_lots', 10)` in both files — matches how mmm_scaler.py and mmm_safety.py read the canonical key.
+
+**Prevention rule:**
+For session-level configuration values, always read from `session['params']` (populated from DEFAULT_PARAMS). Top-level `session['lots']` is a runtime tracking field set during entry — never use it as a config source.
+
+### Bug B: `calculate_standard_loss` over-hedging when active position is profitable
+
+**What went wrong:**
+`total_loss = max(active_loss, zero) + shifted_loss` floored active_loss at 0 before adding frozen position losses. When the active position was profitable (premium dropped), that profit was discarded, and frozen losses alone triggered hedging — even when the net portfolio was profitable. This caused unnecessary sell adjustments.
+
+**Fix:**
+Changed to `total_loss = active_loss + shifted_loss`. The outer `max(total_loss, zero)` on the return line already ensures non-negative output. Removing the inner floor allows active profits to offset frozen losses at the portfolio level.
+
+**Prevention rule:**
+When computing aggregate P&L across active + frozen positions, let profits offset losses before flooring. Premature flooring at the component level systematically overstates exposure.
+
+### Bug C: Stale `_last_trigger_result` in both-sides auto-decision path
+
+**What went wrong:**
+When both CE and PE premiums exceeded their triggers simultaneously (BOTH_SIDES_UP), the 30s auto-decision path called `_process_adjustment` directly, bypassing `evaluate_triggers`. The gamma-aware multiplier in `calculate_lots_to_sell` read `session['_last_trigger_result']` — still containing the PREVIOUS heartbeat's trigger data. This caused the multiplier to fire (or not fire) based on stale excess percentages.
+
+**Fix:**
+Added `_last_trigger_result` update inside `_auto_decide_both_sides`, computing fresh `excess_pct` values from current premiums and trigger snapshots before returning the decision. Now when the subsequent `_process_adjustment` → `calculate_lots_to_sell` reads the trigger result, it has current data.
+
+**Prevention rule:**
+Any code path that calls `_process_adjustment` (or any function that reads `_last_trigger_result`) MUST ensure `session['_last_trigger_result']` is current. If bypassing `evaluate_triggers`, manually compute and set the trigger result first.
+
+---
+
+## [2026-03-15] Wind-down buyback race condition — missing `_being_closed` guard
+
+**What went wrong:**
+`_process_wind_down_buyback` called `smart_execute` (async, can take 60s+ with repricing) without pre-marking positions as `_being_closed`. During the await, other mechanisms (close-at-5, M2 recycler, M1 harvest) could concurrently attempt to close the same positions, causing double-close on the exchange.
+
+**Root cause:**
+The `_being_closed` guard was added to `_process_harvest` (Fix F1.2) but never applied to `_process_wind_down_buyback`. Both paths close positions via async order execution, both need the same race protection.
+
+**Fix:**
+Added `_being_closed = True` on matching positions (by `_pos_id`) before `smart_execute`, and cleanup (pop the flag) on failure or exception — identical pattern to harvest's Fix F1.2.
+
+**Prevention rule:**
+Any code path that closes positions via an async exchange call MUST pre-mark positions with `_being_closed = True` before the await, and clear the flag on failure. Search for `smart_execute` and `close_position` calls and verify the guard exists.
+
+## [2026-03-15] `_being_closed` flag had no TTL — positions permanently locked after crash (March 11 incident)
+
+**What went wrong:**
+On March 11, 3 PE positions had `_being_closed=True` stuck for 30+ minutes (22:55–23:22 UTC). The first close attempt set the flag, then crashed in a path that didn't clear it. Every subsequent heartbeat saw the flag and skipped the positions. They were never closed — carrying unnecessary risk for 30+ minutes.
+
+**Fix:**
+Added `_being_closed_at = time.monotonic()` when setting the flag. In `scan_closeable_positions()`, `_check_stale_being_closed()` auto-clears the flag if stuck > 180 seconds, with a warning log.
+
+**Prevention rule:**
+Never set `_being_closed` without also setting `_being_closed_at`. Never add new exit paths from `close_position()` without ensuring the flag is cleared on failure.
+
+---
+
+## [2026-03-15] `MAX_CLOSES_PER_HEARTBEAT = 3` was dead code — cap never enforced
+
+**What went wrong:**
+The class constant `MAX_CLOSES_PER_HEARTBEAT = 3` was defined and referenced in the docstring, but never actually used in the loop. The only real cap was the beat deadline. Near expiry with many eligible positions, all of them could be attempted in one heartbeat, potentially stalling for 10+ minutes.
+
+**Fix:**
+Removed the dead constant. Added `close_at_max_per_beat` to `DEFAULT_PARAMS` (default 3, hot-reloadable). `_process_close_at_5()` now reads it from params and enforces the cap in the loop.
+
+**Prevention rule:**
+If a constant is meant to gate a loop, verify with grep that it's actually used in the loop condition. Dead constants in docstrings only are misleading.
+
+---
+
+## [2026-03-15] close_at_5 closes had no persistent activity log entry
+
+**What went wrong:**
+`'close_at_5'` existed in `ACTIVITY_TYPES` but `close_position()` never called `log_activity()`. Successful closes only wrote to the ephemeral heartbeat walkthrough and analytics[]. The persistent activity log (the main audit trail) had no record of which positions were closed, at what premium, and what P&L was realized.
+
+**Fix:**
+Added `log_activity('close_at_5', ...)` call inside `close_position()` after every successful fill.
+
+**Prevention rule:**
+Any function that realizes P&L must write a `log_activity` entry. Check `ACTIVITY_TYPES` to ensure the type is defined, then verify the call exists with grep.
+
+---
+
+## [2026-03-15] Breakeven Engine cache invalidation missing for 5 of 8 position-changing events
+
+**What went wrong:**
+The other coding AI that implemented the Breakeven Engine only added `invalidate_cache()` calls at 3 of 8 position-changing events (adjustment fill, strike shift fill, shift fallback fill). Missing from: close-at-5, M1 harvest, M2 lot recycle, shift-time recycle, operator inject.
+
+Without invalidation, the breakeven engine would serve stale cached breakeven prices after these events, leading to wrong zone classification, wrong aggression multiplier, and potentially under/over-hedging.
+
+**Fix:**
+Added `invalidate_cache()` calls at all 5 missing locations (4 in mmm_monitor.py, 1 in mmm_api.py with local import).
+
+**Prevention rule:**
+When adding a caching layer that depends on position state, enumerate ALL code paths that modify positions and add invalidation at each one. The complete list of position-changing events in MMM is: adjustment fill, strike shift fill, shift fallback fill, close-at-5 fill, M1 harvest fill, M2 lot recycle fill, shift-time recycle close, operator inject fill, adopt (mmm_adopter.py), perp fill. Search for `close_position`, `smart_execute`, `recompute_side_lots` calls to find them all.
