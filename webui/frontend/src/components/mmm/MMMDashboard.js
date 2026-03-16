@@ -77,6 +77,10 @@ import MMMPnLChart from './MMMPnLChart';
 import MMMBothSidesAlert from './MMMBothSidesAlert';
 import MMMBreakevenPanel from './MMMBreakevenPanel';
 import MMMGammaPanel from './MMMGammaPanel';
+import MMMRiskProfileChart from './MMMRiskProfileChart';
+import MMMCombinedZoneWidget from './MMMCombinedZoneWidget';
+import MMMHealthRadar from './MMMHealthRadar';
+import MMMDistanceHistoryChart from './MMMDistanceHistoryChart';
 import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMRegimePanel from './MMMRegimePanel';
@@ -1401,6 +1405,8 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   // 'active' = use algo's current active strike; 'custom' = operator types one
   const [strikeMode, setStrikeMode] = useState('active');
   const [customStrike, setCustomStrike] = useState('');
+  const [adopt, setAdopt] = useState(false);
+  const [adoptFillPrice, setAdoptFillPrice] = useState('');
   const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
@@ -1415,6 +1421,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   const resetForm = () => {
     setResult(null); setError(''); setLots(1); setSide('ce');
     setStrikeMode('active'); setCustomStrike(''); setConfirmed(false);
+    setAdopt(false); setAdoptFillPrice('');
   };
 
   const handleClose = () => { if (loading) return; resetForm(); onClose(); };
@@ -1428,7 +1435,8 @@ const MMMInjectModal = ({ open, session, onClose }) => {
     setResult(null);
     try {
       const res = await mmmService.injectPosition(
-        session.session_id, side, lots, effectiveStrike
+        session.session_id, side, lots, effectiveStrike,
+        adopt, adopt ? Number(adoptFillPrice) : null
       );
       setResult(res);
       if (!res.success) setError(res.error || 'Injection failed');
@@ -1445,12 +1453,13 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   };
 
   const isDone = result != null;
-  const isValid = effectiveStrike >= 1000 && lots >= 1 && lots <= maxLots && maxLots > 0;
+  const adoptFillValid = !adopt || (Number(adoptFillPrice) > 0);
+  const isValid = effectiveStrike >= 1000 && lots >= 1 && (adopt || maxLots > 0) && (adopt || lots <= maxLots) && adoptFillValid;
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
       <DialogTitle sx={{ fontWeight: 700, color: '#ff9800' }}>
-        💉 Inject Position
+        {adopt ? '📌 Adopt Existing Position' : '💉 Inject Position'}
       </DialogTitle>
 
       <DialogContent sx={{ pt: 2 }}>
@@ -1459,7 +1468,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
           <Box>
             {result.success ? (
               <Alert severity="success" sx={{ mb: 1.5 }}>
-                Injected successfully. Fill: <strong>${result.fill_price?.toFixed(2)}</strong>
+                {result.adopted ? 'Adopted successfully.' : 'Injected successfully.'} Fill: <strong>${result.fill_price?.toFixed(2)}</strong>
               </Alert>
             ) : (
               <Alert severity="error" sx={{ mb: 1.5 }}>{error || 'Injection failed.'}</Alert>
@@ -1476,11 +1485,37 @@ const MMMInjectModal = ({ open, session, onClose }) => {
         ) : (
           /* ---- Input view ---- */
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 0.5 }}>
-            <Alert severity="warning" sx={{ fontSize: '0.8rem' }}>
-              This places a <strong>real SELL order</strong> on the exchange and registers
-              the position with the algo. The algo will manage it (adjustments, shifts,
-              close-at-5) from this point forward.
-            </Alert>
+
+            {/* Adopt / New order toggle */}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              border: '1px solid', borderColor: adopt ? 'info.main' : 'divider',
+              borderRadius: 1, px: 1.5, py: 0.75,
+              backgroundColor: adopt ? 'rgba(33,150,243,0.07)' : 'transparent' }}>
+              <Box>
+                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                  {adopt ? '📌 Adopt mode' : '💉 New sell order'}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  {adopt
+                    ? 'Register an existing exchange position — no order placed'
+                    : 'Place a real SELL order and register it'}
+                </Typography>
+              </Box>
+              <Switch checked={adopt} onChange={e => { setAdopt(e.target.checked); setConfirmed(false); setAdoptFillPrice(''); }} color="info" size="small" />
+            </Box>
+
+            {adopt ? (
+              <Alert severity="info" sx={{ fontSize: '0.8rem' }}>
+                Registers an <strong>already-open position on the exchange</strong> with the algo.
+                No order is placed. Use this when you sold manually or the session lost track.
+              </Alert>
+            ) : (
+              <Alert severity="warning" sx={{ fontSize: '0.8rem' }}>
+                This places a <strong>real SELL order</strong> on the exchange and registers
+                the position with the algo. The algo will manage it (adjustments, shifts,
+                close-at-5) from this point forward.
+              </Alert>
+            )}
 
             {/* Side selector */}
             <Box>
@@ -1554,29 +1589,46 @@ const MMMInjectModal = ({ open, session, onClose }) => {
 
             {/* Lots input */}
             <TextField
-              label={`Lots to sell ${maxLots > 0 ? `(max ${maxLots})` : '(cap reached)'}`}
+              label={adopt ? 'Lots to adopt' : `Lots to sell ${maxLots > 0 ? `(max ${maxLots})` : '(cap reached)'}`}
               type="number"
               value={lots}
-              onChange={e => setLots(Math.max(1, Math.min(maxLots, parseInt(e.target.value) || 1)))}
-              inputProps={{ min: 1, max: maxLots }}
+              onChange={e => setLots(Math.max(1, parseInt(e.target.value) || 1))}
+              inputProps={{ min: 1, ...(adopt ? {} : { max: maxLots }) }}
               size="small"
               fullWidth
-              error={lots > maxLots || maxLots <= 0}
-              helperText={maxLots <= 0 ? 'max_lots_per_side cap reached' : lots > maxLots ? `Max available: ${maxLots}` : ''}
+              error={!adopt && (lots > maxLots || maxLots <= 0)}
+              helperText={!adopt && (maxLots <= 0 ? 'max_lots_per_side cap reached' : lots > maxLots ? `Max available: ${maxLots}` : '')}
             />
+
+            {/* Fill price (adopt mode only) */}
+            {adopt && (
+              <TextField
+                label="Your fill price (entry premium $)"
+                type="number"
+                value={adoptFillPrice}
+                onChange={e => setAdoptFillPrice(e.target.value)}
+                size="small"
+                fullWidth
+                autoFocus
+                placeholder="e.g. 73.02"
+                inputProps={{ min: 0.01, step: 0.01 }}
+                error={adoptFillPrice !== '' && Number(adoptFillPrice) <= 0}
+                helperText="The premium you received when you sold. Used for P&L tracking."
+              />
+            )}
 
             {/* Confirmation toggle */}
             <Box sx={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-              border: '1px solid', borderColor: confirmed ? 'warning.main' : 'divider',
+              border: '1px solid', borderColor: confirmed ? (adopt ? 'info.main' : 'warning.main') : 'divider',
               borderRadius: 1, px: 1.5, py: 0.5,
-              backgroundColor: confirmed ? 'rgba(255,152,0,0.08)' : 'transparent',
+              backgroundColor: confirmed ? (adopt ? 'rgba(33,150,243,0.08)' : 'rgba(255,152,0,0.08)') : 'transparent',
               transition: 'all 0.2s',
             }}>
-              <Typography variant="body2" sx={{ fontWeight: confirmed ? 700 : 400, color: confirmed ? 'warning.main' : 'text.secondary' }}>
-                I confirm this places a real SELL order
+              <Typography variant="body2" sx={{ fontWeight: confirmed ? 700 : 400, color: confirmed ? (adopt ? 'info.main' : 'warning.main') : 'text.secondary' }}>
+                {adopt ? 'I confirm this registers an existing exchange position' : 'I confirm this places a real SELL order'}
               </Typography>
-              <Switch checked={confirmed} onChange={e => setConfirmed(e.target.checked)} color="warning" size="small" />
+              <Switch checked={confirmed} onChange={e => setConfirmed(e.target.checked)} color={adopt ? 'info' : 'warning'} size="small" />
             </Box>
 
             {error && <Alert severity="error">{error}</Alert>}
@@ -1591,12 +1643,17 @@ const MMMInjectModal = ({ open, session, onClose }) => {
         {!isDone && (
           <Button
             variant="contained"
-            color="warning"
+            color={adopt ? 'info' : 'warning'}
             onClick={handleSubmit}
             disabled={loading || !isValid || !confirmed}
             startIcon={loading ? <CircularProgress size={16} color="inherit" /> : null}
           >
-            {loading ? 'Placing order...' : `Sell ${lots} Lot${lots !== 1 ? 's' : ''} @ ${effectiveStrike >= 1000 ? effectiveStrike.toLocaleString() : '—'}`}
+            {loading
+              ? (adopt ? 'Adopting...' : 'Placing order...')
+              : adopt
+                ? `Adopt ${lots} Lot${lots !== 1 ? 's' : ''} @ ${effectiveStrike >= 1000 ? effectiveStrike.toLocaleString() : '—'}`
+                : `Sell ${lots} Lot${lots !== 1 ? 's' : ''} @ ${effectiveStrike >= 1000 ? effectiveStrike.toLocaleString() : '—'}`
+            }
           </Button>
         )}
       </DialogActions>
@@ -1620,6 +1677,63 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   useEffect(() => {
     setDetailTab(0);
   }, [session?.session_id]);
+
+  // P&L curve data — shared between RiskProfileChart (fetches it) and CombinedZoneWidget (consumes computed_breakeven)
+  const [pnlCurveData, setPnlCurveData] = useState(null);
+  // Keep a ref so heartbeat effect always sees latest curve data (avoids stale closure)
+  const pnlCurveDataRef = React.useRef(null);
+  React.useEffect(() => { pnlCurveDataRef.current = pnlCurveData; }, [pnlCurveData]);
+
+  // Helper: compute BE distance from curve when engine is disabled
+  const computeBeDistanceFromCurve = (curveData, spotOverride) => {
+    if (!curveData?.computed_breakeven) return null;
+    const sp = spotOverride || curveData.spot_price;
+    if (!sp || sp <= 0) return null;
+    const cb = curveData.computed_breakeven;
+    const distances = [cb.lower_breakeven, cb.upper_breakeven]
+      .filter(v => v != null)
+      .map(v => Math.abs(v - sp) / sp * 100);
+    return distances.length > 0 ? Math.min(...distances) : null;
+  };
+
+  // Rolling heartbeat history for distance timeline chart (max 200 entries)
+  const [heartbeatHistory, setHeartbeatHistory] = React.useState([]);
+
+  // Seed history when curve first loads (so chart has data immediately, not waiting for next heartbeat)
+  React.useEffect(() => {
+    if (!pnlCurveData?.computed_breakeven) return;
+    const beDistance = computeBeDistanceFromCurve(pnlCurveData);
+    if (beDistance == null) return;
+    const entry = { ts: new Date().toISOString(), beDistance, gammaDistance: null, beZone: 'SAFE', gammaZone: 'SAFE' };
+    setHeartbeatHistory(prev => {
+      // Only seed if empty or last entry has no beDistance (avoid duplicate on re-renders)
+      if (prev.length > 0 && prev[prev.length - 1].beDistance != null) return prev;
+      return [...prev, entry];
+    });
+  }, [pnlCurveData]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  React.useEffect(() => {
+    const beResult = wsData?.heartbeat?.breakeven;
+    const gammaResult = wsData?.heartbeat?.gamma;
+    // Use engine result if available, else compute from curve (ref is always fresh)
+    let beDistance = beResult?.nearest_distance_pct ?? null;
+    let beZone = beResult?.zone || null;
+    if (beDistance == null) {
+      beDistance = computeBeDistanceFromCurve(pnlCurveDataRef.current);
+    }
+    if (!beDistance && !gammaResult) return;
+    const entry = {
+      ts: new Date().toISOString(),
+      beDistance,
+      gammaDistance: gammaResult?.nearest_distance_pct ?? null,
+      beZone: beZone || 'SAFE',
+      gammaZone: gammaResult?.gamma_zone || 'SAFE',
+    };
+    setHeartbeatHistory(prev => {
+      const updated = [...prev, entry];
+      return updated.length > 200 ? updated.slice(-200) : updated;
+    });
+  }, [wsData?.heartbeat]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Session duration calculation — must be before early return (hooks rule)
   const sessionCreatedAt = session?.created_at || session?.entry_time;
@@ -1817,6 +1931,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
         <Tab label="Margin" />
         <Tab label="Regime" />
         <Tab label="Perp Hedge" />
+        <Tab label="Risk" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -2130,6 +2245,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
           {isLive && (session.params?.breakeven_control_enabled || heartbeat?.breakeven?.enabled) && (
             <MMMBreakevenPanel
               breakeven={heartbeat?.breakeven || session._breakeven_result}
+              gamma={heartbeat?.gamma || session._gamma_result}
             />
           )}
 
@@ -2567,6 +2683,63 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
           perpHedgeEvents={wsData.perpHedgeEvents || []}
           perpHedgeFlip={wsData.perpHedgeFlip}
         />
+      )}
+
+      {/* Tab 14: Risk — Breakeven + Gamma visual landscape */}
+      {detailTab === 14 && (
+        <Box>
+          {/* Row 1: 2-column — Combined Zone (spatial WHERE) + Health Radar (dimensional HOW HEALTHY) */}
+          <Grid container spacing={2} sx={{ mb: 2 }}>
+            <Grid item xs={12} md={6}>
+              <MMMCombinedZoneWidget
+                breakeven={heartbeat?.breakeven || session._breakeven_result}
+                gamma={heartbeat?.gamma || session._gamma_result}
+                computedBreakeven={pnlCurveData?.computed_breakeven}
+                spotPrice={pnlCurveData?.spot_price}
+              />
+            </Grid>
+            <Grid item xs={12} md={6}>
+              <MMMHealthRadar
+                breakeven={heartbeat?.breakeven || session._breakeven_result}
+                gamma={heartbeat?.gamma || session._gamma_result}
+                margin={heartbeat?.margin || session._last_margin_snapshot}
+                regime={heartbeat?.regime || (session._regime_action != null ? {
+                  regime_action: session._regime_action,
+                  vol_regime: session._vol_regime || 'NORMAL',
+                  gamma_regime: session._gamma_regime || 'NORMAL',
+                  trend_regime: session._trend_regime || 'NORMAL',
+                  trend_tier: session._trend_tier || 0,
+                } : null)}
+              />
+            </Grid>
+          </Grid>
+
+          {/* Row 2: P&L Landscape Chart — on-demand fetch */}
+          <Paper elevation={0} sx={{ p: 1.5, mb: 2, borderRadius: 1.5, border: '1px solid rgba(255,255,255,0.1)' }}>
+            <MMMRiskProfileChart
+              sessionId={session.session_id}
+              isActive={detailTab === 14}
+              breakeven={heartbeat?.breakeven || session._breakeven_result}
+              onCurveLoaded={setPnlCurveData}
+            />
+          </Paper>
+
+          {/* Row 3: Distance History Timeline */}
+          <MMMDistanceHistoryChart
+            heartbeatHistory={heartbeatHistory}
+            beWarnPct={session.params?.breakeven_warning_pct}
+            gammaWarnPct={session.params?.gamma_warning_distance_pct}
+          />
+
+          {/* Row 4: Detailed compact panels (always-visible summary) */}
+          <MMMBreakevenPanel
+            breakeven={heartbeat?.breakeven || session._breakeven_result}
+            gamma={heartbeat?.gamma || session._gamma_result}
+          />
+          <MMMGammaPanel
+            gamma={heartbeat?.gamma || session._gamma_result}
+          />
+        </Box>
       )}
 
       <Snackbar

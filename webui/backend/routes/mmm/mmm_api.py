@@ -1704,9 +1704,12 @@ def update_session_params(session_id: str):
                 'error': 'No parameters provided',
             }), 400
 
+        log.info(f"[{session_id}] Received param update request: {list(data.keys())}")
+
         # Validate with hot-reload restriction if running
         validated, errors = validate_params(data, hot_only=is_running)
         if errors:
+            log.warning(f"[{session_id}] Param validation errors: {errors}")
             return jsonify({
                 'success': False,
                 'error': 'Parameter validation failed',
@@ -1714,9 +1717,19 @@ def update_session_params(session_id: str):
             }), 400
 
         if not validated:
+            submitted_keys = set(data.keys())
+            from .mmm_config import PARAM_RULES
+            unknown_keys = [k for k in submitted_keys if k not in PARAM_RULES]
+            log.warning(
+                f"[{session_id}] No valid parameters after validation. "
+                f"Submitted: {list(submitted_keys)}, Unknown (skipped): {unknown_keys}"
+            )
             return jsonify({
                 'success': False,
                 'error': 'No valid parameters to update',
+                'details': f'All {len(submitted_keys)} submitted parameters were either unknown or filtered out. '
+                           f'Unknown parameters (skipped): {unknown_keys}' if unknown_keys else
+                           'All submitted parameters were filtered out (possibly non-hot parameters while session is running).',
             }), 400
 
         # Merge with existing params
@@ -1771,8 +1784,22 @@ def update_session_params(session_id: str):
                     f"CE={ce_lots}, PE={pe_lots}, uPnL=${total_unrealized:+.0f}"
                 )
 
+        # Set auto-expiry timestamp when breakeven_high_risk_mode is toggled ON.
+        # The engine reads _high_risk_mode_expires_at to auto-expire after 4 hours.
+        # Must use datetime.now(timezone.utc) — NOT datetime.utcnow() (robustv2 fix #14).
+        session_updates = {'params': current_params}
+        if 'breakeven_high_risk_mode' in changed_keys:
+            from datetime import timedelta
+            if validated.get('breakeven_high_risk_mode', False):
+                expires_at = (datetime.now(timezone.utc) + timedelta(hours=4)).isoformat()
+                session_updates['_high_risk_mode_expires_at'] = expires_at
+                log.info(f"[{session_id}] breakeven_high_risk_mode enabled; expires at {expires_at}")
+            else:
+                # Explicitly clear when toggled OFF so expiry doesn't linger
+                session_updates['_high_risk_mode_expires_at'] = None
+
         # Persist
-        storage.update_session(session_id, {'params': current_params})
+        storage.update_session(session_id, session_updates)
 
         # Emit WebSocket update
         emit_params_changed(session_id, {k: validated[k] for k in changed_keys})
@@ -3267,6 +3294,8 @@ def inject_position(session_id: str):
         side_param = data.get('side', '').lower()
         lots_param = int(data.get('lots', 0))
         strike_raw = data.get('strike')
+        adopt = bool(data.get('adopt', False))
+        adopt_fill_price = data.get('fill_price')  # required when adopt=True
 
         if side_param not in ('ce', 'pe'):
             return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
@@ -3279,10 +3308,17 @@ def inject_position(session_id: str):
         if strike_val <= 0:
             return jsonify({'success': False, 'error': 'strike must be a positive number'}), 400
 
-        # Guardian check before any order placement
-        signal = _check_guardian_signal()
-        if signal != 'GO':
-            return jsonify({'success': False, 'error': f'Guardian signal is {signal}'}), 403
+        if adopt:
+            if adopt_fill_price is None:
+                return jsonify({'success': False, 'error': 'fill_price is required in adopt mode'}), 400
+            adopt_fill_price = float(adopt_fill_price)
+            if adopt_fill_price <= 0:
+                return jsonify({'success': False, 'error': 'fill_price must be a positive number'}), 400
+        else:
+            # Guardian check only needed when actually placing an order
+            signal = _check_guardian_signal()
+            if signal != 'GO':
+                return jsonify({'success': False, 'error': f'Guardian signal is {signal}'}), 403
 
         storage = get_storage()
         session = storage.get_session(session_id)
@@ -3296,19 +3332,21 @@ def inject_position(session_id: str):
                 'error': f'Session must be RUNNING or PAUSED. Current: {status}',
             }), 400
 
-        # --- Cap check ---
         params = session.get('params', {})
-        max_lots = int(params.get('max_lots_per_side', 100))
         side_state = session.get(side_param, {})
-        current_lots = side_state.get('active_lots', 0)
-        if current_lots + lots_param > max_lots:
-            return jsonify({
-                'success': False,
-                'error': (
-                    f'Would exceed max_lots_per_side ({max_lots}). '
-                    f'Current active: {current_lots}, requesting: {lots_param}.'
-                ),
-            }), 400
+
+        if not adopt:
+            # --- Cap check (only for real orders — adopt registers existing exposure) ---
+            max_lots = int(params.get('max_lots_per_side', 100))
+            current_lots = side_state.get('active_lots', 0)
+            if current_lots + lots_param > max_lots:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f'Would exceed max_lots_per_side ({max_lots}). '
+                        f'Current active: {current_lots}, requesting: {lots_param}.'
+                    ),
+                }), 400
 
         expiry = params.get('expiry', '')
         option_type = 'call' if side_param == 'ce' else 'put'
@@ -3316,33 +3354,45 @@ def inject_position(session_id: str):
         initializer = get_initializer()
         symbol = initializer.build_symbol(option_type, 'BTC', strike_val, expiry)
 
-        log_activity(
-            'manual_inject',
-            f'💉 Inject: SELL {lots_param} {side_param.upper()} @ {int(strike_val)} ({symbol})',
-            session_id, 'info',
-            {'side': side_param.upper(), 'strike': strike_val, 'lots': lots_param},
-        )
-
-        result = _run_async(executor.smart_execute(
-            symbol=symbol,
-            side='sell',
-            size=lots_param,
-            reduce_only=False,
-            session_id=session_id,
-        ))
-
-        if not result.get('success'):
-            err = result.get('error', 'execution failed')
+        if adopt:
+            fill_price = adopt_fill_price
+            order_id = ''
             log_activity(
                 'manual_inject',
-                f'💉 Inject FAILED: {side_param.upper()} @ {int(strike_val)} — {err}',
-                session_id, 'error',
-                {'side': side_param.upper(), 'strike': strike_val, 'error': err},
+                f'📌 Adopt: register existing {lots_param} {side_param.upper()} @ {int(strike_val)} '
+                f'(fill ${fill_price:.2f}) — no order placed',
+                session_id, 'info',
+                {'side': side_param.upper(), 'strike': strike_val, 'lots': lots_param,
+                 'fill_price': fill_price, 'adopt': True},
             )
-            return jsonify({'success': False, 'error': err}), 500
+        else:
+            log_activity(
+                'manual_inject',
+                f'💉 Inject: SELL {lots_param} {side_param.upper()} @ {int(strike_val)} ({symbol})',
+                session_id, 'info',
+                {'side': side_param.upper(), 'strike': strike_val, 'lots': lots_param},
+            )
 
-        fill_price = float(result.get('fill_price', 0))
-        order_id = str(result.get('order_id', ''))
+            result = _run_async(executor.smart_execute(
+                symbol=symbol,
+                side='sell',
+                size=lots_param,
+                reduce_only=False,
+                session_id=session_id,
+            ))
+
+            if not result.get('success'):
+                err = result.get('error', 'execution failed')
+                log_activity(
+                    'manual_inject',
+                    f'💉 Inject FAILED: {side_param.upper()} @ {int(strike_val)} — {err}',
+                    session_id, 'error',
+                    {'side': side_param.upper(), 'strike': strike_val, 'error': err},
+                )
+                return jsonify({'success': False, 'error': err}), 500
+
+            fill_price = float(result.get('fill_price', 0))
+            order_id = str(result.get('order_id', ''))
         now = datetime.now(timezone.utc).isoformat()
 
         # --- Record fill in positions[] (Unified Ledger) ---
@@ -3431,9 +3481,10 @@ def inject_position(session_id: str):
         except Exception as ws_err:
             log.warning(f'[{session_id}] WS emit failed after inject: {ws_err}')
 
+        _action = 'Adopt' if adopt else 'Inject'
         log_activity(
             'manual_inject',
-            f'💉 Inject OK: SELL {lots_param} {side_param.upper()} @ {int(strike_val)} '
+            f'💉 {_action} OK: {lots_param} {side_param.upper()} @ {int(strike_val)} '
             f'fill ${fill_price:.2f} (new active: {side_state.get("active_lots", 0)} lots)',
             session_id, 'success',
             {
@@ -3443,11 +3494,12 @@ def inject_position(session_id: str):
                 'fill_price': fill_price,
                 'order_id': order_id,
                 'new_active_lots': side_state.get('active_lots', 0),
+                'adopt': adopt,
             },
         )
 
         log.info(
-            f'[{session_id}] Inject complete: {side_param.upper()} '
+            f'[{session_id}] {_action} complete: {side_param.upper()} '
             f'{lots_param} lots @ {strike_val} fill=${fill_price:.2f}'
         )
 
@@ -3468,6 +3520,7 @@ def inject_position(session_id: str):
             'fill_price': fill_price,
             'order_id': order_id,
             'new_active_lots': side_state.get('active_lots', 0),
+            'adopted': adopt,
         })
 
     except Exception as e:
@@ -5836,4 +5889,162 @@ def export_audit_trail():
         
     except Exception as e:
         log.exception("Failed to export audit trail")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# P&L Curve — on-demand portfolio landscape endpoint
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/pnl-curve', methods=['GET'])
+def get_pnl_curve(session_id: str):
+    """
+    Compute and return the portfolio P&L landscape for chart display.
+
+    Uses the intrinsic-only model from BreakevenEngine: no live premium fetches,
+    fast (~1ms). Called on-demand when the Risk tab opens or user clicks Refresh.
+
+    Query parameters:
+        n_points: Number of curve sample points (default 120, max 300)
+
+    Returns:
+        curve_points: [{spot, pnl}, ...] across the scan range
+        strike_markers: [{strike, side, lots, entry_premium, pos_type}, ...]
+        breakeven: last known breakeven result from session
+        gamma: last known gamma result from session (or null)
+        spot_price: spot used for the curve
+        scan_range_pct: how wide the chart is (% of spot, each side)
+    """
+    try:
+        from .mmm_breakeven_engine import get_breakeven_engine
+
+        # --- 1. Load live session (prefer monitor's in-memory state) ---
+        monitor = get_monitor(session_id)
+        if monitor and getattr(monitor, '_running', False) and hasattr(monitor, 'session'):
+            session = monitor.session
+        else:
+            storage = get_storage()
+            session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        params = session.get('params', {})
+
+        # --- 2. Determine spot price ---
+        # Priority: breakeven_result.spot → gamma_result.spot → _regime_spot_price
+        # This ensures the endpoint works even when breakeven/gamma engines are disabled.
+        be_result = session.get('_breakeven_result') or {}
+        gamma_result = session.get('_gamma_result') or {}
+        spot_price = (
+            be_result.get('spot_price') or
+            gamma_result.get('spot_price') or
+            session.get('_regime_spot_price') or
+            0.0
+        )
+        if spot_price <= 0:
+            return jsonify({'success': False, 'error': 'No spot price available — session not yet started or no heartbeat'}), 422
+
+        # --- 3. Collect positions ---
+        be_engine = get_breakeven_engine()
+        positions = be_engine._collect_open_positions(session)
+
+        if not positions:
+            return jsonify({
+                'success': True,
+                'session_id': session_id,
+                'spot_price': spot_price,
+                'curve_points': [],
+                'strike_markers': [],
+                'breakeven': be_result or None,
+                'gamma': session.get('_gamma_result') or None,
+                'scan_range_pct': 0.0,
+                'positions_count': 0,
+            })
+
+        # --- 4. Compute scan range (use engine formula + floor at 15%) ---
+        engine_range = be_engine._compute_scan_range(spot_price, positions, params)
+        min_range = spot_price * 0.15  # always show at least ±15% for useful chart
+        scan_range = max(engine_range, min_range)
+        scan_range_pct = round(scan_range / spot_price * 100.0, 2)
+
+        # --- 5. Generate curve points ---
+        n_points = min(int(request.args.get('n_points', 120)), 300)
+        if n_points < 20:
+            n_points = 20
+
+        spot_lo = max(spot_price - scan_range, 1.0)
+        spot_hi = spot_price + scan_range
+        step = (spot_hi - spot_lo) / (n_points - 1)
+
+        curve_points = []
+        for i in range(n_points):
+            s = spot_lo + i * step
+            pnl = be_engine._compute_pnl_at_spot(positions, s, session)
+            curve_points.append({
+                'spot': round(s, 2),
+                'pnl': round(pnl, 4),
+            })
+
+        # --- 6. Zero-crossing breakeven from curve (works even when BE engine disabled) ---
+        computed_breakeven = None
+        if not be_result:
+            # Find all sign-change intervals and interpolate exact zero crossings
+            zero_crossings = []
+            for i in range(len(curve_points) - 1):
+                p0 = curve_points[i]
+                p1 = curve_points[i + 1]
+                if p0['pnl'] * p1['pnl'] <= 0 and (p0['pnl'] != 0 or p1['pnl'] != 0):
+                    # Linear interpolation
+                    d = p1['pnl'] - p0['pnl']
+                    cross = p0['spot'] - p0['pnl'] * (p1['spot'] - p0['spot']) / d if d != 0 else (p0['spot'] + p1['spot']) / 2
+                    zero_crossings.append(round(cross, 2))
+            if len(zero_crossings) >= 2:
+                computed_breakeven = {
+                    'lower_breakeven': min(zero_crossings),
+                    'upper_breakeven': max(zero_crossings),
+                    'source': 'curve_zero_crossing',
+                }
+            elif len(zero_crossings) == 1:
+                # Only one side (deep ITM or all profit) — still useful
+                zc = zero_crossings[0]
+                if zc < spot_price:
+                    computed_breakeven = {'lower_breakeven': zc, 'upper_breakeven': None, 'source': 'curve_zero_crossing'}
+                else:
+                    computed_breakeven = {'lower_breakeven': None, 'upper_breakeven': zc, 'source': 'curve_zero_crossing'}
+
+        # --- 7. P&L at spot from curve (nearest point) ---
+        pnl_at_spot = None
+        if curve_points:
+            nearest = min(curve_points, key=lambda p: abs(p['spot'] - spot_price))
+            pnl_at_spot = nearest['pnl']
+
+        # --- 8. Strike markers (for vertical reference lines on chart) ---
+        strike_markers = []
+        for pos in positions:
+            strike_markers.append({
+                'strike': pos['strike'],
+                'side': 'CE' if pos['option_type'] == 'call' else 'PE',
+                'lots': pos['lots'],
+                'entry_premium': pos['entry_premium'],
+                'pos_type': pos.get('pos_type', 'unknown'),
+            })
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'spot_price': spot_price,
+            'curve_points': curve_points,
+            'strike_markers': strike_markers,
+            'breakeven': be_result or None,
+            'computed_breakeven': computed_breakeven,
+            'pnl_at_spot': pnl_at_spot,
+            'gamma': session.get('_gamma_result') or None,
+            'scan_range_pct': scan_range_pct,
+            'positions_count': len(positions),
+            'computed_at': datetime.now(timezone.utc).isoformat(),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to compute P&L curve for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500

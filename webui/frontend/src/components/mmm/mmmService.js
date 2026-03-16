@@ -231,10 +231,12 @@ const mmmService = {
    * @param {number} lots     - number of lots to sell
    * @param {number} strike   - strike price
    */
-  async injectPosition(sessionId, side, lots, strike) {
+  async injectPosition(sessionId, side, lots, strike, adopt = false, fillPrice = null) {
+    const body = { side, lots, strike };
+    if (adopt) { body.adopt = true; body.fill_price = fillPrice; }
     const { data } = await api.post(
       `${BASE_URL}/session/${sessionId}/inject-position`,
-      { side, lots, strike }
+      body
     );
     return data;
   },

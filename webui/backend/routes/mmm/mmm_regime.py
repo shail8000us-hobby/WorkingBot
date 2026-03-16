@@ -566,12 +566,14 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
     current_regime = session.get('_trend_regime', TREND_NORMAL)
     current_tier = session.get('_trend_tier', TREND_TIER_NONE)
 
-    new_tier = _compute_trend_tier(abs_move, ema_confirms, is_fast_move, params)
+    raw_tier = _compute_trend_tier(abs_move, ema_confirms, is_fast_move, params)
 
     # ── Tier only ESCALATES within a trend, never de-escalates ──
     # (de-escalation only happens via full reset)
     if current_regime != TREND_NORMAL:
-        new_tier = max(new_tier, current_tier)
+        new_tier = max(raw_tier, current_tier)
+    else:
+        new_tier = raw_tier
 
     # ── Map tier + direction to regime ──
     if new_tier >= TREND_TIER_ALERT:
@@ -622,8 +624,30 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
                     session['_trend_high'] = spot_price
                     session['_trend_low'] = spot_price
                     session['_trend_calm_beats'] = 0
+                    session['_trend_plateau_beats'] = 0
             else:
                 session['_trend_calm_beats'] = 0
+                # Plateau reset: market moved up/down, plateaued near the new level,
+                # and never retraced enough (< retrace_threshold_pct) to trigger the
+                # standard calm+retracement path.  When the raw computed tier (based on
+                # current price vs anchor) has fallen below the locked tier AND the EMA
+                # has gone flat, count consecutive calm beats.  After
+                # trend_plateau_reset_beats beats we advance the anchor to the current
+                # price and exit the trend lock.  This prevents a stale anchor from
+                # keeping T3/T4 locked indefinitely after the market stabilises.
+                if raw_tier < current_tier and ema_calmed:
+                    plateau_beats = session.get('_trend_plateau_beats', 0) + 1
+                    session['_trend_plateau_beats'] = plateau_beats
+                    if plateau_beats >= params.get('trend_plateau_reset_beats', 5):
+                        new_regime = TREND_NORMAL
+                        new_tier = TREND_TIER_NONE
+                        session['_trend_anchor_spot'] = spot_price
+                        session['_trend_high'] = spot_price
+                        session['_trend_low'] = spot_price
+                        session['_trend_calm_beats'] = 0
+                        session['_trend_plateau_beats'] = 0
+                else:
+                    session['_trend_plateau_beats'] = 0
 
             # Check for trend reversal (was up, now strongly down or vice versa)
             tier1_pct = params.get('trend_tier1_pct', 0.5)

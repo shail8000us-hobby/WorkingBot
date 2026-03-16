@@ -62,6 +62,14 @@ PRESET_5DTE = {
     'trend_tier2_pct': 2.0,
     'trend_tier3_pct': 3.0,
     'trend_tier4_pct': 5.0,
+    # Breakeven DTE-aware controls
+    'breakeven_dte_threshold_mult': 1.5,     # widen thresholds 50% at session start
+    'breakeven_dte_aggression_damp': 0.1,    # 10% lot boost reduction in WARNING/DANGER
+    'breakeven_dte_vol_regime_damp': 0.2,    # auto-damp 20% on HIGH vol (10% on ELEVATED)
+    'breakeven_dte_pnl_clamp_pct': 1.5,      # disable widening if loss > 1.5× total premium collected
+    'breakeven_tv_credit_factor': 0.0,       # reserved
+    'breakeven_high_risk_mode': False,        # operator-triggered max aggression (0DTE-equivalent)
+    'breakeven_critical_lot_ceiling': 4.0,   # CRITICAL ceiling (vs combined cap for lower zones)
 }
 
 # Registry of all presets

@@ -370,14 +370,19 @@ class BreakevenEngine:
         self,
         nearest_distance_pct: Optional[float],
         params: Dict,
+        dte_scale: float = 1.0,
     ) -> str:
-        """Classify risk zone based on distance to nearest breakeven."""
+        """Classify risk zone based on distance to nearest breakeven.
+
+        dte_scale widens all thresholds proportionally — at 5DTE start with
+        mult=1.5 and t_ratio=1.0, thresholds are 50% wider than at 0DTE.
+        """
         if nearest_distance_pct is None:
             return 'SAFE'
 
-        warning_pct = params.get('breakeven_warning_pct', 2.0)
-        danger_pct = params.get('breakeven_danger_pct', 1.0)
-        critical_pct = params.get('breakeven_critical_pct', 0.5)
+        warning_pct = params.get('breakeven_warning_pct', 2.0) * dte_scale
+        danger_pct = params.get('breakeven_danger_pct', 1.0) * dte_scale
+        critical_pct = params.get('breakeven_critical_pct', 0.5) * dte_scale
 
         if nearest_distance_pct > warning_pct:
             return 'SAFE'
@@ -393,6 +398,8 @@ class BreakevenEngine:
         zone: str,
         nearest_distance_pct: Optional[float],
         params: Dict,
+        dte_scale: float = 1.0,
+        dte_aggression_damp: float = 0.0,
     ) -> float:
         """
         Continuous aggression multiplier ramp based on zone and distance.
@@ -400,26 +407,38 @@ class BreakevenEngine:
         Non-directional: applies to ANY triggered adjustment (no hedge_side filter).
         Ranges: SAFE=1.0, WARNING=1.0-1.3, DANGER=1.3-2.0, CRITICAL=2.0-max_mult.
         Linear interpolation prevents lot-count flip-flops at zone boundaries.
+
+        dte_aggression_damp [0,1]: reduces WARNING/DANGER amplitude proportionally.
+        CRITICAL is fully exempt (genuine emergency — damp never applies).
+        Zone boundaries use dte_scale-adjusted thresholds for consistent interpolation.
         """
         if zone == 'SAFE' or nearest_distance_pct is None:
             return 1.0
 
-        warning_pct = params.get('breakeven_warning_pct', 2.0)
-        danger_pct = params.get('breakeven_danger_pct', 1.0)
-        critical_pct = params.get('breakeven_critical_pct', 0.5)
+        warning_pct = params.get('breakeven_warning_pct', 2.0) * dte_scale
+        danger_pct = params.get('breakeven_danger_pct', 1.0) * dte_scale
+        critical_pct = params.get('breakeven_critical_pct', 0.5) * dte_scale
         max_mult = params.get('breakeven_aggression_max', 3.0)
+
+        # Damp factor: 1.0 = full aggression, <1.0 = reduced.
+        # CRITICAL zone ignores damp entirely — it's a genuine emergency.
+        damp_factor = max(0.0, 1.0 - dte_aggression_damp)
 
         if zone == 'WARNING':
             denom = warning_pct - danger_pct
             progress = (warning_pct - nearest_distance_pct) / denom if denom > 0 else 0.0
-            return 1.0 + min(progress, 1.0) * 0.3
+            # Damped range: 0.3 × damp_factor. Continuous at zone boundary (both sides damp equally).
+            return 1.0 + min(progress, 1.0) * 0.3 * damp_factor
 
         elif zone == 'DANGER':
             denom = danger_pct - critical_pct
             progress = (danger_pct - nearest_distance_pct) / denom if denom > 0 else 0.0
-            return 1.3 + min(progress, 1.0) * 0.7
+            # Total excess above 1.0 at this point: 0.3 + progress*0.7, scaled by damp_factor.
+            # At progress=0 this equals WARNING end (1.0 + 0.3*damp_factor) — no discontinuity.
+            return 1.0 + (0.3 + min(progress, 1.0) * 0.7) * damp_factor
 
         elif zone == 'CRITICAL':
+            # Fully exempt from damp — if CRITICAL fires despite dte_scale widening, it's real.
             progress = min(1.0, (critical_pct - nearest_distance_pct) / critical_pct) if critical_pct > 0 else 1.0
             return 2.0 + min(max(progress, 0.0), 1.0) * (max_mult - 2.0)
 
@@ -473,8 +492,64 @@ class BreakevenEngine:
             nearest_distance_pct = distance_upper_pct
             nearest_side = 'upper'
 
-        zone = self._classify_zone(nearest_distance_pct, params)
-        multiplier = self._compute_multiplier(zone, nearest_distance_pct, params)
+        # DTE-aware threshold scaling
+        dte_scale = self._compute_dte_scale(session, params)
+
+        # Aggression damp: vol regime auto-damp overrides manual setting when triggered
+        vol_regime = session.get('_vol_regime', 'NORMAL')
+        vol_regime_damp = params.get('breakeven_dte_vol_regime_damp', 0.2)
+        if vol_regime == 'HIGH':
+            aggression_damp = vol_regime_damp
+        elif vol_regime == 'ELEVATED':
+            aggression_damp = vol_regime_damp * 0.5
+        else:
+            aggression_damp = params.get('breakeven_dte_aggression_damp', 0.0)
+
+        # High risk mode override: force dte_scale=1.0 AND zero aggression_damp.
+        # Intent: operator activates before FOMC/CPI to disable threshold widening entirely —
+        # bot behaves as if expiry is now (0DTE-equivalent sensitivity + maximum lot aggression).
+        high_risk_active = params.get('breakeven_high_risk_mode', False)
+        if high_risk_active:
+            expires_raw = session.get('_high_risk_mode_expires_at')
+            if expires_raw is not None:
+                try:
+                    expires_dt = (
+                        datetime.fromisoformat(expires_raw.replace('Z', '+00:00'))
+                        if isinstance(expires_raw, str) else expires_raw
+                    )
+                    if expires_dt.tzinfo is None:
+                        expires_dt = expires_dt.replace(tzinfo=timezone.utc)
+                    if datetime.now(timezone.utc) >= expires_dt:
+                        high_risk_active = False
+                        log.info('[breakeven] breakeven_high_risk_mode auto-expired')
+                except Exception:
+                    pass
+            if high_risk_active:
+                dte_scale = 1.0      # disable threshold widening: 0DTE-equivalent sensitivity
+                aggression_damp = 0.0  # max lot aggression allowed
+
+        # pnl_clamp: if losses already deep vs total_premium_collected, disable dte_scale widening.
+        # Uses session-level total (includes harvested/closed lots) not just current open positions,
+        # so a session that harvested half its lots isn't falsely clamped on remaining positions.
+        # Floor: MIN_LOTS_FOR_CLAMP=5 prevents false trigger on tiny test/canary positions.
+        _MIN_LOTS_FOR_CLAMP = 5
+        clamp_pct = params.get('breakeven_dte_pnl_clamp_pct', 1.5)
+        total_lots_pos = sum(p['lots'] for p in positions)
+        pnl_at_spot = self._compute_pnl_at_spot(positions, spot_price, session)
+        total_premium_collected = session.get('total_premium_collected', 0)
+        if (dte_scale > 1.0
+                and total_lots_pos >= _MIN_LOTS_FOR_CLAMP
+                and pnl_at_spot < 0
+                and total_premium_collected > 0
+                and abs(pnl_at_spot) / total_premium_collected > clamp_pct):
+            dte_scale = 1.0
+
+        zone = self._classify_zone(nearest_distance_pct, params, dte_scale=dte_scale)
+        multiplier = self._compute_multiplier(
+            zone, nearest_distance_pct, params,
+            dte_scale=dte_scale,
+            dte_aggression_damp=aggression_damp,
+        )
 
         # Band width
         band_width_pct = self._compute_band_width_pct(lower, upper, spot_price)
@@ -490,9 +565,6 @@ class BreakevenEngine:
         is_narrow_band = (
             band_width_pct is not None and band_width_pct < narrow_threshold
         )
-
-        # P&L at current spot
-        pnl_at_spot = self._compute_pnl_at_spot(positions, spot_price, session)
 
         # Perp included?
         perp_state = session.get('_perp_state', {})
@@ -521,6 +593,10 @@ class BreakevenEngine:
             'positions_included': positions_included,
             'perp_included': perp_included,
             'from_cache': from_cache,
+            'dte_scale': round(dte_scale, 4),
+            'effective_warning_pct': round(params.get('breakeven_warning_pct', 2.0) * dte_scale, 4),
+            'effective_danger_pct': round(params.get('breakeven_danger_pct', 1.0) * dte_scale, 4),
+            'effective_critical_pct': round(params.get('breakeven_critical_pct', 0.5) * dte_scale, 4),
         }
 
     def _empty_result(self, spot_price: float, enabled: bool = True) -> Dict:
@@ -545,6 +621,10 @@ class BreakevenEngine:
             'positions_included': 0,
             'perp_included': False,
             'from_cache': False,
+            'dte_scale': 1.0,
+            'effective_warning_pct': None,
+            'effective_danger_pct': None,
+            'effective_critical_pct': None,
         }
 
     # =========================================================================
@@ -561,6 +641,65 @@ class BreakevenEngine:
         if lower is None or upper is None:
             return None
         return (upper - lower) / spot * 100.0
+
+    def _compute_dte_scale(self, session: Dict, params: Dict) -> float:
+        """
+        Compute the DTE-aware threshold scale factor.
+
+        Uses √T scaling: dte_scale = 1.0 + (mult - 1.0) * sqrt(t_ratio)
+        where t_ratio = hours_remaining / total_dte_hours (1.0 at start, 0.0 at expiry).
+
+        At session start (t_ratio=1): dte_scale = mult (maximum widening).
+        At expiry (t_ratio=0): dte_scale = 1.0 (back to standard thresholds).
+        When mult=1.0 (default): always returns 1.0 (fully backward-compatible).
+        """
+        mult = params.get('breakeven_dte_threshold_mult', 1.0)
+
+        if mult <= 1.0:
+            return 1.0
+
+        total_dte_hours = params.get('total_dte_hours', 0.0)
+        if total_dte_hours <= 0.0:
+            return 1.0
+
+        # Compute hours remaining to expiry using session expiry_time (ISO UTC string)
+        hours_remaining = total_dte_hours  # safe fallback: treat as full session
+        expiry_time = session.get('expiry_time')
+        if expiry_time:
+            try:
+                if isinstance(expiry_time, str):
+                    expiry_dt = datetime.fromisoformat(expiry_time.replace('Z', '+00:00'))
+                else:
+                    expiry_dt = expiry_time
+                if expiry_dt.tzinfo is None:
+                    expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                hours_remaining = max((expiry_dt - now).total_seconds() / 3600.0, 0.0)
+            except Exception:
+                pass  # keep fallback value
+
+        # t_ratio: fraction of session time remaining (clamped [0, 1])
+        t_ratio = min(hours_remaining / total_dte_hours, 1.0)
+
+        # √T threshold widening — decays as expiry approaches
+        dte_scale = 1.0 + (mult - 1.0) * math.sqrt(t_ratio)
+
+        # Vol regime damp: reduce threshold widening when vol is elevated/high.
+        # At HIGH vol, BTC front-end IV is elevated (jump risk premium) — the extrinsic
+        # buffer argument weakens, so widen thresholds less aggressively.
+        vol_regime_damp = params.get('breakeven_dte_vol_regime_damp', 0.2)
+        if vol_regime_damp > 0 and dte_scale > 1.0:
+            vol_regime = session.get('_vol_regime', 'NORMAL')
+            if vol_regime == 'HIGH':
+                damp = vol_regime_damp
+            elif vol_regime == 'ELEVATED':
+                damp = vol_regime_damp * 0.5
+            else:
+                damp = 0.0
+            if damp > 0:
+                dte_scale = 1.0 + (dte_scale - 1.0) * (1.0 - damp)
+
+        return round(max(1.0, dte_scale), 4)
 
     def _hash_positions(self, positions: list, session: Dict) -> str:
         """

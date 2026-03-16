@@ -7364,6 +7364,37 @@ def _save_session(session: Dict, my_generation: int = 0):
                         # trigger originally persisted it.  Restore the original value so the
                         # DB is left clean for the next session round.
                         session['params']['wind_down_enabled'] = session.pop('_atm_prev_wind_down_enabled')
+
+                # API-inject race fix: re-apply positions written by inject-position or
+                # set-active-strike APIs that arrived while this heartbeat was in-flight.
+                # The monitor only tracks positions it knows about (loaded at heartbeat start);
+                # any position added via API after that reload is invisible to this save and
+                # would be silently overwritten. Fix: find positions in storage (by ID) that
+                # are not in the monitor's in-memory copy and merge them back in.
+                for _side in ('ce', 'pe'):
+                    _stored_side = stored.get(_side, {})
+                    _mem_side = session.get(_side)
+                    if not _mem_side or not isinstance(_stored_side.get('positions'), list):
+                        continue
+                    _mem_ids = {p['id'] for p in _mem_side.get('positions', []) if 'id' in p}
+                    _new_pos = [
+                        p for p in _stored_side['positions']
+                        if 'id' in p and p['id'] not in _mem_ids
+                    ]
+                    if _new_pos:
+                        log.info(
+                            f"[{sid}] _save_session: merging {len(_new_pos)} API-injected "
+                            f"{_side.upper()} position(s) from storage: "
+                            f"{[p['id'] for p in _new_pos]}"
+                        )
+                        _mem_side.setdefault('positions', []).extend(_new_pos)
+                        # Also preserve the higher _pos_counter from storage so future
+                        # IDs don't collide with the injected positions.
+                        _stored_counter = _stored_side.get('_pos_counter', 0)
+                        if _stored_counter > _mem_side.get('_pos_counter', 0):
+                            _mem_side['_pos_counter'] = _stored_counter
+                        recompute_side_lots(_mem_side)
+                        session[_side] = _mem_side
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")

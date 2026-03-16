@@ -383,6 +383,25 @@ class MMMEngine:
             constraint_msg = f"{constraint_msg}; {be_msg}" if constraint_msg else be_msg
         # ── END Breakeven Multiplier ──────────────────────────────────────
 
+        # ── Gamma Severity Multiplier ─────────────────────────────────────
+        # Applies when gamma_detector finds DANGER zone — losses will accelerate rapidly.
+        # NOTE: gamma_mult above (T3-2) is the aggressor-excess gamma-aware multiplier.
+        # This is DIFFERENT — it is the gamma boundary severity multiplier.
+        gamma_severity_mult = 1.0
+        gamma_result = session.get('_gamma_result', {})
+        if (params.get('gamma_severity_multiplier_enabled', False) and
+                gamma_result.get('gamma_zone') == 'DANGER'):
+            gamma_severity_mult = params.get('gamma_severity_max_multiplier', 1.5)
+            pre_gsev = lots_to_sell
+            lots_to_sell = max(math.ceil(lots_to_sell * gamma_severity_mult), 1)
+            gsev_msg = (
+                f'Gamma Severity {gamma_severity_mult:.1f}x (DANGER zone, '
+                f'nearest={gamma_result.get("nearest_distance_pct", 0):.1f}%): '
+                f'{pre_gsev} → {lots_to_sell} lots'
+            )
+            constraint_msg = f'{constraint_msg}; {gsev_msg}' if constraint_msg else gsev_msg
+        # ── END Gamma Severity Multiplier ────────────────────────────────
+
         # ── IMP-2 + Trend Boost: Directional lot adjustment ──────────────
         # When a trend is detected, the dangerous side (CE in uptrend) gets
         # reduced lots, but the safe/hedge side (PE in uptrend) gets BOOSTED
@@ -447,11 +466,16 @@ class MMMEngine:
         # After all multiplicative amplifiers, before hard caps and reductions.
         # Prevents gamma × breakeven × trend compound runaway.
         # Does NOT include asymmetry or OTM scaling (those are reductive, not amplifiers).
-        max_combined = params.get('max_combined_lot_multiplier', 3.0)
-        if max_combined > 0 and (gamma_mult > 1.0 or breakeven_mult > 1.0 or
-                                  session.get('_trend_boost_active')):
+        # When zone=CRITICAL, use breakeven_critical_lot_ceiling (separate cap for genuine emergencies).
+        breakeven_zone = session.get('_breakeven_zone', 'SAFE')
+        if breakeven_zone == 'CRITICAL':
+            max_combined = params.get('breakeven_critical_lot_ceiling', 4.0)
+        else:
+            max_combined = params.get('max_combined_lot_multiplier', 3.0)
+        if max_combined > 0 and (gamma_mult > 1.0 or gamma_severity_mult > 1.0 or
+                                  breakeven_mult > 1.0 or session.get('_trend_boost_active')):
             boost_mult = session.get('_trend_boost_mult', 1.0)
-            combined = gamma_mult * breakeven_mult * (boost_mult if session.get('_trend_boost_active') else 1.0)
+            combined = gamma_mult * gamma_severity_mult * breakeven_mult * (boost_mult if session.get('_trend_boost_active') else 1.0)
             if combined > max_combined:
                 # Scale back proportionally
                 overshoot = combined / max_combined

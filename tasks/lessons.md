@@ -1,5 +1,102 @@
 # MMM Lessons Learned
 
+## [2026-03-16] MMM settings dialog 400 error — internal params filtered causing empty update
+
+**Bug:** Settings dialog returns 400 "No valid parameters to update" even when user changed visible parameters.
+
+**Root cause:** The frontend merged ALL params from `DEFAULT_PARAMS` (including internal ones like `close_at_use_bid`, `shift_cooldown_sec`) into `formValues`. When user saved settings, if the only changed params were internal ones (not in `PARAM_RULES`), the backend validation would skip them all, leaving no valid parameters → 400 error.
+
+**Trigger:** Old sessions that get new default params on dialog open, or sessions where internal params differ from current defaults. If those internal params change value and are the only changes, the save fails.
+
+**Fix #1 (Frontend — main fix):** `MMMSettingsDialog.js` line 586-596. Added filter to only send params that exist in `paramsInfo.params` (editable params). Internal params are now excluded from PATCH requests.
+
+**Fix #2 (Backend — logging only):** `mmm_api.py` `update_session_params` endpoint. Added logging of received/validated/skipped params. Better 400 error messages showing which params were rejected and why.
+
+**Location:**
+- `webui/frontend/src/components/mmm/MMMSettingsDialog.js:586-596`
+- `webui/backend/routes/mmm/mmm_api.py:1700-1729`
+
+**Prevention rules:**
+- When a UI component merges defaults into editable form state, filter out internal/system params that aren't meant to be user-editable.
+- Backend validation should silently skip unknown params (already does this), but log what was skipped so 400 errors are debuggable.
+- If ALL submitted params are skipped during validation, return a 400 with details showing what was submitted and why each was rejected.
+- Frontend should never send params that don't exist in the backend's editable params list (`PARAM_RULES` or `paramsInfo.params`).
+
+---
+
+## [2026-03-16] inject-position race condition: heartbeat overwrites API-injected positions
+
+**Bug:** `inject-position` returns 200, but the position disappears from the session within seconds. Subsequent `set-active-strike` returns 400 "No open positions". Reconciliation then reports an untracked exchange position.
+
+**Root cause:** The monitor reloads the full session from storage at the START of each heartbeat, but then saves `self.session` (its in-memory copy) at the END. If `inject-position` saves a new position to storage while a heartbeat is in-flight (between the reload and the save), the heartbeat's save overwrites the inject. Same pattern that existed for `params` hot-reload (already fixed for params), but not for positions.
+
+**Fix:** In `_save_session`, after re-reading params, also compare stored `positions[]` by position ID. Any position in storage that doesn't exist in the monitor's in-memory session (new IDs added by API) is merged back in before saving.
+
+**Location:** `mmm_monitor.py` `_save_session()` — same block as params hot-reload fix.
+
+**Prevention rules:**
+- Any API endpoint that modifies `session[side]['positions']` is vulnerable to this race. The fix in `_save_session` protects inject-position and any future position-writing APIs.
+- The same race applies to any session field that can be written by an API AND by the heartbeat. The pattern: re-read the stored field before saving, then merge (for add-only fields like positions) or preserve (for replace fields like params).
+- When debugging a 400 from `set-active-strike`, check the backend log for the inject that preceded it — if the session has "NO record" of the exchange position, this race is the cause.
+
+---
+
+## [2026-03-16] DTE-aware breakeven engine: 4 implementation bugs found in code review
+
+**Bug 1 — pnl_clamp used wrong premium denominator**
+Implementation used `sum(p['entry_premium'] * p['lots'] for p in positions)` (current open positions only).
+After the bot harvests some lots, the denominator shrinks dramatically. Example: session collected $1000 premium total, harvested half, current positions only have $200 premium. A normal $300 loss would show as 300/200 = 1.5× (clamp fires) when vs total it's only 0.3× (clamp should NOT fire).
+**Fix:** Use `session.get('total_premium_collected', 0)` — the session-level accumulated total.
+**Also:** Missing `pnl_at_spot < 0` guard — `abs()` without the negative check would fire the clamp even when position is profitable.
+
+**Bug 2 — high_risk_mode didn't force dte_scale=1.0**
+The engine only zeroed `aggression_damp` (lot boost) when `high_risk_mode=True`. But `dte_scale` stayed at 1.5 — thresholds were still wide. Operator's FOMC/CPI override was half-broken: max lots when triggered but still triggering less often than expected.
+**Fix:** Add `dte_scale = 1.0` in the high_risk_active block — both threshold tightening AND max aggression.
+
+**Bug 3 — vol_regime_damp only affected aggression_damp, not dte_scale**
+Plan: vol_regime_damp should reduce dte_scale inside `_compute_dte_scale()`. Implementation: vol_regime_damp was only used to override aggression_damp in `_build_result()`. In HIGH vol, thresholds were NOT tightened — only lot aggression was changed.
+**Fix:** Added vol_regime damping inside `_compute_dte_scale()`: `dte_scale = 1.0 + (dte_scale - 1.0) * (1.0 - damp)`.
+
+**Bug 4 — `_high_risk_mode_expires_at` was never written**
+Engine read `session.get('_high_risk_mode_expires_at')` for auto-expiry. Nothing in the API set it. Result: high_risk_mode stayed active forever once toggled on — no 4h auto-expiry.
+**Fix:** Added setter in `mmm_api.py` `update_session_params` endpoint. When `breakeven_high_risk_mode` changes to True, sets `session['_high_risk_mode_expires_at'] = (now + 4h).isoformat()`. Clears it when toggled False.
+
+**Prevention rules:**
+- When a feature reads a session field for control logic, verify something WRITES that field. A read without a writer is dead code.
+- When overriding a behavior (high_risk_mode), override ALL the dimensions it's supposed to change (dte_scale AND aggression_damp). Check the plan carefully.
+- Use session-level aggregates (`total_premium_collected`) as denominators for ratio checks, not position-level aggregates. Positions change; the session total captures the full history.
+- Always add `value < 0` guard before using `abs(value) / total > threshold` ratio checks. The ratio firing on the wrong sign inverts the logic.
+
+---
+
+## [2026-03-15] Trend T3 BLOCK locked indefinitely — stale anchor with no plateau reset path
+
+**What went wrong:**
+`_update_trend_guard` in `mmm_regime.py` has two reset paths:
+1. Spot crosses back below anchor (immediate reset)
+2. 30% retracement from high/low + EMA calm for N beats (gradual reset)
+
+When the market moves up, hits T3 (≥1.5% from anchor), then **plateaus near the high**
+without retracing back 30%, neither path fires. The tier-escalation-only rule (`new_tier = max(raw, current)`)
+keeps it at T3 indefinitely even though the market has been calm for days.
+Concrete case: anchor=$70,647, spot=$71,507 (+1.18%), T3 was set when spot was ~$71,700.
+Only ~15% retracement from high — far below the 30% threshold. EMA slope = 0.2 (flat).
+Result: T3 BLOCK active for 3 days on a completely calm market.
+
+**Fix applied:**
+1. Save `raw_tier` (pre-escalation) separately from `new_tier`.
+2. Added plateau reset path in `else` branch of the retracement block:
+   when `raw_tier < current_tier AND ema_calmed` for `trend_plateau_reset_beats` (default 20)
+   consecutive beats, advance anchor to current price and reset to NORMAL.
+   At 5-min heartbeat, 20 beats ≈ 100 minutes of calm → resets.
+
+**Prevention rule:**
+The trend engine must have a plateau reset path. A stale anchor + tier-escalation-only
+will keep the trend locked indefinitely when the market moves up and plateaus near the high.
+Always save `raw_tier` before the escalation clamp so reset checks can use the pre-clamp value.
+
+---
+
 ## [2026-03-15] WIDE-SPREAD GUARD silently skipped close-at-5 when bid ≤ threshold but mark > threshold
 
 **What went wrong:**

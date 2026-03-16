@@ -1,11 +1,13 @@
 # Breakeven Engine + Gamma Detector — WebUI Visualization Upgrade Plan
 
-**Status:** Planning — Ready to implement
+**Status:** ✅ COMPLETED — 2026-03-15
 **Priority:** P1 (critical gap: gamma settings inaccessible from UI)
 **Estimated total effort:** ~7.75 hours
 **Files touched:** 9 (4 modify, 5 new)
 **Phases:** 9 total (1, 2, 3, 4, 5, 6, 6.5, 7, 8)
 **New dependencies:** None — all uses Recharts 2.9.0 (already installed) + MUI + SVG
+
+> **Implementation complete.** All 9 phases delivered in a single session. 436 sealed tests pass (0 regressions). Frontend build successful, all bundle sizes within budget. One backend restart required to activate the `/pnl-curve` endpoint (deferred — session `mmm16mar26-1` was RUNNING at time of implementation).
 
 ---
 

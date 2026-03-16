@@ -195,6 +195,14 @@ PARAM_RULES = {
     'breakeven_scan_range_pct':         {'type': float, 'min': 2.0,  'max': 15.0,  'hot': True},
     'max_combined_lot_multiplier':      {'type': float, 'min': 1.5,  'max': 5.0,   'hot': True},
     'breakeven_narrow_band_threshold':  {'type': float, 'min': 1.0,  'max': 10.0,  'hot': True},
+    # Breakeven DTE-aware controls
+    'breakeven_dte_threshold_mult':     {'type': float, 'min': 1.0,  'max': 5.0,   'hot': True},
+    'breakeven_dte_aggression_damp':    {'type': float, 'min': 0.0,  'max': 0.4,   'hot': True},
+    'breakeven_dte_vol_regime_damp':    {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'breakeven_dte_pnl_clamp_pct':      {'type': float, 'min': 0.5,  'max': 3.0,   'hot': True},
+    'breakeven_tv_credit_factor':       {'type': float, 'min': 0.0,  'max': 0.5,   'hot': True},
+    'breakeven_high_risk_mode':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'breakeven_critical_lot_ceiling':   {'type': float, 'min': 2.0,  'max': 6.0,   'hot': True},
     # Gamma Detector Engine
     'gamma_detector_enabled':           {'type': bool,  'min': None, 'max': None,  'hot': True},
     'gamma_step_pct':                   {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
@@ -202,7 +210,8 @@ PARAM_RULES = {
     'gamma_warning_distance_pct':       {'type': float, 'min': 0.1,  'max': 20.0,  'hot': True},
     'gamma_danger_distance_pct':        {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
     'gamma_detect_epsilon':             {'type': float, 'min': 0.01, 'max': 50.0,  'hot': True},
-    'gamma_severity_multiplier_enabled': {'type': bool, 'min': None, 'max': None,  'hot': True},
+    'gamma_severity_multiplier_enabled': {'type': bool,  'min': None, 'max': None,  'hot': False},  # requires restart when toggled
+    'gamma_severity_max_multiplier':     {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
 }
 
 
@@ -546,6 +555,14 @@ def get_param_info() -> Dict[str, Dict]:
         'breakeven_scan_range_pct': 'Minimum scan width as % of spot for breakeven search (auto-expands to 120% beyond furthest strike)',
         'max_combined_lot_multiplier': 'Cap on combined gamma × breakeven × trend multiplier product (prevents compound runaway)',
         'breakeven_narrow_band_threshold': 'Warn operator when breakeven band width falls below this % of spot',
+        # Breakeven DTE-aware controls
+        'breakeven_dte_threshold_mult': 'DTE threshold widening multiplier. dte_scale = 1 + (mult-1)*sqrt(t_remaining/t_total). At 5DTE start with mult=1.5: thresholds 50% wider. Shrinks to 1.0 at expiry.',
+        'breakeven_dte_aggression_damp': 'Reduce aggression in WARNING/DANGER zones by this fraction [0,0.4]. 0.1 = 10% reduction in lot boost. CRITICAL zone is always fully exempt.',
+        'breakeven_dte_vol_regime_damp': 'Auto-damp applied when vol regime is ELEVATED (×0.5) or HIGH (×1.0). Overrides manual aggression_damp during vol spikes.',
+        'breakeven_dte_pnl_clamp_pct': 'Disable dte_scale widening if |pnl_at_spot| / total_premium_collected > this ratio. Prevents false safety when position is already deeply in loss.',
+        'breakeven_tv_credit_factor': 'Time value credit fraction [0,0.5]. Reserved — set to 0 (Tier 3 feature, not yet active).',
+        'breakeven_high_risk_mode': 'Override all aggression damps to 0 AND force dte_scale=1.0 (0DTE-equivalent sensitivity + maximum lot aggression). Auto-expires after 4 hours via _high_risk_mode_expires_at session field.',
+        'breakeven_critical_lot_ceiling': 'Max combined lot multiplier ceiling applied when zone=CRITICAL, overriding max_combined_lot_multiplier (which applies to WARNING/DANGER).',
     }
 
     info = {}

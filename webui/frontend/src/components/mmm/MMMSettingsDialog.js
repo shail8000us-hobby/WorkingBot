@@ -223,6 +223,45 @@ const PARAM_GROUPS = {
         header: 'Advanced',
         params: ['breakeven_scan_range_pct'],
       },
+      {
+        header: 'DTE-Aware Threshold Scaling',
+        params: ['breakeven_dte_threshold_mult'],
+      },
+      {
+        header: 'DTE Aggression Controls',
+        params: ['breakeven_dte_aggression_damp', 'breakeven_dte_vol_regime_damp', 'breakeven_high_risk_mode'],
+      },
+      {
+        header: 'DTE Safety Limits',
+        params: ['breakeven_dte_pnl_clamp_pct', 'breakeven_critical_lot_ceiling'],
+      },
+    ],
+  },
+  gammaDetector: {
+    title: '📐 Gamma Detector',
+    color: '#6a1b9a',
+    blurb: 'P&L curvature scanner. Detects kinks in the portfolio P&L curve at option strikes — these kinks are gamma boundaries where hedging urgency spikes. Warns before spot reaches a breakeven boundary. Observation-only by default; Phase 9 enables lot multiplier modulation.',
+    sections: [
+      {
+        header: null,
+        params: ['gamma_detector_enabled'],
+      },
+      {
+        header: 'Scan Parameters',
+        params: ['gamma_step_pct', 'gamma_scan_steps'],
+      },
+      {
+        header: 'Zone Thresholds (% distance from spot to nearest gamma boundary)',
+        params: ['gamma_warning_distance_pct', 'gamma_danger_distance_pct'],
+      },
+      {
+        header: 'Detection Sensitivity',
+        params: ['gamma_detect_epsilon'],
+      },
+      {
+        header: 'Advanced — Phase 9 Gate (requires session restart)',
+        params: ['gamma_severity_multiplier_enabled'],
+      },
     ],
   },
 };
@@ -371,6 +410,21 @@ const PARAM_TOOLTIPS = {
   max_combined_lot_multiplier: 'Caps the combined effect of ALL lot multipliers (gamma-aware × breakeven × trend boost). Prevents compound runaway. A value of 3.0 means the total multiplier never exceeds 3×, even if individual systems each want more. Applied after all individual multipliers, before position caps.',
   breakeven_narrow_band_threshold: 'Diagnostic threshold for narrow band warning. When the breakeven band width (upper − lower, as % of spot) falls below this, the UI displays an amber warning and an activity log is emitted. Does not trigger automatic responses — operator decides corrective action. Default 5% warns when both breakevens are within ~2.5% of spot.',
   breakeven_scan_range_pct: 'Minimum scan width from spot (% of spot). The engine auto-expands the range to cover all open strikes (120% of furthest strike distance). This parameter acts as a floor. Default 5% is sufficient for most sessions.',
+  // Breakeven DTE-aware controls
+  breakeven_dte_threshold_mult: 'DTE threshold widening multiplier. Uses √T scaling: dte_scale = 1 + (mult−1)×√(hours_remaining/total_hours). With mult=1.5, thresholds start 50% wider at session creation and decay back to standard at expiry. Default 1.0 = disabled (backward-compatible).',
+  breakeven_dte_aggression_damp: 'Reduce lot boost amplitude in WARNING and DANGER zones by this fraction. 0.1 = 10% reduction (e.g. max WARNING goes from 1.3× to 1.27×). CRITICAL zone is always fully exempt — damp never applies there. Default 0.0 = no reduction.',
+  breakeven_dte_vol_regime_damp: 'Auto-damp fraction applied during volatile regimes. ELEVATED vol: this×0.5. HIGH vol: this×1.0. Overrides the manual aggression_damp setting. With 0.2: ELEVATED = 10% damp, HIGH = 20% damp. Does not affect CRITICAL zone.',
+  breakeven_high_risk_mode: 'Emergency override: set all aggression damps to 0 (maximum breakeven response). Intended for sessions where you manually determine that maximum lot boost is warranted. Auto-expires after 4 hours — set _high_risk_mode_expires_at in session to control duration.',
+  breakeven_dte_pnl_clamp_pct: 'Safety clamp: if |pnl_at_spot| / total_premium_collected exceeds this ratio, dte_scale reverts to 1.0. Prevents dte_scale from keeping thresholds artificially wide when the position is already deeply in trouble. Requires ≥5 lots total to trigger (avoids false clamp on tiny positions). Default 1.5.',
+  breakeven_critical_lot_ceiling: 'Combined multiplier ceiling specifically for CRITICAL zone. Replaces max_combined_lot_multiplier when zone=CRITICAL, allowing a higher ceiling during genuine emergencies. Default 4.0 (vs typical 3.0 combined cap). Still bounded by max_lots_per_side.',
+  // Gamma Detector Engine
+  gamma_detector_enabled: 'Enable real-time portfolio gamma boundary scanning. The detector computes the P&L curve from your open positions and finds BTC price levels where the curve kinks sharply — these are gamma boundaries where hedging urgency spikes. Observation-only by default (no lot changes) until gamma_severity_multiplier_enabled is turned on. Safe to enable: no trades are affected.',
+  gamma_step_pct: 'Step size as % of BTC spot for the P&L curve scan. Smaller = finer resolution but more computation. 0.5% at BTC $87k ≈ $435 per step. Range: 0.1–5.0. Default 0.5%.',
+  gamma_scan_steps: 'Steps to scan outward from spot in each direction. Total scan range = ±(gamma_step_pct × gamma_scan_steps). With defaults (0.5% × 40), range = ±20% of spot. More steps = wider view but slower. Range: 10–200. Default 40.',
+  gamma_warning_distance_pct: 'Distance (% of spot) from nearest gamma boundary that triggers Warning zone. At 3% with BTC at $87k, Warning fires when spot is within ~$2,610 of a kink. Must be greater than Danger threshold. Default 3.0%.',
+  gamma_danger_distance_pct: 'Distance (% of spot) from nearest gamma boundary that triggers Danger zone. At 1.5% with BTC at $87k, Danger fires when spot is within ~$1,305 of a kink. Must be less than Warning threshold. Default 1.5%.',
+  gamma_detect_epsilon: 'Minimum absolute P&L second-difference (USD) to classify a point as a gamma boundary. Too low = noise triggers false kinks. Too high = misses real boundaries. At 0.3, a kink must cause a $0.30+ curvature change per step. Range: 0.01–50.0. Default 0.3.',
+  gamma_severity_multiplier_enabled: 'Phase 9 gate — enables lot multiplier modulation from gamma severity scores. When ON, gamma boundary proximity boosts hedge lots directionally (toward the threatened side). The combined multiplier ceiling (max_combined_lot_multiplier) still applies. REQUIRES SESSION RESTART when toggled. Off by default until Phase 9 validation is complete.',
 };
 
 // =============================================================================
@@ -530,10 +584,17 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const isRunning = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(sessionStatus);
 
       // Filter out unchanged params; when running, skip non-hot params to avoid 400
+      // Also filter out internal params that aren't editable (not in paramsInfo.params)
       const changedParams = {};
       const hotParams = new Set(paramsInfo?.hot_reload_params || []);
+      const editableParams = paramsInfo?.params || {};
 
       for (const [key, value] of Object.entries(formValues)) {
+        // Skip internal params that aren't editable
+        if (!editableParams[key]) {
+          continue;
+        }
+
         if (value !== currentParams[key]) {
           if (!isRunning || hotParams.has(key)) {
             changedParams[key] = value;

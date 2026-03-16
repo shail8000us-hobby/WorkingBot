@@ -545,15 +545,24 @@ DEFAULT_PARAMS = {
     'breakeven_scan_range_pct': 5.0,      # min scan width as % of spot (floor; auto-expands)
     'max_combined_lot_multiplier': 3.0,   # cap on combined gamma × breakeven × trend multiplier
     'breakeven_narrow_band_threshold': 5.0,  # warn when band width < this % of spot
+    # Breakeven DTE-aware controls
+    'breakeven_dte_threshold_mult': 1.0,     # √T multiplier (1.0 = disabled, backward-compatible)
+    'breakeven_dte_aggression_damp': 0.0,    # manual lot boost reduction in WARNING/DANGER [0,0.4]
+    'breakeven_dte_vol_regime_damp': 0.2,    # auto-damp when vol regime is ELEVATED/HIGH
+    'breakeven_dte_pnl_clamp_pct': 1.5,      # reset dte_scale when |pnl|/premium > this ratio
+    'breakeven_tv_credit_factor': 0.0,       # reserved (Tier 3 — not yet active)
+    'breakeven_high_risk_mode': False,        # override all damps; auto-expires via session field
+    'breakeven_critical_lot_ceiling': 4.0,   # ceiling when zone=CRITICAL (overrides combined cap)
 
-    # Gamma Detector Engine — portfolio curvature scanning (observation-only until Phase 9)
+    # Gamma Detector Engine — portfolio curvature scanning
     'gamma_detector_enabled': False,           # master switch
     'gamma_step_pct': 0.5,                    # step size as % of spot for second-difference
     'gamma_scan_steps': 40,                   # steps to scan outward in each direction
     'gamma_warning_distance_pct': 3.0,        # nearest gamma boundary within 3% → WARNING
     'gamma_danger_distance_pct': 1.5,         # nearest gamma boundary within 1.5% → DANGER
     'gamma_detect_epsilon': 0.3,              # abs threshold for detecting a kink (USD)
-    'gamma_severity_multiplier_enabled': False,  # Phase 9 gate — requires restart when toggled
+    'gamma_severity_multiplier_enabled': True,   # enable trading impact (lot multiplier in DANGER zone)
+    'gamma_severity_max_multiplier': 1.5,     # max lot multiplier applied in DANGER zone
 
     # Guardian — heartbeat-level integrity checks
     'guardian_enabled': True,              # master switch for MMM Guardian
@@ -671,9 +680,15 @@ HOT_RELOAD_PARAMS = {
     'breakeven_control_enabled', 'breakeven_warning_pct', 'breakeven_danger_pct',
     'breakeven_critical_pct', 'breakeven_aggression_max', 'breakeven_scan_range_pct',
     'max_combined_lot_multiplier', 'breakeven_narrow_band_threshold',
+    # Breakeven DTE-aware controls
+    'breakeven_dte_threshold_mult', 'breakeven_dte_aggression_damp',
+    'breakeven_dte_vol_regime_damp', 'breakeven_dte_pnl_clamp_pct',
+    'breakeven_tv_credit_factor', 'breakeven_high_risk_mode',
+    'breakeven_critical_lot_ceiling',
     # Gamma Detector Engine (gamma_severity_multiplier_enabled is NOT hot-reloadable)
     'gamma_detector_enabled', 'gamma_step_pct', 'gamma_scan_steps',
     'gamma_warning_distance_pct', 'gamma_danger_distance_pct', 'gamma_detect_epsilon',
+    'gamma_severity_max_multiplier',
 }
 
 
