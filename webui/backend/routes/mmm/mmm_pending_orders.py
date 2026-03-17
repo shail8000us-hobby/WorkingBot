@@ -47,6 +47,12 @@ _STATES_FILLED = {'filled', 'closed', 'completed'}
 _STATES_DEAD   = {'cancelled', 'canceled', 'rejected', 'expired'}
 # Time after which we consider an unverifiable order stale and allow a new one
 _STALE_SECONDS = 900  # 15 minutes
+# C2 FIX: Short TTL for the 'pending' pre-registration sentinel.
+# 'pending' is written before smart_execute() and replaced with the real order_id
+# after placement. If smart_execute() hangs (network stall, exchange timeout),
+# the sentinel blocks the side for the full _STALE_SECONDS (15 min). 90 s is
+# enough for the reprice loop (~4 × 60s attempts) to complete or fail cleanly.
+_PENDING_SENTINEL_STALE_SECONDS = 90
 
 
 def register_pending(
@@ -139,17 +145,26 @@ async def check_and_resolve_pending(
     adj_type = pending.get('adj_type', 'standard')
     placed_at_str = pending.get('placed_at', '')
 
-    # Stale check: if placed > 15 min ago and we still can't verify, let through
+    # Stale check — two thresholds:
+    # - 'pending' sentinel (pre-registration placeholder): short 90s TTL so a
+    #   hung smart_execute() does not block the side for 15 minutes.
+    # - Real order_id: full 15-minute TTL before treating as unverifiable.
     if placed_at_str:
         try:
             placed_dt = datetime.fromisoformat(placed_at_str)
             if placed_dt.tzinfo is None:
                 placed_dt = placed_dt.replace(tzinfo=timezone.utc)
             age_seconds = (datetime.now(timezone.utc) - placed_dt).total_seconds()
-            if age_seconds > _STALE_SECONDS:
+            stale_threshold = (
+                _PENDING_SENTINEL_STALE_SECONDS
+                if order_id == 'pending'
+                else _STALE_SECONDS
+            )
+            if age_seconds > stale_threshold:
                 log.warning(
-                    f"[{session_id}] Pending order {order_id} is stale "
-                    f"({age_seconds:.0f}s old) — clearing and allowing new order"
+                    f"[{session_id}] Pending order {order_id!r} is stale "
+                    f"({age_seconds:.0f}s > {stale_threshold}s threshold) — "
+                    f"clearing and allowing new order"
                 )
                 clear_pending(session_id, side)
                 return 'stale'

@@ -47,6 +47,9 @@ import { HELP } from './MMMEducation';
 // Parameter Groups for UI Organization
 // =============================================================================
 
+// Sealed params — logic is contract-tested and protected. Badge shown in UI.
+const SEALED_PARAMS = new Set(['max_loss_amount', 'initial_lots', 'adjustment_interval']);
+
 const PARAM_GROUPS = {
   core: {
     title: 'Core Parameters',
@@ -58,7 +61,7 @@ const PARAM_GROUPS = {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
     blurb: 'Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.',
-    params: ['min_trigger_move', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'pre_sell_shift_enabled', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
@@ -142,6 +145,7 @@ const PARAM_GROUPS = {
       'shift_recycle_enabled',
       'shift_recycle_premium_floor', 'shift_recycle_floor_ratio',
       'shift_recycle_max_pct',
+      'shift_recycle_pressure_threshold',
     ],
   },
   balanceControl: {
@@ -272,9 +276,12 @@ const PARAM_TOOLTIPS = {
   adjustment_interval: HELP.heartbeat_interval || 'Seconds between heartbeat checks. Shorter = more responsive (catches fast moves) but more API calls and potential fees. Default 300 = 5 minutes.',
   max_loss_amount: HELP.max_loss || 'Absolute dollar hard stop. If your total P&L drops below this negative amount, ALL positions are immediately closed. Your last line of defense.',
   min_trigger_move: HELP.min_trigger_move || 'Minimum % premium must exceed trigger to fire adjustment.',
+  min_trigger_dollar: 'Dollar floor trigger for active strike. Fires an adjustment if the active-strike USD loss (premium_excess × lots × 0.001 BTC) exceeds this amount — regardless of the % threshold. Catches dead-zone losses that accumulate below min_trigger_move at high lot counts. 0 = disabled (default). Example: 0.50 at 10 lots fires when premium rises ~$50.',
+  min_frozen_trigger_dollar: 'Frozen position fallback trigger. Fires a hedge if the total USD loss across all frozen (old-strike) positions exceeds this amount when the active-strike trigger has NOT fired. Covers the blind spot where stranded positions bleed without triggering. 0 = disabled (default). Only runs after active trigger returns no action.',
   shift_threshold: HELP.shift_threshold || 'Minimum premium at the hedge strike to avoid a strike shift.',
   shift_threshold_pct: HELP.shift_threshold_pct || 'Dynamic shift threshold as % of entry premium.',
   shift_target_premium: 'Target premium when looking for a new strike after a shift. The algo picks the strike closest to this premium value. Higher = deeper OTM (safer but less premium). Lower = closer to ATM (more premium but riskier).',
+  pre_sell_shift_enabled: 'Experimental: Before selling hedge lots at a cheap premium, shift to a better strike first. In an up-move, CE rises but PE drops — without this, the algo keeps selling PE at 60-80 when target is 100, causing lot imbalance. With this ON: if PE < shift_target_premium, find a closer-to-ATM PE strike at ~100 first, THEN sell fewer lots there. Falls back to current behavior if no better strike exists in the chain. Default OFF — enable to test.',
   shift_match_opposite_lots: 'Delta-neutral balance: when a strike shift opens a new position, sell AT LEAST as many lots as the opposite side has active. Example: PE has 11 lots, CE shifts → CE opens 11 lots too (not just 4). Prevents directional bias from lot asymmetry. Trend-tier lot reduction is applied proportionally so risk controls are respected. Recommended: ON.',
   max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',
   cooldown_on_reversal: HELP.cooldown || 'After a reversal is detected, skip one heartbeat interval before adjusting. Filters out false reversals from short price spikes.',
@@ -378,6 +385,7 @@ const PARAM_TOOLTIPS = {
   shift_recycle_premium_floor: 'Shift-Time Recycle: Only close frozen positions with live premium BELOW this amount. 0 = use dynamic floor (shift_recycle_floor_ratio × new_strike_premium). Default 60 = close frozen positions worth $60 or less. Higher = more aggressive cleanup.',
   shift_recycle_floor_ratio: 'Shift-Time Recycle dynamic floor: when shift_recycle_premium_floor is 0, compute floor as this fraction × new_strike_premium. 0.40 = close frozen if it costs less than 40% of the new strike. Auto-adapts to current market premium levels.',
   shift_recycle_max_pct: 'Shift-Time Recycle: max fraction of total frozen lots to close per shift. 1.0 = all eligible lots. 0.5 = at most 50% of frozen lots per shift. Prevents liquidating too many positions at once.',
+  shift_recycle_pressure_threshold: 'Shift-Time Recycle: minimum capacity pressure (total_lots / max_lots_per_side) required before recycle runs. 0.7 = only recycle when 70%+ full. 0.0 = always run (not recommended — closes winning positions unnecessarily and wastes fees).',
   // M3: Asymmetry Rebalancing
   rebalance_enabled: 'M3: Enable asymmetry-aware harvest threshold relaxation. When one side accumulates many more lots than the other, the harvest thresholds on the dominant side are automatically relaxed to free capacity faster.',
   rebalance_asymmetry_threshold: 'M3: CE/PE lot ratio that triggers relaxed harvesting on the dominant side. Default 5.0 = relax when one side has 5× more lots than the other. Lower = more aggressive rebalancing.',
@@ -451,6 +459,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const [serverError, setServerError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState(null);
+  const [search, setSearch] = useState('');
 
   // Fetch session data when dialog opens
   useEffect(() => {
@@ -509,6 +518,12 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       check: (v) => v.atm_shield_enabled && v.close_at_atm,
       message: 'ATM Shield and Close-at-ATM conflict. Both handle ATM approaches but differently: ATM Shield repositions (close + re-sell farther OTM), Close-at-ATM just closes. Enable only one. ATM Shield is preferred — it maintains premium collection capacity.',
       params_affected: ['close_at_atm'],
+    },
+    {
+      params: ['pre_sell_shift_enabled', 'shift_match_opposite_lots'],
+      check: (v) => v.pre_sell_shift_enabled && v.shift_match_opposite_lots,
+      message: 'Pre-Sell Shift and Delta-Neutral Match conflict. Pre-Sell Shift aims to sell fewer lots at better premium. Delta-Neutral Match then inflates those lots to match the opposite side — cancelling the lot-reduction benefit. Disable shift_match_opposite_lots when using pre_sell_shift_enabled.',
+      params_affected: ['shift_match_opposite_lots'],
     },
   ];
 
@@ -643,14 +658,73 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     );
   };
 
+  // Badge-style hot/lock + help icons
+  const renderIcons = (isHot, paramName) => (
+    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexShrink: 0 }}>
+      <Box component="span" sx={{
+        fontSize: '0.70rem', fontWeight: isHot ? 700 : 400, letterSpacing: '0.3px',
+        background: isHot ? 'rgba(255,152,0,0.12)' : 'rgba(139,148,158,0.08)',
+        border: '1px solid', borderColor: isHot ? 'rgba(255,152,0,0.3)' : 'rgba(139,148,158,0.18)',
+        color: isHot ? '#ffa726' : '#6e7681',
+        borderRadius: '4px', px: '4px', py: '1px', whiteSpace: 'nowrap',
+      }}>
+        {isHot ? '⚡ HOT' : '🔒'}
+      </Box>
+      {SEALED_PARAMS.has(paramName) && (
+        <Box component="span" sx={{
+          fontSize: '0.70rem', fontWeight: 700, letterSpacing: '0.3px',
+          background: 'rgba(76,175,80,0.10)',
+          border: '1px solid rgba(76,175,80,0.35)',
+          color: '#66bb6a',
+          borderRadius: '4px', px: '4px', py: '1px', whiteSpace: 'nowrap',
+        }}>
+          🔒 SEALED
+        </Box>
+      )}
+      {renderHelpIcon(paramName)}
+    </Box>
+  );
+
+  // Shared card and text styles (defined outside renderParam to avoid recreation)
+  const cardSx = {
+    background: '#1c2128',
+    border: '1px solid #21262d',
+    borderRadius: '8px',
+    p: '10px 12px 8px',
+    height: '100%',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 1,
+    transition: 'border-color 0.15s',
+    '&:hover': { borderColor: 'rgba(56,139,253,0.25)' },
+  };
+  const descSx = { fontSize: '0.85rem', lineHeight: 1.45, color: '#eaf0f8' };
+  const keySx  = { fontSize: '0.72rem', fontFamily: 'monospace', color: 'rgba(79,156,255,0.92)', display: 'block' };
+
   // Render parameter input
-  const renderParam = (paramName) => {
+  const renderParam = (paramName, skipFilter = false) => {
     const params = paramsInfo?.params || {};
     const info = params[paramName] || {};
     const type = info.type || 'str';
     const value = formatValue(formValues[paramName], type);
     const error = errors[paramName];
     const isHot = info.hot_reload;
+    const description = info.description || paramName;
+
+    // Search filter — hide params that don't match (skipped in flat search mode)
+    if (!skipFilter && search.trim()) {
+      const q = search.toLowerCase();
+      const pNorm = paramName.toLowerCase().replace(/_/g, ' ');
+      const matches =
+        pNorm.includes(q) ||
+        paramName.toLowerCase().includes(q) ||
+        description.toLowerCase().includes(q);
+      if (!matches) return null;
+    }
+
+    const rangeText =
+      info.min !== undefined && info.min !== null && info.max !== undefined && info.max !== null
+        ? `${info.min}–${info.max}` : '';
 
     // String select params (e.g. wind_down_floor_action)
     const STRING_SELECT_OPTIONS = {
@@ -679,20 +753,32 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const options = STRING_SELECT_OPTIONS[paramName];
       return (
         <Grid item xs={12} sm={6} key={paramName}>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-            <FormControl fullWidth size="small">
-              <InputLabel>{info.description || paramName}</InputLabel>
-              <Select
-                value={value || ''}
-                label={info.description || paramName}
-                onChange={(e) => handleChange(paramName, e.target.value, type)}
-              >
-                {options.map((opt) => (
-                  <MenuItem key={opt.value} value={opt.value}>{opt.label}</MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            {renderHelpIcon(paramName)}
+          <Box sx={cardSx}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+              <Typography sx={{ ...descSx, flex: 1 }}>{description}</Typography>
+              {renderIcons(isHot, paramName)}
+            </Box>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 'auto' }}>
+              <Typography sx={keySx}>{paramName}</Typography>
+              <FormControl size="small" sx={{ minWidth: 190 }}>
+                <Select
+                  value={value || ''}
+                  onChange={(e) => handleChange(paramName, e.target.value, type)}
+                  displayEmpty
+                  sx={{
+                    fontSize: '0.88rem',
+                    '& .MuiInputBase-input': { py: '4px', px: '10px' },
+                    '& .MuiOutlinedInput-root': { background: '#0d1117' },
+                    '& fieldset': { borderColor: '#30363d' },
+                    '&:hover fieldset': { borderColor: '#6e7681' },
+                  }}
+                >
+                  {options.map((opt) => (
+                    <MenuItem key={opt.value} value={opt.value} sx={{ fontSize: '0.88rem' }}>{opt.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Box>
           </Box>
         </Grid>
       );
@@ -701,40 +787,47 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     if (type === 'bool') {
       const conflictWarnings = getConflictWarnings(formValues);
       const conflictMsg = conflictWarnings[paramName];
+      const isOn = Boolean(value);
       return (
         <Grid item xs={12} key={paramName}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={Boolean(value)}
-                    onChange={(e) => handleChange(paramName, e.target.checked, type)}
-                    size="small"
-                    color={conflictMsg ? 'warning' : 'primary'}
-                  />
-                }
-                label={
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                    <Typography variant="body2">{info.description || paramName}</Typography>
-                    {!isHot && (
-                      <Tooltip title="Requires session restart">
-                        <LockIcon sx={{ fontSize: 14, color: 'text.disabled' }} />
-                      </Tooltip>
-                    )}
-                    {isHot && (
-                      <Tooltip title="Hot-reloadable">
-                        <HotIcon sx={{ fontSize: 14, color: '#ff9800' }} />
-                      </Tooltip>
-                    )}
-                    {renderHelpIcon(paramName)}
-                  </Box>
-                }
+          <Box
+            sx={{
+              background: conflictMsg ? 'rgba(255,152,0,0.05)' : isOn ? 'rgba(56,139,253,0.07)' : '#1c2128',
+              border: '1px solid',
+              borderColor: conflictMsg ? 'rgba(210,120,0,0.5)' : isOn ? 'rgba(56,139,253,0.4)' : '#21262d',
+              borderRadius: '8px',
+              px: '12px', py: '9px',
+              cursor: 'pointer',
+              transition: 'border-color 0.15s, background-color 0.15s',
+              '&:hover': { borderColor: conflictMsg ? 'rgba(210,120,0,0.7)' : 'rgba(56,139,253,0.5)' },
+            }}
+            onClick={() => handleChange(paramName, !isOn, type)}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1.25 }}>
+              <Switch
+                checked={isOn}
+                onChange={(e) => { e.stopPropagation(); handleChange(paramName, e.target.checked, type); }}
+                size="small"
+                color={conflictMsg ? 'warning' : 'primary'}
+                sx={{ mt: 0.15, flexShrink: 0 }}
               />
+              <Box sx={{ flex: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+                  <Typography sx={{
+                    ...descSx, flex: 1, userSelect: 'none',
+                    color: isOn ? '#eaf0f8' : '#9ba8b5',
+                    transition: 'color 0.15s',
+                  }}>
+                    {description}
+                  </Typography>
+                  {renderIcons(isHot, paramName)}
+                </Box>
+                <Typography sx={{ ...keySx, mt: 0.4 }}>{paramName}</Typography>
+              </Box>
             </Box>
             {conflictMsg && (
-              <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.75rem' }} icon={<WarningIcon fontSize="small" />}>
-                ⚠️ <strong>Conflict:</strong> {conflictMsg}
+              <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.7rem', mt: 0.75 }} icon={<WarningIcon fontSize="small" />}>
+                <strong>Conflict:</strong> {conflictMsg}
               </Alert>
             )}
           </Box>
@@ -742,53 +835,62 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       );
     }
 
+    // ── Numeric ──
     return (
       <Grid item xs={12} sm={6} key={paramName}>
-        <TextField
-          label={
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              {info.description || paramName}
-              {!isHot && (
-                <Tooltip title="Requires session restart">
-                  <LockIcon sx={{ fontSize: 12, color: 'text.disabled', ml: 0.5 }} />
-                </Tooltip>
+        <Box sx={cardSx}>
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
+            <Typography sx={{ ...descSx, flex: 1 }}>{description}</Typography>
+            {renderIcons(isHot, paramName)}
+          </Box>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 'auto' }}>
+            <Typography sx={keySx}>{paramName}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+              {rangeText && (
+                <Typography sx={{ fontSize: '0.70rem', color: '#8b949e', whiteSpace: 'nowrap' }}>
+                  {rangeText}
+                </Typography>
               )}
-              {isHot && (
-                <Tooltip title="Hot-reloadable">
-                  <HotIcon sx={{ fontSize: 12, color: '#ff9800', ml: 0.5 }} />
-                </Tooltip>
-              )}
-              {renderHelpIcon(paramName)}
+              <TextField
+                type="number"
+                value={value}
+                onChange={(e) => handleChange(paramName, e.target.value, type)}
+                size="small"
+                error={Boolean(error)}
+                inputProps={{ min: info.min, max: info.max, step: type === 'int' ? 1 : 0.01 }}
+                sx={{
+                  width: 90,
+                  '& .MuiOutlinedInput-root': {
+                    background: '#0d1117',
+                    '& fieldset': { borderColor: error ? 'error.main' : '#30363d' },
+                    '&:hover fieldset': { borderColor: error ? 'error.main' : '#6e7681' },
+                    '&.Mui-focused fieldset': { borderColor: '#388bfd' },
+                  },
+                  '& .MuiInputBase-input': {
+                    py: '4px', px: '8px',
+                    fontSize: '1.0rem', fontWeight: 600,
+                    textAlign: 'right',
+                    color: error ? 'error.main' : '#79c0ff',
+                    fontFamily: '"SF Mono","Fira Code",monospace',
+                  },
+                }}
+              />
             </Box>
-          }
-          type="number"
-          value={value}
-          onChange={(e) => handleChange(paramName, e.target.value, type)}
-          fullWidth
-          size="small"
-          error={Boolean(error)}
-          helperText={
-            error ||
-            (info.min !== undefined && info.min !== null && info.max !== undefined && info.max !== null
-              ? `Range: ${info.min} - ${info.max}`
-              : '')
-          }
-          inputProps={{
-            min: info.min,
-            max: info.max,
-            step: type === 'int' ? 1 : type === 'float' ? 0.01 : undefined,
-          }}
-        />
+          </Box>
+          {error && (
+            <Typography sx={{ fontSize: '0.72rem', color: 'error.main', mt: 0.25 }}>{error}</Typography>
+          )}
+        </Box>
       </Grid>
     );
   };
 
   return (
-    <Dialog open={open} onClose={() => !saving && onClose()} maxWidth="md" fullWidth>
-      <DialogTitle>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+    <Dialog open={open} onClose={() => !saving && onClose()} maxWidth="lg" fullWidth>
+      <DialogTitle sx={{ pb: 1, background: '#1c2128', borderBottom: '1px solid #21262d' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
           <SettingsIcon color="primary" />
-          <span>Strategy Settings</span>
+          <span style={{ fontWeight: 600 }}>Strategy Settings</span>
           <Chip
             label={`Session: ${sessionId}`}
             size="small"
@@ -796,9 +898,34 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
             sx={{ ml: 'auto', fontFamily: 'monospace', fontSize: 11 }}
           />
         </Box>
+        <TextField
+          placeholder="Search parameters…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          size="small"
+          fullWidth
+          sx={{
+            mb: 1.5,
+            '& .MuiOutlinedInput-root': { background: '#0d1117' },
+            '& fieldset': { borderColor: '#30363d' },
+            '&:hover fieldset': { borderColor: '#6e7681' },
+          }}
+          inputProps={{ style: { fontSize: '0.82rem' } }}
+        />
+        <Box sx={{
+          background: 'rgba(56,139,253,0.08)',
+          border: '1px solid rgba(56,139,253,0.2)',
+          borderRadius: '6px',
+          px: 1.5, py: 0.75,
+          fontSize: '0.82rem', color: '#79c0ff',
+          display: 'flex', alignItems: 'center', gap: 0.75,
+        }}>
+          <HotIcon sx={{ fontSize: 14 }} />
+          <span><strong>Hot Reload:</strong> changes apply on next heartbeat. <strong>🔒</strong> params require session restart.</span>
+        </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ maxHeight: '75vh', overflowY: 'auto' }}>
+      <DialogContent sx={{ maxHeight: '72vh', overflowY: 'auto', background: '#161b22', p: '16px 20px' }}>
         {loading && (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
             <CircularProgress />
@@ -819,89 +946,88 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
         {!loading && sessionData && (
           <>
-            <Alert severity="info" sx={{ mb: 3 }} icon={<HotIcon />}>
-              <strong>Hot Reload:</strong> Changes take effect immediately on the next heartbeat.
-              Parameters with <LockIcon sx={{ fontSize: 12, verticalAlign: 'middle' }} /> require
-              session restart.
-            </Alert>
+            {search.trim() ? (
+              /* Search mode: flat list, no group headers */
+              (() => {
+                const q = search.toLowerCase();
+                const params = paramsInfo?.params || {};
+                const matches = Object.keys(params).filter(p => {
+                  const info = params[p] || {};
+                  const desc = info.description || p;
+                  const pNorm = p.toLowerCase().replace(/_/g, ' ');
+                  return pNorm.includes(q) || p.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
+                });
+                if (!matches.length) {
+                  return (
+                    <Typography sx={{ color: '#6e7681', fontSize: '0.82rem', textAlign: 'center', mt: 4 }}>
+                      No parameters match "{search}"
+                    </Typography>
+                  );
+                }
+                return (
+                  <Grid container spacing={1}>
+                    {matches.map(p => renderParam(p, /* skipFilter */ true))}
+                  </Grid>
+                );
+              })()
+            ) : (
+              /* Normal grouped layout */
+              Object.entries(PARAM_GROUPS).map(([groupKey, group], idx) => (
+                <Box key={groupKey} sx={{ mb: 2 }}>
+                  {idx > 0 && <Divider sx={{ my: 2, borderColor: '#21262d' }} />}
 
-            {/* Render parameter groups */}
-            {Object.entries(PARAM_GROUPS).map(([groupKey, group], idx) => (
-              <Box key={groupKey} sx={{ mb: 3 }}>
-                {idx > 0 && <Divider sx={{ my: 3 }} />}
+                  {/* Group header */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <Box sx={{ width: 3, height: 16, backgroundColor: group.color, borderRadius: '2px', flexShrink: 0 }} />
+                    <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: group.color }}>
+                      {group.title}
+                    </Typography>
+                    {groupKey === 'safety' && (
+                      <Box component="span" sx={{
+                        ml: 'auto', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.5px',
+                        background: 'rgba(210,120,0,0.15)', border: '1px solid rgba(210,120,0,0.4)',
+                        color: '#f0883e', borderRadius: '4px', px: '6px', py: '1px', fontSize: '0.69rem',
+                      }}>⚠ CRITICAL</Box>
+                    )}
+                  </Box>
+                  {group.blurb && (
+                    <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem', pl: '11px' }}>
+                      💡 {group.blurb}
+                    </Typography>
+                  )}
 
-                <Box sx={{ mb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Box
-                    sx={{
-                      width: 4,
-                      height: 20,
-                      backgroundColor: group.color,
-                      borderRadius: 1,
-                    }}
-                  />
-                  <Typography variant="subtitle2" sx={{ fontWeight: 700, color: group.color }}>
-                    {group.title}
-                  </Typography>
-
-                  {groupKey === 'safety' && (
-                    <Chip
-                      label="CRITICAL"
-                      size="small"
-                      color="warning"
-                      icon={<WarningIcon />}
-                      sx={{ ml: 'auto', fontWeight: 700 }}
-                    />
+                  {group.sections ? (
+                    group.sections.map((section, sectionIdx) => (
+                      <Box key={sectionIdx}>
+                        {sectionIdx > 0 && <Divider sx={{ my: 1.5, borderStyle: 'dashed', borderColor: '#21262d' }} />}
+                        {section.header && (
+                          <Typography sx={{
+                            display: 'block', fontWeight: 600, color: group.color || '#6e7681',
+                            mb: 1, mt: sectionIdx > 0 ? 0.5 : 0,
+                            letterSpacing: '0.6px', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.90,
+                          }}>
+                            {section.header}
+                          </Typography>
+                        )}
+                        <Grid container spacing={1}>
+                          {section.params.map((paramName) => renderParam(paramName))}
+                        </Grid>
+                      </Box>
+                    ))
+                  ) : (
+                    <Grid container spacing={1}>
+                      {group.params.map((paramName) => renderParam(paramName))}
+                    </Grid>
                   )}
                 </Box>
-                {group.blurb && (
-                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1.5, fontStyle: 'italic', fontSize: '0.72rem', opacity: 0.8 }}>
-                    💡 {group.blurb}
-                  </Typography>
-                )}
-
-                {/* Render params - either flat list or sectioned */}
-                {group.sections ? (
-                  // Sectioned layout (e.g., Breakeven Engine with Zone Thresholds, Aggression, etc.)
-                  group.sections.map((section, sectionIdx) => (
-                    <Box key={sectionIdx}>
-                      {sectionIdx > 0 && <Divider sx={{ my: 2.5, borderStyle: 'dashed', opacity: 0.3 }} />}
-                      {section.header && (
-                        <Typography
-                          variant="caption"
-                          sx={{
-                            display: 'block',
-                            fontWeight: 600,
-                            color: group.color || 'text.secondary',
-                            mb: 1.5,
-                            mt: sectionIdx > 0 ? 1 : 0,
-                            letterSpacing: '0.5px',
-                            textTransform: 'uppercase',
-                            fontSize: '0.7rem',
-                            opacity: 0.8,
-                          }}
-                        >
-                          {section.header}
-                        </Typography>
-                      )}
-                      <Grid container spacing={2}>
-                        {section.params.map((paramName) => renderParam(paramName))}
-                      </Grid>
-                    </Box>
-                  ))
-                ) : (
-                  // Flat layout (all other param groups)
-                  <Grid container spacing={2}>
-                    {group.params.map((paramName) => renderParam(paramName))}
-                  </Grid>
-                )}
-              </Box>
-            ))}
+              ))
+            )}
           </>
         )}
       </DialogContent>
 
-      <DialogActions sx={{ px: 3, pb: 2 }}>
-        <Button onClick={() => onClose()} disabled={saving}>
+      <DialogActions sx={{ px: 3, pb: 2, background: '#1c2128', borderTop: '1px solid #21262d' }}>
+        <Button onClick={() => onClose()} disabled={saving} sx={{ color: '#8b949e', borderColor: '#30363d', '&:hover': { borderColor: '#8b949e', color: '#e6edf3' } }} variant="outlined">
           Cancel
         </Button>
         <Button
@@ -909,6 +1035,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
           onClick={handleSave}
           disabled={saving || success}
           startIcon={saving ? <CircularProgress size={16} /> : undefined}
+          sx={{ background: '#1f6feb', '&:hover': { background: '#388bfd' }, fontWeight: 600 }}
         >
           {saving ? 'Saving...' : success ? 'Saved!' : 'Save Changes'}
         </Button>

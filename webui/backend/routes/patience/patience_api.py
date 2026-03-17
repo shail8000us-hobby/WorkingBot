@@ -760,7 +760,7 @@ def _build_symbol(leg):
 
     if len(expiry_date) >= 10:
         parts = expiry_date.split('-')
-        ddmmyy = parts[2] + parts[1] + parts[0][2:]  # DDMMYY
+        ddmmyy = parts[2] + parts[1] + parts[0][2:]  # DDMMYY — Delta Exchange format (e.g. 170326 = 2026-03-17)
         return f"{prefix}-BTC-{strike}-{ddmmyy}"
     return None
 

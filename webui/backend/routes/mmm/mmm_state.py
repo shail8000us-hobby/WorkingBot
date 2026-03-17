@@ -37,6 +37,9 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
     lifecycle status. Called automatically by recompute_side_lots() when
     positions[] key is absent. Idempotent.
     """
+    if side_state.get('_positions_migrated'):
+        return
+
     now = datetime.now(timezone.utc).isoformat()
     positions = []
     counter = 0
@@ -109,6 +112,9 @@ def _migrate_side_to_positions(side_state: Dict) -> None:
 
     side_state['positions'] = positions
     side_state['_pos_counter'] = counter
+    side_state['_positions_migrated'] = True
+    if '_positions_migrating' in side_state:
+        del side_state['_positions_migrating']
     
     # Fix F2.5: Validate position ID uniqueness — defense-in-depth
     ids = [p['id'] for p in positions]
@@ -348,6 +354,8 @@ DEFAULT_PARAMS = {
     # Hot-reloadable parameters
     'adjustment_interval': 300,         # seconds between checks
     'min_trigger_move': 10.0,           # minimum premium move above trigger
+    'min_trigger_dollar': 0.0,          # dollar floor: also trigger if active-strike USD loss > this (0 = disabled)
+    'min_frozen_trigger_dollar': 0.2,   # fallback: trigger from frozen positions if their USD loss > this (0 = disabled)
     'shift_threshold': 50.0,            # min premium to sell at current strike
     'shift_target_premium': 100.0,      # target premium for new strike on shift
     'close_at_threshold': 5.0,          # close positions at this premium or below
@@ -362,12 +370,13 @@ DEFAULT_PARAMS = {
     # Split Ledger Phase 1
     'max_total_exposure': 0,            # absolute ceiling on active+frozen lots per side. 0 = auto (2× max_lots_per_side)
     # Split Ledger Phase 2: Shift-Time Recycle
-    'shift_recycle_enabled': False,         # proactive cleanup at shift time. Start disabled.
-    'shift_recycle_premium_floor': 60.0,    # only close frozen positions with premium < this. 0 = dynamic mode
-    'shift_recycle_max_pct': 1.0,           # max fraction of frozen lots to close per shift (0.0-1.0)
-    'shift_recycle_floor_ratio': 0.40,      # when premium_floor<=0, floor = new_strike_premium × this ratio
+    'shift_recycle_enabled': False,             # proactive cleanup at shift time. Start disabled.
+    'shift_recycle_premium_floor': 20.0,        # only close frozen positions with premium < this. 0 = dynamic mode
+    'shift_recycle_max_pct': 1.0,               # max fraction of frozen lots to close per shift (0.0-1.0)
+    'shift_recycle_floor_ratio': 0.40,          # when premium_floor<=0, floor = new_strike_premium × this ratio
+    'shift_recycle_pressure_threshold': 0.7,    # only run if total_lots/max_lots >= this (0=always run)
     'max_adjustments': 500,             # maximum adjustment events
-    'max_loss_amount': 5000.0,          # hard stop P&L threshold
+    'max_loss_amount': 100.0,          # hard stop P&L threshold
     'stop_adjustment_mins': 15,         # stop adjusting N mins before expiry
     'auto_close_mins': 5,              # auto-close all N mins before expiry
     'cooldown_on_reversal': True,       # skip 1 interval on reversal
@@ -383,6 +392,7 @@ DEFAULT_PARAMS = {
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
     'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
+    'pre_sell_shift_enabled': False,       # shift to target premium BEFORE selling when hedge premium < shift_target_premium
     'shift_cooldown_sec': 120,             # minimum seconds between consecutive strike shifts
 
     # Adaptive interval
@@ -529,7 +539,7 @@ DEFAULT_PARAMS = {
     'scale_target_premium': 100.0,        # target premium for new strikes (same unit as shift_target_premium)
     'scale_min_premium': 30.0,            # reject strikes with premium below this (liquidity/theta floor)
     # ATM Shield — Close & Retreat
-    'atm_shield_enabled': False,
+    'atm_shield_enabled': True,
     'atm_shield_proximity_pct': 0.5,
     'atm_shield_target_otm_pct': 1.0,
     'atm_shield_loss_split_aggressor': 0.3,
@@ -537,7 +547,7 @@ DEFAULT_PARAMS = {
     'atm_shield_cooldown_mins': 10,
 
     # Breakeven Engine — real-time portfolio breakeven awareness
-    'breakeven_control_enabled': False,   # master switch
+    'breakeven_control_enabled': True,   # master switch
     'breakeven_warning_pct': 2.0,         # distance % → Warning zone (multiplier ramps 1.0→1.3)
     'breakeven_danger_pct': 1.0,          # distance % → Danger zone (multiplier ramps 1.3→2.0)
     'breakeven_critical_pct': 0.5,        # distance % → Critical zone (multiplier ramps 2.0→max)
@@ -555,7 +565,7 @@ DEFAULT_PARAMS = {
     'breakeven_critical_lot_ceiling': 4.0,   # ceiling when zone=CRITICAL (overrides combined cap)
 
     # Gamma Detector Engine — portfolio curvature scanning
-    'gamma_detector_enabled': False,           # master switch
+    'gamma_detector_enabled': True,           # master switch
     'gamma_step_pct': 0.5,                    # step size as % of spot for second-difference
     'gamma_scan_steps': 40,                   # steps to scan outward in each direction
     'gamma_warning_distance_pct': 3.0,        # nearest gamma boundary within 3% → WARNING
@@ -585,16 +595,16 @@ DEFAULT_PARAMS = {
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
     'dte_category', 'total_dte_hours',
-    'adjustment_interval', 'min_trigger_move', 'shift_threshold',
+    'adjustment_interval', 'min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
-    'shift_cooldown_sec',
+    'pre_sell_shift_enabled', 'shift_cooldown_sec',
     'close_at_threshold', 'close_at_watch_interval', 'close_at_max_per_beat',
     'close_at_watcher_force_enabled', 'close_at_watch_hours_before_expiry', 'close_at_watch_near_expiry_interval',
     'premium_buffer_pct', 'max_lots_per_side',
     # Split Ledger
     'max_total_exposure',
     'shift_recycle_enabled', 'shift_recycle_premium_floor', 'shift_recycle_max_pct',
-    'shift_recycle_floor_ratio',
+    'shift_recycle_floor_ratio', 'shift_recycle_pressure_threshold',
     'max_adjustments', 'max_loss_amount', 'stop_adjustment_mins',
     'auto_close_mins', 'cooldown_on_reversal', 'whipsaw_limit',
     'trailing_stop_pct', 'theta_acceleration_window',

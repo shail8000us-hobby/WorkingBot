@@ -30,6 +30,8 @@ import logging
 from typing import Dict, Any, List, Tuple, Optional
 from datetime import datetime, timedelta, timezone
 
+from webui.backend.sealed import sealed
+
 log = logging.getLogger('mmm_safety')
 
 
@@ -198,6 +200,7 @@ class MMMSafety:
     # §13.3: Max Loss Hard Stop
     # =========================================================================
 
+    @sealed
     def check_max_loss(self, session: Dict) -> List[Dict]:
         """Check if total P&L has exceeded max loss threshold."""
         events = []
@@ -250,6 +253,7 @@ class MMMSafety:
 
         return events
 
+    @sealed
     def check_max_loss_sizing(self, session: Dict) -> List[Dict]:
         """
         IMP-6: Warn once per session if max_loss_amount is below the suggested
@@ -425,7 +429,13 @@ class MMMSafety:
         history = session.get('adjustment_history', [])
         algo_history = [h for h in history if h.get('aggressor', '') != 'OPERATOR']
 
-        last_checked_idx = session.get('_whipsaw_last_checked_idx', 0)
+        last_checked_idx = session.get('_whipsaw_last_checked_idx', None)
+        if last_checked_idx is None:
+            # BUG-C3 fix: first-ever run (including post-migration heartbeat where old
+            # _whipsaw_paused_at was cleared but _whipsaw_last_checked_idx was never set).
+            # Skip all past history to avoid false COOLDOWN on session restore/upgrade.
+            last_checked_idx = len(algo_history)
+            session['_whipsaw_last_checked_idx'] = last_checked_idx
         if len(algo_history) > last_checked_idx and len(algo_history) >= 2:
             window_cutoff = now - timedelta(minutes=window_mins)
 
@@ -758,7 +768,7 @@ class MMMSafety:
         stop_mins = params.get('stop_adjustment_mins', 15)
         close_mins = params.get('auto_close_mins', 5)
         total_dte_hours = params.get('total_dte_hours', 0)
-        wind_down_hours = params.get('wind_down_hours_before_expiry', 1)
+        wind_down_hours = params.get('wind_down_hours_before_expiry', 2.0)
 
         # 1. Absolute thresholds — always enforced (same as v1)
         if minutes_to_expiry <= close_mins:
@@ -874,7 +884,7 @@ class MMMSafety:
                     'ratio': round(ratio, 2),
                 },
             })
-        elif 0.8 <= ratio < 1.0:
+        elif 0.8 < ratio < 1.0:
             events.append({
                 'type': 'pnl_guardrail',
                 'level': 'alert',
@@ -1087,6 +1097,10 @@ def update_peak_pnl(session: Dict, total_pnl: float):
                 pass
         decayed = current_peak * decay_factor + total_pnl * (1 - decay_factor)
         session['peak_pnl'] = max(decayed, 0)
+        # BUG-C1 fix: update timestamp after each decay so age_mins resets to
+        # ~1 interval on the next heartbeat. Without this, age_mins grows unboundedly
+        # and decay_factor collapses to ~0 after 60 min, nullifying the trailing stop.
+        session['_peak_pnl_set_at'] = datetime.now(timezone.utc).isoformat()
 
 
 def reset_peak_pnl_on_reversal(session: Dict, total_pnl: float):

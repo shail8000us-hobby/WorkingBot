@@ -26,7 +26,7 @@ import random
 
 from .mmm_state import recompute_side_lots, get_session_summary
 from .mmm_trigger import (
-    evaluate_triggers, update_trigger_snapshots,
+    evaluate_triggers, update_trigger_snapshots, check_frozen_pnl_trigger,
     apply_theta_acceleration, compute_adaptive_interval,
     apply_theta_acceleration_v2, compute_adaptive_interval_v2,
     OUTCOME_NONE, OUTCOME_CE,
@@ -68,7 +68,7 @@ from .mmm_websocket import (
     emit_safety, emit_pnl_update, emit_status_change,
     emit_harvest, emit_recycle, emit_scale_up, emit_breakeven, emit_gamma,
 )
-from .mmm_atm_shield import execute_atm_shield
+from .mmm_atm_shield import execute_atm_shield, _check_shield_gates
 from .mmm_breakeven_engine import get_breakeven_engine
 from .mmm_gamma_detector import get_gamma_detector
 from .mmm_harvester import scan_harvestable_positions
@@ -723,10 +723,10 @@ class MMMMonitor:
                         log.error(f"Failed to save state after heartbeat crash: {save_err}")
 
                     # Graduated response: only hard-stop on truly unrecoverable errors
-                    # (e.g. programming bugs), not exchange connectivity issues
-                    unrecoverable = any(kw in str(e).lower() for kw in (
-                        'typeerror', 'attributeerror', 'nameerror', 'assertionerror',
-                    ))
+                    # (e.g. programming bugs), not exchange connectivity issues.
+                    # Use isinstance so subclasses are caught (e.g. UnboundLocalError
+                    # is a NameError subclass — the old str(e) check missed it).
+                    unrecoverable = isinstance(e, (TypeError, AttributeError, NameError, AssertionError))
                     if unrecoverable:
                         log.critical(
                             f"[{self.session_id}] Unrecoverable error, stopping: {e}"
@@ -1186,19 +1186,27 @@ class MMMMonitor:
                         _atm_wd_side = 'PE'
 
                     if _atm_wd_side:
-                        # ATM Shield takes priority: if enabled and has capacity,
-                        # suppress wind-down entirely — shield will reposition at Step 5.5.
+                        # ATM Shield takes priority: if enabled and has capacity
+                        # AND can actually fire (gates pass), suppress wind-down
+                        # — shield will reposition at Step 5.5.
                         # Wind-down only fires if shield has no viable OTM strike
                         # (the shield itself sets _atm_wind_down_triggered in that case).
                         if params.get('atm_shield_enabled', False):
                             _ws = _atm_wd_side.lower()
-                            _sc = session.get(f'_atm_shield_count_{_ws}', 0)
-                            _sm = params.get('atm_shield_max_per_session', 3)
-                            if _sc < _sm:
+                            _shield_margin_tier = getattr(self._margin_guardian, 'last_tier', 'GREEN')
+                            _shield_mte = self._get_minutes_to_expiry()
+                            _can_fire, _gate_reason = _check_shield_gates(
+                                session, _ws, params, _shield_margin_tier,
+                                _shield_mte if _shield_mte is not None else 999,
+                            )
+                            if _can_fire:
                                 log.info(f"[{sid}] ATM wind-down suppressed — ATM Shield active "
-                                         f"({_sm - _sc} fires remaining). "
+                                         f"(gates pass). "
                                          f"Wind-down will auto-activate only if no viable OTM strike.")
                                 _atm_wd_side = None   # shield handles it at Step 5.5
+                            else:
+                                log.info(f"[{sid}] ATM Shield cannot fire ({_gate_reason}) "
+                                         f"— letting wind-down proceed")
 
                     if _atm_wd_side:
                         _triggered_strike = _ce_orig if _atm_wd_side == 'CE' else _pe_orig
@@ -1266,15 +1274,22 @@ class MMMMonitor:
                         atm_triggered_side = 'PE'
 
                     if atm_triggered_side:
-                        # ATM Shield deferral: let shield handle if it has capacity
+                        # ATM Shield deferral: let shield handle if gates pass
                         if params.get('atm_shield_enabled', False):
                             _es = atm_triggered_side.lower()
-                            _sc = session.get(f'_atm_shield_count_{_es}', 0)
-                            _sm = params.get('atm_shield_max_per_session', 3)
-                            if _sc < _sm:
+                            _shield_margin_tier = getattr(self._margin_guardian, 'last_tier', 'GREEN')
+                            _shield_mte = self._get_minutes_to_expiry()
+                            _can_fire, _gate_reason = _check_shield_gates(
+                                session, _es, params, _shield_margin_tier,
+                                _shield_mte if _shield_mte is not None else 999,
+                            )
+                            if _can_fire:
                                 log.info(f"[{sid}] close_at_ATM deferred to ATM Shield "
-                                         f"(capacity: {_sm - _sc} fires remaining)")
+                                         f"(gates pass)")
                                 atm_triggered_side = None  # skip — shield at Step 5.5
+                            else:
+                                log.info(f"[{sid}] ATM Shield cannot fire ({_gate_reason}) "
+                                         f"— letting close_at_ATM proceed")
 
                     if atm_triggered_side:
                         triggered_strike = ce_original_strike if atm_triggered_side == 'CE' else pe_original_strike
@@ -1835,6 +1850,11 @@ class MMMMonitor:
         # Runs regardless of _skip_to_pnl so UI data stays fresh.
         # No API calls — intrinsic-only model uses in-memory data only.
         if params.get('breakeven_control_enabled', False):
+            # H1 FIX: Reset multiplier to safe default every beat before attempting compute.
+            # If be_spot==0 or engine throws, the stale value from the previous
+            # beat must not persist — a stale CRITICAL multiplier (2.5x) would
+            # silently apply until the engine recovers.
+            session['_breakeven_multiplier'] = 1.0
             try:
                 be_engine = get_breakeven_engine()
                 be_spot = session.get('_regime_spot_price', 0) or 0
@@ -1968,6 +1988,31 @@ class MMMMonitor:
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
             outcome = trigger_result['outcome']
 
+            # Phase 2: Frozen PnL fallback trigger.
+            # Only runs when the active-strike trigger did NOT fire (OUTCOME_NONE).
+            # This is the double-hedging prevention gate: active and frozen triggers
+            # are mutually exclusive within a single heartbeat. If active fired, frozen
+            # positions will be covered by calculate_standard_loss in _process_adjustment
+            # (it already includes frozen losses) and snapshots will be ratcheted after.
+            # Also skipped during wind-down — wind-down has its own buyback path.
+            if outcome == OUTCOME_NONE and not is_wind_down_active(session):
+                _frozen_result = check_frozen_pnl_trigger(
+                    session, self._make_fetch_fn(), ce_now, pe_now,
+                )
+                if _frozen_result['outcome'] != OUTCOME_NONE:
+                    outcome = _frozen_result['outcome']
+                    trigger_result = _frozen_result
+                    log_activity('info',
+                                 f'📍 Frozen PnL trigger: '
+                                 f'CE=${_frozen_result["ce_frozen_loss"]:.2f} '
+                                 f'PE=${_frozen_result["pe_frozen_loss"]:.2f} '
+                                 f'(threshold=${_frozen_result["min_frozen_trigger_dollar"]:.2f}) '
+                                 f'→ {outcome}',
+                                 sid, 'info',
+                                 {'ce_frozen_loss': _frozen_result['ce_frozen_loss'],
+                                  'pe_frozen_loss': _frozen_result['pe_frozen_loss'],
+                                  'trigger_type': 'frozen_pnl'})
+
             # Store trigger data for heartbeat summary (no separate activity)
             params = session.get('params', {})
             min_trigger = trigger_result.get('min_trigger_move', params.get('min_trigger_move', 10.0))
@@ -1978,6 +2023,7 @@ class MMMMonitor:
                 'pe_excess_pct': round(pe_excess_pct, 2),
                 'min_trigger_move': min_trigger,
                 'outcome': outcome,
+                'frozen_triggered': trigger_result.get('frozen_triggered', False),
             }
 
             # Step 7: Process outcome (§4.7)
@@ -2750,12 +2796,15 @@ class MMMMonitor:
                             sid, 'error', {'error': str(e), 'strike': strike_val})
                 any_failed = True
 
-        if not any_failed:
-            # Update triggers only on full success
-            update_trigger_snapshots(
-                session, ce_now, pe_now,
-                fetch_premium_fn=self._make_fetch_fn(),
-            )
+        # Always update trigger snapshots — even on partial failure.
+        # Successful buybacks already mutated session state (lots removed,
+        # P&L booked).  Skipping snapshot updates leaves stale trigger
+        # baselines that cause spurious re-triggers on the next heartbeat
+        # for positions that were already closed.
+        update_trigger_snapshots(
+            session, ce_now, pe_now,
+            fetch_premium_fn=self._make_fetch_fn(),
+        )
 
         # Record in wind-down history
         remaining = session.get(aggressor, {}).get('active_lots', 0)
@@ -2903,6 +2952,7 @@ class MMMMonitor:
         """
         session = self.session
         sid = self.session_id
+        params = session.get('params', {})
 
         # ── PENDING ORDER GUARD ───────────────────────────────────────────────
         # Before firing ANY new order, verify whether a pending adjustment order
@@ -3054,7 +3104,6 @@ class MMMMonitor:
             }
 
             # Cooldown after reversal
-            params = session.get('params', {})
             if params.get('cooldown_on_reversal', True):
                 activate_cooldown(session)
         else:
@@ -3077,6 +3126,20 @@ class MMMMonitor:
                     'Hedge quantity may be understated.',
                     {'type': 'standard', 'side': aggressor}
                 )
+                # FETCH-FALLBACK FIX: When calculation is incomplete, use the last
+                # complete loss as a floor to prevent systematic under-hedging during
+                # API degradation. Frozen position premiums couldn't be fetched, so
+                # the computed loss is understated — don't go below what we last knew.
+                _last_complete = session.get('_last_complete_std_loss', {}).get(aggressor, 0)
+                if _last_complete > loss:
+                    log.warning(
+                        f"[{sid}] Applying last-complete std loss floor: "
+                        f"${loss:.4f} → ${_last_complete:.4f} ({aggressor.upper()})"
+                    )
+                    loss = _last_complete
+            else:
+                # Cache the complete loss for use as a fallback on future incomplete beats
+                session.setdefault('_last_complete_std_loss', {})[aggressor] = loss
 
         if loss <= 0:
             # BUG-2 FIX: Log when trigger fires but loss is zero/negative
@@ -3105,6 +3168,34 @@ class MMMMonitor:
                 hedge, loss, ce_now, pe_now,
             )
             return
+
+        # §10b: Pre-sell shift — when enabled, shift to target premium BEFORE selling
+        # cheap lots. Prevents lot accumulation in the grey zone (shift_threshold → shift_target_premium).
+        # Default OFF — enable via WebUI toggle 'pre_sell_shift_enabled'.
+        if params.get('pre_sell_shift_enabled', False):
+            target_premium = params.get('shift_target_premium', 100.0)
+            if hedge_premium < target_premium:
+                spot_price = await self._fetch_spot_price()
+                better = find_new_strike(self.initializer, session, hedge, spot_price)
+                if better:
+                    log.info(
+                        f"[{sid}] PROACTIVE SHIFT: {hedge.upper()} premium "
+                        f"${hedge_premium:.2f} < target ${target_premium:.2f} — "
+                        f"shifting to {better['strike']} @ {better['premium']:.2f} "
+                        f"before selling"
+                    )
+                    self._hb_wt['shift'] = {
+                        'side': hedge,
+                        'reason': 'proactive_below_target',
+                        'hedge_premium': hedge_premium,
+                        'target_premium': target_premium,
+                        'loss': loss,
+                    }
+                    await self._process_strike_shift(
+                        hedge, loss, ce_now, pe_now,
+                    )
+                    return
+                # No better strike found — fall through and sell at current premium
 
         # §5.4: Calculate lots to sell
         # ITM Guard: NEVER sell ITM options for adjustment (unless disabled by user).
@@ -3271,6 +3362,29 @@ class MMMMonitor:
 
         if result.get('success'):
             fill_price = result['fill_price']
+
+            # STALE-TRIGGER FIX: execution takes 30-60s; ce_now/pe_now captured at
+            # heartbeat start are stale by the time the fill completes.  Re-fetch live
+            # premiums and update trigger snapshots so the next heartbeat doesn't
+            # immediately re-trigger because the aggressor's snapshot is too low.
+            # Same technique as the strike-shift BUG-1 FIX in _process_strike_shift.
+            try:
+                _fresh_ce, _fresh_pe = await self._fetch_premiums()
+                if _fresh_ce and _fresh_pe:
+                    update_trigger_snapshots(
+                        session, _fresh_ce, _fresh_pe,
+                        fetch_premium_fn=self._make_fetch_fn(),
+                    )
+                    log.info(
+                        f"[{sid}] Post-adj trigger refresh: "
+                        f"CE {ce_now:.2f}→{_fresh_ce:.2f}, "
+                        f"PE {pe_now:.2f}→{_fresh_pe:.2f}"
+                    )
+            except Exception as _trf_e:
+                log.warning(
+                    f"[{sid}] Post-adj trigger refresh failed "
+                    f"(stale snapshot retained): {_trf_e}"
+                )
 
             # Analytics: Track adjustment event (no trading logic impact)
             analytics = session.setdefault('analytics', {})
@@ -4653,7 +4767,7 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
         params = session.get('params', {})
-        premium_floor = params.get('shift_recycle_premium_floor', 60.0)
+        premium_floor = params.get('shift_recycle_premium_floor', 20.0)
         if premium_floor <= 0:
             # Dynamic mode: close frozen if cheaper than N% of new strike premium
             dynamic_ratio = params.get('shift_recycle_floor_ratio', 0.40)
@@ -4664,6 +4778,22 @@ class MMMMonitor:
         frozen_positions = side_state.get('frozen_positions', [])
 
         if not frozen_positions:
+            return 0.0
+
+        # Capacity pressure gate: only recycle when lot book is under pressure.
+        # Without this gate the recycle fires at every shift — closing winning,
+        # naturally-decaying positions that would reach close_at_threshold on their
+        # own, wasting fees and leaving premium on the table.
+        # Same pattern as M1 Harvest (harvest_pressure_threshold).
+        max_lots = max(params.get('max_lots_per_side', 100), 1)
+        total_side_lots = side_state.get('total_lots', 0)
+        capacity_pressure = total_side_lots / max_lots
+        min_pressure = params.get('shift_recycle_pressure_threshold', 0.7)
+        if capacity_pressure < min_pressure:
+            log.debug(
+                f"[{sid}] Shift recycle skipped: {side.upper()} pressure "
+                f"{capacity_pressure:.2f} < {min_pressure:.2f} — no capacity relief needed"
+            )
             return 0.0
 
         # Respect max_pct: limit total lots we can close this shift
@@ -6758,6 +6888,50 @@ class MMMMonitor:
                     if s > 0:
                         open_strikes[s] = open_strikes.get(s, 0) + pos.get('lots', 0)
 
+            # Recovery path: if active_lots=0 but frozen positions exist, promote the
+            # highest-lots strike as the new active — regardless of open-strike count.
+            # Covers the close-at-5 drain scenario: active positions decayed and were
+            # closed, leaving only frozen. Without this, the trigger heal sets the
+            # baseline to current price every beat and the algo goes blind to frozen
+            # loss accumulation (pe_excess = pe_now - healed_pe_now = 0 always).
+            if side_state.get('active_lots', 0) == 0 and open_strikes:
+                best_strike = max(open_strikes, key=open_strikes.get)
+                for pos in positions:
+                    pos_strike = float(pos.get('strike', 0))
+                    if pos.get('status') == 'shifted' and abs(pos_strike - best_strike) < 1:
+                        pos['status'] = 'active'
+                        pos['shifted_at'] = None
+                side_state['active_strike'] = best_strike
+                recompute_side_lots(side_state)
+                session[side] = side_state
+                changed = True
+                log.info(
+                    f"[{sid}] ZERO-LOTS RECOVERY: {side.upper()} active strike "
+                    f"{int(current_active)} → {int(best_strike)} "
+                    f"(active_lots was 0, {open_strikes[best_strike]} frozen lots promoted)"
+                )
+                log_activity(
+                    'auto_atm_promote',
+                    f'📌 Zero-lots recovery: {side.upper()} active strike '
+                    f'{int(current_active)} → {int(best_strike)} '
+                    f'({open_strikes[best_strike]} frozen lots restored as active)',
+                    sid, 'info',
+                    {'side': side.upper(), 'old_strike': current_active,
+                     'new_strike': best_strike, 'reason': 'active_lots_zero'},
+                )
+                try:
+                    from .mmm_websocket import emit_to_session
+                    emit_to_session(sid, 'mmm_active_strike_changed', {
+                        'session_id': sid,
+                        'side': side.upper(),
+                        'old_strike': current_active,
+                        'new_strike': best_strike,
+                        'reason': 'active_lots_zero',
+                    })
+                except Exception:
+                    pass
+                continue  # Don't fall through to normal ATM-proximity logic
+
             if len(open_strikes) <= 1:
                 continue  # Only one open strike, nothing to promote
 
@@ -7395,6 +7569,38 @@ def _save_session(session: Dict, my_generation: int = 0):
                             _mem_side['_pos_counter'] = _stored_counter
                         recompute_side_lots(_mem_side)
                         session[_side] = _mem_side
+                    # Preserve active_strike + position status changes from
+                    # set-active-strike API that arrived while this heartbeat was
+                    # in-flight. The new-positions merge above handles injected
+                    # positions (by ID); this handles active_strike field and
+                    # position status (shifted→active) changes from set_active_strike.
+                    # Guard: only fires when stored has active_strike_pinned=True
+                    # (explicit API call) but the heartbeat's in-memory copy doesn't.
+                    if (_stored_side.get('active_strike_pinned')
+                            and not _mem_side.get('active_strike_pinned', False)):
+                        _api_active = float(_stored_side.get('active_strike') or 0)
+                        _mem_active = float(_mem_side.get('active_strike') or 0)
+                        if _api_active > 0 and abs(_api_active - _mem_active) >= 1:
+                            _sp_map = {
+                                p['id']: p
+                                for p in _stored_side.get('positions', [])
+                                if 'id' in p
+                            }
+                            for _pos in _mem_side.get('positions', []):
+                                _pid = _pos.get('id')
+                                if _pid in _sp_map:
+                                    _pos['status'] = _sp_map[_pid].get(
+                                        'status', _pos['status'])
+                                    _pos['shifted_at'] = _sp_map[_pid].get('shifted_at')
+                            _mem_side['active_strike'] = _api_active
+                            _mem_side['active_strike_pinned'] = True
+                            recompute_side_lots(_mem_side)
+                            session[_side] = _mem_side
+                            log.info(
+                                f"[{sid}] _save_session: preserved API active_strike "
+                                f"{_side.upper()} {int(_mem_active)} → {int(_api_active)} "
+                                f"(set-active-strike during in-flight heartbeat)"
+                            )
         storage.save_session(session)
     except Exception as e:
         log.error(f"Failed to save session: {e}")

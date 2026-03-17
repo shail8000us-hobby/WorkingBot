@@ -349,9 +349,9 @@ export const SessionCard = ({ session, selected, onSelect, onControl }) => {
             >
               P&L: ${session.net_pnl?.toFixed(2) || '0.00'}
             </Typography>
-            {(session.realized_pnl !== 0 || session.unrealized_pnl !== 0) && (
+            {(session.realized_pnl !== 0 || session.net_pnl !== 0) && (
               <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.65rem' }}>
-                R: ${(session.realized_pnl || 0).toFixed(2)} &nbsp; U: ${(session.unrealized_pnl || 0).toFixed(2)}
+                R: ${(session.realized_pnl || 0).toFixed(2)} &nbsp; U: ${((session.net_pnl || 0) - (session.realized_pnl || 0)).toFixed(2)}
               </Typography>
             )}
           </Box>
@@ -1870,10 +1870,12 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   const isLive = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status);
 
   // P&L calculations — H-14 fix: use ?? 0 to prevent NaN when backend returns null
+  // Prefer session.net_pnl (kept fresh by mmm_pnl_update event) over locally-recomputed value,
+  // since realized/unrealized can be from different time snapshots and sum incorrectly.
   const realized = session.realized_pnl ?? 0;
-  const unrealized = session.unrealized_pnl ?? 0;
   const fees = session.total_fees ?? 0;
-  const netPnl = realized + unrealized - fees;
+  const netPnl = session.net_pnl ?? ((session.realized_pnl ?? 0) + (session.unrealized_pnl ?? 0) - fees);
+  const unrealized = netPnl - realized;
   const totalPremium = session.total_premium_collected ?? 0;
   const cePremiumCollected = session.ce_premium_collected ?? 0;
   const pePremiumCollected = session.pe_premium_collected ?? 0;

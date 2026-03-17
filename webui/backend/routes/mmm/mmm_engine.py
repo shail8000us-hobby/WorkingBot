@@ -130,10 +130,28 @@ class MMMEngine:
 
         # 2. Shifted position losses — ALL positions at old strikes
         #    Every open position contributes to total loss. No exceptions.
-        #    §5.2 Case A: Use entry_premium as baseline for frozen positions
-        #    (lifetime loss). trigger_snapshot is only for the ACTIVE strike.
+        #    §5.2 Case A: Use trigger_snapshot as baseline for frozen positions
+        #    (incremental loss since last hedge). Falls back to entry_premium
+        #    only if no snapshot exists (first hedge cycle for this position).
+        #    This prevents double-counting already-hedged frozen losses.
         shifted_loss = _D(0)
         option_type = 'call' if aggressor_side == 'ce' else 'put'
+        trigger_snapshots = side_state.get('trigger_snapshot', {})
+
+        # C1 FIX: If fetch_premium_fn is None but frozen positions exist, we
+        # cannot price those positions — returning incomplete=False here would
+        # make the caller believe the loss is fully accounted for when it is not.
+        # Return early with incomplete=True so the caller can decide whether to
+        # proceed (typically: skip the adjustment or use a conservative fallback).
+        frozen_positions = side_state.get('frozen_positions', [])
+        if not fetch_premium_fn and frozen_positions:
+            log.warning(
+                f"calculate_standard_loss: fetch_premium_fn is None but "
+                f"{len(frozen_positions)} frozen position(s) exist for "
+                f"{aggressor_side.upper()} — returning incomplete result to "
+                f"prevent under-hedge"
+            )
+            return float(max(active_loss, _D(0))), True  # incomplete=True
 
         if fetch_premium_fn:
             for pos in side_state.get('frozen_positions', []):
@@ -164,15 +182,27 @@ class MMMEngine:
                     )
                     continue
 
-                # §5.2 Case A: Use entry_premium as baseline for frozen positions.
+                # Use trigger_snapshot for frozen positions (incremental loss
+                # since last hedge). Falls back to entry_premium if no snapshot
+                # exists yet.  update_trigger_snapshots() ratchets frozen
+                # snapshots after each hedge — using entry_premium here would
+                # re-count already-hedged loss on every subsequent adjustment.
+                p_strike_key = strike_key(p_strike)
+                p_baseline = trigger_snapshots.get(p_strike_key)
+                if p_baseline is not None and p_baseline > 0:
+                    baseline_label = 'trigger_snapshot'
+                else:
+                    p_baseline = p_entry
+                    baseline_label = 'entry_premium'
+
                 # Fix #19: Decimal arithmetic for P&L accumulation
-                pos_loss = (_D(p_current) - _D(p_entry)) * _D(p_lots) * _LOT
+                pos_loss = (_D(p_current) - _D(p_baseline)) * _D(p_lots) * _LOT
                 if pos_loss > 0:
                     shifted_loss += pos_loss
                     log.info(
                         f"Shifted position loss @ {p_strike}: "
-                        f"({p_current:.2f} - {p_entry:.2f}) × {p_lots} lots "
-                        f"= ${float(pos_loss):.4f} [baseline from entry_premium]"
+                        f"({p_current:.2f} - {p_baseline:.2f}) × {p_lots} lots "
+                        f"= ${float(pos_loss):.4f} [baseline from {baseline_label}]"
                     )
 
         zero = _D(0)
@@ -449,6 +479,15 @@ class MMMEngine:
                 multiplier = max(1.0 - lot_reduction, 0.1)  # Floor at 10% to avoid zero
                 original_lots = lots_to_sell
                 lots_to_sell = max(math.ceil(lots_to_sell * multiplier), 1)
+                # C5 FIX: Breakeven / gamma multipliers applied before this block can
+                # inflate lots_to_sell above the IMP-2–intended value.  E.g., with
+                # breakeven 1.5x and IMP-2 0.70x the net is 1.05x above baseline —
+                # the safety reduction is silently cancelled.
+                # Enforce a hard ceiling: result must not exceed ceil(raw_lots × multiplier),
+                # the value IMP-2 would have produced from a clean baseline.
+                imp2_ceiling = max(math.ceil(raw_lots * multiplier), 1)
+                if lots_to_sell > imp2_ceiling:
+                    lots_to_sell = imp2_ceiling
                 session['_trend_boost_active'] = False
                 session['_trend_boost_mult'] = 1.0
                 if lots_to_sell < original_lots:
@@ -797,7 +836,8 @@ class MMMEngine:
         side_prem_key = 'ce_premium_collected' if hedge_side.lower() == 'ce' else 'pe_premium_collected'
         session[side_prem_key] = session.get(side_prem_key, 0) + premium_collected
 
-        session.setdefault('adjustment_history', []).append({
+        history = session.setdefault('adjustment_history', [])
+        history.append({
             'side': hedge_side.upper(),
             'aggressor': aggressor_side.upper(),
             'lots_sold': lots,
@@ -809,6 +849,11 @@ class MMMEngine:
             'adjustment_number': session['adjustment_count'],
             'spot': session.get('_regime_spot_price', 0),
         })
+        # M1 FIX: Cap history to last 500 entries. Without pruning, every
+        # adjustment appends ~200 bytes; after 1 000 adjustments (a multi-day
+        # session) each SQLite save carries ~200 KB of redundant history.
+        if len(history) > 500:
+            session['adjustment_history'] = history[-500:]
 
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
 

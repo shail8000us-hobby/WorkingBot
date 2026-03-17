@@ -12,16 +12,20 @@ export default function IVPanel() {
   const [current, setCurrent] = useState(null);
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [armedCards, setArmedCards] = useState([]);
 
   useEffect(() => {
     const fetch = async () => {
       try {
-        const [c, h] = await Promise.all([
+        const [c, h, cardsRes] = await Promise.all([
           patienceAPI.getIVCurrent(),
           patienceAPI.getIVHistory(30),
+          patienceAPI.getCards(),
         ]);
         setCurrent(c.data);
-        setHistory((h.data?.history || []).slice(0, 120).reverse()); // recent first → chronological
+        setHistory((h.data?.history || []).slice(0, 120).reverse());
+        const all = cardsRes.data?.cards || [];
+        setArmedCards(all.filter(c => ['ARMED', 'WAITING'].includes(c.status) && (c.iv_percentile_min || c.iv_percentile_max)));
       } catch (e) { /* silent */ }
       finally { setLoading(false); }
     };
@@ -84,6 +88,38 @@ export default function IVPanel() {
               </div>
             </div>
           </div>
+
+          {/* ── IV Gate Status for armed cards ── */}
+          {armedCards.length > 0 && (
+            <div style={{ background: '#0f172a', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>IV Gate Status — Armed Cards</div>
+              {armedCards.map(card => {
+                const min = card.iv_percentile_min;
+                const max = card.iv_percentile_max;
+                const passes = (min == null || pct >= min) && (max == null || pct <= max);
+                const gateLabel = [
+                  min != null ? `≥${min}%` : null,
+                  max != null ? `≤${max}%` : null,
+                ].filter(Boolean).join(' & ');
+                return (
+                  <div key={card.card_id} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <span style={{
+                      padding: '2px 8px', borderRadius: 4, fontSize: 11, fontWeight: 700,
+                      background: pct == null ? '#334155' : passes ? '#166534' : '#7f1d1d',
+                      color: pct == null ? '#64748b' : passes ? '#22c55e' : '#ef4444',
+                    }}>
+                      {pct == null ? 'N/A' : passes ? '✓ PASS' : '✗ BLOCK'}
+                    </span>
+                    <span style={{ fontSize: 13, color: '#e2e8f0' }}>{card.card_name}</span>
+                    <span style={{ fontSize: 11, color: '#64748b' }}>IV {gateLabel}</span>
+                    <span style={{ fontSize: 11, color: '#475569' }}>
+                      (current: {pct != null ? `${pct.toFixed(1)}%` : '—'})
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Simple bar chart */}
           {values.length > 1 && (

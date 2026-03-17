@@ -384,6 +384,34 @@ patienceAPI.getIVCurrent()      // GET /api/patience/iv/current
 
 ## 11. CRITICAL RULES
 
+### 0. Patience is a completely independent system — NEVER modify other algos to fix Patience
+
+Patience algo lives in:
+- `webui/backend/routes/patience/` — API + models
+- `webui/backend/services/patience_*.py` — trigger, executor, loop, IV
+
+**It must NEVER modify, patch, or alter any file belonging to MMM, GridBot, Guardian, or any other algo.**
+If Patience needs functionality that already exists elsewhere (cancel order, place order, get price, Greeks, etc.),
+**COPY the code into a Patience file** — do not modify the source.
+
+All other algos (MMM, GridBot, Guardian) are tried, tested, and live. They are the reference implementation.
+When Patience needs to do something those algos already do:
+1. Read how the working algo does it
+2. Copy the pattern directly into the relevant Patience file
+3. Keep Patience self-contained
+
+**The only allowed interactions with other systems are read-only imports:**
+- `get_cached_positions()` — read positions (no write)
+- `get_price_websocket()` — read BTC price (no write)
+- `enrich_positions_with_greeks()` — compute Greeks (no write)
+- `get_groups_storage()` — create group on card completion (Patience-owned write)
+- `get_unified_client()` — shared API client (no modification)
+
+**Specifically: never use `cancel_order_with_verification` from patience code.**
+That SEALED function calls `AsyncDeltaClient.cancel_order(order_id)` with only one arg,
+but the real signature requires `(order_id, product_id)`. Use `rest.cancel_order(str(oid), int(pid))`
+directly — the same pattern as `MMMExecutor._cancel_order`.
+
 ### 1. Never self-call HTTP
 All internal function calls must use direct Python imports. Do NOT use `requests.get("http://localhost:5555/...")` within patience code.
 ```python

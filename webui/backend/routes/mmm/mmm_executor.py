@@ -704,7 +704,20 @@ class MMMExecutor:
                             log.error(f"❌ Emergency order {order_id} unparseable fill_price: {raw_fill!r} ({_ep})")
                             fill_price = aggressive_price  # Emergency: use aggressive_price as fallback
                     else:
-                        # IOC file price should be ≤ aggressive_price
+                        # C4 NOTE: average_fill_price is missing despite state=filled.
+                        # This is an exchange data-lag edge case on IOC orders.
+                        # We fall back to aggressive_price (the IOC limit, worst-case floor)
+                        # rather than returning failure — a failure return here would cause
+                        # the next heartbeat to re-attempt a buyback that already executed,
+                        # risking a double-close. Conservative understatement of fill price
+                        # is safer than a double-execution. Log at error level so operators
+                        # can reconcile manually if needed.
+                        log.error(
+                            f"❌ Emergency order {order_id} state=filled but "
+                            f"average_fill_price missing — using aggressive_price "
+                            f"({aggressive_price:.2f}) as conservative fallback. "
+                            f"Manual reconciliation may be needed."
+                        )
                         fill_price = aggressive_price
 
                     # Robust v2 Fix #3 (emergency path): Guard unfilled_size parsing

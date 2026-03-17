@@ -23,6 +23,8 @@ PARAM_RULES = {
     'expiry':                  {'type': str,   'min': None, 'max': None,  'hot': False},
     'adjustment_interval':     {'type': int,   'min': 10,   'max': 3600,  'hot': True},
     'min_trigger_move':        {'type': float, 'min': 0.1,  'max': 100,   'hot': True},
+    'min_trigger_dollar':          {'type': float, 'min': 0, 'max': 100000, 'hot': True},
+    'min_frozen_trigger_dollar':   {'type': float, 'min': 0, 'max': 100000, 'hot': True},
     'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
     'shift_target_premium':    {'type': float, 'min': 10,   'max': 5000,  'hot': True},
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
@@ -36,10 +38,11 @@ PARAM_RULES = {
     # Split Ledger Phase 1
     'max_total_exposure':      {'type': int,   'min': 0,    'max': 20000, 'hot': True},
     # Split Ledger Phase 2 — Shift-Time Recycle
-    'shift_recycle_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
-    'shift_recycle_premium_floor':   {'type': float, 'min': 0,    'max': 500,   'hot': True},
-    'shift_recycle_max_pct':         {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
-    'shift_recycle_floor_ratio':     {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'shift_recycle_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'shift_recycle_premium_floor':        {'type': float, 'min': 0,    'max': 500,   'hot': True},
+    'shift_recycle_max_pct':              {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'shift_recycle_floor_ratio':          {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'shift_recycle_pressure_threshold':   {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
     'max_adjustments':         {'type': int,   'min': 1,    'max': 1000,  'hot': True},
     # M-6 fix: min raised from 0 to 1 — setting to 0 triggers auto_close on
     # any negative P&L including normal spread fluctuation (extremely dangerous).
@@ -60,6 +63,7 @@ PARAM_RULES = {
     'itm_guard_enabled':         {'type': bool,  'min': None, 'max': None,  'hot': True},
     'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'shift_match_opposite_lots': {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'pre_sell_shift_enabled':    {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Adaptive interval
     'adaptive_interval_enabled': {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Wind-down mode
@@ -432,6 +436,8 @@ def get_param_info() -> Dict[str, Dict]:
         'expiry': 'Target expiry date/time',
         'adjustment_interval': 'Seconds between heartbeat checks',
         'min_trigger_move': 'Minimum % premium move above trigger to fire adjustment (e.g. 15 = 15%)',
+        'min_trigger_dollar': 'Dollar floor trigger: also fire if active-strike USD loss exceeds this amount regardless of % move (0 = disabled). Catches dead-zone losses below min_trigger_move threshold.',
+        'min_frozen_trigger_dollar': 'Frozen position fallback trigger: fire if total frozen USD loss exceeds this amount when active trigger has not fired (0 = disabled). Covers blind-spot losses at old strikes.',
         'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
         'shift_target_premium': 'Target premium for new strike when shifting (picks strike closest to this premium)',
         'close_at_threshold': 'Close positions at this premium or below',
@@ -445,9 +451,10 @@ def get_param_info() -> Dict[str, Dict]:
         # Split Ledger
         'max_total_exposure': 'Absolute ceiling on active+frozen lots per side. 0 = auto (2× max_lots_per_side). Prevents runaway accumulation when frozen lots do not block the active cap.',
         'shift_recycle_enabled': 'Split Ledger Phase 2: At each strike shift, close cheap frozen positions to free capacity. Returns buyback cost is folded into the new sell calculation. Disabled by default — enable after observing Phase 1 behavior.',
-        'shift_recycle_premium_floor': 'Shift-Time Recycle: only close frozen positions with live premium BELOW this value. 0 = dynamic mode (uses shift_recycle_floor_ratio × new_strike_premium). Default 60.',
+        'shift_recycle_premium_floor': 'Shift-Time Recycle: only close frozen positions with live premium BELOW this value. 0 = dynamic mode (uses shift_recycle_floor_ratio × new_strike_premium). Default 20.',
         'shift_recycle_max_pct': 'Shift-Time Recycle: maximum fraction of total frozen lots to close per shift. 1.0 = all eligible. 0.5 = at most half. Prevents closing too many at once.',
         'shift_recycle_floor_ratio': 'Shift-Time Recycle dynamic floor: when shift_recycle_premium_floor=0, close frozen if premium < this fraction × new_strike_premium. 0.4 = close if frozen < 40% of new premium.',
+        'shift_recycle_pressure_threshold': 'Shift-Time Recycle: minimum capacity pressure (total_lots/max_lots) required to run recycle. 0.7 = only recycle when 70%+ full. 0.0 = always run (not recommended — closes winning positions unnecessarily and wastes fees).',
         'max_adjustments': 'Maximum number of adjustment events',
         'max_loss_amount': 'Absolute dollar hard stop — close all if breached',
         'stop_adjustment_mins': 'Stop adjusting N minutes before expiry',
@@ -563,6 +570,43 @@ def get_param_info() -> Dict[str, Dict]:
         'breakeven_tv_credit_factor': 'Time value credit fraction [0,0.5]. Reserved — set to 0 (Tier 3 feature, not yet active).',
         'breakeven_high_risk_mode': 'Override all aggression damps to 0 AND force dte_scale=1.0 (0DTE-equivalent sensitivity + maximum lot aggression). Auto-expires after 4 hours via _high_risk_mode_expires_at session field.',
         'breakeven_critical_lot_ceiling': 'Max combined lot multiplier ceiling applied when zone=CRITICAL, overriding max_combined_lot_multiplier (which applies to WARNING/DANGER).',
+        # Trigger & Adjustment — missing
+        'shift_threshold_pct': 'Dynamic shift threshold as % of current entry premium. E.g. 0.30 = shift only when hedge premium drops below 30% of what you paid. Overrides the fixed shift_threshold when non-zero. 0 = use fixed shift_threshold instead.',
+        'shift_match_opposite_lots': 'Delta-neutral balance: when shifting strikes, sell at least as many lots as the opposite side. E.g. PE has 11 lots → CE shift opens 11 lots (not just formula lots). Prevents directional bias. Trend-tier reductions still apply. Recommended: ON.',
+        'pre_sell_shift_enabled': 'Experimental: shift to target premium BEFORE selling cheap hedge lots. In an up-move, CE rises but PE drops — algo would normally sell PE at 60-80 (below target 100), accumulating many cheap lots. With this ON: if PE < shift_target_premium, find a better OTM strike at ~100 first, then sell fewer lots there. Falls back to current behavior if no better strike exists. Default OFF.',
+        # Trend Boost
+        'trend_boost_enabled': 'Trend Boost: multiply hedge lots by tier multipliers when a trend is active. When CE is the aggressor in an uptrend, CE adjustment lots are scaled up to catch up faster. Each tier has its own multiplier.',
+        'trend_boost_tier1_mult': 'Trend Boost Tier 1 (ALERT) lot multiplier. E.g. 1.5 = sell 50% more CE lots when Tier 1 trend is active on that side.',
+        'trend_boost_tier2_mult': 'Trend Boost Tier 2 (GUARD) lot multiplier. Higher than Tier 1 — stronger trend warrants larger hedge. E.g. 2.0 = double the lots.',
+        'trend_boost_tier3_mult': 'Trend Boost Tier 3 (BLOCK) lot multiplier — applies to the non-blocked side only. E.g. 2.5 = sell 2.5× PE lots when CE is fully blocked (uptrend Tier 3).',
+        # Lot Velocity Limiter
+        'lot_velocity_enabled': 'Enable lot velocity limiter — caps total lots sold within a rolling time window. Prevents runaway accumulation in fast-moving markets.',
+        'lot_velocity_limit': 'Maximum lots that can be sold within the velocity window. When this limit is hit, all adjustments are blocked until the window rolls forward.',
+        'lot_velocity_window_mins': 'Rolling window in minutes for the velocity cap. Lots sold within this window count toward the limit. Older sells age out automatically.',
+        # Favorable Scale-Up
+        'scale_enabled': 'Favorable Scale-Up: when BOTH CE and PE premiums are decaying (flat market), open new OTM positions to capture additional theta. These become standard MMM positions.',
+        'scale_min_decay_pct': 'Minimum premium decay % required on BOTH sides before Scale-Up fires. E.g. 30 = both CE and PE must have decayed 30% from entry before scaling.',
+        'scale_lots_pct': 'New position size as % of current total lots per side. E.g. 50 = new scaled position = 50% of current side lots.',
+        'scale_max_events': 'Maximum scale-up events per session. Prevents unlimited position stacking in very flat markets.',
+        'scale_cooldown_mins': 'Minimum minutes between consecutive scale-up events.',
+        'scale_target_premium': 'Target premium (in $) when scanning for the new OTM strike to sell during scale-up. Picks the strike closest to this premium.',
+        'scale_min_premium': 'Minimum premium ($) required for the scale-up strike to be sold. Prevents selling strikes with negligible theta.',
+        # ATM Shield
+        'atm_shield_enabled': 'ATM Shield: pre-emptively closes endangered positions approaching ATM and repositions at a safer OTM strike. Overrides Trend Guard at T1/T2 when active.',
+        'atm_shield_proximity_pct': 'ATM proximity threshold (% of spot). When any strike is within this % of spot, Shield fires. E.g. 1.5 = fire when strike is within 1.5% of BTC price.',
+        'atm_shield_target_otm_pct': 'After closing the ATM-bound strike, re-sell at this % OTM from spot. E.g. 3.0 = new strike at spot ± 3%.',
+        'atm_shield_loss_split_aggressor': 'Fraction of ATM Shield buyback loss to add to the new lot calculation for the aggressor side. 0.5 = split loss 50/50 between sides. 1.0 = all loss on the aggressor.',
+        'atm_shield_max_per_session': 'Maximum ATM Shield activations per session. Prevents repeated close-reopen cycles in a trending market.',
+        'atm_shield_cooldown_mins': 'Minimum minutes between consecutive ATM Shield activations.',
+        # Gamma Detector
+        'gamma_detector_enabled': 'Enable P&L curvature scanner — detects kinks in the portfolio P&L curve at option strikes (gamma boundaries). Warns before spot reaches a breakeven boundary.',
+        'gamma_step_pct': 'Step size (% of spot) for gamma scan grid. Smaller = finer resolution but slower scan. Default 0.5%.',
+        'gamma_scan_steps': 'Number of steps on each side of spot to scan for gamma kinks. E.g. 50 steps × 0.5% = ±25% of spot covered.',
+        'gamma_warning_distance_pct': 'Distance (% of spot) from nearest gamma boundary to trigger WARNING zone. E.g. 5.0 = warn when boundary is within 5% of current spot.',
+        'gamma_danger_distance_pct': 'Distance (% of spot) to trigger DANGER zone. Should be less than warning threshold. E.g. 2.0 = danger when boundary within 2% of spot.',
+        'gamma_detect_epsilon': 'Minimum P&L slope change to count as a kink (gamma boundary). Lower = more sensitive, more false positives. Default 1.0.',
+        'gamma_severity_multiplier_enabled': 'Phase 9 (RESTART REQUIRED): enable lot multiplier modulation based on gamma severity score. When ON, the gamma detector not only warns but actively scales hedge lots proportional to curvature magnitude.',
+        'gamma_severity_max_multiplier': 'Maximum lot multiplier applied by gamma severity modulation (Phase 9). E.g. 2.0 = at maximum severity, double the hedge lots.',
     }
 
     info = {}

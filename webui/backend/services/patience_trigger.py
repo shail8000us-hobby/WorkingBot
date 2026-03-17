@@ -198,8 +198,8 @@ class PatienceTrigger:
                         continue
                     if self._evaluate_trigger(card, current_price, self._prev_price):
                         # Price trigger met — check IV gate
-                        if not self._check_iv_gate_stub(card):
-                            # IV gate blocked — already alerted in stub
+                        if not self._check_iv_gate(card):
+                            # IV gate blocked — already logged in _check_iv_gate
                             continue
                         # All conditions met — queue for execution
                         self._triggered_cards.add(card_id)
@@ -262,7 +262,7 @@ class PatienceTrigger:
 
     # ── IV gate ───────────────────────────────────────────────────────
 
-    def _check_iv_gate_stub(self, card: dict) -> bool:
+    def _check_iv_gate(self, card: dict) -> bool:
         """
         Check card's IV percentile gate against current Deribit DVOL percentile.
         Returns True if IV conditions are met (or no gate is set).

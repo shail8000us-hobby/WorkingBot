@@ -493,7 +493,9 @@ export default function MMMPositionsTable({ session, heartbeat, onSetActiveStrik
             {/* Total row */}
             <TableRow sx={{ '& td': { borderTop: '2px solid', borderColor: 'divider' } }}>
               <TableCell colSpan={6} align="right" sx={{ fontWeight: 700 }}>
-                Total P&L
+                <Tooltip title="Sum of (Entry − Current) × Lots for all open positions. Does not include realized P&L from closed positions." arrow>
+                  <span style={{ cursor: 'help' }}>Open Position P&L</span>
+                </Tooltip>
               </TableCell>
               {/* P&L value */}
               <TableCell

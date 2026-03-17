@@ -60,7 +60,10 @@ const ORDER_MODE_OPTIONS = [
 ];
 const modeLabel = (v) => ORDER_MODE_OPTIONS.find(o => o.value === v)?.label || v;
 
-export default function CardDetail({ card: initialCard, onBack, onRefresh }) {
+// LOT_SIZE_BTC matches Delta Exchange: 1 lot = 0.001 BTC
+const LOT_SIZE_BTC = 0.001;
+
+export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPrice: propBtcPrice }) {
   const [card, setCard] = useState(initialCard);
   const [log, setLog] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -304,7 +307,7 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh }) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ color: '#64748b', borderBottom: '1px solid #1e293b' }}>
-                  {['#', 'Dir', 'Type', 'Strike', 'Expiry', 'Lots', 'Mode', 'Bid', 'Ask', 'Mid', 'Fill @', 'Status', ''].map(h => (
+                  {['#', 'Dir', 'Type', 'Strike', 'Expiry', 'Lots', 'Mode', 'Bid', 'Ask', 'Mid', 'Fill @', 'uP&L', 'Status', ''].map(h => (
                     <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -417,6 +420,17 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh }) {
                       <td style={{ ...cellStyle, color: '#22c55e' }}>
                         {leg.fill_price ? `$${fmtPrice(leg.fill_price)}` : '—'}
                       </td>
+                      <td style={{ ...cellStyle, fontSize: 11 }}>
+                        {(() => {
+                          if (!leg.fill_price || mid == null) return <span style={{ color: '#334155' }}>—</span>;
+                          const fillRef = parseFloat(leg.fill_price);
+                          const priceDiff = mid - fillRef;
+                          const sign = leg.direction === 'SELL' ? -1 : 1;
+                          const upnl = sign * priceDiff * (leg.lots || 0) * LOT_SIZE_BTC;
+                          const color = upnl > 0 ? '#22c55e' : upnl < 0 ? '#ef4444' : '#94a3b8';
+                          return <span style={{ color, fontWeight: 600 }}>{upnl >= 0 ? '+' : ''}${fmtPrice(upnl)}</span>;
+                        })()}
+                      </td>
                       <td style={cellStyle}>
                         <span style={{ background: legColor, color: '#000', borderRadius: 3, padding: '2px 6px', fontSize: 11, fontWeight: 700 }}>
                           {isHandedOff ? 'MMM' : leg.status}
@@ -455,13 +469,21 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh }) {
 
       {/* ── Payoff Graph ─────────────────────────────────────────── */}
       {legs.length > 0 && (
-        <Section title="Payoff at Expiry">
+        <Section title={`Payoff at Expiry${propBtcPrice ? ` — BTC @ $${propBtcPrice?.toLocaleString()}` : ''}`}>
           <PatiencePayoffGraph
             legs={legs}
             prices={Object.values(prices)}
-            spotPrice={card.trigger_price}
+            spotPrice={propBtcPrice || card.trigger_price}
           />
         </Section>
+      )}
+
+      {/* ── Manage Positions link (for COMPLETED cards with a group) ── */}
+      {card.status === 'COMPLETED' && card.group_id && (
+        <div style={{ marginBottom: 16, padding: '12px 16px', background: '#0f172a', borderRadius: 8, border: '1px solid #1e293b', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ fontSize: 13, color: '#a78bfa' }}>📊 Positions grouped as <strong>{card.group_id}</strong></span>
+          <span style={{ fontSize: 12, color: '#64748b' }}>— Open the Options Panel to manage active positions in this group.</span>
+        </div>
       )}
 
       {/* ── Execution log ────────────────────────────────────────── */}

@@ -3849,9 +3849,12 @@ def close_strike_route(session_id: str):
         old_active = side_state.get('active_strike', 0)
         new_active = old_active
         if abs(old_active - strike_val) < 1:
+            # BUG FIX: include 'shifted' positions in candidates — all non-active-strike
+            # open positions have status='shifted', so filtering for 'active' only always
+            # yields an empty list, causing new_active=0 and active_lots=0 with frozen stuck.
             remaining = [
                 p for p in positions
-                if p.get('status') == 'active'
+                if p.get('status') in ('active', 'shifted')
                 and abs(float(p.get('strike', 0)) - strike_val) >= 1
             ]
             if remaining:
@@ -3859,6 +3862,13 @@ def close_strike_route(session_id: str):
                 for p in remaining:
                     by_strike[float(p['strike'])] += p.get('lots', 0)
                 new_active = max(by_strike, key=by_strike.get)
+                # BUG FIX: un-shift positions at the promoted strike so recompute sees them
+                # as active (mirrors the logic in set_active_strike).
+                for _pos in positions:
+                    if (_pos.get('status') == 'shifted'
+                            and abs(float(_pos.get('strike', 0)) - new_active) < 1):
+                        _pos['status'] = 'active'
+                        _pos['shifted_at'] = None
             else:
                 new_active = 0
             side_state['active_strike'] = new_active

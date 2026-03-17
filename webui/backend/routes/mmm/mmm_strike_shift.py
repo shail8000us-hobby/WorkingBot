@@ -329,13 +329,22 @@ def activate_new_strike(
     # FIX: Update symbol to match the new active strike.
     expiry = session.get('params', {}).get('expiry', '')
     option_type = 'call' if side == 'ce' else 'put'
-    from .mmm_initializer import MMMInitializer
+    # H3 FIX: Use get_initializer() singleton instead of MMMInitializer() inline.
+    # Inline construction can silently fail (API timeout, missing creds) and leave
+    # side_state['symbol'] pointing at the old strike — next order then uses a wrong
+    # symbol and burns through the full reprice loop (4 × 60s) before surfacing.
+    # Failure is promoted to log.error so it is visible in alerting/monitoring.
+    from .mmm_initializer import get_initializer
     try:
-        _init = MMMInitializer()
+        _init = get_initializer()
         side_state['symbol'] = _init.build_symbol(option_type, 'BTC', new_strike, expiry)
         log.info(f"Symbol updated for {side.upper()}: {side_state['symbol']}")
     except Exception as e:
-        log.warning(f"Failed to update symbol for {side.upper()} shift: {e}")
+        log.error(
+            f"Failed to update symbol for {side.upper()} shift to {new_strike}: {e}. "
+            f"Existing symbol retained — next order will likely be rejected; "
+            f"reconciliation required."
+        )
 
     # Fix #23: Append new position to Unified Position Ledger
     # Shifted positions use type='strike_shift' so calculate_reversal_loss()

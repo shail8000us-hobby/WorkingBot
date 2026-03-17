@@ -35,7 +35,7 @@ except (ImportError, AttributeError):
 
 ORDER_PREFERENCE = 'maker_only'   # hardcoded — never changes
 MAX_RETRIES = 10                  # retries before PAUSE (cancel + re-place with fresh mid-price)
-RETRY_DELAY = 30.0               # seconds between re-placements
+RETRY_DELAY = 15.0               # seconds between re-placements (maker_only: 15s is sufficient)
 POLL_INTERVAL = 2.0              # seconds between fill-checks within a retry window
 ROUND_DELAY = 1.0                # seconds between GCD rounds
 
@@ -270,13 +270,14 @@ class PatienceLoopService:
                                    orders: List[dict], round_num: int,
                                    total_rounds: int) -> tuple:
         """
-        Place all orders in a round with retry logic.
+        Place all orders in a round using amend-first retry logic (copied from MMM pattern).
 
-        Retries up to MAX_RETRIES times:
-          - Place orders (fresh mid-price each attempt via place_smart_order)
-          - Poll for fills for RETRY_DELAY seconds
-          - Cancel unfilled orders, retry with fresh mid-price
-          - After MAX_RETRIES: signal PAUSE
+        First attempt: place all orders via _place_batch.
+        Subsequent attempts: amend unfilled orders in-place via edit_order (same order ID, new price).
+        Fallback to cancel+replace ONLY if amend fails with a non-400 error.
+
+        This guarantees at most 1 order per leg is on the exchange at any time —
+        even across 10 reprice cycles.
 
         Returns:
             (round_progress: dict, success: bool)
@@ -294,85 +295,164 @@ class PatienceLoopService:
         }
         state['progress'] = dict(round_progress)
 
-        # Track which orders are already filled (accumulate across retries)
         filled_symbols: dict = {}   # symbol -> result
-        pending_orders_all = list(orders)
+        active_orders: dict = {}    # symbol -> placed result dict (has order_id + product_id)
+        placement_failures: dict = {}  # symbol -> consecutive placement failure count
 
         for attempt in range(1, MAX_RETRIES + 1):
             if state['stop_requested']:
                 return round_progress, False
 
-            # Only place unfilled orders
-            to_place = [o for o in pending_orders_all if o['symbol'] not in filled_symbols]
-            if not to_place:
-                break   # all done
+            unfilled_syms = set(o['symbol'] for o in orders) - set(filled_symbols.keys())
+            if not unfilled_syms:
+                break
 
-            modes = list({o.get('order_mode', 'maker_only') for o in to_place})
-            log.info(
-                f"[PATIENCE-LOOP:{loop_id}] Round {round_num} attempt {attempt}/{MAX_RETRIES}: "
-                f"placing {len(to_place)} order(s) mode={modes}"
-            )
+            # Split: symbols with an active order (amend) vs symbols needing fresh placement
+            to_amend = [active_orders[sym] for sym in unfilled_syms if sym in active_orders]
+            to_place = [o for o in orders if o['symbol'] in unfilled_syms
+                        and o['symbol'] not in active_orders]
 
-            placed = self._place_batch(to_place)
-            if placed is None:
-                state['error'] = f"Round {round_num} attempt {attempt}: system error placing orders"
-                return round_progress, False
+            # ── Step 1: Amend existing active orders with a fresh mid price ──
+            if to_amend:
+                log.info(
+                    f"[PATIENCE-LOOP:{loop_id}] Round {round_num} attempt {attempt}/{MAX_RETRIES}: "
+                    f"amending {len(to_amend)} order(s), placing {len(to_place)} fresh"
+                )
+                amend_results = self._amend_batch(to_amend)
 
-            # Classify results
-            placed_pending = []
-            _MARKET_MODES = {'market', 'market_only'}
-            for result in placed:
-                sym = result.get('symbol')
-                if not result.get('success'):
-                    log.warning(
-                        f"[PATIENCE-LOOP:{loop_id}] Order {sym} failed to place: {result.get('error')}"
-                    )
-                    round_progress[sym] = {**round_progress.get(sym, {}), 'status': 'error',
-                                           'error': result.get('error')}
-                    # Market orders must NEVER retry on failure — the order may have already
-                    # landed on the exchange. A retry would cause a double fill.
-                    if result.get('order_mode') in _MARKET_MODES:
-                        state['error'] = (
-                            f"Market order failed for {sym}: {result.get('error')} "
-                            f"— aborting (no retry to prevent double fill)"
+                # Non-400 amend failure → cancel + re-place as fallback
+                for item in amend_results['failed']:
+                    sym = item['symbol']
+                    self._cancel_orders([item])  # best-effort cleanup
+                    active_orders.pop(sym, None)
+                    orig = next((o for o in orders if o['symbol'] == sym), None)
+                    if orig:
+                        to_place.append(orig)
+
+                # Amend returned 400 → order already filled or cancelled — check immediately
+                if amend_results['filled_or_cancelled']:
+                    check_ids = [
+                        i.get('order_id') for i in amend_results['filled_or_cancelled']
+                        if i.get('order_id')
+                    ]
+                    statuses = self._check_order_statuses(check_ids) or []
+                    for s_item in statuses:
+                        oid = s_item.get('order_id')
+                        matched = next(
+                            (i for i in amend_results['filled_or_cancelled']
+                             if i.get('order_id') == oid), None
                         )
-                        log.error(f"[PATIENCE-LOOP:{loop_id}] {state['error']}")
-                        return round_progress, False
-                    continue
+                        if not matched:
+                            continue
+                        sym = matched['symbol']
+                        if s_item.get('state') in ('filled', 'closed'):
+                            filled_symbols[sym] = {**matched, 'fill_price': s_item.get('fill_price')}
+                            active_orders.pop(sym, None)
+                            round_progress[sym] = {
+                                'status': 'filled', 'filled': True,
+                                'size': s_item.get('size', matched.get('size')),
+                                'orderId': oid,
+                                'fillPrice': s_item.get('fill_price'),
+                                'leg_id': round_progress.get(sym, {}).get('leg_id'),
+                            }
+                            log.info(
+                                f"[PATIENCE-LOOP:{loop_id}] {sym} filled (amend-400) "
+                                f"@ {s_item.get('fill_price')}"
+                            )
+                        else:
+                            # Cancelled externally — re-place
+                            active_orders.pop(sym, None)
+                            orig = next((o for o in orders if o['symbol'] == sym), None)
+                            if orig:
+                                to_place.append(orig)
+                            log.info(
+                                f"[PATIENCE-LOOP:{loop_id}] {sym} order {oid} cancelled — will re-place"
+                            )
+            else:
+                log.info(
+                    f"[PATIENCE-LOOP:{loop_id}] Round {round_num} attempt {attempt}/{MAX_RETRIES}: "
+                    f"placing {len(to_place)} order(s)"
+                )
 
-                exec_type = result.get('execution_type', '')
-                filled_types = [
-                    'market', 'market_fallback', 'market_fallback_no_quotes',
-                    'market_fallback_error', 'limit_filled', 'limit_filled_late',
-                ]
-                if exec_type in filled_types or not result.get('order_id'):
-                    # Filled immediately
-                    filled_symbols[sym] = result
-                    round_progress[sym] = {
-                        'status': 'filled', 'filled': True,
-                        'size': result.get('size', 0),
-                        'orderId': result.get('order_id'),
-                        'fillPrice': result.get('fill_price'),
-                        'leg_id': round_progress.get(sym, {}).get('leg_id'),
-                    }
-                    log.info(f"[PATIENCE-LOOP:{loop_id}] {sym} filled immediately @ {result.get('fill_price')}")
-                else:
-                    placed_pending.append(result)
-                    round_progress[sym] = {
-                        'status': 'pending', 'filled': False,
-                        'size': result.get('size', 0),
-                        'orderId': result.get('order_id'),
-                        'fillPrice': None,
-                        'leg_id': round_progress.get(sym, {}).get('leg_id'),
-                    }
+            # ── Step 2: Place fresh orders (initial placement or cancel+replace fallback) ──
+            _MARKET_MODES = {'market', 'market_only'}
+            if to_place:
+                placed = self._place_batch(to_place)
+                if placed is None:
+                    state['error'] = f"Round {round_num} attempt {attempt}: system error placing orders"
+                    return round_progress, False
+
+                for result in placed:
+                    sym = result.get('symbol')
+                    if not result.get('success'):
+                        log.warning(
+                            f"[PATIENCE-LOOP:{loop_id}] Order {sym} failed: {result.get('error')}"
+                        )
+                        round_progress[sym] = {
+                            **round_progress.get(sym, {}), 'status': 'error',
+                            'error': result.get('error'),
+                        }
+                        if result.get('order_mode') in _MARKET_MODES:
+                            state['error'] = (
+                                f"Market order failed for {sym}: {result.get('error')} "
+                                f"— aborting (no retry to prevent double fill)"
+                            )
+                            log.error(f"[PATIENCE-LOOP:{loop_id}] {state['error']}")
+                            return round_progress, False
+                        placement_failures[sym] = placement_failures.get(sym, 0) + 1
+                        if placement_failures[sym] >= 3:
+                            state['error'] = (
+                                f"Round {round_num}: {sym} failed to PLACE "
+                                f"{placement_failures[sym]} times in a row — aborting. "
+                                f"Last error: {result.get('error')}"
+                            )
+                            log.error(f"[PATIENCE-LOOP:{loop_id}] {state['error']}")
+                            return round_progress, False
+                        continue
+                    else:
+                        placement_failures[sym] = 0
+
+                    exec_type = result.get('execution_type', '')
+                    filled_types = [
+                        'market', 'market_fallback', 'market_fallback_no_quotes',
+                        'market_fallback_error', 'limit_filled', 'limit_filled_late',
+                    ]
+                    if exec_type in filled_types or not result.get('order_id'):
+                        filled_symbols[sym] = result
+                        active_orders.pop(sym, None)
+                        round_progress[sym] = {
+                            'status': 'filled', 'filled': True,
+                            'size': result.get('size', 0),
+                            'orderId': result.get('order_id'),
+                            'fillPrice': result.get('fill_price'),
+                            'leg_id': round_progress.get(sym, {}).get('leg_id'),
+                        }
+                        log.info(
+                            f"[PATIENCE-LOOP:{loop_id}] {sym} filled immediately "
+                            f"@ {result.get('fill_price')}"
+                        )
+                    else:
+                        active_orders[sym] = result   # store for amend on next retry
+                        round_progress[sym] = {
+                            'status': 'pending', 'filled': False,
+                            'size': result.get('size', 0),
+                            'orderId': result.get('order_id'),
+                            'fillPrice': None,
+                            'leg_id': round_progress.get(sym, {}).get('leg_id'),
+                        }
 
             state['progress'] = dict(round_progress)
 
-            # ── Poll pending orders for RETRY_DELAY seconds ──
-            if placed_pending:
-                order_ids = [r['order_id'] for r in placed_pending if r.get('order_id')]
+            # ── Step 3: Poll active orders for RETRY_DELAY seconds ──
+            poll_syms = [
+                s for s in unfilled_syms
+                if s in active_orders and s not in filled_symbols
+            ]
+            if poll_syms:
+                poll_orders = [active_orders[s] for s in poll_syms]
+                order_ids = [r['order_id'] for r in poll_orders if r.get('order_id')]
                 deadline = time.time() + RETRY_DELAY
-                newly_filled_ids: set = set()
+                newly_done_ids: set = set()
 
                 while time.time() < deadline and not state['stop_requested']:
                     time.sleep(POLL_INTERVAL)
@@ -384,17 +464,17 @@ class PatienceLoopService:
                     for os_item in statuses:
                         oid = os_item.get('order_id')
                         matching = next(
-                            (p for p in placed_pending if p.get('order_id') == oid), None
+                            (p for p in poll_orders if p.get('order_id') == oid), None
                         )
                         if not matching:
                             continue
-
                         sym = matching['symbol']
                         order_state = os_item.get('state', '')
 
                         if order_state in ('filled', 'closed'):
-                            newly_filled_ids.add(oid)
+                            newly_done_ids.add(oid)
                             filled_symbols[sym] = {**matching, 'fill_price': os_item.get('fill_price')}
+                            active_orders.pop(sym, None)
                             round_progress[sym] = {
                                 'status': 'filled', 'filled': True,
                                 'size': os_item.get('size', matching.get('size')),
@@ -405,42 +485,43 @@ class PatienceLoopService:
                             log.info(
                                 f"[PATIENCE-LOOP:{loop_id}] {sym} filled @ {os_item.get('fill_price')}"
                             )
+                        elif order_state in ('cancelled', 'not_found'):
+                            # Cancelled externally — remove so next attempt re-places
+                            newly_done_ids.add(oid)
+                            active_orders.pop(sym, None)
+                            log.info(
+                                f"[PATIENCE-LOOP:{loop_id}] {sym} order {oid} "
+                                f"{order_state} — will re-place"
+                            )
 
                     state['progress'] = dict(round_progress)
 
-                    pending_remaining = [
-                        p for p in placed_pending if p['order_id'] not in newly_filled_ids
-                    ]
-                    if not pending_remaining:
-                        break   # all filled this attempt
+                    if not [p for p in poll_orders if p['order_id'] not in newly_done_ids]:
+                        break  # all settled
 
-                # Cancel orders that weren't filled in RETRY_DELAY window
-                unfilled_orders = [
-                    p for p in placed_pending if p['order_id'] not in newly_filled_ids
-                ]
-                if unfilled_orders:
-                    unfilled_ids = [p['order_id'] for p in unfilled_orders if p.get('order_id')]
-                    unfilled_syms = [p['symbol'] for p in unfilled_orders]
+                remaining = [s for s in poll_syms if s not in filled_symbols]
+                if remaining and attempt < MAX_RETRIES:
                     log.info(
                         f"[PATIENCE-LOOP:{loop_id}] Round {round_num} attempt {attempt}: "
-                        f"{len(unfilled_orders)} unfilled after {RETRY_DELAY}s — cancelling: {unfilled_syms}"
+                        f"{len(remaining)} unfilled after {RETRY_DELAY}s — "
+                        f"will amend on next attempt: {remaining}"
                     )
-                    self._cancel_orders(unfilled_ids)
 
-                    if attempt < MAX_RETRIES:
-                        log.info(
-                            f"[PATIENCE-LOOP:{loop_id}] Will retry in 2s with fresh mid-price..."
-                        )
-                        time.sleep(2)  # small gap before re-placing
-
-            # Check if all done
             if set(o['symbol'] for o in orders) == set(filled_symbols.keys()):
                 break
 
-        # Determine success
+        # ── Determine success ──
         all_filled = set(o['symbol'] for o in orders) == set(filled_symbols.keys())
 
         if not all_filled:
+            # Cancel any remaining active orders (cleanup)
+            leftover = [
+                v for v in active_orders.values()
+                if v.get('order_id') and v.get('product_id')
+            ]
+            if leftover:
+                log.info(f"[PATIENCE-LOOP:{loop_id}] Cleaning up {len(leftover)} unfilled orders")
+                self._cancel_orders(leftover)
             unfilled = [o['symbol'] for o in orders if o['symbol'] not in filled_symbols]
             state['error'] = (
                 f"Round {round_num}: {len(unfilled)} leg(s) not filled after "
@@ -543,6 +624,7 @@ class PatienceLoopService:
                 'execution_type': exec_type,
                 'fill_price': fill_price,
                 'order_id': result.get('id'),
+                'product_id': result.get('product_id'),
                 'index': index,
                 'leg_id': order_data.get('leg_id'),
                 'order_mode': raw_mode,
@@ -596,21 +678,36 @@ class PatienceLoopService:
             log.error(f"[PATIENCE-LOOP] Status check error: {e}")
             return None
 
-    def _cancel_orders(self, order_ids: List[str]) -> None:
-        """Cancel a list of orders (best effort — do not block on failure)."""
-        if not order_ids:
+    def _cancel_orders(self, orders_to_cancel: List[dict]) -> None:
+        """Cancel a list of orders (best effort — do not block on failure).
+
+        Args:
+            orders_to_cancel: list of dicts with 'order_id' and 'product_id' keys.
+        """
+        if not orders_to_cancel:
             return
 
         client = self._api_client_factory()
 
         async def _cancel():
-            from webui.backend.routes.options.order_executor import cancel_order_with_verification
-            for oid in order_ids:
+            rest = client.rest_client
+            for item in orders_to_cancel:
+                oid = item.get('order_id')
+                pid = item.get('product_id')
+                if not oid:
+                    continue
+                if not pid:
+                    log.warning(f"[PATIENCE-LOOP] Cannot cancel order {oid} — product_id unknown")
+                    continue
                 try:
-                    await cancel_order_with_verification(client, oid)
+                    await rest.cancel_order(str(oid), int(pid))
                     log.info(f"[PATIENCE-LOOP] Cancelled order {oid}")
                 except Exception as e:
-                    log.warning(f"[PATIENCE-LOOP] Cancel order {oid} failed: {e}")
+                    err = str(e)
+                    if '400' in err:
+                        log.info(f"[PATIENCE-LOOP] Order {oid} cancel 400 — already filled/cancelled")
+                    else:
+                        log.warning(f"[PATIENCE-LOOP] Cancel order {oid} failed: {e}")
 
         try:
             loop = asyncio.new_event_loop()
@@ -621,6 +718,126 @@ class PatienceLoopService:
                 loop.close()
         except Exception as e:
             log.error(f"[PATIENCE-LOOP] Cancel batch error: {e}")
+
+    # ── Amend helpers (MMM amend-first pattern) ───────────────────────
+
+    def _amend_batch(self, orders: List[dict]) -> dict:
+        """Amend a list of active orders with fresh mid prices (MMM amend-first pattern).
+
+        Returns dict with keys:
+          'amended': orders successfully amended in-place (same order_id, new price)
+          'failed': orders where amend failed with non-400 error — caller should cancel+replace
+          'filled_or_cancelled': orders where amend returned 400 — caller should check fill status
+        """
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                return loop.run_until_complete(self._exec_amend_batch(orders))
+            finally:
+                loop.close()
+        except Exception as e:
+            log.error(f"[PATIENCE-LOOP] Amend batch error: {e}", exc_info=True)
+            return {'amended': [], 'failed': list(orders), 'filled_or_cancelled': []}
+
+    async def _exec_amend_batch(self, orders: List[dict]) -> dict:
+        """Async: amend all orders concurrently with fresh mid prices."""
+        client = self._api_client_factory()
+        results = {'amended': [], 'failed': [], 'filled_or_cancelled': []}
+        outcomes = await asyncio.gather(
+            *[self._amend_single(client, order) for order in orders],
+            return_exceptions=False,
+        )
+        for order, outcome in zip(orders, outcomes):
+            results[outcome].append(order)
+        return results
+
+    async def _amend_single(self, client, order: dict) -> str:
+        """Amend one order with a fresh mid price.
+
+        Returns: 'amended', 'failed', or 'filled_or_cancelled'
+        """
+        sym = order['symbol']
+        oid = order.get('order_id')
+        pid = order.get('product_id')
+        if not oid or not pid:
+            log.warning(f"[PATIENCE-LOOP] Cannot amend {sym} — missing order_id or product_id")
+            return 'failed'
+
+        quotes = await self._fetch_fresh_quotes(client, sym)
+        if not quotes:
+            log.warning(f"[PATIENCE-LOOP] No quotes for {sym} — cannot amend order {oid}")
+            return 'failed'
+
+        new_price = self._calc_mid_price(quotes)
+        if not new_price:
+            log.warning(f"[PATIENCE-LOOP] Zero mid price for {sym} — cannot amend order {oid}")
+            return 'failed'
+
+        try:
+            await client.rest_client.edit_order(
+                order_id=str(oid),
+                product_id=int(pid),
+                new_price=str(new_price),
+            )
+            log.info(f"[PATIENCE-LOOP] Amended {sym} order {oid} → ${new_price:.2f}")
+            return 'amended'
+        except Exception as e:
+            err = str(e)
+            if '400' in err:
+                log.info(
+                    f"[PATIENCE-LOOP] Amend 400 for {sym} order {oid} — already filled/cancelled"
+                )
+                return 'filled_or_cancelled'
+            log.warning(f"[PATIENCE-LOOP] Amend failed for {sym} order {oid}: {e}")
+            return 'failed'
+
+    @staticmethod
+    async def _fetch_fresh_quotes(client, symbol: str) -> Optional[dict]:
+        """Fetch fresh L2 orderbook quotes for mid-price calculation (copied from MMM executor)."""
+        result = {'best_bid': 0.0, 'best_ask': 0.0, 'tick_size': 0.01, 'fresh': False}
+        try:
+            orderbook = await client.rest_client.get_orderbook(symbol)
+            if orderbook:
+                buy_orders = orderbook.get('buy', [])
+                sell_orders = orderbook.get('sell', [])
+                if buy_orders and sell_orders:
+                    result['best_bid'] = float(buy_orders[0].get('price', 0))
+                    result['best_ask'] = float(sell_orders[0].get('price', 0))
+                    result['fresh'] = True
+        except Exception as e:
+            log.warning(f"[PATIENCE-LOOP] L2 orderbook failed for {symbol}: {e}")
+
+        if not result['fresh'] or result['best_bid'] == 0 or result['best_ask'] == 0:
+            try:
+                resp = await client.rest_client._request_with_retry(
+                    method="GET", path=f"/v2/tickers/{symbol}"
+                )
+                ticker = resp.get('result', resp)
+                quotes = ticker.get('quotes', {})
+                result['best_bid'] = float(quotes.get('best_bid') or 0)
+                result['best_ask'] = float(quotes.get('best_ask') or 0)
+                result['tick_size'] = float(ticker.get('tick_size') or 0.01)
+                result['fresh'] = True
+            except Exception as e:
+                log.warning(f"[PATIENCE-LOOP] Ticker fallback failed for {symbol}: {e}")
+
+        if result['fresh'] and result['best_bid'] > 0 and result['best_ask'] > 0:
+            return result
+        return None
+
+    @staticmethod
+    def _calc_mid_price(quotes: dict) -> float:
+        """Calculate mid-price from quotes, rounded to tick size (copied from MMM executor)."""
+        bid = quotes.get('best_bid', 0)
+        ask = quotes.get('best_ask', 0)
+        tick = quotes.get('tick_size', 0.01)
+        if bid <= 0 or ask <= 0:
+            return 0.0
+        mid = (bid + ask) / 2
+        if tick > 0:
+            mid = round(mid / tick) * tick
+        return round(mid, 2)
 
 
 # ── Singleton ─────────────────────────────────────────────────────────

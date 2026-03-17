@@ -21,7 +21,8 @@ Updated: February 17, 2026 — Converted min_trigger_move from absolute to perce
 import logging
 from typing import Dict, Any, Tuple, Optional
 
-from .mmm_constants import strike_key
+from .mmm_constants import strike_key, LOT_SIZE_BTC
+from webui.backend.sealed import sealed
 
 log = logging.getLogger('mmm_trigger')
 
@@ -84,6 +85,10 @@ def evaluate_triggers(
         '_effective_min_trigger_move',
         params.get('min_trigger_move', 10.0),
     )
+    # Dollar floor trigger: fire if active-strike USD loss exceeds this amount.
+    # Catches the dead-zone where small % moves below min_trigger_move accumulate
+    # real dollar exposure. 0 = disabled (default). OR condition with %-based trigger.
+    min_trigger_dollar = params.get('min_trigger_dollar', 0.0)
 
     ce_side = session.get('ce', {})
     pe_side = session.get('pe', {})
@@ -112,6 +117,9 @@ def evaluate_triggers(
             'ce_trigger': ce_trigger, 'pe_trigger': pe_trigger,
             'ce_now': ce_now, 'pe_now': pe_now,
             'min_trigger_move': min_trigger_move,
+            'ce_dollar_excess': 0.0, 'pe_dollar_excess': 0.0,
+            'ce_dollar_triggered': False, 'pe_dollar_triggered': False,
+            'min_trigger_dollar': min_trigger_dollar,
         }
 
     # Calculate absolute excess above trigger
@@ -124,9 +132,19 @@ def evaluate_triggers(
     ce_excess_pct = (ce_excess / ce_base) * 100
     pe_excess_pct = (pe_excess / pe_base) * 100
 
-    # Apply percentage-based minimum trigger move filter
-    ce_triggered = ce_excess_pct > min_trigger_move
-    pe_triggered = pe_excess_pct > min_trigger_move
+    # Dollar floor: compute active-strike USD loss for each side.
+    # Uses active_lots only (frozen positions are not monitored here).
+    # Negative dollar_excess (premium declining) cannot trigger.
+    ce_active_lots = ce_side.get('active_lots', 0)
+    pe_active_lots = pe_side.get('active_lots', 0)
+    ce_dollar_excess = max(ce_excess * ce_active_lots * LOT_SIZE_BTC, 0.0)
+    pe_dollar_excess = max(pe_excess * pe_active_lots * LOT_SIZE_BTC, 0.0)
+    ce_dollar_triggered = (min_trigger_dollar > 0) and (ce_dollar_excess > min_trigger_dollar)
+    pe_dollar_triggered = (min_trigger_dollar > 0) and (pe_dollar_excess > min_trigger_dollar)
+
+    # Apply trigger: percentage-based OR dollar-floor (whichever fires first)
+    ce_triggered = ce_excess_pct > min_trigger_move or ce_dollar_triggered
+    pe_triggered = pe_excess_pct > min_trigger_move or pe_dollar_triggered
 
     # Determine outcome (§4.7)
     if ce_triggered and pe_triggered:
@@ -151,6 +169,140 @@ def evaluate_triggers(
         'ce_now': ce_now,
         'pe_now': pe_now,
         'min_trigger_move': min_trigger_move,
+        # Dollar floor fields (0 when disabled)
+        'ce_dollar_excess': round(ce_dollar_excess, 4),
+        'pe_dollar_excess': round(pe_dollar_excess, 4),
+        'ce_dollar_triggered': ce_dollar_triggered,
+        'pe_dollar_triggered': pe_dollar_triggered,
+        'min_trigger_dollar': min_trigger_dollar,
+    }
+
+
+def check_frozen_pnl_trigger(
+    session: Dict,
+    fetch_premium_fn,
+    ce_now: float = 0.0,
+    pe_now: float = 0.0,
+) -> Dict[str, Any]:
+    """
+    Phase 2: Fallback trigger — fires when frozen positions at old strikes
+    accumulate unrealized losses exceeding min_frozen_trigger_dollar.
+
+    MUST only be called when evaluate_triggers() returned OUTCOME_NONE.
+    This prevents same-beat double-hedging: active and frozen triggers
+    cannot fire in the same heartbeat.
+
+    Uses trigger_snapshot as baseline for each frozen position (same as
+    calculate_standard_loss), so already-hedged losses are never re-counted.
+    Falls back to entry_premium only when no snapshot exists yet (first hedge
+    cycle for that position).
+
+    Args:
+        session: Full session dict
+        fetch_premium_fn: sync callable(strike, option_type) → float|None
+                          Backed by _premium_cache (populated by heartbeat prefetch).
+        ce_now: Active CE strike price (for return dict compatibility with evaluate_triggers)
+        pe_now: Active PE strike price
+
+    Returns:
+        Same structure as evaluate_triggers() so monitor can use it as a
+        drop-in replacement for trigger_result.
+        Additional fields: frozen_triggered, ce_frozen_loss, pe_frozen_loss,
+        min_frozen_trigger_dollar.
+    """
+    params = session.get('params', {})
+    min_frozen = params.get('min_frozen_trigger_dollar', 0.0)
+
+    _base_result = {
+        'outcome': OUTCOME_NONE,
+        'ce_excess': 0.0, 'pe_excess': 0.0,
+        'ce_excess_pct': 0.0, 'pe_excess_pct': 0.0,
+        'ce_triggered': False, 'pe_triggered': False,
+        'ce_trigger': 0.0, 'pe_trigger': 0.0,
+        'ce_now': ce_now, 'pe_now': pe_now,
+        'min_trigger_move': params.get('min_trigger_move', 10.0),
+        'frozen_triggered': False,
+        'ce_frozen_loss': 0.0,
+        'pe_frozen_loss': 0.0,
+        'min_frozen_trigger_dollar': min_frozen,
+    }
+
+    if min_frozen <= 0:
+        return _base_result
+
+    def _compute_frozen_loss(side_key: str) -> float:
+        side_state = session.get(side_key, {})
+        option_type = 'call' if side_key == 'ce' else 'put'
+        trigger_snapshots = side_state.get('trigger_snapshot', {})
+        total = 0.0
+
+        for pos in side_state.get('frozen_positions', []):
+            p_strike = pos.get('strike', 0)
+            p_lots = pos.get('lots', 0)
+            if p_lots <= 0 or p_strike <= 0 or pos.get('_being_closed'):
+                continue
+
+            # Use trigger_snapshot as baseline — prevents double-counting
+            # losses that were already covered by a previous hedge.
+            # Fall back to entry_premium only when no snapshot exists yet.
+            p_key = strike_key(p_strike)
+            baseline = trigger_snapshots.get(p_key)
+            if baseline is None or baseline <= 0:
+                baseline = pos.get('entry_premium', 0)
+            if baseline <= 0:
+                continue
+
+            try:
+                current = fetch_premium_fn(p_strike, option_type)
+            except Exception:
+                continue
+            if current is None or current <= 0:
+                continue
+
+            # Only count loss (premium rising above baseline), not gain
+            pos_loss = max((current - baseline) * p_lots * LOT_SIZE_BTC, 0.0)
+            total += pos_loss
+
+        return total
+
+    ce_frozen_loss = _compute_frozen_loss('ce')
+    pe_frozen_loss = _compute_frozen_loss('pe')
+
+    ce_triggered = ce_frozen_loss > min_frozen
+    pe_triggered = pe_frozen_loss > min_frozen
+
+    if ce_triggered and pe_triggered:
+        outcome = OUTCOME_BOTH
+    elif ce_triggered:
+        outcome = OUTCOME_CE
+    elif pe_triggered:
+        outcome = OUTCOME_PE
+    else:
+        outcome = OUTCOME_NONE
+
+    if outcome != OUTCOME_NONE:
+        log.info(
+            f"Frozen PnL trigger fired: CE_loss=${ce_frozen_loss:.4f}, "
+            f"PE_loss=${pe_frozen_loss:.4f}, threshold=${min_frozen:.2f} → {outcome}"
+        )
+
+    return {
+        'outcome': outcome,
+        'ce_excess': round(ce_frozen_loss, 4),
+        'pe_excess': round(pe_frozen_loss, 4),
+        'ce_excess_pct': 0.0,
+        'pe_excess_pct': 0.0,
+        'ce_triggered': ce_triggered,
+        'pe_triggered': pe_triggered,
+        'ce_trigger': 0.0,
+        'pe_trigger': 0.0,
+        'ce_now': ce_now,
+        'pe_now': pe_now,
+        'min_trigger_move': params.get('min_trigger_move', 10.0),
+        'frozen_triggered': True,
+        'ce_frozen_loss': round(ce_frozen_loss, 4),
+        'pe_frozen_loss': round(pe_frozen_loss, 4),
+        'min_frozen_trigger_dollar': min_frozen,
     }
 
 
@@ -331,6 +483,7 @@ ADAPTIVE_INTERVAL_TIERS = [
 ADAPTIVE_INTERVAL_FLOOR = 30
 
 
+@sealed
 def compute_adaptive_interval(
     base_interval: int,
     hours_to_expiry: float,
@@ -407,6 +560,7 @@ ADAPTIVE_INTERVAL_V2_TIERS = [
 ]
 
 
+@sealed
 def compute_adaptive_interval_v2(
     base_interval: int,
     hours_to_expiry: float,

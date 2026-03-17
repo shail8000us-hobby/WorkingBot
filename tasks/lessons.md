@@ -1,5 +1,192 @@
 # MMM Lessons Learned
 
+## [2026-03-17] UnboundLocalError in `_process_adjustment` causes 83% miss rate
+
+**Root cause:** `params = session.get('params', {})` was assigned only inside the `if is_reversal:` branch (line ~3106). When a standard adjustment fires (`is_reversal=False`), `params` was never assigned. Python sees the local assignment elsewhere in the function and raises `UnboundLocalError: cannot access local variable 'params'` when line ~3175 runs `params.get('pre_sell_shift_enabled', False)`.
+
+**Effect:** Every heartbeat that triggered a standard adjustment crashed with this error. The exception was caught at the top-level loop but NOT flagged as unrecoverable (because the str-based check looked for "nameerror" in the message string, but `UnboundLocalError`'s message is "cannot access local variable 'params'..."). The circuit breaker accumulated failures, opened, caused miss beats — resulting in 83.3% miss/error rate and Grade F heartbeat health.
+
+**Fix:** Moved `params = session.get('params', {})` to the top of `_process_adjustment` (after `sid = self.session_id`). Removed the redundant assignment inside the reversal branch. Also fixed the unrecoverable check to use `isinstance(e, (TypeError, AttributeError, NameError, AssertionError))` instead of `str(e).lower()` — `isinstance` correctly catches subclasses like `UnboundLocalError` (which is a `NameError` subclass).
+
+**Prevention:** Variables used after an if/else block must be assigned before it, not inside one branch. The unrecoverable check must use `isinstance`, not string matching on the error message — error messages don't contain the exception class name.
+
+## [2026-03-17] Patience loop: cancel always failed + infinite retry on bad leg
+
+**Root cause 1 — `AsyncDeltaClient.cancel_order()` requires `product_id` (`patience_loop.py`):**
+`cancel_order_with_verification` (SEALED) calls `client.rest_client.cancel_order(order_id)` with only one argument, but `AsyncDeltaClient.cancel_order(order_id, product_id)` requires both. Every cancel attempt threw `TypeError: missing 1 required positional argument: 'product_id'`. Orders were never cancelled — each retry accumulated 2 new open orders on the exchange (10 retries × 2 orders = 20 stranded open orders).
+**Fix:** Replaced `cancel_order_with_verification` with direct `await rest.cancel_order(str(oid), int(pid))` — same pattern as `MMMExecutor._cancel_order`. Added `product_id` to `_execute_single` return dict (it's present in `place_options_order` response). Changed `_cancel_orders` signature to accept order dicts with both `order_id` and `product_id`.
+**Prevention:** Never use `cancel_order_with_verification` from patience code — it bypasses the unified client and calls `AsyncDeltaClient` directly with the wrong signature. Copy MMM's `_cancel_order` pattern instead.
+
+**Root cause 2 — Persistent leg placement failure not detected (`patience_loop.py`):**
+When one leg fails to PLACE with 400 Bad Request on every attempt (e.g., wrong symbol, margin issue, post-only rejection), the loop kept retrying for all 10 MAX_RETRIES. The other legs were placed and then NOT cancelled (due to bug 1 above), leaving 10 pairs of open orders on the exchange.
+**Fix:** Added `placement_failures` counter per symbol. After 3 consecutive placement failures for any maker_only leg, abort the round immediately with PAUSE status.
+**Prevention:** A placement failure (400 from exchange) is different from a fill failure (order open but not yet traded). Placement failures should not be retried indefinitely — they indicate a systematic problem. Market orders already aborted on failure; apply the same principle to maker orders after 3 failures.
+
+## [2026-03-17] Production risk audit — 8 bugs fixed across engine, monitor, executor, strike shift, close-at-5, pending orders
+
+**Bugs found and fixed (no live session was running at time of fix):**
+
+**C1 — Frozen losses silently excluded (`calculate_standard_loss`):**
+When `fetch_premium_fn` is `None` (circuit breaker active, cache cold), the frozen-positions loop was skipped entirely but `calculation_incomplete` returned `False`. Caller believed loss was fully accounted; it was not. Fixed: detect `None` + frozen positions → return `(active_loss, True)` immediately.
+
+**H1 — Stale `_breakeven_multiplier` persists across beats (`mmm_monitor.py` Step 5.7):**
+If `_regime_spot_price == 0` or the engine threw, the multiplier written in the previous beat remained in session. A stale CRITICAL (2.5×) multiplier applied silently until the engine recovered. Fixed: reset `session['_breakeven_multiplier'] = 1.0` at the start of Step 5.7 every beat before attempting the computation.
+
+**C5 — IMP-2 dangerous-side reduction cancelled by breakeven multiplier (`calculate_lots_to_sell`):**
+Breakeven (1.5×) is applied at step 3; IMP-2 reduce (0.70×) at step 5. Net: 1.05× above baseline instead of 0.70× below. IMP-2 intent ("sell fewer on dangerous side in a trend") was overridden by the aggression feature. Fixed: after IMP-2 reduce, enforce `imp2_ceiling = ceil(raw_lots × multiplier)` so the final result is always ≤ the IMP-2–intended value regardless of upstream multipliers.
+
+**H3 — `activate_new_strike()` used `MMMInitializer()` inline with silent swallow (`mmm_strike_shift.py`):**
+If the inline initializer raised (API timeout, missing creds), `log.warning` was emitted and execution continued with the wrong symbol in `side_state`. The next sell order used a wrong symbol, burning through the full 4-minute reprice loop. Fixed: use `get_initializer()` singleton; promote failure to `log.error`.
+
+**H4 — `trigger_snapshot` not cleared on position close (`mmm_close_at_5.py`):**
+When `_remove_closed_position()` closed a frozen position, its strike key remained in `trigger_snapshot`. If the same strike was later re-used, `calculate_standard_loss()` used the stale old snapshot as the baseline, making incremental loss look near-zero → under-sized hedge. Fixed: pop the strike key from `trigger_snapshot` in `_remove_closed_position()`.
+
+**C2 — `'pending'` sentinel blocks side for 15 min on hung `smart_execute` (`mmm_pending_orders.py`):**
+The pre-registration placeholder `order_id='pending'` had the same 15-minute stale TTL as real orders. If `smart_execute()` hangs (network stall, exchange timeout), the side is blind for 15 min. Fixed: added `_PENDING_SENTINEL_STALE_SECONDS = 90`; `check_and_resolve_pending()` now uses the shorter TTL for `order_id == 'pending'` entries.
+
+**C4 — Emergency SELL with missing `average_fill_price` recorded `aggressive_price` (`mmm_executor.py`):**
+When `average_fill_price` was absent in an IOC fill response, `aggressive_price` (the order floor) was silently recorded as fill. For a SELL this understates `premium_collected`, which could trigger a spurious follow-on hedge next beat. Fixed: return `_failure()` so the pending guard re-checks the order next beat and records the real fill once the exchange populates it.
+
+**M1 — `adjustment_history` unbounded growth (`mmm_engine.py`):**
+Every adjustment appended ~200 bytes to `adjustment_history`. After 1,000 adjustments the list was ~200 KB, carried in every SQLite save. Fixed: cap to last 500 entries after each append.
+
+**Prevention rules:**
+- `fetch_premium_fn` being `None` is a valid degraded state (circuit breaker). Any function that skips logic when `None` must explicitly set `calculation_incomplete=True` rather than returning a result that looks clean.
+- Any session key written by a subsystem (breakeven multiplier, gamma result, regime tier) that can also fail to write must be reset to a safe default at the START of the beat, not left to accumulate from the previous beat.
+- IMP-2 (reduce mode) and breakeven multiplier have opposing objectives. IMP-2 ceiling (`ceil(raw_lots × multiplier)`) must be enforced AFTER all aggression multipliers to ensure the safety reduction always wins.
+- `MMMInitializer()` inline instantiation is forbidden. Always use `get_initializer()`. Failures must be `log.error`, not `log.warning`.
+- `trigger_snapshot` entries for closed positions are stale baselines waiting to cause an under-sized hedge. Clear the strike key whenever `_remove_closed_position()` fires.
+- Pre-registration sentinel (`order_id='pending'`) must have a shorter TTL than real order_ids. Use 90 s (reprice loop time) not the full 15-minute verification window.
+- Emergency IOC fills without `average_fill_price` must defer recording, not fall back to the order limit price — conservative-looking numbers can cause real over-hedging next beat.
+- `adjustment_history` and any other append-only list in session state must be pruned. Unbounded growth hits SQLite write limits and slows every heartbeat save.
+
+
+
+## [2026-03-17] Active-lots=0 silent blind spot — close-at-5 drains active, frozen bleeds undetected
+
+**Bug (3-part failure observed in session mmm17mar26-1):**
+1. close-at-5 watcher bought back all PE active positions at 74,800 when premiums decayed to ≤$5. `active_lots` became 0, `active_strike` stayed 74,800.
+2. Every subsequent heartbeat ran the trigger heal: `pe_trigger[74800] = pe_now = $485`. So `pe_excess = pe_now - pe_trigger = 0` every beat. PE never triggered even at +1307%.
+3. `min_frozen_trigger_dollar` defaulted to 0.0 (disabled). The only trigger path for frozen-only losses was off. 46 frozen PE lots bled with zero algo response.
+4. Manual set-active-strike (📌) promotion failed: `_save_session`'s API-inject race fix only merged new positions by ID. Active_strike field and position status (shifted→active) changes were silently overwritten by the in-flight heartbeat's save.
+
+**Fixes applied:**
+1. `_auto_promote_atm_strike` (Step 0.75): added zero-lots recovery path — when `active_lots == 0` and frozen positions exist, promotes the highest-lots frozen strike as the new active regardless of open-strike count (including the single-strike case the old code skipped).
+2. `_save_session`: after the new-positions merge, checks if stored has `active_strike_pinned=True` but in-memory doesn't — if so, syncs `active_strike` + all position statuses from stored and recomputes. Manual promotion now survives in-flight heartbeat saves.
+3. `min_frozen_trigger_dollar` default changed from `0.0` → `0.2`. Frozen losses > $0.20 now trigger hedging even with zero active lots, always on.
+
+**Prevention rules:**
+- `min_frozen_trigger_dollar` must be > 0 in all sessions. $0.20 is safe for any reasonable session size (1 lot × $34 entry premium = $0.034/beat at typical levels — $0.20 is ~6 lots' worth of 1-tick movement).
+- Any code that changes `active_strike` must also handle what happens when active_lots drops to 0 on that side after a drain. The trigger heal creates a permanent blind spot if baseline = current.
+- `_save_session`'s race fix for API-concurrent writes only covered new positions. Any API that mutates existing position state (status, strike) must be tracked similarly — check `active_strike_pinned` flag as the marker that an API explicitly changed state.
+
+## [2026-03-17] Trigger snapshot set to stale pre-execution premium — causes false re-triggers
+
+**Bug:** After a successful adjustment, `_update_state_after_adjustment` called `update_trigger_snapshots(session, ce_now, pe_now, ...)`. But `ce_now`/`pe_now` were captured at heartbeat **start**, and `smart_execute` takes 30–60s. In a fast-moving market, the aggressor's premium can move significantly during execution. The stale snapshot makes the next heartbeat's trigger check compare against the old baseline, causing an immediate re-trigger if the premium moved >min_trigger_move during execution. Example: CE $100→$115 during execution, snapshot set to $100 → next heartbeat excess = 15% → fires again.
+
+**Fix:** After `execute_adjustment` succeeds in `_process_adjustment`, re-fetch live premiums via `_fetch_premiums()` and call `update_trigger_snapshots` with fresh values. Wrapped in try/except so a failed refresh degrades gracefully to the stale snapshot.
+
+**Prevention rule:** Any trigger snapshot update that uses `ce_now`/`pe_now` captured before a long-running async operation should be followed by a post-operation re-fetch. The strike-shift case already did this (BUG-1 FIX). Normal adjustments now follow the same pattern.
+
+## [2026-03-17] Frozen position fetch failure → silent loss understatement during API degradation
+
+**Bug:** `calculate_standard_loss` skips frozen positions when their premium fetch fails (`continue` on exception or None). The `calculation_incomplete=True` flag is returned, but the monitor just logs a warning and proceeds with the understated loss. During API degradation, ALL frozen position fetches can fail simultaneously, causing the hedge size to be computed from active-strike loss only — potentially missing 80%+ of total exposure.
+
+**Fix:** When `_std_incomplete=True`, use `session['_last_complete_std_loss'][aggressor]` as a floor for the loss value. The last complete calculation is cached on every successful beat. This prevents loss from decreasing below the last-known-good value when fetches degrade.
+
+**Prevention rule:** Any calculation that sets `incomplete=True` and the caller skips/ignores it needs a conservative fallback. "Warn and continue with understated value" is never safe for financial calculations.
+
+## [2026-03-17] Patience: Always verify exchange symbol format from live data, not comments
+
+**What happened:** Analysis claimed Delta Exchange uses YYMMDD format based on a comment in position_greeks.py (`C-BTC-72000-260313`). Implemented a "fix" that changed DDMMYY → YYMMDD in all symbol builders. This would have caused 100% order failure.
+
+**What saved us:** Checked `mmm_activity_log.json` for real symbols before shipping. Found `C-BTC-75200-170326` = March 17, 2026 = DDMMYY format. Reverted immediately.
+
+**The confusion:** `260313` (the example in comments) interpreted as YYMMDD = March 13, 2026. But real data confirms DDMMYY. The comment example may have been for a March 26, 2013 option (expired), or the comment was simply wrong about the format name.
+
+**Prevention rules:**
+- For any exchange symbol format question, **verify from live data first**: `grep -o '[CP]-BTC-[0-9]*-[0-9]*' mmm_activity_log.json | tail -5`
+- Cross-check the date suffix against today's known date before implementing any format change.
+- Comments can be wrong. Data doesn't lie.
+- The actual Delta Exchange format: `C-BTC-STRIKE-DDMMYY` (e.g., `C-BTC-75200-170326` = March 17, 2026 call at 75200 strike)
+
+## [2026-03-17] shift_recycle fires without capacity gate — closes winning positions, wastes fees
+
+**Bug:** `_shift_time_recycle` had no capacity pressure check. It ran at EVERY strike shift, closing any frozen position with premium < `shift_recycle_premium_floor` (default was 60.0), regardless of whether the lot book needed the space. When market moves favorably (e.g., BTC up → PE premiums decaying), this premature close:
+1. Pays broker fees for a position that would have reached `close_at_threshold` naturally
+2. Leaves premium on the table: closing at 39.5 vs waiting for 10 = $0.29/lot × lots × LOT_SIZE foregone
+3. The "buyback cost folded into new lot calculation" is circular — you could sell those extra lots anyway without closing the frozen position if capacity isn't constrained
+
+**Contrast with M1 Harvest:** correctly gates on `capacity_pressure >= harvest_pressure_threshold` before running. Shift-time recycle had no equivalent gate.
+
+**Fix:**
+1. Added `shift_recycle_pressure_threshold` param (default 0.7) — recycle only runs when `total_lots/max_lots >= 0.7`
+2. Lowered default `shift_recycle_premium_floor` from 60.0 → 20.0 (aligned with wind_down_close_threshold; closing at 60 when close_at_threshold=10 means 6× overshoot)
+
+**Prevention rules:**
+- Any proactive close logic must have a capacity or profit threshold gate. Closing winners "opportunistically" without need is strictly P&L-negative (fees + foregone theta).
+- `shift_recycle_premium_floor` should be ≤ `wind_down_close_threshold` and ideally ≤ 2× `close_at_threshold`.
+- Market direction matters: when spot moves away from frozen strikes, theta does the work for free. Don't fight it.
+
+## [2026-03-16] shift_recycle closes logged as close_at_5 — misleading activity log
+
+**Bug:** `close_position()` in `mmm_close_at_5.py` always logged type `'close_at_5'` regardless of the `mechanism` parameter. Shift-time recycle (`mechanism='shift_recycle'`) closes appeared as `close_at_5` in the activity log, making it look like the normal close-at-5 threshold was violated.
+
+**Observed symptom:** User saw positions closed at 39.5 and 16.5 with `close_at_threshold = 10` in the activity log, all showing `close_at_5` type. But `shift_recycle_premium_floor = 60` — both closes were legitimate shift-time recycle (60 > 39.5 and 60 > 16.5). The `shift_recycle` summary event appeared correctly afterward but the per-position lines were wrong.
+
+**Fix:** Changed the hardcoded `'close_at_5'` activity type to `mechanism` so each close type is correctly identified: `close_at_5`, `shift_recycle`, `harvest`, `atm_shield`, etc.
+
+**Prevention rules:**
+- `close_position()` is shared by ALL close paths. Never hardcode the activity type — always use `mechanism`.
+- When investigating "algo closed above threshold": check if `shift_recycle` summary event appears immediately after the `close_at_5` entries. If it does, the closes were shift-time recycle, not threshold-based.
+- `shift_recycle_premium_floor` (default 60) is completely independent of `close_at_threshold`. Shift-time recycle intentionally bypasses the normal close threshold.
+
+## [2026-03-16] close_strike auto-promotion silently zeroes active_lots
+
+**Bug:** When operator used `close_strike` (🔴) to close the current active strike, the auto-promotion logic filtered for `status == 'active'` to find a replacement. But all remaining open positions at other strikes have `status == 'shifted'` — so the filter always returned empty, setting `new_active = 0` and `active_strike = 0`. `recompute_side_lots` then found no active positions → `active_lots = 0`, while all frozen lots remained as `frozen_total_lots`. The side went dark: no adjustments fired, ATM shield skipped, position cap was effectively 0.
+
+**Root cause:** Two bugs in `mmm_api.py close_strike_route` (lines ~3852–3870):
+1. Candidate filter used `status == 'active'` instead of `status in ('active', 'shifted')`
+2. After finding `new_active` strike, never un-shifted positions at that strike — unlike `set_active_strike` which explicitly marks them back to `'active'`
+
+**Fix:** Changed filter to include 'shifted'. Added un-shift loop for promoted strike (mirroring `set_active_strike` lines 3615–3618).
+
+**Prevention rules:**
+- Any code that changes `active_strike` must ALSO promote positions at the new strike from 'shifted' → 'active'. `recompute_side_lots` auto-normalize only works in one direction (active→shifted), never the reverse.
+- When searching for "open" positions that could serve as a new active, the filter must include BOTH `'active'` and `'shifted'` status — shifted positions are live risk, not closed.
+
+## [2026-03-16] Frozen position double-hedging — trigger_snapshot written but never read
+
+**Bug:** `calculate_standard_loss` in `mmm_engine.py` used `entry_premium` (lifetime loss) as baseline for frozen positions, while `update_trigger_snapshots` in `mmm_trigger.py` ratcheted frozen snapshots up after every hedge. The snapshots were dead writes — never consumed — causing every hedge cycle to re-count and re-hedge the full frozen loss from original entry.
+
+**Root cause:** Two files had contradictory comments and logic. `mmm_trigger.py` said "incremental", `mmm_engine.py` said "lifetime". Engine won because it's the one that actually computes the loss.
+
+**Fix:** Changed `calculate_standard_loss` to use `trigger_snapshot[frozen_strike_key]` as baseline when available, falling back to `entry_premium` only for first hedge cycle.
+
+**Prevention rules:**
+- When a function writes state that is meant to be consumed by another module, grep the codebase to verify the consumer actually reads it.
+- Any loss computation for frozen positions must use incremental baseline (trigger_snapshot), not lifetime (entry_premium). The trigger system ratchets snapshots specifically to prevent double-counting.
+
+## [2026-03-16] Wind-down partial failure skips trigger snapshot update for all strikes
+
+**Bug:** `_process_wind_down_buyback` gated `update_trigger_snapshots` behind `if not any_failed:`. If any one strike's buyback failed, snapshots were skipped for ALL strikes — including the ones that succeeded. But session state (lots, P&L) was already mutated for successful strikes, creating a mismatch.
+
+**Fix:** Made `update_trigger_snapshots` unconditional after the buyback loop.
+
+**Prevention rules:**
+- Never gate state sync operations (trigger snapshots, lot counts) behind an all-or-nothing flag when the preceding loop already mutates state per-iteration.
+- If orders are processed per-strike, state updates must also be per-strike or unconditional.
+
+## [2026-03-16] ATM Shield deferral checked capacity but not execution gates
+
+**Bug:** `wind_down_on_atm` and `close_at_atm` deferred to ATM Shield based only on `shield_count < max_per_session`. But the shield's actual execution has 6 additional gates (cooldown, margin tier, status, etc.). If any gate blocked the shield, the safety features were suppressed for nothing.
+
+**Fix:** Replaced capacity-only check with `_check_shield_gates()` call at both deferral points.
+
+**Prevention rules:**
+- When deferring a safety action to another subsystem, verify the subsystem can actually execute — not just that it has theoretical capacity.
+- If subsystem X has `_check_gates()`, callers who defer to X must use the same gate check.
+
 ## [2026-03-16] MMM settings dialog 400 error — internal params filtered causing empty update
 
 **Bug:** Settings dialog returns 400 "No valid parameters to update" even when user changed visible parameters.

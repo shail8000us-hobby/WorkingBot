@@ -18,7 +18,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
 from webui.backend.sealed import sealed
 
 # Fix #19: Decimal precision helper — mirrors mmm_engine._D
@@ -511,10 +511,12 @@ async def close_position(
         )
 
         # Persistent audit trail (activity log)
+        # Use mechanism as the activity type so shift_recycle / harvest / etc. closes
+        # are correctly identified in the log instead of appearing as 'close_at_5'.
         try:
             from .mmm_activity import log_activity as _log_activity
             _log_activity(
-                'close_at_5',
+                mechanism,
                 f'{actual_lots} {side.upper()} @ {strike} | entry={entry_prem:.2f} close={close_price:.2f} pnl={realized_pnl:.4f}',
                 session.get('session_id', ''),
                 'info',
@@ -725,6 +727,14 @@ def _remove_closed_position(
                 f"lots={target_lots}, prem≈{target_prem:.2f}, strike={target_strike}. "
                 f"Position may already have been removed."
             )
+
+    # H4 FIX: Remove the trigger_snapshot entry for the closed position's strike.
+    # If the same strike is later re-used, calculate_standard_loss() would use the
+    # old snapshot as the baseline, making incremental loss appear near-zero and
+    # producing an under-sized hedge for the new position at that strike.
+    closed_strike = position.get('strike', 0)
+    if closed_strike:
+        side_state.get('trigger_snapshot', {}).pop(_strike_key(closed_strike), None)
 
     recompute_side_lots(side_state)
     session[side] = side_state

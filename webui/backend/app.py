@@ -596,10 +596,13 @@ except Exception as e:
 # Register Patience blueprint (MAR 2026: Scenario card execution engine for BTC options)
 try:
     from webui.backend.routes.patience import patience_bp, init_patience
+    from webui.backend.services.patience_executor import init_socketio as init_patience_socketio
     app.register_blueprint(patience_bp)
     print(f"✅ Registered patience blueprint (Scenario Card Engine — /api/patience)")
     init_patience()
     print(f"✅ Patience trigger daemon started")
+    init_patience_socketio(socketio)
+    print(f"✅ Patience WebSocket initialized")
 except Exception as e:
     print(f"⚠️ Could not register patience blueprint: {e}")
     log.warning(f"Patience routes not available: {e}")

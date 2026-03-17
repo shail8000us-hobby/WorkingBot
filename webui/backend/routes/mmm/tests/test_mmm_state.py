@@ -234,7 +234,7 @@ class TestRecomputeSideLots:
             '_positions_migrated': True,
             'positions': [
                 {
-                    'id': 'ce_orig', 'strike': 100000, 'lots': 5,
+                    'id': 'ce_orig', 'strike': 105000, 'lots': 5,
                     'entry_premium': 150.0, 'premium': 150.0,
                     'type': 'original', 'status': 'active',
                     'created_at': _NOW, 'shifted_at': None, 'closed_at': None,

@@ -19,6 +19,7 @@ import CardDetail from './CardDetail';
 import ChainTreeView from './ChainTreeView';
 import IVPanel from './IVPanel';
 import PnLDashboard from './PnLDashboard';
+import PerformanceHistory from './PerformanceHistory';
 import TemplateManager from './TemplateManager';
 
 // ── Status color mapping ──────────────────────────────────────────────
@@ -121,13 +122,13 @@ function CardTile({ card, btcPrice, onSelect, onArm, onDisarm, onCancel, onResum
         {card.iv_percentile_max && <span>IV ≤ {card.iv_percentile_max}%</span>}
         {card.iv_percentile_min && <span>IV ≥ {card.iv_percentile_min}%</span>}
         <span>{legsCount} leg{legsCount !== 1 ? 's' : ''}</span>
-        {distance !== null && (
-          <span style={{ color: Math.abs(distance) < 500 ? '#f97316' : '#94a3b8' }}>
-            {distance > 0 ? '▲' : '▼'} {Math.abs(distance).toLocaleString()} pts away
-          </span>
-        )}
         {card.parent_card_id && <span style={{ color: '#a78bfa' }}>⛓ chained</span>}
       </div>
+
+      {/* Distance gauge — only for ARMED cards with BTC price */}
+      {isArmed && distance !== null && (
+        <DistanceGauge distance={parseInt(distance)} triggerPrice={card.trigger_price} btcPrice={btcPrice} />
+      )}
     </div>
   );
 }
@@ -142,6 +143,59 @@ const btnStyle = (bg) => ({
   fontSize: 11,
   fontWeight: 600,
 });
+
+// ── Trigger distance gauge ────────────────────────────────────────────
+function DistanceGauge({ distance, triggerPrice, btcPrice }) {
+  // Show how far BTC is from trigger. Max range: 3000 pts each side.
+  const MAX_RANGE = 3000;
+  const clampedDist = Math.max(-MAX_RANGE, Math.min(MAX_RANGE, distance));
+  // Trigger is above BTC: distance > 0 (bullish arm — wait for price to rise)
+  const pct = ((MAX_RANGE + clampedDist) / (2 * MAX_RANGE)) * 100;  // 50% = at trigger
+  const proximityPct = 1 - Math.abs(distance) / MAX_RANGE;
+  const barColor = proximityPct > 0.8 ? '#ef4444' : proximityPct > 0.6 ? '#f97316' : '#3b82f6';
+
+  return (
+    <div style={{ marginTop: 8 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#475569', marginBottom: 2 }}>
+        <span>BTC ${btcPrice?.toLocaleString()}</span>
+        <span style={{ color: Math.abs(distance) < 300 ? '#f97316' : '#64748b', fontWeight: 600 }}>
+          {Math.abs(distance) < 300 ? '⚡ ' : ''}{Math.abs(distance).toLocaleString()} pts {distance > 0 ? 'below trigger' : 'above trigger'}
+        </span>
+        <span>Trigger ${triggerPrice?.toLocaleString()}</span>
+      </div>
+      <div style={{ height: 4, background: '#1e293b', borderRadius: 2, position: 'relative' }}>
+        {/* Current price marker */}
+        <div style={{
+          position: 'absolute',
+          left: `${100 - pct}%`,
+          top: -2, width: 8, height: 8,
+          background: barColor,
+          borderRadius: '50%',
+          transform: 'translateX(-50%)',
+          transition: 'left 0.5s',
+        }} />
+        {/* Trigger line */}
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: -3, width: 2, height: 10,
+          background: '#a78bfa',
+          transform: 'translateX(-50%)',
+        }} />
+        {/* Fill from btc to trigger */}
+        <div style={{
+          position: 'absolute',
+          left: `${Math.min(50, 100 - pct)}%`,
+          width: `${Math.abs(50 - (100 - pct))}%`,
+          height: '100%',
+          background: barColor,
+          opacity: 0.3,
+          borderRadius: 2,
+        }} />
+      </div>
+    </div>
+  );
+}
 
 // ── Main dashboard ────────────────────────────────────────────────────
 export default function PatienceDashboard() {
@@ -255,6 +309,7 @@ export default function PatienceDashboard() {
         card={selectedCard}
         onBack={() => { setSelectedCard(null); fetchCards(); }}
         onRefresh={fetchCards}
+        btcPrice={btcPrice}
       />
     );
   }
@@ -368,6 +423,7 @@ export default function PatienceDashboard() {
           { key: 'cards', label: '📋 Cards' },
           { key: 'pnl', label: '💰 P&L' },
           { key: 'iv', label: '📊 IV' },
+          { key: 'performance', label: '🏆 Performance' },
           { key: 'templates', label: '📄 Templates' },
         ].map(tab => (
           <button
@@ -446,6 +502,7 @@ export default function PatienceDashboard() {
 
       {activeTab === 'pnl' && <PnLDashboard />}
       {activeTab === 'iv' && <IVPanel />}
+      {activeTab === 'performance' && <PerformanceHistory />}
       {activeTab === 'templates' && (
         <TemplateManager
           onCardCreated={() => {

@@ -1,81 +1,173 @@
 # MMM Algorithm: Deep Code Analysis & Hidden Bugs Report
 
 ## Executive Summary
-A comprehensive, line-by-line analysis of the MMM codebase was conducted focusing on logic conflicts, race conditions, and integration issues between modules. The analysis revealed **4 new critical bugs** that compromise the algorithm's safety mechanisms and financial integrity. These bugs are not listed in the current `mmm_bugs.md` or `MMM_BUGS_AND_IMPROVEMENTS.md` trackers.
+A comprehensive, line-by-line analysis of the MMM codebase was conducted focusing on logic conflicts, race conditions, and integration issues between modules. The analysis revealed **4 potential bugs**. After independent senior code review against the actual source code:
 
-The most severe issue is a fundamental contradiction between the `mmm_trigger.py` module and the `mmm_engine.py` module that guarantees exponential over-hedging of frozen positions.
+- **2 bugs confirmed REAL and FIXED** (Bug 1 critical, Bug 3 high)
+- **1 bug confirmed FALSE** (Bug 2 — already had defensive guard)
+- **1 bug PARTIALLY TRUE and FIXED** (Bug 4 — narrower than originally claimed)
+
+All 436 sealed tests pass after fixes. Zero regressions.
 
 ---
 
 ## 1. CRITICAL BUG: Guaranteed Double-Hedging of Frozen Positions
 **Severity:** CRITICAL
 **Modules:** `mmm_trigger.py` vs `mmm_engine.py`
+**Verdict:** REAL — FIXED
 
 **The Conflict:**
-There is a massive contradiction between how the Trigger system and the Engine treat losses on shifted/frozen positions.
-*   In `mmm_trigger.py` (line 201), `update_trigger_snapshots` explicitly updates the trigger snapshot for all frozen positions to their *current* premium. The inline comments explicitly state: *"This makes frozen position loss INCREMENTAL (since last hedge) instead of lifetime (since entry), preventing double-counting."*
-*   However, in `mmm_engine.py` (line 167), `calculate_standard_loss` completely ignores this trigger snapshot. It computes the loss for frozen positions using `(_D(p_current) - _D(p_entry)) * _D(p_lots)`. The inline comments there explicitly state: *"Use entry_premium as baseline for frozen positions (lifetime loss). "*
+There was a contradiction between how the Trigger system and the Engine treated losses on shifted/frozen positions.
+*   In `mmm_trigger.py` (line 201), `update_trigger_snapshots` explicitly updates the trigger snapshot for all frozen positions to their *current* premium. The inline comments state: *"This makes frozen position loss INCREMENTAL (since last hedge) instead of lifetime (since entry), preventing double-counting."*
+*   However, in `mmm_engine.py` (line 167), `calculate_standard_loss` completely ignored this trigger snapshot. It computed the loss for frozen positions using `(_D(p_current) - _D(p_entry)) * _D(p_lots)`. The inline comments stated: *"Use entry_premium as baseline for frozen positions (lifetime loss)."*
+
+**Root Cause:** The frozen trigger snapshots were **dead writes** — `update_trigger_snapshots()` wrote them after every hedge, but no code anywhere ever read `trigger_snapshot[frozen_strike_key]` for any loss calculation. Only the active strike key was ever consumed.
 
 **The Financial Impact:**
-This logic gap guarantees exponential over-hedging. 
-1. If a CE position is entered at $100 and shifts (freezes) when the premium reaches $120, the $20 loss is hedged by the standard adjustment. 
-2. The trigger system correctly ratchets the snapshot up to $120. 
-3. If the premium later hits $130, the *incremental* loss is $10. 
-4. But because `mmm_engine.py` evaluates the lifetime `p_entry` ($100), it will calculate a $30 loss to cover! 
-5. The algorithm already hedged $20 of that loss previously, so it will now over-hedge an additional $30, resulting in $50 of total protection for a $30 market move. 
+This logic gap caused compounding over-hedging:
+1. Frozen CE position entered at $100, shifts when premium reaches $120 — $20 loss hedged.
+2. Trigger system ratchets snapshot up to $120.
+3. Premium hits $130 — incremental loss should be $10.
+4. But engine used lifetime `p_entry` ($100), calculated $30 loss — re-hedging the $20 already covered.
+5. Over-hedging compounds on every subsequent trigger event.
 
-This double-counting compounds on every subsequent trigger event, leading to an explosion in hedge lot sizing constraint breaches and heavy financial bleed.
+**Fix Applied (`mmm_engine.py`):**
+Changed `calculate_standard_loss` to use `trigger_snapshot[frozen_strike_key]` as baseline for frozen positions when available (incremental loss since last hedge). Falls back to `entry_premium` only if no snapshot exists yet (first hedge cycle for that position). This aligns with the documented intent of `update_trigger_snapshots`.
 
 ---
 
-## 2. HIGH BUG: ITM Guard is Silently Bypassed by Auto-Shift Fallback
-**Severity:** HIGH
+## 2. ~~HIGH BUG: ITM Guard is Silently Bypassed by Auto-Shift Fallback~~
+**Severity:** ~~HIGH~~ N/A
 **Modules:** `mmm_monitor.py`
+**Verdict:** FALSE — no bug exists
 
-**The Conflict:**
-The `itm_guard` parameter is designed to absolutely prevent selling options that are In-The-Money (ITM) near expiry.
-*   In `_process_adjustment` (~line 3130), if the target strike is ITM, the ITM Guard successfully intercepts the standard sell and forces an auto-shift by calling `_process_strike_shift(hedge_side, ...)`.
-*   In `_process_strike_shift` (~line 3914), if the shift logic cannot find a valid new Out-Of-The-Money (OTM) strike (e.g., premiums are decayed extremely low everywhere else), it falls back by calling `_process_shift_fallback`.
-*   `_process_shift_fallback` explicitly executes a sell at the *current active strike*.
+**Original Claim:**
+The `_process_shift_fallback` method executes a sell at the current active strike, which would be the exact ITM strike that the ITM Guard just refused to sell.
 
-**The Impact:**
-The *current active strike* in this fallback scenario is the exact ITM strike that the ITM Guard just refused to sell in the first place. The fallback routine completely bypasses the ITM Guard's protection and sells the ITM option anyway. The safety mechanism fails silently, providing a false sense of security while compounding ITM exposure near expiry.
+**Actual Code (verified):**
+`_process_shift_fallback` (line ~4005) has its **own independent ITM Guard check** that blocks the sell if the fallback strike is ITM:
+
+```python
+# _process_shift_fallback (lines 4005-4029)
+itm_guard_on = session.get('params', {}).get('itm_guard_enabled', True)
+if hedge_strike:
+    spot_price = await self._fetch_spot_price()
+    if is_itm and itm_guard_on:
+        log.warning(f"ITM GUARD (shift fallback): ...")
+        log_activity('itm_guard_blocked', ..., {'context': 'shift_fallback'})
+        return  # BLOCKS THE SELL
+```
+
+The comment even states: `# ITM Guard check (same as normal adjustment)`. This defensive guard was already in place — the bug report's claim is incorrect.
 
 ---
 
 ## 3. HIGH BUG: Partial Wind-Down Failure Corrupts Trigger Snapshots
 **Severity:** HIGH
 **Modules:** `mmm_monitor.py`
+**Verdict:** REAL — FIXED
 
 **The Conflict:**
-In `_process_wind_down_buyback` (line 2571), the algorithm correctly groups fills and places separate buy orders for each individual strike.
-*   If *any* single order fails or partially fails execution, the `any_failed = True` flag is raised in the loop.
-*   At the end of the buyback routine, `update_trigger_snapshots` is only conditionally called: `if not any_failed:`.
+In `_process_wind_down_buyback` (line 2571), the algorithm groups fills and places separate buy orders for each strike. If *any* single order fails, `any_failed = True`. The `update_trigger_snapshots` call was gated by `if not any_failed:`, meaning it was skipped entirely on partial failure.
 
 **The Impact:**
-If the wind-down mechanism attempts to buy back 3 strikes—and Strike 1 succeeds, Strike 2 fails, and Strike 3 succeeds—`any_failed` becomes True. Because of this, `update_trigger_snapshots` is entirely skipped for the beat. The trigger snapshots for the successfully bought-back strikes (1 and 3) are never updated to reflect their closed status or revised lot capacity. This leaves the core state with stale trigger data, causing the standard trigger system to misfire on subsequent heartbeats because it assumes those positions are still fully exposed at their old premiums.
+When Strike 1 succeeds but Strike 2 fails:
+- Session state is already mutated (lots removed, P&L booked for Strike 1 at lines 2710-2716)
+- But trigger snapshots don't update because `any_failed = True`
+- Stale snapshots cause the trigger system to mis-evaluate on subsequent heartbeats for positions that were already closed
+
+**Fix Applied (`mmm_monitor.py`):**
+Removed the `if not any_failed:` gate. `update_trigger_snapshots` is now called unconditionally after the buyback loop. Rationale: successful buybacks already mutated session state — the snapshots must stay in sync regardless of whether unrelated strikes failed.
 
 ---
 
-## 4. MEDIUM BUG: ATM Shield Implicitly Breaks ATM Wind-Down & ATM Close
+## 4. MEDIUM BUG: ATM Shield Deferral Gate Mismatch
+**Severity:** MEDIUM (narrower than originally claimed)
+**Modules:** `mmm_monitor.py`, `mmm_atm_shield.py`
+**Verdict:** PARTIALLY TRUE — FIXED
+
+**Original Claim (inaccurate parts):**
+> "The ATM Shield only reduces the position by up to 50% max"
+
+This is **false**. The ATM Shield closes **100%** of positions on the endangered side, then re-establishes at a safer OTM strike. It is a full position shift, not a partial reduction.
+
+**The Real Bug (confirmed):**
+Both `wind_down_on_atm` (~line 1188) and `close_at_atm` (~line 1268) deferred to the ATM Shield based solely on **capacity** (`shield_count < max_per_session`). However, the actual shield execution at Step 5.5 is gated by `_check_shield_gates()` which checks 6 additional conditions: session status, margin tier, auto-close window, per-side cooldown, capacity, and proactive shift status.
+
+This mismatch meant: if the shield had capacity but was blocked by cooldown, margin RED/CRITICAL, or the `_skip_to_pnl` flag, both wind-down and close-at-ATM were suppressed for nothing — the shield wouldn't fire either.
+
+**Fix Applied (`mmm_monitor.py`):**
+Replaced the simple capacity check at both deferral points with a call to `_check_shield_gates()`, which validates all 6 gate conditions. If any gate fails, wind-down/close-at-ATM proceeds normally instead of being suppressed. Added import of `_check_shield_gates` from `mmm_atm_shield`.
+
+---
+
+## Conclusion (Session 1)
+
+| Bug | Original Claim | Verdict | Action |
+|-----|---------------|---------|--------|
+| 1. Double-hedging frozen positions | CRITICAL | **REAL** | Fixed in `mmm_engine.py` |
+| 2. ITM Guard bypass by fallback | HIGH | **FALSE** | No action needed — guard already existed |
+| 3. Wind-down partial failure snapshots | HIGH | **REAL** | Fixed in `mmm_monitor.py` |
+| 4. ATM Shield deferral mismatch | MEDIUM | **PARTIALLY TRUE** | Fixed in `mmm_monitor.py` |
+
+**Tests:** 436 sealed tests pass, 0 failures, 0 regressions.
+
+---
+
+## Session 2 Analysis (2026-03-17)
+
+A second independent deep analysis was performed. 5 potential bugs were raised by a subagent; after verifying each against actual source code, 2 were confirmed real. The remaining 3 were false positives with existing mitigations.
+
+### FALSE POSITIVES (mitigated by existing code)
+
+| Agent Bug | Claim | Why FALSE |
+|-----------|-------|-----------|
+| Optimistic state before fill confirmation | HIGH | `smart_execute` validates `filled_size` and only returns `success=True` after exchange fill is confirmed. State update is post-confirmation. |
+| Partial fill `filled_size` defaults to requested | MEDIUM | Executor returns `failure` if `unfilled_size` is missing (line 388-392). `filled_size` always present on `success=True`. |
+| Trigger guard blocks both sides on missing snapshot | MEDIUM | Trigger snapshot HEAL at `mmm_monitor.py:1099–1118` initializes both CE+PE snapshots to current premiums **before** `evaluate_triggers()` runs every heartbeat. |
+
+---
+
+## 5. HIGH BUG: Trigger Snapshot Set to Stale Pre-Execution Premium
+**Severity:** HIGH
+**Module:** `mmm_monitor.py`
+**Verdict:** REAL — FIXED
+
+**The Problem:**
+After `execute_adjustment` succeeds, `_update_state_after_adjustment` calls `update_trigger_snapshots(session, ce_now, pe_now, ...)`. These `ce_now`/`pe_now` values were captured at **heartbeat start** (line 959). `smart_execute` takes 30–60 seconds. In a trending market:
+
+1. Heartbeat: CE = $100, trigger = $85 → fires.
+2. `smart_execute` runs 45s. CE moves to $115 during execution.
+3. Trigger snapshot set to **stale $100**.
+4. Next heartbeat: CE = $115. Excess = 15% → **immediate re-trigger**.
+
+The strike-shift path already had this fix (BUG-1 FIX at `_process_strike_shift`). Normal adjustments did not.
+
+**Fix Applied (`mmm_monitor.py`):**
+After `execute_adjustment` succeeds, call `_fetch_premiums()` to get live CE and PE premiums, then call `update_trigger_snapshots` with the fresh values. Wrapped in try/except — a failed refresh degrades gracefully to the stale snapshot rather than breaking the adjustment.
+
+---
+
+## 6. MEDIUM BUG: Frozen Position Fetch Failure → Silent Loss Understatement
 **Severity:** MEDIUM
-**Modules:** `mmm_monitor.py`
+**Module:** `mmm_engine.py`, `mmm_monitor.py`
+**Verdict:** REAL — FIXED
 
-**The Conflict:**
-Both the `wind_down_on_atm` (~line 1109) and `close_at_atm` (~line 1179) logic blocks contain identical ATM Shield deferral logic:
-```python
-if atm_shield_enabled and shield_count < max_per_session:
-    return 'shielded'
-```
-**The Impact:**
-If the ATM Shield is available, the ATM proximity check returns early, completely bypassing the invocation of ATM Wind-Down or Close-at-ATM. The ATM Shield only reduces the endangered position by up to 50% max and applies a cooldown tracker (`atm_shield_cooldown_mins`). This means that as long as shields are mathematically available, the algorithm will not fully wind down or fully auto-close an ATM position, regardless of the user's explicit parameter settings for `wind_down_on_atm` or `close_at_atm`. The 50% mitigation shield unconditionally overrides and prevents the 100% liquidation/wind-down safety features.
+**The Problem:**
+`calculate_standard_loss` skips frozen positions when their premium fetch fails (`continue` on exception or `None`). The `calculation_incomplete=True` flag is returned, but the monitor only logged a warning and proceeded with the understated loss. During API degradation all frozen position fetches can fail simultaneously, causing the hedge to be sized from active-strike loss only — potentially missing 80%+ of total exposure.
+
+**Fix Applied (`mmm_monitor.py`):**
+When `_std_incomplete=True`, a `_last_complete_std_loss` floor is applied: the last successful loss calculation is cached per-aggressor-side on every clean beat. If the current incomplete calculation returns less than the cached complete value, the cached value is used as the loss floor. This prevents under-hedging when API degradation causes cascading fetch failures.
 
 ---
 
-## Conclusion and Recommended Actions
-The immense scale and complexity of the MMM codebase (6,500+ lines in the monitor alone) has led to architectural "left-hand ignores right-hand" bugs where safety features override each other unconditionally, bypass each other via edge-case fallbacks, or clash on foundational math paradigms.
+## Updated Summary
 
-**Immediate Action Requirements:**
-1.  **Resolve the Baseline Contradiction:** Unify the shifted loss calculation. If frozen losses are mathematically intended to be incremental to avoid double-counting, `mmm_engine.py` MUST compute `pos_loss` based on the `trigger_snapshot` of the frozen strike instead of its lifetime `entry_premium`.
-2.  **Fix ITM Guard Fallback:** Modify `_process_shift_fallback` to explicitly check if the fallback strike is ITM when `itm_guard_enabled` is True. If it is, the fallback must **abort/pause** the session rather than execute the unsafe sell.
-3.  **Fix Trigger Updates in Wind-Down:** Refactor `_process_wind_down_buyback` to ensure `update_trigger_snapshots` is called successfully for the strikes that *did* correctly fill, regardless of partial failures on unrelated strikes.
+| Bug | Severity | Verdict | Action |
+|-----|----------|---------|--------|
+| 1. Double-hedging frozen positions | CRITICAL | REAL | Fixed — Session 1 |
+| 2. ITM Guard bypass by fallback | HIGH | FALSE | No action |
+| 3. Wind-down partial failure snapshots | HIGH | REAL | Fixed — Session 1 |
+| 4. ATM Shield deferral mismatch | MEDIUM | PARTIALLY TRUE | Fixed — Session 1 |
+| 5. Stale trigger snapshot post-execution | HIGH | REAL | Fixed — Session 2 |
+| 6. Fetch failure → loss understatement | MEDIUM | REAL | Fixed — Session 2 |

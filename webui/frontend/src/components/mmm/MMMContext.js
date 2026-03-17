@@ -314,8 +314,10 @@ export function MMMProvider({ children, socket }) {
       payload: {
         session_id: data.session_id,
         total_pnl: data.total_pnl,
+        net_pnl: data.total_pnl,
         realized_pnl: data.realized,
         unrealized_pnl: data.unrealized,
+        total_fees: data.fees,
       },
     });
   }, []);

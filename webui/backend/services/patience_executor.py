@@ -16,6 +16,7 @@ Created: March 14, 2026
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 from datetime import datetime
@@ -23,6 +24,24 @@ from pathlib import Path
 from typing import Optional
 
 log = logging.getLogger(__name__)
+
+# ── WebSocket reference ───────────────────────────────────────────────
+_socketio = None
+
+
+def init_socketio(sio):
+    global _socketio
+    _socketio = sio
+
+
+def _emit(event: str, data: dict):
+    """Emit WebSocket event if socketio is wired up. Fails silently."""
+    if _socketio is not None:
+        try:
+            _socketio.emit(event, data, namespace='/')
+        except Exception as e:
+            log.debug(f"patience_executor: ws emit failed: {e}")
+
 
 # Eventlet-safe real OS thread
 try:
@@ -54,11 +73,11 @@ def _leg_to_symbol(leg: dict) -> str:
     """
     Build Delta Exchange option symbol from leg fields.
 
-    Delta Exchange format: C-BTC-72000-260313
+    Delta Exchange format: C-BTC-75200-170326
         C/P = CE/PE
         BTC = asset (hardcoded for now)
-        72000 = strike (int)
-        260313 = ddmmyy from expiry_date 'YYYY-MM-DD'
+        75200 = strike (int)
+        170326 = ddmmyy from expiry_date 'YYYY-MM-DD'  (DDMMYY format confirmed by live data)
     """
     prefix = 'C' if leg.get('option_type') == 'CE' else 'P'
     strike = int(float(leg.get('strike', 0)))
@@ -66,7 +85,7 @@ def _leg_to_symbol(leg: dict) -> str:
 
     if expiry_date and len(expiry_date) >= 10:
         parts = expiry_date.split('-')
-        # ddmmyy: day(2)+month(2)+year(2 last digits)
+        # ddmmyy: day(2)+month(2)+year(2 last digits) — Delta Exchange DDMMYY format
         ddmmyy = parts[2] + parts[1] + parts[0][2:]
     else:
         log.error(f"patience_executor: invalid expiry_date '{expiry_date}' for leg {leg.get('leg_id')}")
@@ -107,7 +126,7 @@ async def _resolve_strikes(legs: list, spot_price: float) -> list:
 
 # ── Portfolio Greeks check ────────────────────────────────────────────
 
-MAX_PORTFOLIO_DELTA = 500   # configurable in Phase 3 via settings
+MAX_PORTFOLIO_DELTA = int(os.environ.get('PATIENCE_MAX_PORTFOLIO_DELTA', '500'))
 
 
 def _check_greeks_ok(card: dict, legs: list, spot_price: float) -> tuple:
@@ -335,6 +354,13 @@ def execute_card(card_id: str):
             {'round': round_num, 'fills': fills}
         )
         _notify(f"Patience: [{card_name}] Round {round_num}/{total_rounds} done. {', '.join(fills)}")
+        _emit('patience_card_update', {
+            'card_id': card_id,
+            'event': 'round_complete',
+            'round': round_num,
+            'total_rounds': total_rounds,
+            'fills': fills,
+        })
 
     def on_card_pause(loop_id, error_msg):
         """Called when patience_loop exhausts retries."""
@@ -345,6 +371,11 @@ def execute_card(card_id: str):
             f"Card PAUSED. Check Web UI. Error: {error_msg}"
         )
         log.error(f"patience_executor: [{card_name}] PAUSED — {error_msg}")
+        _emit('patience_card_update', {
+            'card_id': card_id,
+            'event': 'paused',
+            'error': error_msg,
+        })
         # Release execution lock in trigger
         _release_execution_lock(card_id)
 
@@ -405,21 +436,26 @@ def _on_card_completed(card_id: str, card_name: str, resolved_legs: list):
     )
 
     log.info(f"patience_executor: [{card_name}] COMPLETED. group_id={group_id}")
+    _emit('patience_card_update', {
+        'card_id': card_id,
+        'event': 'completed',
+        'group_id': group_id,
+    })
 
     # Release execution lock
     _release_execution_lock(card_id)
 
 
 def _auto_group(card_id: str, card_name: str, resolved_legs: list) -> Optional[str]:
-    """Create a position group for this card's legs. Returns group_id or None."""
+    """Create a position group for this card's legs and assign leg symbols. Returns group_id or None."""
     try:
         from webui.backend.routes.options.groups_api import get_groups_storage
 
-        # Get primary expiry from first leg and convert to DDMMYYYY format
+        # Get primary expiry from first leg — convert to DDMMYY (matches Delta Exchange symbol suffix)
         expiry_date = resolved_legs[0].get('expiry_date', '') if resolved_legs else ''
-        if expiry_date:  # 'YYYY-MM-DD' → 'DDMMYYYY'
+        if expiry_date:  # 'YYYY-MM-DD' → 'DDMMYY' (e.g. 2026-03-17 → '170326')
             parts = expiry_date.split('-')
-            expiry_key = f"{parts[2]}{parts[1]}{parts[0]}" if len(parts) == 3 else 'unknown'
+            expiry_key = parts[2] + parts[1] + parts[0][2:] if len(parts) == 3 else 'unknown'
         else:
             expiry_key = 'unknown'
 
@@ -431,7 +467,23 @@ def _auto_group(card_id: str, card_name: str, resolved_legs: list) -> Optional[s
             name=f"Patience: {card_name}",
             color='#7c3aed',
         )
-        log.info(f"patience_executor: auto-grouped card {card_id} → group {group_id}")
+
+        # Assign each leg's symbol to the group
+        for leg in resolved_legs:
+            sym = _leg_to_symbol(leg)
+            if 'XXXXXX' not in sym:
+                leg_expiry_date = leg.get('expiry_date', expiry_date)
+                if leg_expiry_date:
+                    leg_parts = leg_expiry_date.split('-')
+                    leg_expiry_key = leg_parts[2] + leg_parts[1] + leg_parts[0][2:] if len(leg_parts) == 3 else expiry_key
+                else:
+                    leg_expiry_key = expiry_key
+                try:
+                    storage.assign_symbol(leg_expiry_key, sym, group_id)
+                except Exception as ae:
+                    log.warning(f"patience_executor: assign_symbol failed for {sym}: {ae}")
+
+        log.info(f"patience_executor: auto-grouped card {card_id} → group {group_id} (expiry_key={expiry_key})")
         return group_id
     except Exception as e:
         log.warning(f"patience_executor: auto-group failed: {e}")
