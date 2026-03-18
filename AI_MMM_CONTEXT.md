@@ -2,8 +2,8 @@
 
 > **Purpose:** This document provides every detail an AI agent needs to understand, debug, modify, or extend the MMM (Money Mind & Method) algorithm and its WebUI implementation. **This is the single source of truth** — all information from `MMM_robustv2.md` (26 fixes) is incorporated here.
 >
-> **Last Updated:** March 15, 2026
-> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** **Multi-DTE Support (0DTE → 5DTE+) — DTE presets, aggregate PnL safety, liquidity gate, v2 adaptive interval, v2 theta acceleration, v2 near-expiry — see §17.** **Breakeven Engine (risk-aware lot scaling by portfolio P&L boundary distance) fully implemented — see §2.21.** **Gamma Detector Engine (portfolio curvature boundary scanning, observation-only) fully implemented — see §2.22.** Production-ready.
+> **Last Updated:** March 18, 2026
+> **Status:** All phases complete. All 26 robustv2 hardening fixes implemented. Perpetual Futures Delta Hedge module (Task #26) live. Lot Lifecycle (M1/M2/M3) system added. **Split Ledger (frozen lot capacity relief) fully implemented.** March 2026 audit fixes complete (T1–T4, see §15). **Operator Strike Controls (Set Active Strike + Close Strike + Position Inject) fully implemented — see §16.** **Wind-down / regime interference fixed (March 12, 2026) — see §2.12 note.** **ATM Shield (proactive close & retreat at ATM proximity) fully implemented — see §2.20.** **Multi-DTE Support (0DTE → 5DTE+) — DTE presets, aggregate PnL safety, liquidity gate, v2 adaptive interval, v2 theta acceleration, v2 near-expiry — see §17.** **Breakeven Engine (risk-aware lot scaling by portfolio P&L boundary distance) fully implemented — see §2.21.** **Gamma Detector Engine (portfolio curvature boundary scanning, observation-only) fully implemented — see §2.22.** **Trade Transparency System (institutional-grade write-once audit trail — every fill, every P&L, every state change) fully implemented — see §18.** Production-ready.
 > **Robustv2 Audit:** 25/25 fixes + 1 new feature = 26/26 complete. See §2.15 for full summary.
 > **Lot Lifecycle:** M1 Profit Harvesting + M2 Lot Recycling + M3 Asymmetry Rebalancing — see §2.18.
 > **Split Ledger:** Phase 1 (core cap fix) + Phase 2 (shift-time recycle) + Phase 3 (dashboard) + Profitability Suggestions — see §2.19.
@@ -2567,4 +2567,87 @@ Dispatched automatically for sessions with `total_dte_hours > 36 && dte_category
 | Theta acceleration | Fixed 30-min window | 2% of total DTE (max 240 min) | Same |
 | Near-expiry safety | Absolute minutes | 3-tier (absolute + wind-down + % warning) | Same |
 | All other modules | Unchanged | Unchanged | N/A |
+
+---
+
+## 18. TRADE TRANSPARENCY SYSTEM (2026-03-18)
+
+Institutional-grade write-once audit trail. Every confirmed fill and every operational state change is persisted to SQLite. **Does not affect trading logic — all writes are fire-and-forget.**
+
+### 18.1 Files
+
+| File | Role |
+|---|---|
+| `mmm_audit_log.py` | `MMMTradeAuditLog` + `MMMSessionEventLog` — queue-based WAL SQLite writer. Singletons: `get_audit_log()`, `get_event_log()` |
+| `mmm_audit_remark.py` | `build_trade_remark(**kwargs) → str`, `build_event_remark(category, type, **ctx) → str` — zero deps, never raises |
+| `mmm_audit_reconciler.py` | `reconcile_session(session_id, session) → dict` — compares audit sums vs live session state |
+
+### 18.2 Tables (in `mmm_sessions.db`)
+
+**`position_audit_log`** — one row per confirmed exchange fill:
+- `action` TEXT — `BUY` or `SELL`
+- `option_type` TEXT — `CE`, `PE`, or `PERP`
+- `strike`, `quantity_requested`, `quantity_filled`, `premium`
+- `event_type` TEXT — `ENTRY | ADJUSTMENT | REVERSAL | CLOSE | WIND_DOWN | EXIT | RECYCLE_BUY | RECYCLE_SELL | PERP_HEDGE`
+- `mechanism` TEXT — `fresh_entry | import | harvest | close_at_5 | recycler | atm_shield | wind_down | emergency | operator | perp_hedge | perp_close`
+- `realized_pnl_usd` REAL — stored at close time; NULL for open sells
+- `idempotency_key` TEXT UNIQUE — prevents duplicate rows on crash/restart
+- `remark` TEXT — human-readable trader-facing description
+
+**`session_event_log`** — one row per operational state change:
+- `event_category` TEXT — `SESSION_LIFECYCLE | SAFETY | REGIME | MARGIN | PARAM_CHANGE | STRIKE_SHIFT`
+- `event_type` TEXT — subcategory (e.g. `started`, `tier_change`, `transition`, `hot_reload`, `shifted`)
+- `severity` TEXT — `INFO | WARN | CRITICAL`
+- `remark` TEXT, `details` JSON
+
+### 18.3 Write Rules (NEVER violate)
+
+```python
+# Pattern: always after success confirmed, always wrapped
+try:
+    get_audit_log().enqueue_trade(
+        session_id=sid, action='SELL', option_type='CE',
+        strike=strike, quantity_requested=lots, quantity_filled=filled_lots,
+        premium=fill_price, event_type='ENTRY', mechanism='fresh_entry',
+        realized_pnl_usd=None, remark=build_trade_remark(...),
+    )
+except Exception:
+    pass
+```
+
+- **Only call after `result.get('success') == True`** — never on failure
+- **Always `try/except: pass`** — audit failure must never abort trading
+- **All P&L in USD** — no INR conversion in audit layer
+- **No UPDATE/DELETE ever** — INSERT OR IGNORE only
+- `realized_pnl_usd`: pass for BUY rows (closing fills); None/omit for SELL rows (opens)
+- `closing_entry_premium` + `closing_entry_lots`: pass for buybacks so P&L auto-computes if not provided
+
+### 18.4 Instrumented Paths
+
+| File | What is recorded |
+|---|---|
+| `mmm_api.py` | Mode A entry (CE+PE SELL ENTRY), Mode B import (CE+PE SELL ENTRY), operator inject (SELL ENTRY), operator close-strike (BUY EXIT), session started/stopped events |
+| `mmm_engine.py` | `execute_adjustment()` — SELL ADJUSTMENT / REVERSAL / RECYCLE_SELL |
+| `mmm_close_at_5.py` | `close_position()` — BUY CLOSE / EXIT / RECYCLE_BUY / WIND_DOWN for all mechanisms |
+| `mmm_monitor.py` | Wind-down LIFO buybacks (separate path from close_position), regime transition events, SAFETY critical events, session completed event |
+| `mmm_perp_hedge.py` | `run_perp_hedge()` + `close_all_perp()` — BUY/SELL PERP_HEDGE |
+| `mmm_margin_guardian.py` | Margin tier change events |
+| `mmm_strike_shift.py` | Strike shift events (post `activate_new_strike()`) |
+| `mmm_api.py` (params) | PARAM_CHANGE event per hot-reload param changed |
+
+### 18.5 Read API (REST — never in heartbeat)
+
+```
+GET /api/mmm/session/<id>/audit/trades          → {rows: [...], count, page, limit}
+GET /api/mmm/session/<id>/audit/strike_summary  → {summary: [...]}
+GET /api/mmm/session/<id>/audit/pnl             → {total_realized_pnl_usd, ce_realized_pnl_usd, pe_realized_pnl_usd, ...}
+GET /api/mmm/session/<id>/audit/events          → {events: [...], count}
+GET /api/mmm/session/<id>/audit/reconcile       → {is_clean, pnl_ok, pnl_delta, pnl_audit, pnl_session, position_discrepancies, trade_count}
+```
+
+`reconcile` always returns HTTP 200. Check `is_clean` in body. `trade_count=0` means session predates audit deployment (not an error).
+
+### 18.6 Frontend
+
+`MMMTradeAuditPanel.js` — tab 16 in `MMMDashboard.js` SessionDetail. Sub-tabs: Fills | Strike Summary | P&L Attribution | Events | Reconcile. Auto-reconcile banner fires on panel mount only when `is_clean=false AND trade_count > 0`.
 

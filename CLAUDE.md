@@ -188,6 +188,9 @@ WorkingBot/
 | `mmm_recycler.py` | M2 lot recycling emergency relief |
 | `mmm_activity.py` | Activity log (ACTIVITY_TYPES, ACTIVITY_CATEGORIES) |
 | `mmm_websocket.py` | WebSocket event emitters |
+| `mmm_audit_log.py` | Trade Transparency System — `get_audit_log()` / `get_event_log()` singletons |
+| `mmm_audit_remark.py` | Pure remark builder — `build_trade_remark()` / `build_event_remark()` |
+| `mmm_audit_reconciler.py` | `reconcile_session(session_id, session)` → audit vs live state cross-check |
 
 **Key facts:**
 - LOT_SIZE_BTC = 0.001 (1 lot = 0.001 BTC on Delta Exchange)
@@ -196,6 +199,7 @@ WorkingBot/
 - `engine.calculate_lots_to_sell(session, hedge_side, loss, premium)` returns `(lots, constraint_msg)`
 - `session['_regime_action']` stores regime status; import `ACTION_BLOCK_ALL_SELLS` from `mmm_regime.py`
 - `self._margin_guardian.last_tier` on monitor: TIER_GREEN/YELLOW/ORANGE/RED/CRITICAL
+- **Trade audit:** every confirmed fill calls `get_audit_log().enqueue_trade(...)` — fire-and-forget, < 1µs. Every state change calls `get_event_log().enqueue_event(...)`. Never call before `result.get('success')`. Always wrap in `try/except: pass`.
 
 ---
 
