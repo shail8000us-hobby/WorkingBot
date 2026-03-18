@@ -6415,8 +6415,7 @@ def reconcile_audit_endpoint(session_id: str):
     if not session:
         return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
     result = reconcile_session(session_id, session)
-    status_code = 200 if result.get('is_clean') else 409
-    return jsonify(result), status_code
+    return jsonify(result), 200
 
 
 @mmm_bp.route('/session/<session_id>/audit/events', methods=['GET'])

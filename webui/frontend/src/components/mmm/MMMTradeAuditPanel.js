@@ -82,7 +82,7 @@ const TradeLog = ({ sessionId }) => {
 
   useVisibilityAwarePolling(load, 15000, 60000, true);
 
-  const trades = data?.trades || [];
+  const trades = data?.rows || data?.trades || [];
 
   return (
     <Box>
@@ -99,9 +99,12 @@ const TradeLog = ({ sessionId }) => {
       {loading && !data && <CircularProgress size={20} />}
 
       {trades.length === 0 && !loading && (
-        <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-          No fills recorded yet
-        </Typography>
+        <Box sx={{ p: 2, textAlign: 'center' }}>
+          <Typography variant="body2" color="text.secondary">No fills recorded yet</Typography>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5, opacity: 0.6 }}>
+            Fills are recorded from audit deployment onwards. Pre-existing positions are not back-filled.
+          </Typography>
+        </Box>
       )}
 
       {trades.length > 0 && (
@@ -285,7 +288,8 @@ const PnLAttribution = ({ sessionId }) => {
 
   useVisibilityAwarePolling(load, 20000, 90000, true);
 
-  const attr = data?.attribution || {};
+  // Backend returns attribution fields flat (no 'attribution' wrapper key)
+  const attr = data?.attribution || data || {};
 
   const kpis = [
     { label: 'Total Realized P&L', value: attr.total_realized_pnl_usd, prefix: '$', decimals: 4 },
@@ -440,12 +444,7 @@ const ReconcilePanel = ({ sessionId }) => {
       const res = await mmmService.getAuditReconcile(sessionId);
       setResult(res);
     } catch (e) {
-      // 409 = not clean — still parse the body
-      if (e.response?.data) {
-        setResult(e.response.data);
-      } else {
-        setError(e.message || 'Reconcile failed');
-      }
+      setError(e.message || 'Reconcile failed');
     } finally {
       setLoading(false);
     }
@@ -561,13 +560,7 @@ const ReconcileBanner = ({ sessionId }) => {
     let cancelled = false;
     mmmService.getAuditReconcile(sessionId)
       .then((res) => { if (!cancelled) { setResult(res); setChecked(true); } })
-      .catch((e) => {
-        if (!cancelled) {
-          const body = e?.response?.data;
-          if (body) { setResult(body); }
-          setChecked(true);
-        }
-      });
+      .catch(() => { if (!cancelled) setChecked(true); });
     return () => { cancelled = true; };
   }, [sessionId]);
 
