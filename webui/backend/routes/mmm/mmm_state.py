@@ -299,6 +299,7 @@ def recompute_side_lots(side_state: Dict) -> Dict:
             'type': p.get('type', 'adjustment'),
             '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
             '_being_closed': p.get('_being_closed', False),  # AUDIT FIX: propagate in-flight flag
+            '_being_closed_at': p.get('_being_closed_at', 0),  # required for TTL auto-clear
         }
         for p in adj_positions
     ]
@@ -314,6 +315,7 @@ def recompute_side_lots(side_state: Dict) -> Dict:
             'frozen_at': p.get('shifted_at', ''),
             '_pos_id': p.get('id', ''),  # Fix #23: O(1) ID-based removal
             '_being_closed': p.get('_being_closed', False),  # AUDIT FIX: propagate in-flight flag
+            '_being_closed_at': p.get('_being_closed_at', 0),  # required for TTL auto-clear
             'source': p.get('source', ''),
         }
         for p in shifted_positions
@@ -832,6 +834,7 @@ def create_session(
         'pe_premium_collected': 0.0,
         'total_fees': 0.0,
         'strategy_status': 'IDLE',  # IDLE → RUNNING → PAUSED/BOTH_SIDES_UP → STOPPED
+                                     # RUNNING/PAUSED/BOTH_SIDES_UP → EXITING → STOPPED (graceful exit)
 
         # Manual position reductions (user-triggered buybacks)
         'manual_reductions': [],     # [{side, lots, strike, avg_price, realized_pnl, timestamp}]

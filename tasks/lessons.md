@@ -1,5 +1,19 @@
 # MMM Lessons Learned
 
+## [2026-03-18] exit_all: realized_pnl not persisted + slow sequential closes caused extra slippage loss
+
+**Root cause 1 — P&L not persisted after exit (wrong save order):**
+`run_exit_all()` called `update_session()` (safety-net write) BEFORE `monitor.stop()`. Between the update and stop(), a concurrent heartbeat from one of the 3 simultaneously-running monitors could write a higher `_monitor_generation` to DB, causing stop()'s generation-check to reject its save. Result: DB kept the pre-exit `realized_pnl = $7.99` instead of the post-exit `-$2.73`. Dashboard showed wrong values: R=$7.99, U=-$10.12 (stale unrealized from open positions), Total=-$2.13 instead of correct -$2.73.
+
+**Fix:** Move `update_session()` to AFTER `monitor.stop()`. By then: `_save_disabled=True` (no concurrent heartbeats), stop() has already attempted its own save (correct in most cases), and the post-stop `update_session()` is the definitive write. Also sets `unrealized_pnl=0.0` and `strategy_status='STOPPED'` explicitly.
+
+**Root cause 2 — Sequential closes caused 82-second execution, extra slippage:**
+Original interleaved loop was `CE[0] → PE[0] → CE[1] → PE[1]` etc., processed one position at a time. For 5 positions, total wall-clock = ~82s. The most damaging position was PE @ 74000 (entry 132.50, close 257.50 = -$8.25). It was closed 28s after the exit started while BTC was near 73960 (PE deeply ITM). Every second of delay while ITM = more slippage.
+
+**Fix:** Use `asyncio.gather()` to close CE and PE sides concurrently. Within each side, positions close sequentially by ATM proximity. Result: CE and PE close in parallel → halves wall-clock time. Also reduced INTER_ROUND_DELAY_SEC from 2s to 1s.
+
+**Prevention rule:** exit_all is a time-critical operation. Never close CE then wait then close PE — they MUST run concurrently. Always place the safety-net DB write AFTER stop(), not before. Never trust that stop()'s save succeeded when multiple monitors may be running simultaneously.
+
 ## [2026-03-17] UnboundLocalError in `_process_adjustment` causes 83% miss rate
 
 **Root cause:** `params = session.get('params', {})` was assigned only inside the `if is_reversal:` branch (line ~3106). When a standard adjustment fires (`is_reversal=False`), `params` was never assigned. Python sees the local assignment elsewhere in the function and raises `UnboundLocalError: cannot access local variable 'params'` when line ~3175 runs `params.get('pre_sell_shift_enabled', False)`.
@@ -1053,3 +1067,40 @@ Added `invalidate_cache()` calls at all 5 missing locations (4 in mmm_monitor.py
 
 **Prevention rule:**
 When adding a caching layer that depends on position state, enumerate ALL code paths that modify positions and add invalidation at each one. The complete list of position-changing events in MMM is: adjustment fill, strike shift fill, shift fallback fill, close-at-5 fill, M1 harvest fill, M2 lot recycle fill, shift-time recycle close, operator inject fill, adopt (mmm_adopter.py), perp fill. Search for `close_position`, `smart_execute`, `recompute_side_lots` calls to find them all.
+
+---
+
+## [2026-03-18] Exit All failed silently — _being_closed flags blocked all 3 rounds
+
+**What went wrong:**
+The Global Graceful Exit (`mmm_exit_all.py`) ran 3 rounds but closed zero positions. All positions showed "Position already being closed (in-flight guard)" in every round. Session stopped as PARTIAL with live open positions on the exchange.
+
+Root cause: A previous heartbeat's `close_at_5` scan had set `_being_closed=True` on positions and stored the monotonic timestamp. Exit All ran within ~6 seconds (3 rounds × 2s delay), which is far below the 180s auto-clear TTL. The `_collect_side_positions()` function skipped every position flagged as in-flight. Since the heartbeat gate blocks all normal logic during EXITING, those close attempts from the prior scan were never in-flight anymore — the flags were stale artifacts.
+
+**Fix:**
+Added `_force_clear_being_closed()` called at the top of `run_exit_all()`, before any rounds begin. This clears all `_being_closed` flags and `_being_closed_at` timestamps on all positions in both sides. Safe because the EXITING gate in `_heartbeat_inner()` ensures no concurrent order placements can be in-flight when exit_all runs.
+
+**Prevention rule:**
+Any multi-round retry mechanism that interacts with `_being_closed` guards must explicitly clear stale flags before the first round, not rely on TTL auto-clear. TTL (180s) is designed for detecting genuinely abandoned in-flight orders, not for short retry windows. When entering an "exit mode" that blocks all normal logic, any pre-existing in-flight flags from normal operation become stale immediately and must be cleared.
+
+---
+
+## [2026-03-18] Exit All: unrealized_pnl not zeroed + exit P&L not persisted in DB
+
+**What went wrong:**
+After exit_all closed all positions, the session showed R=$7.99, U=-$10.12, Total=-$2.13. R was the pre-exit realized only (exit trade P&Ls missing). U was the stale last-heartbeat unrealized (should be $0 with no open positions). The total happened to be approximately correct only by coincidence (stale U ≈ exit buyback cost).
+
+Two bugs:
+1. `session['unrealized_pnl']` was never zeroed after exit_all closed all positions
+2. `session['realized_pnl']` was updated in memory by `close_position()` line 495 but the stop() save has edge cases (generation check, _save_disabled race) where this doesn't persist to DB
+
+**Fix:**
+Added to `run_exit_all()` before `monitor.stop()`:
+1. `session['unrealized_pnl'] = 0.0` — explicit zero since no open positions remain
+2. `get_storage().update_session(sid, {'realized_pnl': ..., 'unrealized_pnl': 0.0})` — belt-and-suspenders DB write that bypasses the generation-check/save-disabled guards
+
+**Prevention rule:**
+Any "close all positions" handler must explicitly zero `unrealized_pnl` before calling `monitor.stop()`. Never rely solely on stop()'s `_save_my_session()` for critical P&L fields — add an explicit `update_session()` call as belt-and-suspenders when the in-memory update MUST survive a stop().
+
+**Also note (market reality):**
+The user saw +$8 total P&L before triggering exit. During the 82s exit execution, BTC drifted toward PE@74000 strike, pushing that position's premium from ~132 to 257.50 (buyback cost $8.25). This is real market movement loss, not a software bug. Exit_all does not attempt to time or minimize buyback prices.

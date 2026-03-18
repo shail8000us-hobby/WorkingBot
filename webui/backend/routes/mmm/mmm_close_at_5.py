@@ -329,15 +329,25 @@ async def close_position(
         for pos in side_state.get('positions', []):
             if pos.get('id') == pos_id:
                 if pos.get('_being_closed'):
-                    log.warning(
-                        f"Close-at-5: Skipping {side.upper()} pos_id={pos_id} — "
-                        f"already marked _being_closed (in-flight guard). "
-                        f"Previous close may have partially succeeded."
-                    )
-                    return {
-                        'success': False,
-                        'error': 'Position already being closed (in-flight guard)',
-                    }
+                    set_at = pos.get('_being_closed_at', 0)
+                    if set_at and time.monotonic() - set_at > _BEING_CLOSED_TTL:
+                        log.warning(
+                            f"Close-at-5: Auto-cleared stale _being_closed on "
+                            f"{side.upper()} pos_id={pos_id} (stuck >{_BEING_CLOSED_TTL}s)"
+                        )
+                        pos.pop('_being_closed', None)
+                        pos.pop('_being_closed_at', None)
+                        # fall through to set fresh flag below
+                    else:
+                        log.warning(
+                            f"Close-at-5: Skipping {side.upper()} pos_id={pos_id} — "
+                            f"already marked _being_closed (in-flight guard). "
+                            f"Previous close may have partially succeeded."
+                        )
+                        return {
+                            'success': False,
+                            'error': 'Position already being closed (in-flight guard)',
+                        }
                 pos['_being_closed'] = True
                 pos['_being_closed_at'] = time.monotonic()
                 break
@@ -542,6 +552,7 @@ async def close_position(
                 'both_sides_close': 'CLOSE',
                 'emergency':        'EXIT',
                 'operator':         'EXIT',
+                'exit_all':         'EXIT',
             }
             _ev = _MECH_EVENT.get(mechanism, 'CLOSE')
             _get_aud().enqueue_trade(

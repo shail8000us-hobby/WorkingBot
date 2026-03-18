@@ -199,6 +199,11 @@ class MMMMonitor:
         if stored_status == 'PAUSED':
             self._paused = True
             log.info(f"[{self.session_id}] Restoring in PAUSED state (reason: {self.session.get('_paused_reason', 'unknown')})")
+        elif stored_status == 'EXITING':
+            # Backend restarted mid-exit — keep EXITING so the heartbeat gate
+            # resumes the exit sequence on the next beat.
+            self._paused = False
+            log.warning(f"[{self.session_id}] Restoring in EXITING state — exit_all will resume on next heartbeat")
         else:
             self._paused = False
             self.session['strategy_status'] = 'RUNNING'
@@ -892,6 +897,20 @@ class MMMMonitor:
                     f"total_lots corrected from {_ck_stored} → {_ck_new} "
                     f"(positions[] recompute fixed stale derived value)"
                 )
+
+        # ── GLOBAL GRACEFUL EXIT GATE ─────────────────────────────────────────
+        # When strategy_status == 'EXITING' (set by POST /exit_all endpoint),
+        # skip ALL normal trading logic and hand off to the exit handler.
+        # The recompute above already ran so lot counts are authoritative.
+        if session.get('strategy_status') == 'EXITING':
+            try:
+                from .mmm_exit_all import run_exit_all
+                await run_exit_all(self)
+            except Exception as _exit_e:
+                log.error(f"[{sid}] EXIT ALL handler raised unexpectedly: {_exit_e}", exc_info=True)
+                self.stop(f'Exit All failed: {_exit_e}')
+            return
+        # ── END GLOBAL GRACEFUL EXIT GATE ────────────────────────────────────
 
         # Heartbeat counter (no activity log — summary emitted at end)
         session['_heartbeat_counter'] = session.get('_heartbeat_counter', 0) + 1
@@ -5197,7 +5216,7 @@ class MMMMonitor:
             result = await close_position(
                 self.executor, self.initializer, session, pos,
                 hedge_guard=not _both_sides_closing,
-                mechanism='close_at_5',
+                mechanism='wind_down' if using_elevated else 'close_at_5',
             )
 
             if result.get('success'):
@@ -7208,9 +7227,11 @@ class MMMMonitor:
                 return bid_cache[key]
             if key in mark_cache:
                 return mark_cache[key]
-            # If neither cache has it, return 0 (position won't qualify for close)
+            # If neither cache has it, return None so scan_closeable_positions skips it.
+            # (Matches _make_fetch_fn audit fix — returning 0 would make 0 <= threshold
+            #  appear eligible and trigger a spurious market buyback at wrong price.)
             log.warning(f"Bid cache miss for {option_type}@{strike}, skipping close check")
-            return 0
+            return None
         return fetch
 
     def _get_minutes_to_expiry(self) -> Optional[float]:

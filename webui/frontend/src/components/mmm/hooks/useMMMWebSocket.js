@@ -59,8 +59,13 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
 
+  // Live bid/ask prices from options_ticker_update (sub-second from Delta WS l1_orderbook)
+  // { [symbol]: { bid, ask, mid, ts } }
+  const [livePrices, setLivePrices] = useState({});
+
   // Reset all state when sessionId changes to prevent stale cross-session data
   useEffect(() => {
+    setLivePrices({});
     setHeartbeat(null);
     setAdjustments([]);
     setReversals([]);
@@ -244,7 +249,25 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     };
     socket.on('mmm_perp_hedge_update', safeHandler(onPerpUpdate, 'mmm_perp_hedge_update'));
 
+    // Live bid/ask from Delta WS l1_orderbook via the existing options ticker pipeline.
+    // Same event as the options panel — no backend changes needed.
+    const onOptionsTicker = (data) => {
+      const { symbol, best_bid, best_ask, timestamp } = data;
+      if (!symbol) return;
+      setLivePrices((prev) => ({
+        ...prev,
+        [symbol]: {
+          bid: best_bid,
+          ask: best_ask,
+          mid: best_bid > 0 && best_ask > 0 ? (best_bid + best_ask) / 2 : (best_bid || best_ask || 0),
+          ts: timestamp,
+        },
+      }));
+    };
+    socket.on('options_ticker_update', onOptionsTicker);
+
     return () => {
+      socket.off('options_ticker_update', onOptionsTicker);
       // Remove only OUR listeners — don't disconnect the shared socket
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
@@ -295,5 +318,6 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     regimeData,
     perpHedgeEvents,
     perpHedgeFlip,
+    livePrices,
   };
 }

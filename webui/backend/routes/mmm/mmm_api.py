@@ -1451,6 +1451,132 @@ def stop_session(session_id: str):
 
 
 # =============================================================================
+# Global Graceful Exit — close all positions then stop
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/exit_all', methods=['POST'])
+def exit_all_session(session_id: str):
+    """
+    Initiate a global graceful exit for a session.
+
+    Sets strategy_status = 'EXITING'. The next heartbeat detects this and
+    calls run_exit_all() which closes all CE/PE positions across all strikes
+    using the existing close_position() engine, then calls stop().
+
+    Allowed from: RUNNING, PAUSED, BOTH_SIDES_UP, PARTIAL_ENTRY
+    Not allowed from: EXITING (already in progress), STOPPED, IDLE
+
+    Returns HTTP 202 Accepted (exit initiated asynchronously).
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+
+        if status == 'EXITING':
+            return jsonify({
+                'success': False,
+                'error': 'Exit already in progress',
+                'current_status': status,
+            }), 409
+
+        if status in ('STOPPED', 'IDLE'):
+            return jsonify({
+                'success': False,
+                'error': f'Session is already {status} — nothing to exit',
+                'current_status': status,
+            }), 409
+
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'user_requested')
+        initiated_at = datetime.now(timezone.utc).isoformat()
+
+        # Compute position summary for response
+        def _lots(side_key):
+            ss = session.get(side_key, {})
+            return {
+                'active_lots': ss.get('active_lots', 0),
+                'frozen_lots': ss.get('frozen_total_lots', 0),
+                'total_lots': ss.get('total_lots', 0),
+            }
+
+        # Set EXITING status atomically
+        exit_fields = {
+            'strategy_status': 'EXITING',
+            '_exit_all_requested': True,
+            '_exit_all_initiated_at': initiated_at,
+            '_exit_all_reason': reason,
+            '_exit_all_rounds_attempted': 0,
+            '_exit_all_failed_positions': [],
+            '_exit_all_partial': False,
+            '_exit_all_completed_at': None,
+        }
+        storage.update_session(session_id, exit_fields)
+
+        # Mirror into the live monitor's in-memory session (if running)
+        monitor = get_monitor(session_id)
+        if monitor:
+            for k, v in exit_fields.items():
+                monitor.session[k] = v
+
+        emit_status_change(session_id, status, 'EXITING', f'Exit All initiated: {reason}')
+
+        # Force the heartbeat to run immediately so exit starts without waiting
+        # for the next scheduled interval
+        if monitor:
+            monitor.force_heartbeat()
+
+        # Audit: activity log
+        try:
+            from .mmm_activity import log_activity
+            log_activity(
+                'session_exit_all_initiated',
+                f'\U0001f6aa Exit All initiated (reason={reason}, from={status})',
+                session_id, 'warning',
+                {'reason': reason, 'prior_status': status, 'initiated_at': initiated_at},
+            )
+        except Exception:
+            pass
+
+        # Audit: event log
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            from .mmm_audit_remark import build_event_remark as _ber
+            _get_evl().enqueue_event(
+                session_id=session_id,
+                event_category='SESSION_LIFECYCLE',
+                event_type='exit_all_initiated',
+                severity='WARNING',
+                remark=f'Exit All initiated — closing all positions (reason={reason})',
+                details={'reason': reason, 'prior_status': status},
+            )
+        except Exception:
+            pass
+
+        log.warning(f"[{session_id}] EXIT ALL initiated from {status} (reason={reason})")
+
+        return jsonify({
+            'success': True,
+            'message': f'Exit All initiated for session {session_id}',
+            'session_id': session_id,
+            'initiated_at': initiated_at,
+            'prior_status': status,
+            'positions_to_close': {
+                'ce': _lots('ce'),
+                'pe': _lots('pe'),
+            },
+        }), 202
+
+    except Exception as e:
+        log.exception(f"Failed to initiate exit_all for session {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # Both-Sides-Up User Decision — Section 8
 # =============================================================================
 

@@ -115,6 +115,17 @@ const mmmService = {
   },
 
   /**
+   * Global graceful exit: close all positions then stop the session.
+   * Returns HTTP 202 with { success, session_id, initiated_at, positions_to_close }
+   * @param {string} sessionId
+   * @param {string} [reason]
+   */
+  async exitAllSession(sessionId, reason = 'user_requested') {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/exit_all`, { reason });
+    return data;
+  },
+
+  /**
    * Resolve a PARTIAL_ENTRY state by confirming both fill prices manually.
    * Use when one leg already filled on the exchange but the algo marked it as failed.
    * @param {string} sessionId

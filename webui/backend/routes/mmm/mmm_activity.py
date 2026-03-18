@@ -136,6 +136,11 @@ ACTIVITY_TYPES = {
     # Hot reload
     'hot_reload': 'Hot Reload',
 
+    # Global Graceful Exit
+    'session_exit_all_initiated': 'Exit All Initiated',
+    'session_exit_all_completed': 'Exit All Complete',
+    'session_exit_all_partial': 'Exit All Partial',
+
     # General
     'info': 'Info',
     'warning': 'Warning',
@@ -166,6 +171,7 @@ ACTIVITY_CATEGORIES = {
                'gamma_zone_change', 'gamma_danger_detected'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
+               'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
                'info', 'warning', 'error'},
 }
 
@@ -213,6 +219,7 @@ class MMMActivityLog:
     _ALWAYS_PERSIST_TYPES = frozenset({
         'safety_event', 'auto_close', 'max_loss', 'emergency',
         'session_stop', 'session_stopped', 'session_pause', 'session_paused',
+        'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
         'watchdog', 'error',
     })
 

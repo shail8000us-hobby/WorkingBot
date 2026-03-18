@@ -168,6 +168,7 @@ const STATUS_CONFIG = {
   PARTIAL_ENTRY: { color: '#ff5722', bg: 'rgba(255,87,34,0.12)', label: 'Partial Entry!' },
   ERROR: { color: '#f44336', bg: 'rgba(244,67,54,0.12)', label: 'Error' },
   STOPPED: { color: '#757575', bg: 'rgba(117,117,117,0.12)', label: 'Stopped' },
+  EXITING: { color: '#ff6f00', bg: 'rgba(255,111,0,0.12)', label: 'Exiting...' },
 };
 
 const getStatusConfig = (status) =>
@@ -520,6 +521,25 @@ export const SessionCard = ({ session, selected, onSelect, onControl }) => {
               >
                 <StopIcon fontSize="small" />
               </IconButton>
+            </Tooltip>
+          )}
+          {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status) && (
+            <Tooltip title="Exit Strategy — close all positions and stop">
+              <IconButton
+                size="small"
+                sx={{
+                  color: '#ff6f00',
+                  '&:hover': { color: '#ff8f00', backgroundColor: 'rgba(255,111,0,0.12)' },
+                }}
+                onClick={(e) => { e.stopPropagation(); onControl('exit_all', session.session_id); }}
+              >
+                <ContentCutIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+          {status === 'EXITING' && (
+            <Tooltip title="Exit in progress...">
+              <CircularProgress size={16} sx={{ color: '#ff6f00', ml: 0.5 }} />
             </Tooltip>
           )}
           {['IDLE', 'STOPPED'].includes(status) && (
@@ -1718,7 +1738,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
 /**
  * Session detail panel — tabbed live dashboard view
  */
-const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryAction }) => {
+const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEntryAction, onStrikePromoted }) => {
   const [detailTab, setDetailTab] = useState(0);
   const [reduceOpen, setReduceOpen] = useState(false);
   const [injectOpen, setInjectOpen] = useState(false);
@@ -1848,6 +1868,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
         setActiveStrikeSnack({ open: true, message: res.error || 'Cannot set active strike', severity: 'warning' });
       } else {
         setActiveStrikeSnack({ open: true, message: `Active strike set to ${Number(strike).toLocaleString()} ${sideKey.toUpperCase()}`, severity: 'success' });
+        if (onStrikePromoted) onStrikePromoted();
       }
     } catch (e) {
       const msg = e.response?.data?.error || e.message || 'Request failed';
@@ -1957,6 +1978,18 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
   })();
   const ceLivePremium = heartbeat?.ce_premium ?? _cePremiumFromMap ?? null;
   const peLivePremium = heartbeat?.pe_premium ?? _pePremiumFromMap ?? null;
+
+  // Live bid/ask from options_ticker_update (sub-second, same pipeline as options panel)
+  const expiry = session.params?.expiry;
+  const ceSymbol = ce.active_strike && expiry ? `C-BTC-${Math.round(ce.active_strike)}-${expiry}` : null;
+  const peSymbol = pe.active_strike && expiry ? `P-BTC-${Math.round(pe.active_strike)}-${expiry}` : null;
+  const livePrices = wsData?.livePrices || {};
+  const ceLive = ceSymbol ? livePrices[ceSymbol] : null;
+  const peLive = peSymbol ? livePrices[peSymbol] : null;
+  // isLiveRecent: true if last WS update was within 10s
+  const _now = Date.now() / 1000;
+  const ceLiveRecent = ceLive && (_now - ceLive.ts) < 10;
+  const peLiveRecent = peLive && (_now - peLive.ts) < 10;
 
   return (
     <Box sx={{ p: 2 }}>
@@ -2200,24 +2233,40 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                     <Grid item xs={6}>
                       <Box sx={{ mb: 1 }}>
                         {(() => {
+                          const liveWs = key === 'CE' ? ceLive : peLive;
+                          const liveRecent = key === 'CE' ? ceLiveRecent : peLiveRecent;
                           const livePremium = key === 'CE' ? ceLivePremium : peLivePremium;
                           const sk = key.toLowerCase();
                           const avgEntry = sideMetrics[sk].avgEntry;
-                          const hasLive = livePremium != null && livePremium > 0;
-                          // For short sellers: profit when current < entry
+                          // Prefer WS mid price; fallback to heartbeat premium
+                          const displayPremium = (liveWs?.mid > 0) ? liveWs.mid : livePremium;
+                          const hasLive = displayPremium != null && displayPremium > 0;
                           const pctChange = hasLive && avgEntry > 0
-                            ? ((livePremium - avgEntry) / avgEntry * 100)
+                            ? ((displayPremium - avgEntry) / avgEntry * 100)
                             : null;
-                          // Green = current dropped (good for shorts), Red = current rose (bad)
                           const premColor = pctChange != null
                             ? (pctChange <= 0 ? '#4caf50' : '#f44336')
                             : 'text.primary';
                           return (
                             <>
-                              <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>Current Premium</Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.85rem' }}>
+                                  Current Premium
+                                </Typography>
+                                {liveRecent && (
+                                  <Box component="span" sx={{
+                                    width: 6, height: 6, borderRadius: '50%', bgcolor: '#4caf50',
+                                    display: 'inline-block', flexShrink: 0,
+                                    animation: 'pulse 1.5s ease-in-out infinite',
+                                    '@keyframes pulse': {
+                                      '0%': { opacity: 1 }, '50%': { opacity: 0.3 }, '100%': { opacity: 1 },
+                                    },
+                                  }} />
+                                )}
+                              </Box>
                               <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 0.5 }}>
                                 <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', color: premColor }}>
-                                  {hasLive ? `$${livePremium.toFixed(2)}` : '—'}
+                                  {hasLive ? `$${displayPremium.toFixed(2)}` : '—'}
                                 </Typography>
                                 {pctChange != null && (
                                   <Typography variant="caption" sx={{ fontFamily: 'monospace', color: premColor, fontSize: '0.75rem' }}>
@@ -2225,6 +2274,11 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
                                   </Typography>
                                 )}
                               </Box>
+                              {liveWs?.bid > 0 && liveWs?.ask > 0 && (
+                                <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.72rem', display: 'block' }}>
+                                  B:{liveWs.bid.toFixed(1)} / A:{liveWs.ask.toFixed(1)}
+                                </Typography>
+                              )}
                             </>
                           );
                         })()}
@@ -2870,6 +2924,36 @@ const MMMDashboard = () => {
   // WebSocket hook for live data — uses shared socket (no duplicate connection)
   const wsData = useMMMWebSocket(selectedSessionId, socket);
 
+  // Live price subscription: subscribe CE/PE active strikes to options_ticker_update
+  // Uses the same backend pipeline as the options panel (subscribe_options_tickers).
+  // Re-subscribes whenever the active session's strikes change.
+  useEffect(() => {
+    if (!socket || !fullSession) return;
+    const ce = fullSession.ce || {};
+    const pe = fullSession.pe || {};
+    const expiry = fullSession.params?.expiry;
+    const ceStrike = ce.active_strike;
+    const peStrike = pe.active_strike;
+    if (!expiry || (!ceStrike && !peStrike)) return;
+
+    const symbols = [];
+    if (ceStrike) symbols.push(`C-BTC-${Math.round(ceStrike)}-${expiry}`);
+    if (peStrike) symbols.push(`P-BTC-${Math.round(peStrike)}-${expiry}`);
+
+    if (socket.connected) {
+      socket.emit('subscribe_options_tickers', { symbols });
+    }
+    const onConnect = () => socket.emit('subscribe_options_tickers', { symbols });
+    socket.on('connect', onConnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      if (socket.connected) {
+        socket.emit('unsubscribe_options_tickers', { symbols });
+      }
+    };
+  }, [socket, fullSession?.session_id, fullSession?.ce?.active_strike, fullSession?.pe?.active_strike, fullSession?.params?.expiry]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [tabValue, setTabValue] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
@@ -2922,6 +3006,54 @@ const MMMDashboard = () => {
   // Poll full session details — pauses when tab is hidden
   useVisibilityAwarePolling(fetchFullSession, 15000, 60000, !!selectedSessionId);
 
+  // Refresh full session immediately when backend promotes active strike
+  // (auto-promotion at Step 0.75 or manual set-active-strike via API)
+  useEffect(() => {
+    if (!socket || !selectedSessionId) return;
+    const handler = (data) => {
+      if (data?.session_id === selectedSessionId) fetchFullSession();
+    };
+    socket.on('mmm_active_strike_changed', handler);
+    return () => socket.off('mmm_active_strike_changed', handler);
+  }, [socket, selectedSessionId, fetchFullSession]);
+
+  // Exit All WebSocket events — refresh sessions + show alerts
+  useEffect(() => {
+    if (!socket) return;
+    const onProgress = (data) => {
+      if (data?.session_id === selectedSessionId) {
+        fetchFullSession();
+      }
+    };
+    const onCompleted = (data) => {
+      fetchSessions(false);
+      if (data?.session_id === selectedSessionId) {
+        fetchFullSession();
+        setSnackbar({ open: true, message: 'Exit All complete — all positions closed.', severity: 'success' });
+      }
+    };
+    const onPartial = (data) => {
+      fetchSessions(false);
+      if (data?.session_id === selectedSessionId) {
+        fetchFullSession();
+        const failed = data?.failed_positions || [];
+        setSnackbar({
+          open: true,
+          message: `Exit partial: ${failed.length} position(s) may still be open — close manually on exchange.`,
+          severity: 'warning',
+        });
+      }
+    };
+    socket.on('mmm_exit_progress', onProgress);
+    socket.on('mmm_exit_completed', onCompleted);
+    socket.on('mmm_exit_partial', onPartial);
+    return () => {
+      socket.off('mmm_exit_progress', onProgress);
+      socket.off('mmm_exit_completed', onCompleted);
+      socket.off('mmm_exit_partial', onPartial);
+    };
+  }, [socket, selectedSessionId, fetchFullSession, fetchSessions]);
+
   // Session control handler
   const handleControl = useCallback(async (action, sessionId) => {
     try {
@@ -2950,6 +3082,23 @@ const MMMDashboard = () => {
         case 'force_heartbeat':
           result = await mmmService.forceHeartbeat(sessionId);
           break;
+        case 'exit_all': {
+          // Build position summary for confirmation dialog
+          const sess = sessions.find(s => s.session_id === sessionId);
+          const ceLots = (sess?.ce_active_lots || 0) + (sess?.ce_frozen_lots || 0);
+          const peLots = (sess?.pe_active_lots || 0) + (sess?.pe_frozen_lots || 0);
+          const confirmed = window.confirm(
+            `Exit Strategy — Close ALL Positions\n\n` +
+            `This will close ALL open options positions:\n` +
+            `  CE: ${ceLots} lots\n` +
+            `  PE: ${peLots} lots\n\n` +
+            `The session will stop after all positions are closed.\n\n` +
+            `This cannot be undone. Confirm?`
+          );
+          if (!confirmed) return;
+          result = await mmmService.exitAllSession(sessionId);
+          break;
+        }
         case 'delete':
           result = await mmmService.deleteSession(sessionId);
           if (result.success && sessionId === selectedSessionId) {
@@ -3056,7 +3205,7 @@ const MMMDashboard = () => {
 
   // Categorize sessions
   const activeSessions = useMemo(
-    () => sessions.filter((s) => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY'].includes(s.status)),
+    () => sessions.filter((s) => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY', 'EXITING'].includes(s.status)),
     [sessions]
   );
   const idleSessions = useMemo(
@@ -3321,8 +3470,10 @@ const MMMDashboard = () => {
                   <SessionDetail
                     session={fullSession}
                     wsData={wsData}
+                    socket={socket}
                     onBothSidesAction={handleBothSidesDecision}
                     onPartialEntryAction={(action) => handleControl(action, selectedSessionId)}
+                    onStrikePromoted={fetchFullSession}
                   />
                 ) : (
                   <Box sx={{ p: 4, textAlign: 'center' }}>

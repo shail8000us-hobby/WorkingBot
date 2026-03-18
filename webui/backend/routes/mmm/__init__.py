@@ -75,8 +75,8 @@ def init_mmm():
                     
                     status = session.get('strategy_status', 'UNKNOWN')
                     
-                    # Restore monitors for RUNNING or PAUSED sessions
-                    if status in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY'):
+                    # Restore monitors for RUNNING, PAUSED, or mid-exit sessions
+                    if status in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY', 'EXITING'):
                         print(f"[MMM] Restoring monitor for session {sid} (status={status})")
                         log.info(f"  Restoring monitor for session {sid} (status={status})")
                         start_session_monitor(sid, session)

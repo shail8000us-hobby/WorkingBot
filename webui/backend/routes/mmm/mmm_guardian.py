@@ -107,10 +107,10 @@ class MMMGuardian:
         if not params.get('guardian_enabled', True):
             return True, ''
 
-        # Emergency, both-sides-closing, and close-at-5 are always allowed.
-        # close_at_5 buys back short options — it reduces risk unconditionally.
-        # No velocity or hedge-integrity guard should block a buyback at threshold.
-        if both_sides_closing or mechanism in ('emergency', 'both_sides_close', 'close_at_5'):
+        # Emergency, both-sides-closing, close-at-5, and wind-down are always allowed.
+        # Any buyback at threshold (normal or elevated wind-down) reduces risk unconditionally.
+        # No velocity or hedge-integrity guard should block these buybacks.
+        if both_sides_closing or mechanism in ('emergency', 'both_sides_close', 'close_at_5', 'wind_down', 'exit_all'):
             return True, ''
 
         sid = session.get('session_id', '?')
