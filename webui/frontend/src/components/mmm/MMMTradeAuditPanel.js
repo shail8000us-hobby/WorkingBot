@@ -7,7 +7,7 @@
  * Created: 2026-03-18
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   Box, Typography, Paper, Tabs, Tab, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip,
@@ -17,6 +17,7 @@ import {
 import RefreshIcon from '@mui/icons-material/Refresh';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
 import mmmService from './mmmService';
 
@@ -549,6 +550,48 @@ const ReconcilePanel = ({ sessionId }) => {
 };
 
 // =============================================================================
+// Auto-Reconcile Banner
+// =============================================================================
+
+const ReconcileBanner = ({ sessionId }) => {
+  const [result, setResult] = useState(null);
+  const [checked, setChecked] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    mmmService.getAuditReconcile(sessionId)
+      .then((res) => { if (!cancelled) { setResult(res); setChecked(true); } })
+      .catch((e) => {
+        if (!cancelled) {
+          const body = e?.response?.data;
+          if (body) { setResult(body); }
+          setChecked(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [sessionId]);
+
+  if (!checked || !result) return null;
+  if (result.is_clean) return null;  // silent on clean
+
+  return (
+    <Alert
+      severity="warning"
+      icon={<WarningAmberIcon fontSize="small" />}
+      sx={{ mb: 1.5, fontSize: '0.78rem' }}
+      action={
+        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>
+          P&L delta: ${(result.pnl_delta || 0).toFixed(6)}
+          {result.position_discrepancies?.length > 0 && ` | ${result.position_discrepancies.length} position mismatch(es)`}
+        </Typography>
+      }
+    >
+      Audit mismatch detected — open the Reconcile tab for details
+    </Alert>
+  );
+};
+
+// =============================================================================
 // Main Panel
 // =============================================================================
 
@@ -559,6 +602,9 @@ const MMMTradeAuditPanel = ({ sessionId }) => {
 
   return (
     <Box>
+      {/* Auto-reconcile banner — silent on clean, visible on mismatch */}
+      <ReconcileBanner sessionId={sessionId} />
+
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
         <Typography variant="subtitle2" sx={{ fontWeight: 700, color: 'text.secondary', fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: 1 }}>
           Trade Audit

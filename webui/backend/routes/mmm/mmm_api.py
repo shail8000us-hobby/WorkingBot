@@ -317,6 +317,34 @@ def create_session_endpoint():
 
             session['entry_time'] = datetime.now(timezone.utc).isoformat()
 
+            # ── TRADE AUDIT: Mode B import — 2 rows (CE + PE) ─────────────
+            try:
+                from .mmm_audit_log import get_audit_log as _get_aud
+                from .mmm_audit_remark import build_trade_remark as _btr
+                _sid = session.get('session_id', '')
+                for _sk, _sd in [('CE', ce_data), ('PE', pe_data)]:
+                    _sp = float(_sd.get('premium', 0))
+                    _sl = int(_sd.get('lots', 0))
+                    _ss = float(_sd.get('strike', 0))
+                    _get_aud().enqueue_trade(
+                        session_id=_sid,
+                        action='SELL',
+                        option_type=_sk,
+                        strike=_ss,
+                        quantity_requested=_sl,
+                        quantity_filled=_sl,
+                        premium=_sp,
+                        event_type='ENTRY',
+                        mechanism='import',
+                        realized_pnl_usd=None,
+                        remark=_btr(action='SELL', event_type='ENTRY',
+                                    side=_sk.lower(), strike=int(_ss),
+                                    lots=_sl, premium=_sp,
+                                    mechanism='import'),
+                    )
+            except Exception:
+                pass
+
         # Safety check: Never overwrite a non-STOPPED session
         storage = get_storage()
         existing = storage.get_session(session['session_id'])

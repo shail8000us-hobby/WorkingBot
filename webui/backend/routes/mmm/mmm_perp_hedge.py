@@ -698,6 +698,29 @@ async def run_perp_hedge(
     required['_old_lots'] = old_lots
     _emit_perp_events(session, action, filled_lots, fill_price, required)
 
+    # ── TRADE AUDIT: perp hedge fill ──────────────────────────────────────
+    try:
+        from .mmm_audit_log import get_audit_log as _get_aud
+        from .mmm_audit_remark import build_trade_remark as _btr
+        _aud_action = 'BUY' if action == 'buy' else 'SELL'
+        _get_aud().enqueue_trade(
+            session_id=sid,
+            action=_aud_action,
+            option_type='PERP',
+            strike=0,
+            quantity_requested=lots,
+            quantity_filled=filled_lots,
+            premium=fill_price,
+            event_type='PERP_HEDGE',
+            mechanism='perp_hedge',
+            realized_pnl_usd=realized_pnl,
+            remark=_btr(action=_aud_action, event_type='PERP_HEDGE',
+                        side='perp', lots=filled_lots, premium=fill_price,
+                        realized_pnl=realized_pnl),
+        )
+    except Exception:
+        pass
+
     return {
         'action': action,
         'lots_traded': filled_lots,
@@ -779,6 +802,29 @@ async def close_all_perp(
         f"[{sid}] Perp close-all complete: {filled_lots} lots @ {fill_price:.2f}, "
         f"realized_pnl={realized_pnl:+.4f}, reason={reason}"
     )
+
+    # ── TRADE AUDIT: perp close-all fill ──────────────────────────────────
+    try:
+        from .mmm_audit_log import get_audit_log as _get_aud
+        from .mmm_audit_remark import build_trade_remark as _btr
+        _aud_action = 'BUY' if action == 'buy' else 'SELL'
+        _get_aud().enqueue_trade(
+            session_id=sid,
+            action=_aud_action,
+            option_type='PERP',
+            strike=0,
+            quantity_requested=lots,
+            quantity_filled=filled_lots,
+            premium=fill_price,
+            event_type='PERP_HEDGE',
+            mechanism='perp_close',
+            realized_pnl_usd=realized_pnl,
+            remark=_btr(action=_aud_action, event_type='PERP_HEDGE',
+                        side='perp', lots=filled_lots, premium=fill_price,
+                        realized_pnl=realized_pnl),
+        )
+    except Exception:
+        pass
 
     return {
         'success': True,

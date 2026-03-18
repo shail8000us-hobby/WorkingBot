@@ -1,6 +1,6 @@
 # MMM Trade Transparency System — Institutional-Grade Implementation Guide
 
-> **Status:** Phase 1 ✅ COMPLETE | Phase 2 ✅ COMPLETE | Phase 3 ✅ COMPLETE | Phase 4 ⬜ pending
+> **Status:** Phase 1 ✅ COMPLETE | Phase 2 ✅ COMPLETE | Phase 3 ✅ COMPLETE | Phase 4 ✅ COMPLETE
 > **Scope:** Every order fill, every penny of P&L, every operational state change — captured, persisted, verifiable.
 > **Created:** 2026-03-18 | **Last updated:** 2026-03-18
 
@@ -1813,13 +1813,13 @@ Complete in this order. Each phase is independently deployable.
 | 19 | `MMMTradeAuditPanel.js` | Create combined panel (Fills / Strike Summary / P&L / Events / Reconcile sub-tabs) | ✅ Done |
 | 22 | `MMMDashboard.js` | Add Audit tab (tab 16) to SessionDetail | ✅ Done |
 
-### Phase 4: Perp Hedge + Reconciliation UI (do last)
+### Phase 4: Perp Hedge + Reconciliation UI ✅ COMPLETE
 
-| Step | File | Action |
-|---|---|---|
-| 23 | `mmm_perp_hedge.py` | Instrument §5.8 |
-| 24 | `mmm_api.py` | Mode B import audit §5.2 |
-| 25 | Frontend | Add reconcile button + mismatch alert |
+| Step | File | Action | Status |
+|---|---|---|---|
+| 23 | `mmm_perp_hedge.py` | Instrument §5.8 — run_perp_hedge() fill + close_all_perp() fill | ✅ Done |
+| 24 | `mmm_api.py` | Mode B import audit §5.2 — 2 SELL ENTRY rows at session create | ✅ Done |
+| 25 | `MMMTradeAuditPanel.js` | Auto-reconcile banner on panel mount (silent if clean, warning if dirty) | ✅ Done |
 
 ---
 
