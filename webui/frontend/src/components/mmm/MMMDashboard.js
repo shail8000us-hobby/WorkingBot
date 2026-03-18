@@ -87,6 +87,7 @@ import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMRegimePanel from './MMMRegimePanel';
 import MMMPerpHedgePanel from './MMMPerpHedgePanel';
 import MMMPerformancePanel from './MMMPerformancePanel';
+import MMMTradeAuditPanel from './MMMTradeAuditPanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -1988,6 +1989,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
         <Tab label="Perp Hedge" />
         <Tab label="Risk" />
         <Tab label="Performance" />
+        <Tab label="Audit" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -2802,6 +2804,13 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
       {detailTab === 15 && (
         <Box>
           <MMMPerformancePanel sessionId={session?.session_id} />
+        </Box>
+      )}
+
+      {/* Tab 16: Trade Audit */}
+      {detailTab === 16 && (
+        <Box>
+          <MMMTradeAuditPanel sessionId={session?.session_id} />
         </Box>
       )}
 

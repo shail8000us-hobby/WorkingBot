@@ -716,6 +716,40 @@ const mmmService = {
     );
     return data;
   },
+
+  // =========================================================================
+  // Trade Audit (Trade Transparency System)
+  // =========================================================================
+
+  /** All fills for a session — position_audit_log rows */
+  async getAuditTrades(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/trades`);
+    return data;
+  },
+
+  /** Per-strike P&L summary */
+  async getAuditStrikeSummary(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/strike_summary`);
+    return data;
+  },
+
+  /** Realized P&L attribution breakdown */
+  async getAuditPnL(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/pnl`);
+    return data;
+  },
+
+  /** Self-reconciliation: audit vs live session state */
+  async getAuditReconcile(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/reconcile`);
+    return data;
+  },
+
+  /** Operational event log (session_event_log rows) */
+  async getAuditEvents(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/events`);
+    return data;
+  },
 };
 
 export default mmmService;
