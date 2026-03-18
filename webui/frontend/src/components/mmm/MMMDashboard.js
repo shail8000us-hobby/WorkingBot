@@ -2924,9 +2924,21 @@ const MMMDashboard = () => {
   // WebSocket hook for live data — uses shared socket (no duplicate connection)
   const wsData = useMMMWebSocket(selectedSessionId, socket);
 
-  // Live price subscription: subscribe CE/PE active strikes to options_ticker_update
-  // Uses the same backend pipeline as the options panel (subscribe_options_tickers).
-  // Re-subscribes whenever the active session's strikes change.
+  const [tabValue, setTabValue] = useState(0);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
+  const [adoptModeForSession, setAdoptModeForSession] = useState(null);  // session_id that needs adopt mode
+
+  // Settings dialog state
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSessionId, setSettingsSessionId] = useState(null);
+
+  // Full session object for detail view
+  const [fullSession, setFullSession] = useState(null);
+  const [fetchError, setFetchError] = useState(null);  // H-15 fix
+
+  // Live price subscription: subscribe CE/PE active strikes to options_ticker_update.
+  // Must be declared AFTER fullSession useState — deps array is evaluated immediately.
   useEffect(() => {
     if (!socket || !fullSession) return;
     const ce = fullSession.ce || {};
@@ -2953,19 +2965,6 @@ const MMMDashboard = () => {
       }
     };
   }, [socket, fullSession?.session_id, fullSession?.ce?.active_strike, fullSession?.pe?.active_strike, fullSession?.params?.expiry]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const [tabValue, setTabValue] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-  const [adoptModeForSession, setAdoptModeForSession] = useState(null);  // session_id that needs adopt mode
-
-  // Settings dialog state
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSessionId, setSettingsSessionId] = useState(null);
-
-  // Full session object for detail view
-  const [fullSession, setFullSession] = useState(null);
-  const [fetchError, setFetchError] = useState(null);  // H-15 fix
 
   // When selectedSessionId changes, fetch full session
   const selectedSession = useMemo(
