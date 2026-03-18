@@ -1,8 +1,8 @@
 # MMM Trade Transparency System — Institutional-Grade Implementation Guide
 
-> **Status:** Design-ready. Not yet implemented.
+> **Status:** Phase 1 ✅ COMPLETE | Phase 2 ✅ COMPLETE | Phase 3 ⬜ pending | Phase 4 ⬜ pending
 > **Scope:** Every order fill, every penny of P&L, every operational state change — captured, persisted, verifiable.
-> **Created:** 2026-03-18
+> **Created:** 2026-03-18 | **Last updated:** 2026-03-18
 
 ---
 
@@ -1778,32 +1778,32 @@ Add a new "Audit" section (not replacing existing tabs, adding):
 
 Complete in this order. Each phase is independently deployable.
 
-### Phase 1: Backend Core (do first)
+### Phase 1: Backend Core ✅ COMPLETE
 
-| Step | File | Action |
-|---|---|---|
-| 1 | `mmm_audit_remark.py` | Create — pure string building, no deps |
-| 2 | `mmm_audit_log.py` | Create — both classes, singletons |
-| 3 | `mmm_audit_reconciler.py` | Create — reconcile_session() |
-| 4 | `mmm_close_at_5.py` | Instrument §5.4 — all buybacks |
-| 5 | `mmm_engine.py` | Instrument §5.3 — adjustment sells |
-| 6 | `mmm_api.py` | Instrument §5.1 — Mode A entry |
-| 7 | `mmm_api.py` | Instrument §5.6 — operator inject |
-| 8 | `mmm_api.py` | Instrument §5.7 — operator close-strike |
-| 9 | `mmm_monitor.py` | Instrument §5.5 — wind-down LIFO path |
-| 10 | `mmm_api.py` | Add 5 new REST endpoints |
-| 11 | Backend health check | Verify DB tables created on startup |
+| Step | File | Action | Status |
+|---|---|---|---|
+| 1 | `mmm_audit_remark.py` | Create — pure string building, no deps | ✅ Done |
+| 2 | `mmm_audit_log.py` | Create — both classes, singletons | ✅ Done |
+| 3 | `mmm_audit_reconciler.py` | Create — reconcile_session() | ✅ Done |
+| 4 | `mmm_close_at_5.py` | Instrument §5.4 — all buybacks | ✅ Done |
+| 5 | `mmm_engine.py` | Instrument §5.3 — adjustment sells | ✅ Done |
+| 6 | `mmm_api.py` | Instrument §5.1 — Mode A entry | ✅ Done |
+| 7 | `mmm_api.py` | Instrument §5.6 — operator inject | ✅ Done |
+| 8 | `mmm_api.py` | Instrument §5.7 — operator close-strike | ✅ Done |
+| 9 | `mmm_monitor.py` | Instrument §5.5 — wind-down LIFO path | ✅ Done |
+| 10 | `mmm_api.py` | Add 5 new REST endpoints | ✅ Done |
+| 11 | Backend health check | Verify DB tables created on startup | ⬜ Verify on next restart |
 
-### Phase 2: Session Event Log (do second)
+### Phase 2: Session Event Log ✅ COMPLETE
 
-| Step | File | Action |
-|---|---|---|
-| 12 | `mmm_api.py` | SESSION_LIFECYCLE hooks (started/stopped/complete) |
-| 13 | `mmm_safety.py` | SAFETY hooks (cap, max-loss) |
-| 14 | `mmm_regime.py` | REGIME transition hooks |
-| 15 | `mmm_margin_guardian.py` | MARGIN tier change hooks |
-| 16 | `mmm_strike_shift.py` | STRIKE_SHIFT hook |
-| 17 | `mmm_config.py` | PARAM_CHANGE hook |
+| Step | File | Action | Status |
+|---|---|---|---|
+| 12 | `mmm_api.py` | SESSION_LIFECYCLE hooks (started/stopped/complete) | ✅ Done |
+| 13 | `mmm_monitor.py` | SAFETY hooks (critical events → event_log) | ✅ Done |
+| 14 | `mmm_monitor.py` | REGIME transition hooks (transition-only, sentinel) | ✅ Done |
+| 15 | `mmm_margin_guardian.py` | MARGIN tier change hooks | ✅ Done |
+| 16 | `mmm_strike_shift.py` | STRIKE_SHIFT hook | ✅ Done |
+| 17 | `mmm_api.py` | PARAM_CHANGE hook (one event per changed param) | ✅ Done |
 
 ### Phase 3: Frontend (do third)
 

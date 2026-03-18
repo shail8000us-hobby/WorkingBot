@@ -818,6 +818,41 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
         session_id=session_id, severity='success',
         details={'ce_fill': ce_fill, 'pe_fill': pe_fill, 'total_premium': actual_premium})
 
+    # ── TRADE AUDIT: initial entry (Mode A — both legs filled) ───────────
+    try:
+        from .mmm_audit_log import get_audit_log as _get_aud
+        from .mmm_audit_remark import build_trade_remark as _btr
+        _aud = _get_aud()
+        for _side, _fill, _res in [('ce', ce_fill, ce_res), ('pe', pe_fill, pe_res)]:
+            _filled = _res.get('filled_size', lots)
+            if not _filled or _filled <= 0:
+                _filled = lots
+            _strike = int(session[_side].get('active_strike', 0) or 0)
+            _aud.enqueue_trade(
+                session_id=session_id,
+                action='SELL',
+                option_type=_side.upper(),
+                strike=_strike,
+                quantity_requested=lots,
+                quantity_filled=_filled,
+                premium=_fill,
+                event_type='ENTRY',
+                mechanism='fresh_entry',
+                order_id=str(_res.get('order_id', '')),
+                expiry=session.get('params', {}).get('expiry', ''),
+                spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                remark=_btr(
+                    'SELL', 'ENTRY',
+                    side=_side, strike=_strike,
+                    lots=_filled, premium=_fill,
+                    mechanism='fresh_entry',
+                    is_partial=(_filled < lots),
+                ),
+            )
+    except Exception:
+        pass
+    # ── END TRADE AUDIT ──────────────────────────────────────────────────
+
     # Clear stale "placing order..." progress messages now that entry is complete
     from .mmm_activity import resolve_progress_activities
     resolve_progress_activities(session_id)
@@ -825,6 +860,28 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     log_activity('session_started',
         f"Session {session_id} is now RUNNING — heartbeat monitor active",
         session_id=session_id, severity='success')
+
+    # ── SESSION EVENT: lifecycle started ─────────────────────────────────
+    try:
+        from .mmm_audit_log import get_event_log as _get_evl
+        from .mmm_audit_remark import build_event_remark as _ber
+        _get_evl().enqueue_event(
+            session_id=session_id,
+            event_category='SESSION_LIFECYCLE',
+            event_type='started',
+            severity='INFO',
+            remark=_ber('SESSION_LIFECYCLE', 'started'),
+            details={
+                'ce_strike': session.get('ce', {}).get('active_strike'),
+                'pe_strike': session.get('pe', {}).get('active_strike'),
+                'ce_fill': ce_fill, 'pe_fill': pe_fill,
+                'lots': lots,
+                'expiry': session.get('params', {}).get('expiry'),
+            },
+        )
+    except Exception:
+        pass
+    # ── END SESSION EVENT ─────────────────────────────────────────────────
 
     # Start the heartbeat monitor
     start_session_monitor(session_id, session)
@@ -1337,6 +1394,22 @@ def stop_session(session_id: str):
         emit_status_change(session_id, old_status, new_status, reason)
         log.info(f"MMM session {session_id} stopped: {reason}")
 
+        # ── SESSION EVENT: lifecycle stopped ──────────────────────────────
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            from .mmm_audit_remark import build_event_remark as _ber
+            _get_evl().enqueue_event(
+                session_id=session_id,
+                event_category='SESSION_LIFECYCLE',
+                event_type='stopped',
+                severity='INFO',
+                remark=_ber('SESSION_LIFECYCLE', 'stopped', reason=reason),
+                details={'reason': reason, 'new_status': new_status},
+            )
+        except Exception:
+            pass
+        # ── END SESSION EVENT ─────────────────────────────────────────────
+
         return jsonify({
             'success': True,
             'message': f'Session {session_id} stopped',
@@ -1803,6 +1876,30 @@ def update_session_params(session_id: str):
 
         # Emit WebSocket update
         emit_params_changed(session_id, {k: validated[k] for k in changed_keys})
+
+        # ── SESSION EVENT: param changes (one event per changed param) ─────
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            from .mmm_audit_remark import build_event_remark as _ber
+            _orig_params = session.get('params', {})
+            for _pk in changed_keys:
+                _get_evl().enqueue_event(
+                    session_id=session_id,
+                    event_category='PARAM_CHANGE',
+                    event_type='hot_reload',
+                    severity='INFO',
+                    remark=_ber('PARAM_CHANGE', 'hot_reload',
+                                param=_pk,
+                                old_value=_orig_params.get(_pk),
+                                new_value=current_params.get(_pk)),
+                    details={
+                        'param': _pk,
+                        'old_value': _orig_params.get(_pk),
+                        'new_value': current_params.get(_pk),
+                    },
+                )
+        except Exception:
+            pass
 
         log.info(f"MMM session {session_id} params updated: {changed_keys}")
 
@@ -3416,6 +3513,35 @@ def inject_position(session_id: str):
         side_state = _recompute(side_state)
         session[side_param] = side_state
 
+        # ── TRADE AUDIT: operator inject / adopt ─────────────────────────
+        try:
+            from .mmm_audit_log import get_audit_log as _get_aud
+            from .mmm_audit_remark import build_trade_remark as _btr
+            _mech = 'adopt' if adopt else 'operator'
+            _get_aud().enqueue_trade(
+                session_id=session_id,
+                action='SELL',
+                option_type=side_param.upper(),
+                strike=int(strike_val),
+                quantity_requested=lots_param,
+                quantity_filled=lots_param,
+                premium=fill_price,
+                event_type='ENTRY',
+                mechanism=_mech,
+                order_id=order_id,
+                expiry=params.get('expiry', ''),
+                spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                remark=_btr(
+                    'SELL', 'ENTRY',
+                    side=side_param, strike=int(strike_val),
+                    lots=lots_param, premium=fill_price,
+                    mechanism=_mech,
+                ),
+            )
+        except Exception:
+            pass
+        # ── END TRADE AUDIT ──────────────────────────────────────────────
+
         # Track total premium collected
         premium_collected = fill_price * lots_param * LOT_SIZE_BTC
         session['total_premium_collected'] = (
@@ -3949,6 +4075,45 @@ def close_strike_route(session_id: str):
             f'[{session_id}] Close strike complete: {side_param.upper()} '
             f'{total_lots} lots @ {strike_val} fill=${fill_price:.2f} P&L=${total_realized:.2f}'
         )
+
+        # ── TRADE AUDIT: operator close-strike ───────────────────────────
+        try:
+            from .mmm_audit_log import get_audit_log as _get_aud
+            from .mmm_audit_remark import build_trade_remark as _btr
+            # Weighted average entry premium across all closed positions
+            _w_entry = sum(
+                float(p.get('entry_premium', p.get('premium', 0)) or 0) * p.get('lots', 0)
+                for p in target_positions
+            )
+            _avg_entry = _w_entry / total_lots if total_lots > 0 else 0.0
+            _get_aud().enqueue_trade(
+                session_id=session_id,
+                action='BUY',
+                option_type=side_param.upper(),
+                strike=int(strike_val),
+                quantity_requested=total_lots,
+                quantity_filled=total_lots,
+                premium=fill_price,
+                event_type='EXIT',
+                mechanism='operator',
+                order_id=order_id,
+                expiry=params.get('expiry', ''),
+                closing_entry_premium=round(_avg_entry, 4),
+                closing_entry_lots=total_lots,
+                realized_pnl_usd=float(total_realized),
+                spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                remark=_btr(
+                    'BUY', 'EXIT',
+                    side=side_param, strike=int(strike_val),
+                    lots=total_lots, premium=fill_price,
+                    mechanism='operator',
+                    entry_premium=round(_avg_entry, 4),
+                    realized_pnl=float(total_realized),
+                ),
+            )
+        except Exception:
+            pass
+        # ── END TRADE AUDIT ──────────────────────────────────────────────
 
         return jsonify({
             'success': True,
@@ -6120,3 +6285,123 @@ def get_pnl_curve(session_id: str):
     except Exception as e:
         log.exception(f"Failed to compute P&L curve for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trade Audit API  (position_audit_log + session_event_log)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mmm_bp.route('/session/<session_id>/audit/trades', methods=['GET'])
+def get_trade_audit(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/trades
+    ?side=CE&event_type=ADJUSTMENT&page=1&limit=100
+
+    Returns paginated rows from position_audit_log for a session.
+    """
+    from .mmm_audit_log import get_audit_log
+    side        = request.args.get('side')
+    event_type  = request.args.get('event_type')
+    page        = max(1, int(request.args.get('page', 1)))
+    limit       = min(500, max(1, int(request.args.get('limit', 100))))
+    rows = get_audit_log().query_session(session_id, side, event_type, page, limit)
+    return jsonify({'rows': rows, 'page': page, 'limit': limit, 'count': len(rows)})
+
+
+@mmm_bp.route('/session/<session_id>/audit/strike_summary', methods=['GET'])
+def get_strike_summary_audit(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/strike_summary
+    ?include_unrealized=true
+
+    Returns per-(strike, option_type) aggregated P&L, qty, status.
+    Optionally fetches live premiums for ACTIVE rows.
+    """
+    from .mmm_audit_log import get_audit_log
+    summary = get_audit_log().get_strike_summary(session_id)
+
+    if request.args.get('include_unrealized') == 'true':
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if session:
+            try:
+                from .mmm_executor import get_executor
+                from .mmm_initializer import get_initializer
+                executor = get_executor()
+                initializer = get_initializer()
+                params = session.get('params', {})
+                expiry = params.get('expiry', '')
+
+                async def _fetch_all():
+                    results = {}
+                    for row in summary:
+                        if row.get('status') == 'ACTIVE' and (row.get('open_qty') or 0) > 0:
+                            try:
+                                ot = 'call' if row['option_type'] == 'CE' else 'put'
+                                sym = initializer.build_symbol(ot, 'BTC', row['strike'], expiry)
+                                mid = await executor.get_mid_price(sym)
+                                results[(row['strike'], row['option_type'])] = mid
+                            except Exception:
+                                pass
+                    return results
+
+                premiums = _run_async(_fetch_all())
+                for row in summary:
+                    key = (row.get('strike'), row.get('option_type'))
+                    mid = premiums.get(key)
+                    if mid and mid > 0:
+                        row['current_premium'] = round(mid, 2)
+                        avg_sell = row.get('avg_sell_price') or 0
+                        open_qty = row.get('open_qty') or 0
+                        row['unrealized_pnl_usd'] = round(
+                            (avg_sell - mid) * open_qty * 0.001, 6
+                        )
+            except Exception as e:
+                log.warning('Could not fetch unrealized premiums for strike summary: %s', e)
+
+    return jsonify({'summary': summary})
+
+
+@mmm_bp.route('/session/<session_id>/audit/pnl', methods=['GET'])
+def get_pnl_attribution_audit(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/pnl
+
+    P&L breakdown by event_type. Source of truth: must equal session['realized_pnl'].
+    """
+    from .mmm_audit_log import get_audit_log
+    return jsonify(get_audit_log().get_pnl_attribution(session_id))
+
+
+@mmm_bp.route('/session/<session_id>/audit/reconcile', methods=['GET'])
+def reconcile_audit_endpoint(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/reconcile
+
+    Compare audit log totals against live session state.
+    Returns { is_clean, pnl_ok, pnl_delta, position_discrepancies }.
+    HTTP 200 if clean, 409 if discrepancy found.
+    """
+    from .mmm_audit_reconciler import reconcile_session
+    storage = get_storage()
+    session = storage.get_session(session_id)
+    if not session:
+        return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+    result = reconcile_session(session_id, session)
+    status_code = 200 if result.get('is_clean') else 409
+    return jsonify(result), status_code
+
+
+@mmm_bp.route('/session/<session_id>/audit/events', methods=['GET'])
+def get_session_events_audit(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/events
+    ?category=REGIME&severity=WARN&limit=100
+
+    Returns operational event log rows for a session.
+    """
+    from .mmm_audit_log import get_event_log
+    category = request.args.get('category')
+    severity = request.args.get('severity')
+    limit    = min(500, max(1, int(request.args.get('limit', 100))))
+    rows = get_event_log().query_session(session_id, category, severity, limit)
+    return jsonify({'events': rows, 'count': len(rows)})

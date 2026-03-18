@@ -529,6 +529,53 @@ async def close_position(
         except Exception:
             pass
 
+        # ── TRADE AUDIT: position buyback ────────────────────────────────────
+        try:
+            from .mmm_audit_log import get_audit_log as _get_aud
+            from .mmm_audit_remark import build_trade_remark as _btr
+            _MECH_EVENT = {
+                'close_at_5':       'CLOSE',
+                'harvest':          'CLOSE',
+                'recycler':         'RECYCLE_BUY',
+                'atm_shield':       'EXIT',
+                'wind_down':        'WIND_DOWN',
+                'both_sides_close': 'CLOSE',
+                'emergency':        'EXIT',
+                'operator':         'EXIT',
+            }
+            _ev = _MECH_EVENT.get(mechanism, 'CLOSE')
+            _get_aud().enqueue_trade(
+                session_id=session.get('session_id', ''),
+                action='BUY',
+                option_type=side.upper(),
+                strike=int(strike),
+                quantity_requested=lots,
+                quantity_filled=actual_lots,
+                premium=close_price,
+                event_type=_ev,
+                mechanism=mechanism,
+                order_id=str(result.get('order_id', '')),
+                expiry=session.get('params', {}).get('expiry', ''),
+                closing_entry_premium=float(entry_prem),
+                closing_entry_lots=actual_lots,
+                realized_pnl_usd=float(realized_pnl),
+                spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                margin_tier=str(session.get('_margin_tier', '') or ''),
+                remark=_btr(
+                    'BUY', _ev,
+                    side=side, strike=int(strike),
+                    lots=actual_lots, premium=close_price,
+                    mechanism=mechanism,
+                    threshold=float(position.get('threshold_used', 5.0) or 5.0),
+                    entry_premium=float(entry_prem),
+                    realized_pnl=float(realized_pnl),
+                    is_partial=(actual_lots < lots),
+                ),
+            )
+        except Exception:
+            pass
+        # ── END TRADE AUDIT ──────────────────────────────────────────────────
+
         # Record successful close for velocity tracking (observer + guardian)
         try:
             from .mmm_observer import get_observer

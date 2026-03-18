@@ -470,6 +470,33 @@ class MarginGuardian:
                 f"equity: ${margin_data['net_equity']:.2f}, "
                 f"pos_margin: ${margin_data['position_margin']:.2f})"
             )
+            # ── SESSION EVENT: margin tier change ─────────────────────────────
+            try:
+                from .mmm_audit_log import get_event_log as _get_evl
+                from .mmm_audit_remark import build_event_remark as _ber
+                _tier_sev = {
+                    TIER_GREEN: 'INFO', TIER_YELLOW: 'WARN',
+                    TIER_ORANGE: 'WARN', TIER_RED: 'CRITICAL',
+                    TIER_CRITICAL: 'CRITICAL',
+                }.get(tier, 'WARN')
+                _get_evl().enqueue_event(
+                    session_id=self._sid,
+                    event_category='MARGIN',
+                    event_type='tier_change',
+                    severity=_tier_sev,
+                    remark=_ber('MARGIN', 'tier_change',
+                                old_tier=prev_tier, new_tier=tier,
+                                utilization_pct=util_pct),
+                    details={
+                        'prev_tier': prev_tier, 'new_tier': tier,
+                        'utilization_pct': util_pct,
+                        'net_equity': margin_data.get('net_equity'),
+                        'position_margin': margin_data.get('position_margin'),
+                        'blocked_margin': margin_data.get('blocked_margin'),
+                    },
+                )
+            except Exception:
+                pass
 
         actions = list(tier_result['actions'])
         if force_stop and 'force_stop_session' not in actions:

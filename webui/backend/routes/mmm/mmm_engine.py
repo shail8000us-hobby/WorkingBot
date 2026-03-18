@@ -755,6 +755,53 @@ class MMMEngine:
                     log.warning(f"Failed to clear pending order: {_pe}")
             # ── END CLEAR ────────────────────────────────────────────────────
 
+            # ── TRADE AUDIT: adjustment / reversal sell ───────────────────
+            try:
+                from .mmm_audit_log import get_audit_log as _get_aud
+                from .mmm_audit_remark import build_trade_remark as _btr
+                _ev = (
+                    'REVERSAL'
+                    if adj_type in ('reversal', 'first_reversal')
+                    else ('RECYCLE_SELL' if adj_type == 'recycle_phase_b' else 'ADJUSTMENT')
+                )
+                _aggressor = 'pe' if hedge_side == 'ce' else 'ce'
+                _trig_snap = session.get(hedge_side, {}).get(
+                    'trigger_snapshot', {}
+                ).get(str(int(round(float(hedge_strike)))), 0.0)
+                _loss = float(session.get('_last_adjustment_loss', 0.0) or 0.0)
+                _get_aud().enqueue_trade(
+                    session_id=session.get('session_id', ''),
+                    action='SELL',
+                    option_type=hedge_side.upper(),
+                    strike=int(hedge_strike),
+                    quantity_requested=lots_to_sell,
+                    quantity_filled=filled_lots,
+                    premium=fill_price,
+                    event_type=_ev,
+                    adj_type=adj_type,
+                    mechanism='algo',
+                    aggressor_side=_aggressor,
+                    trigger_snapshot_at=float(_trig_snap or 0.0),
+                    loss_covered_usd=_loss,
+                    order_id=str(result.get('order_id', '')),
+                    expiry=session.get('params', {}).get('expiry', ''),
+                    spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                    whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                    margin_tier=str(session.get('_margin_tier', '') or ''),
+                    regime_action=str(session.get('_regime_action', '') or ''),
+                    remark=_btr(
+                        'SELL', _ev,
+                        side=hedge_side, strike=int(hedge_strike),
+                        lots=filled_lots, premium=fill_price,
+                        adj_type=adj_type, aggressor=_aggressor,
+                        loss_covered=_loss,
+                        is_partial=(filled_lots < lots_to_sell),
+                    ),
+                )
+            except Exception:
+                pass
+            # ── END TRADE AUDIT ───────────────────────────────────────────
+
             return {
                 'success': True,
                 'fill_price': fill_price,

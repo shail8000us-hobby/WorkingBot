@@ -1410,6 +1410,24 @@ class MMMMonitor:
                         'both_sides_closed — options expired worthless'
                     )
             self.stop('Both sides fully closed — strategy complete!')
+            # ── SESSION EVENT: lifecycle completed ────────────────────────
+            try:
+                from .mmm_audit_log import get_event_log as _get_evl
+                from .mmm_audit_remark import build_event_remark as _ber
+                _get_evl().enqueue_event(
+                    session_id=sid,
+                    event_category='SESSION_LIFECYCLE',
+                    event_type='completed',
+                    severity='INFO',
+                    remark=_ber('SESSION_LIFECYCLE', 'completed'),
+                    details={
+                        'realized_pnl': session.get('realized_pnl', 0),
+                        'adjustment_count': session.get('adjustment_count', 0),
+                    },
+                )
+            except Exception:
+                pass
+            # ── END SESSION EVENT ─────────────────────────────────────────
             # H-2 fix: emit final heartbeat data and save before returning
             try:
                 current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
@@ -1537,6 +1555,28 @@ class MMMMonitor:
                 sid, event['type'], event['level'], event['message'],
                 event.get('details')
             )
+
+        # ── SESSION EVENT: critical safety events ─────────────────────────
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            from .mmm_audit_remark import build_event_remark as _ber
+            _SAFETY_SEV = {'critical': 'CRITICAL', 'alert': 'WARN', 'warning': 'WARN', 'info': 'INFO'}
+            _CRITICAL_ACTIONS = {'auto_close', 'stop', 'pause'}
+            for _se in safety_events:
+                if _se.get('action') in _CRITICAL_ACTIONS:
+                    _ev_type = _se.get('type', 'unknown')
+                    _sev = _SAFETY_SEV.get(_se.get('level', 'warning'), 'WARN')
+                    _get_evl().enqueue_event(
+                        session_id=sid,
+                        event_category='SAFETY',
+                        event_type=_ev_type,
+                        severity=_sev,
+                        remark=_se.get('message', _ber('SAFETY', _ev_type,
+                                                       **(_se.get('details') or {}))),
+                        details=_se.get('details'),
+                    )
+        except Exception:
+            pass
 
         # Track safety events for walkthrough
         self._hb_wt['safety_events'] = safety_events
@@ -1682,6 +1722,36 @@ class MMMMonitor:
                 )
                 self._regime_engine.update_trend_guard(session, spot_price)
                 regime_action = self._regime_engine.compute_regime_action(session)
+                session['_regime_action'] = regime_action
+
+                # ── SESSION EVENT: regime state transition (log once per change) ──
+                try:
+                    _prev_regime = getattr(self, '_last_logged_regime_action', ACTION_NORMAL)
+                    if regime_action != _prev_regime:
+                        from .mmm_audit_log import get_event_log as _get_evl
+                        from .mmm_audit_remark import build_event_remark as _ber
+                        _sev = 'CRITICAL' if 'BLOCK' in str(regime_action) or regime_action == ACTION_FORCE_REDUCE else 'WARN'
+                        _get_evl().enqueue_event(
+                            session_id=sid,
+                            event_category='REGIME',
+                            event_type='transition',
+                            severity=_sev,
+                            remark=_ber('REGIME', 'transition',
+                                        old_state=str(_prev_regime),
+                                        new_state=str(regime_action)),
+                            details={
+                                'old_action': str(_prev_regime),
+                                'new_action': str(regime_action),
+                                'vol_regime': session.get('_vol_regime'),
+                                'gamma_regime': session.get('_gamma_regime'),
+                                'trend_regime': session.get('_trend_regime'),
+                                'trend_tier': session.get('_trend_tier'),
+                            },
+                        )
+                        self._last_logged_regime_action = regime_action
+                except Exception:
+                    pass
+                # ── END SESSION EVENT ─────────────────────────────────────
 
                 # Emit regime status via WebSocket (included in heartbeat, low overhead)
                 regime_status = self._regime_engine.get_regime_status(session)
@@ -2833,6 +2903,40 @@ class MMMMonitor:
                              'avg_entry': round(avg_entry, 2),
                              'realized_pnl': round(group_realized, 2)})
 
+                # ── TRADE AUDIT: wind-down LIFO buyback ───────────────────
+                try:
+                    from .mmm_audit_log import get_audit_log as _get_aud
+                    from .mmm_audit_remark import build_trade_remark as _btr
+                    _get_aud().enqueue_trade(
+                        session_id=sid,
+                        action='BUY',
+                        option_type=aggressor.upper(),
+                        strike=int(strike_val),
+                        quantity_requested=group_lots,
+                        quantity_filled=actual_filled,
+                        premium=close_price,
+                        event_type='WIND_DOWN',
+                        mechanism='wind_down',
+                        order_id=str(result.get('order_id', '')),
+                        expiry=session.get('params', {}).get('expiry', ''),
+                        closing_entry_premium=float(avg_entry),
+                        closing_entry_lots=actual_filled,
+                        realized_pnl_usd=float(group_realized),
+                        spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                        remark=_btr(
+                            'BUY', 'WIND_DOWN',
+                            side=aggressor, strike=int(strike_val),
+                            lots=actual_filled, premium=close_price,
+                            mechanism='wind_down',
+                            entry_premium=float(avg_entry),
+                            realized_pnl=float(group_realized),
+                            is_partial=(actual_filled < group_lots),
+                        ),
+                    )
+                except Exception:
+                    pass
+                # ── END TRADE AUDIT ───────────────────────────────────────
+
             except Exception as e:
                 # Clear _being_closed flags on exception so positions can be retried
                 for _pid in _wd_marked_ids:
@@ -3083,6 +3187,7 @@ class MMMMonitor:
             loss, adj_pnl, _rev_incomplete = self._engine.calculate_reversal_loss(
                 session, aggressor, self._make_fetch_fn()
             )
+            session['_last_adjustment_loss'] = float(loss)   # audit context only
 
             # Robust v2 Fix #2: Warn if reversal calculation was incomplete
             if _rev_incomplete:
@@ -3163,6 +3268,7 @@ class MMMMonitor:
                 fetch_premium_fn=self._make_fetch_fn(),
             )
             adj_type = 'standard'
+            session['_last_adjustment_loss'] = float(loss)   # audit context only
 
             # Robust v2 Fix #2: Warn if standard loss calculation was incomplete
             if _std_incomplete:

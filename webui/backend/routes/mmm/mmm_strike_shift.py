@@ -383,4 +383,33 @@ def activate_new_strike(
         f"{new_strike} with {lots} lots @ {fill_premium:.2f}"
     )
 
+    # ── SESSION EVENT: strike shift ────────────────────────────────────────
+    try:
+        from .mmm_audit_log import get_event_log as _get_evl
+        from .mmm_audit_remark import build_event_remark as _ber
+        # Old strike is in frozen_positions (set to 'shifted' by freeze_current_positions)
+        _old_strike = 0
+        for _fp in side_state.get('frozen_positions', []):
+            if _fp.get('lots', 0) > 0:
+                _old_strike = int(_fp.get('strike', 0))
+                break
+        _get_evl().enqueue_event(
+            session_id=session.get('session_id', ''),
+            event_category='STRIKE_SHIFT',
+            event_type='shifted',
+            severity='INFO',
+            remark=_ber('STRIKE_SHIFT', 'shifted',
+                        side=side, old_strike=_old_strike,
+                        new_strike=int(new_strike), old_premium=fill_premium),
+            details={
+                'side': side,
+                'old_strike': _old_strike,
+                'new_strike': new_strike,
+                'lots': lots,
+                'fill_premium': fill_premium,
+            },
+        )
+    except Exception:
+        pass
+
     return session
