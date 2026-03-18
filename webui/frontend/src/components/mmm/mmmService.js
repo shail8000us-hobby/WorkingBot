@@ -332,6 +332,22 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Get session performance intelligence (score, efficiency, exit quality)
+   */
+  async getSessionPerformance(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/performance`);
+    return data;
+  },
+
+  /**
+   * Get aggregated performance summary across all sessions
+   */
+  async getPerformanceSummary() {
+    const { data } = await api.get(`${BASE_URL}/performance/summary`);
+    return data;
+  },
+
   // =========================================================================
   // Parameters (Section 19)
   // =========================================================================

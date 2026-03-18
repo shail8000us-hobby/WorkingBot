@@ -80,6 +80,9 @@ Every adjustment appended ~200 bytes to `adjustment_history`. After 1,000 adjust
 - Any code that changes `active_strike` must also handle what happens when active_lots drops to 0 on that side after a drain. The trigger heal creates a permanent blind spot if baseline = current.
 - `_save_session`'s race fix for API-concurrent writes only covered new positions. Any API that mutates existing position state (status, strike) must be tracked similarly — check `active_strike_pinned` flag as the marker that an API explicitly changed state.
 
+**[2026-03-18 addendum] Pin flag blocks zero-lots recovery:**
+The original zero-lots recovery checked `active_strike_pinned` BEFORE checking `active_lots==0`. If the user pinned a strike (📌) and then close-at-5 drained all lots at that strike, the pin blocked recovery forever. The fix: move zero-lots recovery BEFORE the pin check, and clear `active_strike_pinned=False` when recovery fires (the pin is stale once the strike has no lots). Normal ATM-proximity promotion still respects the pin (pin check placed after the `continue` that exits zero-lots recovery).
+
 ## [2026-03-17] Trigger snapshot set to stale pre-execution premium — causes false re-triggers
 
 **Bug:** After a successful adjustment, `_update_state_after_adjustment` called `update_trigger_snapshots(session, ce_now, pe_now, ...)`. But `ce_now`/`pe_now` were captured at heartbeat **start**, and `smart_execute` takes 30–60s. In a fast-moving market, the aggressor's premium can move significantly during execution. The stale snapshot makes the next heartbeat's trigger check compare against the old baseline, causing an immediate re-trigger if the premium moved >min_trigger_move during execution. Example: CE $100→$115 during execution, snapshot set to $100 → next heartbeat excess = 15% → fires again.

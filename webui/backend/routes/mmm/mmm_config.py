@@ -182,6 +182,7 @@ PARAM_RULES = {
     # Multi-Expiry DTE Presets
     'dte_category':                    {'type': str,   'min': None, 'max': None,  'hot': True},
     'total_dte_hours':                 {'type': float, 'min': 0,    'max': 10000, 'hot': True},
+    'session_window_hours':            {'type': float, 'min': 0,    'max': 24,    'hot': True},
     'global_max_loss':                 {'type': float, 'min': 100,  'max': 1e9,   'hot': True},
     # Guardian params
     'guardian_enabled':                {'type': bool,  'min': None, 'max': None,  'hot': True},

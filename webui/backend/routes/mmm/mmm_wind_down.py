@@ -88,6 +88,18 @@ def is_wind_down_active(session: Dict) -> bool:
                 expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
             hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
 
+            # Short Window: also consider session deadline as an effective expiry
+            deadline_str = session.get('session_deadline_utc')
+            if deadline_str:
+                try:
+                    deadline_dt = datetime.fromisoformat(deadline_str)
+                    if deadline_dt.tzinfo is None:
+                        deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+                    hours_to_deadline = (deadline_dt - now).total_seconds() / 3600.0
+                    hours_remaining = min(hours_remaining, hours_to_deadline)
+                except (ValueError, TypeError):
+                    pass
+
             if hours_remaining <= wd_hours:
                 return True
             return False
@@ -140,6 +152,19 @@ def get_wind_down_status(session: Dict) -> Dict[str, Any]:
         if expiry_dt.tzinfo is None:
             expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
         hours_remaining = (expiry_dt - now).total_seconds() / 3600.0
+
+        # Short Window: also consider session deadline as an effective expiry
+        deadline_str = session.get('session_deadline_utc')
+        if deadline_str:
+            try:
+                deadline_dt = datetime.fromisoformat(deadline_str)
+                if deadline_dt.tzinfo is None:
+                    deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+                hours_to_deadline = (deadline_dt - now).total_seconds() / 3600.0
+                hours_remaining = min(hours_remaining, hours_to_deadline)
+            except (ValueError, TypeError):
+                pass
+
         active = hours_remaining <= wd_hours
         activates_in = max(0.0, hours_remaining - wd_hours) if not active else None
         return {

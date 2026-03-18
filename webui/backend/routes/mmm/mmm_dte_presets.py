@@ -40,6 +40,49 @@ PRESET_0DTE = {
     'lot_velocity_window_mins': 30,
 }
 
+PRESET_SHORT_WINDOW = {
+    'dte_category': 'SHORT_WINDOW',
+    'session_window_hours': 5.0,
+    'adjustment_interval': 120,
+    'adaptive_max_interval': 300,
+    'min_trigger_move': 15.0,
+    'shift_threshold': 25,
+    'shift_target_premium': 150,
+    'close_at_threshold': 5,
+    'max_loss_amount': 5000,
+    'max_lots_per_side': 30,
+    'max_total_exposure': 50,
+    'max_adjustments': 12,
+    'trailing_stop_pct': 0.4,
+    'wind_down_enabled': True,
+    'wind_down_hours_before_expiry': 1.0,
+    'wind_down_close_threshold': 40.0,
+    'wind_down_floor_action': 'close_all',
+    'stop_adjustment_mins': 30,
+    'auto_close_mins': 10,
+    'whipsaw_cooldown_score': 3,
+    'reversal_cooldown_seconds': 0,
+    'lot_velocity_limit': 8,
+    'lot_velocity_window_mins': 20,
+    'harvest_profit_pct': 30.0,
+    'harvest_min_age_mins': 20,
+    'harvest_max_per_beat': 5,
+    'harvest_pressure_threshold': 0.3,
+    'recycle_enabled': False,
+    'proactive_shift_enabled': False,
+    'atm_shield_enabled': True,
+    'atm_shield_proximity_pct': 0.8,
+    'atm_shield_max_per_session': 2,
+    'atm_shield_cooldown_mins': 15,
+    'perp_hedge_enabled': True,
+    'perp_hedge_delta_threshold': 0.03,
+    'perp_hedge_max_lots': 20,
+    'breakeven_warning_pct': 2.5,
+    'breakeven_danger_pct': 1.5,
+    'breakeven_critical_pct': 0.8,
+    'breakeven_aggression_max': 2.5,
+}
+
 PRESET_5DTE = {
     'dte_category': '5DTE',
     'adjustment_interval': 900,         # 15 min
@@ -75,6 +118,7 @@ PRESET_5DTE = {
 # Registry of all presets
 DTE_PRESETS = {
     '0DTE': PRESET_0DTE,
+    'SHORT_WINDOW': PRESET_SHORT_WINDOW,
     '5DTE': PRESET_5DTE,
 }
 
@@ -88,13 +132,16 @@ def list_presets() -> List[Dict]:
     """List all available DTE presets with metadata."""
     result = []
     for name, preset in DTE_PRESETS.items():
-        result.append({
+        entry = {
             'name': name,
             'adjustment_interval': preset.get('adjustment_interval'),
             'min_trigger_move': preset.get('min_trigger_move'),
             'max_loss_amount': preset.get('max_loss_amount'),
             'max_lots_per_side': preset.get('max_lots_per_side'),
-        })
+        }
+        if 'session_window_hours' in preset:
+            entry['session_window_hours'] = preset['session_window_hours']
+        result.append(entry)
     return result
 
 

@@ -4981,6 +4981,68 @@ def get_aggregated_analytics():
 
 
 # =============================================================================
+# Performance Intelligence Endpoints
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/performance', methods=['GET'])
+def get_session_performance(session_id: str):
+    """Get performance intelligence for a session."""
+    try:
+        from .mmm_performance import get_performance_storage, analyze_session
+
+        storage = get_performance_storage()
+        record = storage.get(session_id)
+
+        if record:
+            return jsonify({
+                'success': True,
+                'performance': record,
+                'session_id': session_id,
+                'source': 'persistent_storage',
+            })
+
+        # Fallback: compute live for running sessions
+        from .mmm_storage import get_storage
+        sess_storage = get_storage()
+        session = sess_storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        live_record = analyze_session(session)
+        return jsonify({
+            'success': True,
+            'performance': live_record,
+            'session_id': session_id,
+            'source': 'live_session',
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get performance for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/performance/summary', methods=['GET'])
+def get_performance_summary():
+    """Get aggregated performance summary across all sessions."""
+    try:
+        from .mmm_performance import get_performance_storage
+
+        storage = get_performance_storage()
+        summary = storage.get_summary()
+        history = storage.get_all(limit=50)
+
+        return jsonify({
+            'success': True,
+            'summary': summary,
+            'history': history,
+        })
+
+    except Exception as e:
+        log.exception("Failed to get performance summary")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # Perpetual Futures Delta Hedge Endpoints (§26.13)
 # =============================================================================
 

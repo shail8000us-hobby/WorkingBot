@@ -85,7 +85,7 @@ const PARAM_GROUPS = {
     title: 'Wind-Down Mode',
     color: '#9c27b0',
     blurb: 'Near-expiry risk reduction: buys back positions (LIFO) instead of adding new naked lots.',
-    params: ['wind_down_on_atm', 'wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
+    params: ['session_window_hours', 'wind_down_on_atm', 'wind_down_enabled', 'wind_down_hours_before_expiry', 'wind_down_buyback_pct', 'wind_down_close_threshold', 'wind_down_min_lots_to_keep', 'wind_down_floor_action'],
   },
   marginGuardian: {
     title: '🛡️ Margin Guardian',
@@ -307,6 +307,7 @@ const PARAM_TOOLTIPS = {
   close_at_use_bid: 'Use bid price (not mark price) to detect when a position is eligible for close-at-5. Bid is more accurate for illiquid options — mark price can be much higher than what you actually get. Always leave ON.',
   theta_acceleration_window: 'Minutes before expiry to activate theta acceleration. Within this window, the algo widens trigger thresholds (allows more premium move before adjusting) because time decay is rapidly working in your favor.',
   adaptive_interval_enabled: HELP.adaptive_interval_enabled || 'Auto-scale heartbeat frequency based on time-to-expiry.',
+  session_window_hours: 'Short Window: session auto-exits after N hours from start. 0 = disabled (runs until expiry). When set, wind-down and stop-adjustment timers count down from the session deadline, not the chain expiry. Ideal for evening sessions where you want to exit before India close (5:30 PM IST).',
   wind_down_on_atm: 'Auto-trigger wind-down mode if any original strike becomes ATM (spot ≈ strike). Instead of closing all positions immediately (like close_at_atm), this switches the algo into gradual LIFO buyback mode. The original strike is the entry strike — real danger territory. Activates once and stays active for the rest of the session.',
   wind_down_enabled: HELP.wind_down_enabled || 'Enable wind-down mode near expiry.',
   wind_down_hours_before_expiry: HELP.wind_down_hours_before_expiry || 'Hours before expiry to activate wind-down.',

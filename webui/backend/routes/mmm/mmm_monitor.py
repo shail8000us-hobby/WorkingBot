@@ -158,6 +158,9 @@ class MMMMonitor:
         self._last_iv_data = {}   # Populated by _fetch_premiums
         self._last_gamma_data = {}  # Populated by _calculate_portfolio_delta
 
+        # Performance Intelligence collector (zero I/O during heartbeat)
+        self._perf_collector = None  # Initialized in start() when timing is known
+
         # Lazy-loaded
         self._executor = None
         self._initializer = None
@@ -233,6 +236,35 @@ class MMMMonitor:
             analytics['total_ce_lots_traded'] = analytics['initial_ce_lots']
             analytics['total_pe_lots_traded'] = analytics['initial_pe_lots']
             analytics['total_combined_lots_traded'] = analytics['initial_ce_lots'] + analytics['initial_pe_lots']
+
+        # Short Window: compute session deadline from start time + window hours
+        _window_hours = self.session.get('params', {}).get('session_window_hours', 0)
+        if _window_hours and float(_window_hours) > 0 and not self.session.get('session_deadline_utc'):
+            from datetime import timedelta
+            _deadline = datetime.now(timezone.utc) + timedelta(hours=float(_window_hours))
+            self.session['session_deadline_utc'] = _deadline.isoformat()
+            log.info(f"[{self.session_id}] Short Window: deadline set to "
+                     f"{_deadline.isoformat()} ({_window_hours}h from now)")
+
+        # Performance Intelligence: initialize collector with session time bounds
+        try:
+            from .mmm_performance import PerformanceCollector
+            _start = datetime.fromisoformat(
+                analytics.get('session_start_time') or datetime.now(timezone.utc).isoformat()
+            )
+            if _start.tzinfo is None:
+                _start = _start.replace(tzinfo=timezone.utc)
+            # End time: session_deadline_utc or expiry_time
+            _end_str = self.session.get('session_deadline_utc') or self.session.get('expiry_time')
+            if _end_str:
+                _end = datetime.fromisoformat(_end_str)
+                if _end.tzinfo is None:
+                    _end = _end.replace(tzinfo=timezone.utc)
+            else:
+                _end = _start + timedelta(hours=24)  # fallback
+            self._perf_collector = PerformanceCollector(self.session_id, _start, _end)
+        except Exception as _perf_e:
+            log.warning(f"[{self.session_id}] Performance collector init failed (non-fatal): {_perf_e}")
 
         # T4-2: Clear any stale in-memory pending order registry entries from a
         # previous monitor run on this same session_id (within the same process).
@@ -383,6 +415,14 @@ class MMMMonitor:
             log.info(f"Saved analytics for {self.session_id} to persistent storage")
         except Exception as e:
             log.error(f"Failed to save analytics to persistent storage: {e}")
+
+        # Performance Intelligence: analyze and persist (ONE final write)
+        try:
+            from .mmm_performance import analyze_session, get_performance_storage
+            perf_record = analyze_session(self.session, self._perf_collector)
+            get_performance_storage().save(perf_record)
+        except Exception as e:
+            log.error(f"Failed to save performance record for {self.session_id}: {e}")
 
         emit_status_change(
             self.session_id, old_status, 'STOPPED', reason
@@ -2327,6 +2367,16 @@ class MMMMonitor:
             sid, pnl['net_pnl'], pnl['realized'],
             pnl['unrealized'], pnl['fees'], pnl['total_premium_collected'],
         )
+
+        # Performance Intelligence: track phase transitions (zero I/O)
+        if self._perf_collector:
+            try:
+                self._perf_collector.on_heartbeat(
+                    datetime.now(timezone.utc),
+                    pnl['net_pnl'], pnl['realized'], pnl['unrealized'],
+                )
+            except Exception:
+                pass  # Never block heartbeat for performance tracking
 
         # §13.3 POST-UPDATE MAX LOSS CHECK: Immediate enforcement
         # Safety checks in Step 3 use previous heartbeat's P&L.
@@ -6873,10 +6923,6 @@ class MMMMonitor:
             if not side_state:
                 continue
 
-            # Skip if user explicitly pinned the active strike via the 📌 button
-            if side_state.get('active_strike_pinned'):
-                continue
-
             current_active = side_state.get('active_strike', 0)
             positions = side_state.get('positions', [])
 
@@ -6889,11 +6935,13 @@ class MMMMonitor:
                         open_strikes[s] = open_strikes.get(s, 0) + pos.get('lots', 0)
 
             # Recovery path: if active_lots=0 but frozen positions exist, promote the
-            # highest-lots strike as the new active — regardless of open-strike count.
-            # Covers the close-at-5 drain scenario: active positions decayed and were
-            # closed, leaving only frozen. Without this, the trigger heal sets the
-            # baseline to current price every beat and the algo goes blind to frozen
-            # loss accumulation (pe_excess = pe_now - healed_pe_now = 0 always).
+            # highest-lots strike as the new active — regardless of open-strike count
+            # AND regardless of whether the user has pinned the strike (active_strike_pinned).
+            # The pin is respected only while there are live lots at the pinned strike.
+            # When close-at-5 drains the last active lot, the pin is stale and must be
+            # cleared so the trigger system regains a valid baseline. Without this, the
+            # pinned-but-empty strike keeps the auto-promote skipped every beat, and the
+            # trigger heal sets the baseline to current price → algo goes blind.
             if side_state.get('active_lots', 0) == 0 and open_strikes:
                 best_strike = max(open_strikes, key=open_strikes.get)
                 for pos in positions:
@@ -6902,6 +6950,7 @@ class MMMMonitor:
                         pos['status'] = 'active'
                         pos['shifted_at'] = None
                 side_state['active_strike'] = best_strike
+                side_state['active_strike_pinned'] = False  # stale pin cleared
                 recompute_side_lots(side_state)
                 session[side] = side_state
                 changed = True
@@ -6931,6 +6980,11 @@ class MMMMonitor:
                 except Exception:
                     pass
                 continue  # Don't fall through to normal ATM-proximity logic
+
+            # Skip normal ATM-proximity promotion if user pinned the strike.
+            # (Zero-lots recovery above already ran and cleared the pin when needed.)
+            if side_state.get('active_strike_pinned'):
+                continue
 
             if len(open_strikes) <= 1:
                 continue  # Only one open strike, nothing to promote
@@ -7075,8 +7129,21 @@ class MMMMonitor:
             if exp.tzinfo is None:
                 exp = exp.replace(tzinfo=timezone.utc)
             now = datetime.now(timezone.utc)
-            delta = (exp - now).total_seconds() / 60
-            return max(delta, 0)
+            minutes_to_expiry = max((exp - now).total_seconds() / 60, 0)
+
+            # Short Window: if session_deadline_utc is set, use the earlier deadline
+            deadline_str = self.session.get('session_deadline_utc')
+            if deadline_str:
+                try:
+                    deadline_dt = datetime.fromisoformat(deadline_str)
+                    if deadline_dt.tzinfo is None:
+                        deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+                    minutes_to_deadline = max((deadline_dt - now).total_seconds() / 60, 0)
+                    return min(minutes_to_expiry, minutes_to_deadline)
+                except (ValueError, TypeError):
+                    pass
+
+            return minutes_to_expiry
         except (ValueError, TypeError):
             return None
 

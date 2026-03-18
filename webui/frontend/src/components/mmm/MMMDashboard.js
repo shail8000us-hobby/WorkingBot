@@ -47,6 +47,7 @@ import {
   ToggleButton,
   Switch,
   FormControlLabel,
+  Slider,
 } from '@mui/material';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import {
@@ -85,6 +86,7 @@ import MMMSafetyPanel from './MMMSafetyPanel';
 import MMMMarginGuardianPanel from './MMMMarginGuardianPanel';
 import MMMRegimePanel from './MMMRegimePanel';
 import MMMPerpHedgePanel from './MMMPerpHedgePanel';
+import MMMPerformancePanel from './MMMPerformancePanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -290,8 +292,15 @@ export const SessionCard = ({ session, selected, onSelect, onControl }) => {
               {session.session_id}
             </Typography>
             {session.dte_category && session.dte_category !== '0DTE' && (
-              <Chip label={session.dte_category} size="small" color="info" variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />
+              <Chip
+                label={session.dte_category === 'SHORT_WINDOW'
+                  ? `${session.session_window_hours || 5}h`
+                  : session.dte_category}
+                size="small"
+                color={session.dte_category === 'SHORT_WINDOW' ? 'warning' : 'info'}
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+              />
             )}
             {/* Health Grade Badge */}
             {session._health_grade && (
@@ -575,6 +584,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     max_lots_per_side: 100,
     max_adjustments: 30,
     max_loss_amount: 50000,
+    session_window_hours: 0,
   });
   const [importData, setImportData] = useState({
     ce: { strike: '', premium: '', lots: '' },
@@ -598,6 +608,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         max_lots_per_side: preset.max_lots_per_side ?? prev.max_lots_per_side,
         max_loss_amount: preset.max_loss_amount ?? prev.max_loss_amount,
         min_trigger_move: preset.min_trigger_move ?? prev.min_trigger_move,
+        session_window_hours: preset.session_window_hours ?? 0,
       }));
     }
   };
@@ -770,7 +781,9 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                 <MenuItem value="">Custom (no preset)</MenuItem>
                 {Object.keys(dtePresets).map((name) => (
                   <MenuItem key={name} value={name}>
-                    {name}
+                    {name === 'SHORT_WINDOW'
+                      ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
+                      : name}
                     {dtePresets[name]?.max_loss_amount && (
                       <Typography
                         component="span"
@@ -805,18 +818,58 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         {/* DTE preset info */}
         {dtePreset && dtePresets[dtePreset] && (
           <Alert severity="info" sx={{ mb: 2 }} icon={false}>
-            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-              {dtePreset} Preset Applied
-            </Typography>
-            <Typography variant="body2">
-              Interval: {dtePresets[dtePreset].adjustment_interval}s
-              {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
-              {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
-              {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
-            </Typography>
-            <Typography variant="caption" color="text.secondary">
-              You can override any parameter below. The preset provides defaults.
-            </Typography>
+            {dtePreset === 'SHORT_WINDOW' ? (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  Short Window Preset — Evening Theta Harvest
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Optimized for 1–8h evening sessions. Wind-down starts 1h before deadline.
+                  Auto-closes all positions at session end.
+                </Typography>
+                <Box sx={{ px: 1 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
+                    Session window: {params.session_window_hours}h
+                  </Typography>
+                  <Slider
+                    value={params.session_window_hours || 5}
+                    min={1}
+                    max={8}
+                    step={0.5}
+                    marks={[
+                      { value: 1, label: '1h' },
+                      { value: 3, label: '3h' },
+                      { value: 5, label: '5h' },
+                      { value: 8, label: '8h' },
+                    ]}
+                    valueLabelDisplay="auto"
+                    onChange={(_, v) => handleParamChange('session_window_hours', v)}
+                    sx={{ mt: 0.5 }}
+                  />
+                </Box>
+                <Typography variant="caption" color="text.secondary">
+                  Interval: {dtePresets[dtePreset].adjustment_interval}s
+                  {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
+                  {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
+                  {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                </Typography>
+              </>
+            ) : (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  {dtePreset} Preset Applied
+                </Typography>
+                <Typography variant="body2">
+                  Interval: {dtePresets[dtePreset].adjustment_interval}s
+                  {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
+                  {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
+                  {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  You can override any parameter below. The preset provides defaults.
+                </Typography>
+              </>
+            )}
           </Alert>
         )}
 
@@ -1934,6 +1987,7 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
         <Tab label="Regime" />
         <Tab label="Perp Hedge" />
         <Tab label="Risk" />
+        <Tab label="Performance" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -2741,6 +2795,13 @@ const SessionDetail = ({ session, wsData, onBothSidesAction, onPartialEntryActio
           <MMMGammaPanel
             gamma={heartbeat?.gamma || session._gamma_result}
           />
+        </Box>
+      )}
+
+      {/* Tab 15: Performance Intelligence */}
+      {detailTab === 15 && (
+        <Box>
+          <MMMPerformancePanel sessionId={session?.session_id} />
         </Box>
       )}
 

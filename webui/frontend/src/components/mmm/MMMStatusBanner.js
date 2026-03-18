@@ -299,6 +299,33 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction,
           </Tooltip>
         )}
 
+        {/* Short Window deadline countdown */}
+        {session?.session_deadline_utc && (() => {
+          const deadlineMs = new Date(session.session_deadline_utc).getTime();
+          const remainMs = Math.max(0, deadlineMs - now);
+          const remainMin = Math.floor(remainMs / 60000);
+          const remainH = Math.floor(remainMin / 60);
+          const remMin = remainMin % 60;
+          const label = remainH > 0 ? `⏱ ${remainH}h ${remMin}m left` : `⏱ ${remainMin}m left`;
+          const urgent = remainMin < 30;
+          return (
+            <Tooltip title={`Short Window deadline: session will wind down and close all positions at ${new Date(session.session_deadline_utc).toLocaleTimeString()}`}>
+              <Chip
+                label={label}
+                size="small"
+                sx={{
+                  cursor: 'help',
+                  bgcolor: urgent ? 'rgba(211,47,47,0.12)' : 'rgba(237,108,2,0.12)',
+                  color: urgent ? '#d32f2f' : '#ed6c02',
+                  fontWeight: 700,
+                  borderColor: urgent ? '#d32f2f' : '#ed6c02',
+                  border: '1px solid',
+                }}
+              />
+            </Tooltip>
+          );
+        })()}
+
         {/* Wind-Down Mode Active */}
         {heartbeat?.wind_down_active && (
           <Tooltip title="Wind-down mode is ACTIVE. The algo is reducing positions instead of adding new ones. Trigger events cause buybacks (LIFO) instead of adjustments.">

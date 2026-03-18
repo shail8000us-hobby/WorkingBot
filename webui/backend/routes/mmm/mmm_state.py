@@ -587,14 +587,15 @@ DEFAULT_PARAMS = {
     'shift_match_max_inflate_mult': 1.5,   # cap inflation: lots = min(opposite_lots, formula_lots × this)
 
     # Multi-Expiry DTE Presets
-    'dte_category': '',                    # '0DTE', '5DTE' — set at session creation
+    'dte_category': '',                    # '0DTE', '5DTE', 'SHORT_WINDOW' — set at session creation
     'total_dte_hours': 0.0,                # total hours from creation to expiry (computed)
+    'session_window_hours': 0.0,           # Short Window: 0 = disabled, >0 = auto-exit after N hours
     'global_max_loss': 50000.0,            # aggregate max loss across all active sessions ($)
 }
 
 # Which parameters can be changed while algo is running
 HOT_RELOAD_PARAMS = {
-    'dte_category', 'total_dte_hours',
+    'dte_category', 'total_dte_hours', 'session_window_hours',
     'adjustment_interval', 'min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
     'pre_sell_shift_enabled', 'shift_cooldown_sec',
@@ -862,7 +863,8 @@ def create_session(
         'last_heartbeat': datetime.now(timezone.utc).isoformat(),
         'next_heartbeat': None,
         # C-5 fix: compute expiry_time from params['expiry'] at creation
-        'expiry_time': None,  # populated below
+        'expiry_time': None,      # populated below
+        'session_deadline_utc': None,  # Short Window: set when monitor starts
 
         # Parameters
         'params': merged_params,
@@ -1130,6 +1132,8 @@ def get_session_summary(session: Dict) -> Dict:
         'expiry': session.get('params', {}).get('expiry', ''),   # DDMMYYYY
         'expiry_time': session.get('expiry_time'),                # ISO UTC string
         'dte_category': session.get('params', {}).get('dte_category', ''),
+        'session_deadline_utc': session.get('session_deadline_utc'),
+        'session_window_hours': session.get('params', {}).get('session_window_hours', 0),
 
         # Pause context (if paused)
         '_paused_reason': session.get('_paused_reason', ''),
