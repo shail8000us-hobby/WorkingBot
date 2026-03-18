@@ -471,17 +471,30 @@ const ReconcilePanel = ({ sessionId }) => {
 
       {result && (
         <Box>
+          {/* Pre-deployment gap note */}
+          {!result.is_clean && (result.trade_count ?? 0) === 0 && (
+            <Alert severity="info" sx={{ mb: 2, fontSize: '0.78rem' }}>
+              Trade count is 0 — this session started before the audit system was deployed.
+              The P&L delta reflects historical fills that were never recorded.
+              New fills from this point onwards will be audited. This is not a data integrity error.
+            </Alert>
+          )}
+
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
             {result.is_clean ? (
               <CheckCircleIcon sx={{ color: '#4caf50' }} />
             ) : (
-              <ErrorIcon sx={{ color: '#f44336' }} />
+              <ErrorIcon sx={{ color: (result.trade_count ?? 0) === 0 ? '#ff9800' : '#f44336' }} />
             )}
             <Typography
               variant="h6"
-              sx={{ fontWeight: 700, color: result.is_clean ? '#4caf50' : '#f44336' }}
+              sx={{ fontWeight: 700, color: result.is_clean ? '#4caf50' : (result.trade_count ?? 0) === 0 ? '#ff9800' : '#f44336' }}
             >
-              {result.is_clean ? 'CLEAN — Audit matches session state' : 'MISMATCH — Discrepancy detected'}
+              {result.is_clean
+                ? 'CLEAN — Audit matches session state'
+                : (result.trade_count ?? 0) === 0
+                  ? 'PRE-DEPLOYMENT — No audit data recorded yet'
+                  : 'MISMATCH — Discrepancy detected'}
             </Typography>
           </Box>
 
@@ -565,7 +578,8 @@ const ReconcileBanner = ({ sessionId }) => {
   }, [sessionId]);
 
   if (!checked || !result) return null;
-  if (result.is_clean) return null;  // silent on clean
+  if (result.is_clean) return null;           // silent on clean
+  if ((result.trade_count ?? 0) === 0) return null;  // pre-deployment session — no audit data yet
 
   return (
     <Alert
