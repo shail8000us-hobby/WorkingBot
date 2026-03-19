@@ -118,14 +118,14 @@ const AggregatePnLWidget = () => {
   const fetchAgg = useCallback(async () => {
     try {
       const result = await mmmService.getAggregatePnL();
-      if (result.success) setData(result);
+      if (result.success && result.aggregate) setData(result.aggregate);
     } catch (_) { /* non-critical */ }
   }, []);
 
   useEffect(() => { fetchAgg(); }, [fetchAgg]);
   useVisibilityAwarePolling(fetchAgg, 30000, 120000, true);
 
-  if (!data || data.active_sessions === 0) return null;
+  if (!data || data.session_count === 0) return null;
 
   const cfg = AGGREGATE_LEVEL_CONFIG[data.level] || AGGREGATE_LEVEL_CONFIG.ok;
   const pnl = data.combined_pnl ?? 0;
@@ -253,11 +253,77 @@ const getCountdownColor = (expiryInfo) => {
   return '#f44336';                       // < 1 hour: red
 };
 
+// ── Radar background — SVG data-URI injected as Card backgroundImage ─────────
+const _RADAR_REGIME_SCORES = {
+  NORMAL: 95, BLOCK_CE_SELLS: 65, BLOCK_PE_SELLS: 65,
+  BLOCK_ALL_SELLS: 35, PAUSE: 15, FORCE_REDUCE: 5,
+};
+const _RADAR_TREND_SCORES = { 0: 95, 1: 70, 2: 45, 3: 20, 4: 5 };
+
+function _radarBgImage(session, heartbeat) {
+  const deg = (d) => (d * Math.PI) / 180;
+  const CX = 50, CY = 50, R = 38;
+  const hb = heartbeat || {};
+
+  // Prefer live heartbeat data, fall back to stored session summary fields
+  const beDist = hb.breakeven?.nearest_distance_pct ?? session._be_nearest_pct;
+  const beEnabled = hb.breakeven?.enabled ?? session._be_enabled;
+  const beScore = beEnabled && beDist != null ? Math.min(100, (beDist / 5.0) * 100) : 100;
+
+  const gDist = hb.gamma?.nearest_distance_pct ?? session._gamma_nearest_pct;
+  const gEnabled = hb.gamma?.enabled ?? session._gamma_enabled;
+  const gammaScore = gEnabled && gDist != null ? Math.min(100, (gDist / 6.0) * 100) : 100;
+
+  const marginUtil = hb.margin?.utilization_pct;
+  const marginScore = marginUtil != null ? Math.max(0, 100 - marginUtil) : 85;
+
+  const regimeAction = hb.regime?.action || hb.regime?.regime_action || session._regime_action || 'NORMAL';
+  const regimeScore  = _RADAR_REGIME_SCORES[regimeAction] ?? 95;
+
+  const trendTier = hb.regime?.trend_tier ?? session._trend_tier ?? 0;
+  const trendScore = _RADAR_TREND_SCORES[trendTier] ?? 95;
+
+  const scores = [beScore, gammaScore, marginScore, regimeScore, trendScore];
+  const worst  = Math.min(...scores);
+  const color  = worst < 30 ? '#f44336' : worst < 60 ? '#ff9800' : '#4caf50';
+
+  const pt = (s, i) => {
+    const a = deg(-90 + i * 72);
+    const r = (s / 100) * R;
+    return `${(CX + r * Math.cos(a)).toFixed(1)},${(CY + r * Math.sin(a)).toFixed(1)}`;
+  };
+  const scorePts = scores.map((s, i) => pt(s, i)).join(' ');
+
+  const ringPts = (f) => Array.from({ length: 5 }, (_, i) => {
+    const a = deg(-90 + i * 72);
+    const r = f * R;
+    return `${(CX + r * Math.cos(a)).toFixed(1)},${(CY + r * Math.sin(a)).toFixed(1)}`;
+  }).join(' ');
+
+  const dots = scores.map((s, i) => {
+    const a = deg(-90 + i * 72);
+    const r = (s / 100) * R;
+    return `<circle cx='${(CX + r * Math.cos(a)).toFixed(1)}' cy='${(CY + r * Math.sin(a)).toFixed(1)}' r='1.5' fill='${color}' opacity='0.5'/>`;
+  }).join('');
+
+  const svg = [
+    `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'>`,
+    `<polygon points='${ringPts(0.33)}' fill='none' stroke='white' stroke-width='0.4' opacity='0.12'/>`,
+    `<polygon points='${ringPts(0.67)}' fill='none' stroke='white' stroke-width='0.4' opacity='0.12'/>`,
+    `<polygon points='${ringPts(1)}'    fill='none' stroke='white' stroke-width='0.4' opacity='0.12'/>`,
+    `<polygon points='${scorePts}' fill='${color}' fill-opacity='0.12' stroke='${color}' stroke-width='1.2' opacity='0.45'/>`,
+    dots,
+    `</svg>`,
+  ].join('');
+
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+
 /**
  * Session card condensed view
  */
 // 🔒 SEALED #74 — test: test_sealed_mmm_session_card.test.js
-export const SessionCard = ({ session, selected, onSelect, onControl }) => {
+export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat }) => {
   const status = session.status || 'IDLE';
   const cfg = getStatusConfig(status);
 
@@ -283,6 +349,10 @@ export const SessionCard = ({ session, selected, onSelect, onControl }) => {
           ? `2px solid ${cfg.color}`
           : '1px solid rgba(255,255,255,0.12)',
         backgroundColor: selected ? cfg.bg : 'transparent',
+        backgroundImage: _radarBgImage(session, heartbeat),
+        backgroundRepeat: 'no-repeat',
+        backgroundPosition: 'right 8px bottom 8px',
+        backgroundSize: '42% 75%',
         transition: 'all 0.2s',
         '&:hover': { backgroundColor: cfg.bg },
       }}
@@ -362,7 +432,7 @@ export const SessionCard = ({ session, selected, onSelect, onControl }) => {
             </Typography>
             {(session.realized_pnl !== 0 || session.net_pnl !== 0) && (
               <Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary', fontSize: '0.65rem' }}>
-                R: ${(session.realized_pnl || 0).toFixed(2)} &nbsp; U: ${((session.net_pnl || 0) - (session.realized_pnl || 0)).toFixed(2)}
+                R: ${(session.realized_pnl || 0).toFixed(2)} &nbsp; U: ${(session.unrealized_pnl || 0).toFixed(2)} &nbsp; F: -${(session.total_fees || 0).toFixed(2)}
               </Typography>
             )}
           </Box>
@@ -804,6 +874,8 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   <MenuItem key={name} value={name}>
                     {name === 'SHORT_WINDOW'
                       ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
+                      : name === 'SHORT_STRADDLE'
+                      ? 'Short Straddle — Auto'
                       : name}
                     {dtePresets[name]?.max_loss_amount && (
                       <Typography
@@ -873,6 +945,25 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
                   {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
                   {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                </Typography>
+              </>
+            ) : dtePreset === 'SHORT_STRADDLE' ? (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  ⚡ Short Straddle — Dynamic Theta Sprint
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Pure ATM straddle optimized for daily BTC options. All 52 parameters
+                  auto-scale based on hours remaining to 5:30 PM IST expiry (2–12h range).
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
+                  {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                  {' • '}Trailing Stop: {(dtePresets[dtePreset].trailing_stop_pct * 100) || 25}%
+                  {' • '}Adjustments: auto-scaled
+                </Typography>
+                <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
+                  ⏱ Params computed at session creation from time-to-expiry. Select today's expiry above.
                 </Typography>
               </>
             ) : (
@@ -3389,6 +3480,7 @@ const MMMDashboard = () => {
                   selected={s.session_id === selectedSessionId}
                   onSelect={selectSession}
                   onControl={handleControl}
+                  heartbeat={s.session_id === selectedSessionId ? wsData?.heartbeat : null}
                 />
               ))}
               {tabValue === 0 && activeSessions.length === 0 && (

@@ -61,7 +61,7 @@ from .mmm_constants import LOT_SIZE_BTC, strike_key
 from .mmm_monitor import (
     start_session_monitor, stop_session_monitor,
     pause_session_monitor, resume_session_monitor,
-    get_monitor, get_all_monitors,
+    get_monitor, get_all_monitors, compute_live_pnl,
 )
 
 log = logging.getLogger('mmm_api')
@@ -71,6 +71,35 @@ log = logging.getLogger('mmm_api')
 # =============================================================================
 
 mmm_bp = Blueprint('mmm', __name__, url_prefix='/api/mmm')
+
+
+def _overlay_live_pnl(sessions_list):
+    """Replace stored P&L with live-computed values for running sessions.
+
+    The stored unrealized_pnl is a CACHE that can be stale between heartbeats.
+    For running sessions, compute_live_pnl() returns authoritative values
+    computed from the monitor's in-memory state + cached prices.
+    For stopped sessions, stored values are the final state — no overlay needed.
+
+    This function is the architectural fix that makes PnL correct at every
+    REST read, regardless of when the last heartbeat ran or what mid-heartbeat
+    events (close, shift, reduce) updated realized_pnl without refreshing
+    unrealized_pnl.
+    """
+    monitors = get_all_monitors()
+    if not monitors:
+        return
+    for s in sessions_list:
+        sid = s.get('session_id', '')
+        if sid not in monitors:
+            continue
+        live = compute_live_pnl(sid)
+        if live is None:
+            continue
+        s['realized_pnl'] = round(live['realized'], 6)
+        s['unrealized_pnl'] = round(live['unrealized'], 6)
+        s['total_fees'] = round(live['fees'], 6)
+        s['net_pnl'] = round(live['net_pnl'], 6)
 
 
 def _invalidate_sessions_cache():
@@ -100,11 +129,17 @@ def get_dte_presets():
         {success: true, presets: [...]}
     """
     try:
-        from .mmm_dte_presets import list_presets, DTE_PRESETS
+        from .mmm_dte_presets import list_presets, DTE_PRESETS, SHORT_STRADDLE_CATEGORY, build_short_straddle_preset
+        # Include dynamic preset with example values (5h) for UI display
+        preset_details = {k: v for k, v in DTE_PRESETS.items()}
+        try:
+            preset_details[SHORT_STRADDLE_CATEGORY] = build_short_straddle_preset(5.0)
+        except ValueError:
+            pass  # Should never fail at 5h, but be safe
         return jsonify({
             'success': True,
             'presets': list_presets(),
-            'preset_details': {k: v for k, v in DTE_PRESETS.items()},
+            'preset_details': preset_details,
         })
     except Exception as e:
         log.exception("Failed to get DTE presets")
@@ -127,6 +162,9 @@ def get_aggregate_pnl():
         active = [s for s in all_sessions
                   if s.get('strategy_status') in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP',
                                                   'STARTING', 'PARTIAL_ENTRY')]
+        # ARCHITECTURAL FIX: live P&L overlay — aggregate safety check
+        # must use live values, not stale stored fields
+        _overlay_live_pnl(active)
         result = check_aggregate_pnl(active)
         return jsonify({'success': True, 'aggregate': result})
     except Exception as e:
@@ -164,6 +202,13 @@ def list_sessions():
         else:
             sessions = storage.list_sessions(active_only=active_only)
 
+        # ARCHITECTURAL FIX: For running sessions, replace stored P&L (which
+        # can be stale between heartbeats) with live-computed values from the
+        # monitor's cached prices. This eliminates the stale-unrealized bug
+        # class entirely — no more race windows between close events and
+        # heartbeat step 8.
+        _overlay_live_pnl(sessions)
+
         return jsonify({
             'success': True,
             'sessions': sessions,
@@ -198,6 +243,9 @@ def get_session(session_id: str):
 
         summary_mode = request.args.get('summary', 'false').lower() == 'true'
         data = get_session_summary(session) if summary_mode else session
+
+        # ARCHITECTURAL FIX: live P&L overlay for running sessions
+        _overlay_live_pnl([data])
 
         return jsonify({'success': True, 'session': data})
 
@@ -492,6 +540,7 @@ def start_session(session_id: str):
                       if s.get('strategy_status') in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP',
                                                       'STARTING', 'PARTIAL_ENTRY')
                       and s.get('session_id') != session_id]
+            _overlay_live_pnl(active)
             global_max = session.get('params', {}).get('global_max_loss', 50000.0)
             agg_check = check_aggregate_pnl(active, global_max)
             if not agg_check['safe']:
@@ -819,6 +868,14 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     pe_strike_key = strike_key(session['pe'].get('active_strike', 0))
     session['ce']['trigger_snapshot'] = {ce_strike_key: ce_fill}
     session['pe']['trigger_snapshot'] = {pe_strike_key: pe_fill}
+
+    # Record exchange commissions from initial entry sells — Delta uses 'paid_commission'
+    _ce_od = ce_res.get('order_details') or {}
+    _pe_od = pe_res.get('order_details') or {}
+    _ce_comm = float(_ce_od.get('paid_commission', 0) or _ce_od.get('commission', 0) or 0)
+    _pe_comm = float(_pe_od.get('paid_commission', 0) or _pe_od.get('commission', 0) or 0)
+    if _ce_comm or _pe_comm:
+        session['total_fees'] = session.get('total_fees', 0) + abs(_ce_comm) + abs(_pe_comm)
 
     actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
     session['actual_total_premium'] = actual_premium
@@ -1179,6 +1236,12 @@ def _retry_partial_leg_background(
     session[side]['entry_fill_price'] = fill_price
     session[side]['entry_order_id'] = result.get('order_id')
     session[side]['original_premium'] = fill_price
+
+    # Record exchange commission from retry leg fill — Delta uses 'paid_commission'
+    _od = result.get('order_details') or {}
+    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    if _commission:
+        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
 
     # Update trigger snapshot for retried side
     retried_strike_key = strike_key(session[side].get('active_strike', 0))
@@ -1679,6 +1742,134 @@ def get_params_info():
         })
     except Exception as e:
         log.exception("Failed to get param info")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/parameter_suggestions', methods=['GET'])
+def get_parameter_suggestions():
+    """
+    Compute cross-session parameter suggestions based on the last N completed sessions.
+    Returns human-readable suggestions the operator can accept or reject.
+    This is decision support — nothing is auto-applied.
+
+    Query params:
+      n  — number of recent sessions to analyse (default 3, min 2)
+    """
+    try:
+        n = max(2, int(request.args.get('n', 3)))
+        storage = get_storage()
+        all_sessions = storage.list_sessions() or []
+
+        # Only completed sessions with meaningful analytics
+        completed = [
+            s for s in all_sessions
+            if s.get('strategy_status') in ('STOPPED', 'COMPLETE')
+            and s.get('session_id')
+        ]
+        # Most recent N
+        completed = sorted(completed, key=lambda s: s.get('updated_at', ''), reverse=True)[:n]
+
+        if len(completed) < 2:
+            return jsonify({
+                'success': True,
+                'suggestions': [],
+                'message': f'Need at least 2 completed sessions (have {len(completed)}). '
+                           'Run more sessions to unlock suggestions.',
+            })
+
+        suggestions = []
+
+        # Aggregate metrics across sessions using real session fields
+        whipsaw_ratios, shield_exhausted_pct = [], []
+        for s in completed:
+            fires_total = (
+                s.get('_atm_shield_count_ce', 0) + s.get('_atm_shield_count_pe', 0)
+            )
+            max_fires = s.get('params', {}).get('atm_shield_max_per_session', 3) * 2
+
+            if fires_total > 0:
+                # Whipsaw proxy: reversal_count / adjustment_count
+                # High ratio = price kept reversing → shields likely fired on oscillations
+                rev = s.get('reversal_count', 0)
+                adj = max(1, s.get('adjustment_count', 1))
+                whipsaw_ratios.append(rev / adj)
+                shield_exhausted_pct.append(1.0 if fires_total >= max_fires else 0.0)
+
+        avg_whipsaw = sum(whipsaw_ratios) / len(whipsaw_ratios) if whipsaw_ratios else 0
+        avg_efficiency = 1.0  # reserved — requires per-fire buyback tracking not yet implemented
+        pct_exhausted = sum(shield_exhausted_pct) / len(shield_exhausted_pct) if shield_exhausted_pct else 0
+
+        sample_params = completed[0].get('params', {})
+
+        # Rule 1: High whipsaw ratio → fire less eagerly
+        if avg_whipsaw > 0.4:
+            cur_prox = sample_params.get('atm_shield_proximity_pct', 0.5)
+            cur_cool = sample_params.get('atm_shield_cooldown_mins', 10)
+            suggestions.append({
+                'param': 'atm_shield_proximity_pct',
+                'current': cur_prox,
+                'suggested': round(max(0.2, cur_prox * 0.85), 2),
+                'reason': (
+                    f'Shield fired and price reversed {avg_whipsaw*100:.0f}% of the time '
+                    f'(threshold: 40%). Shield is firing too eagerly in oscillating conditions. '
+                    f'Tighten proximity (fire closer to ATM) to reduce false fires.'
+                ),
+            })
+            suggestions.append({
+                'param': 'atm_shield_cooldown_mins',
+                'current': cur_cool,
+                'suggested': min(30, round(cur_cool * 1.3)),
+                'reason': (
+                    f'High whipsaw ratio ({avg_whipsaw*100:.0f}%). '
+                    f'Extending cooldown reduces rapid-fire shield activation in choppy markets.'
+                ),
+            })
+
+        # Rule 2: Low shield efficiency → reduce recovery lot aggression
+        if avg_efficiency < 0.8:
+            cur_split = sample_params.get('atm_shield_loss_split_aggressor', 0.3)
+            suggestions.append({
+                'param': 'atm_shield_loss_split_aggressor',
+                'current': cur_split,
+                'suggested': round(max(0.1, cur_split * 0.8), 2),
+                'reason': (
+                    f'Shield recovered only {avg_efficiency*100:.0f}% of buyback cost '
+                    f'(threshold: 80%). Recovery lots are over-recovering — '
+                    f'reduce aggressor split to sell fewer recovery lots per fire.'
+                ),
+            })
+
+        # Rule 3: Shield exhausted most sessions → increase max_per_session
+        if pct_exhausted > 0.5:
+            cur_max = sample_params.get('atm_shield_max_per_session', 3)
+            suggestions.append({
+                'param': 'atm_shield_max_per_session',
+                'current': cur_max,
+                'suggested': min(10, cur_max + 1),
+                'reason': (
+                    f'Shield was exhausted in {pct_exhausted*100:.0f}% of sessions '
+                    f'(threshold: 50%). Increase max_per_session to give the shield '
+                    f'more capacity in future sessions.'
+                ),
+            })
+
+        return jsonify({
+            'success': True,
+            'sessions_analysed': len(completed),
+            'metrics': {
+                'avg_whipsaw_ratio': round(avg_whipsaw, 3),
+                'avg_shield_efficiency': round(avg_efficiency, 3),
+                'pct_sessions_exhausted': round(pct_exhausted, 3),
+            },
+            'suggestions': suggestions,
+            'message': (
+                f'Based on {len(completed)} completed sessions. '
+                'All suggestions require operator confirmation — nothing is auto-applied.'
+            ),
+        })
+
+    except Exception as e:
+        log.exception("Failed to compute parameter suggestions")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -3406,6 +3597,11 @@ def reduce_position(session_id: str):
 
                     group_realized = (avg_entry - fill_price) * group_lots * LOT_SIZE_BTC
                     total_realized += group_realized
+                    # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+                    _od = result.get('order_details') or {}
+                    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+                    if _commission:
+                        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
                     session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
                     session['manual_reduction_pnl'] = (
                         session.get('manual_reduction_pnl', 0) + group_realized
@@ -3467,6 +3663,21 @@ def reduce_position(session_id: str):
             log.warning(f'[{session_id}] Could not reset trigger snapshots after manual reduce: {snap_err}')
 
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
+
+        # AUDIT FIX (stale-unrealized bug): realized_pnl increased from the closes but
+        # unrealized_pnl is stale (still includes the just-closed positions' contributions).
+        # Refresh it via the monitor's cached prices before saving so that the REST response
+        # to the frontend's fetchSessions() call returns an accurate net_pnl.
+        try:
+            from .mmm_monitor import get_monitor as _get_mon
+            _mon = _get_mon(session_id)
+            if _mon and hasattr(_mon, '_engine') and hasattr(_mon, '_make_fetch_fn'):
+                _fresh = _mon._engine.compute_unrealized_pnl(session, _mon._make_fetch_fn())
+                session['unrealized_pnl'] = _fresh
+                log.debug(f"[{session_id}] P&L refresh after manual reduce: unrealized={_fresh:.4f}")
+        except Exception as _e:
+            log.warning(f"[{session_id}] P&L refresh after manual reduce failed (non-critical): {_e}")
+
         storage.save_session(session)
 
         # Emit WebSocket event so frontend updates immediately
@@ -3644,6 +3855,13 @@ def inject_position(session_id: str):
 
             fill_price = float(result.get('fill_price', 0))
             order_id = str(result.get('order_id', ''))
+
+            # Record exchange commission from inject sell
+            _od = result.get('order_details') or {}
+            _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+            if _commission:
+                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+
         now = datetime.now(timezone.utc).isoformat()
 
         # --- Record fill in positions[] (Unified Ledger) ---
@@ -4111,6 +4329,13 @@ def close_strike_route(session_id: str):
 
         fill_price = float(result.get('fill_price', 0))
         order_id = str(result.get('order_id', ''))
+
+        # Record exchange commission from close-at-strike buyback
+        _od = result.get('order_details') or {}
+        _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+        if _commission:
+            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+
         now = datetime.now(timezone.utc).isoformat()
 
         # Mark all target positions as closed and compute realized P&L
