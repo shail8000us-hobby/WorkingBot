@@ -122,6 +122,158 @@ DTE_PRESETS = {
     '5DTE': PRESET_5DTE,
 }
 
+# Dynamic preset identifier — not in DTE_PRESETS because it's a factory function
+SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'
+
+
+def build_short_straddle_preset(hours_to_expiry: float) -> dict:
+    """
+    Dynamic short straddle preset — computes time-proportional parameters.
+
+    Delta Exchange BTC options expire daily at 5:30 PM IST (12:00 UTC).
+    Call this at session creation with actual hours remaining.
+
+    Fixed params (37): strategy-intrinsic, same for all durations.
+    Scaled params (11): proportional to H with clamp(min, max).
+    Regime tiers (4): widen for longer sessions.
+
+    See docs/SHORT_STRADDLE_5H_PRESET.md for full design rationale.
+
+    Args:
+        hours_to_expiry: Hours until expiry (2.0 to 12.0)
+
+    Returns:
+        Complete parameter dict for the session
+
+    Raises:
+        ValueError: if hours_to_expiry < 2 or > 12
+    """
+    H = hours_to_expiry
+
+    if H < 2:
+        raise ValueError(
+            f"Short straddle requires ≥2h to expiry (got {H:.1f}h). "
+            f"Below 2h, gamma risk dominates and theta is insufficient."
+        )
+    if H > 12:
+        raise ValueError(
+            f"Short straddle preset supports ≤12h (got {H:.1f}h). "
+            f"For longer sessions, use PRESET_SHORT_WINDOW or PRESET_5DTE."
+        )
+
+    def clamp(val, min_val, max_val):
+        return max(min_val, min(max_val, val))
+
+    return {
+        # ── Identity / UI ──
+        'preset_name': f'Short Straddle – {H:.0f}H Sprint',
+        'description': (
+            f'ATM short straddle, {H:.0f}h window. '
+            f'Dynamic params auto-scaled from time-to-expiry. '
+            f'Conservative lot sizing with full perp delta hedge.'
+        ),
+
+        # ── DTE / Session ──
+        'dte_category': '0DTE',
+        'total_dte_hours': H,
+        'session_window_hours': H,
+
+        # ── Lot Sizing (fixed) ──
+        'initial_lots': 1,
+        'max_lots_per_side': 5,
+        'max_total_exposure': 10,
+        'max_adjustments': clamp(round(H * 4), 10, 50),
+
+        # ── Heartbeat ──
+        'adjustment_interval': 120,
+        'adaptive_interval_enabled': True,
+        'adaptive_max_interval': clamp(round(H * 60), 180, 600),
+
+        # ── Trigger Logic (fixed) ──
+        'min_trigger_move': 8.0,
+        'premium_buffer_pct': 0.08,
+        'shift_threshold': 30,
+        'shift_target_premium': 100,
+        'close_at_threshold': 5,
+
+        # ── Near-Expiry (fixed absolute thresholds) ──
+        'stop_adjustment_mins': 30,
+        'auto_close_mins': 10,
+        'theta_acceleration_window': clamp(round(H * 36), 60, 360),
+
+        # ── Wind-Down (scaled — consumed by mmm_wind_down.py) ──
+        'wind_down_enabled': True,
+        'wind_down_hours_before_expiry': round(clamp(H * 0.20, 0.5, 2.0), 1),
+        'wind_down_close_threshold': 30.0,
+        'wind_down_floor_action': 'close_all',
+        'wind_down_on_atm': False,
+
+        # ── P&L Guardrails (fixed) ──
+        'max_loss_amount': 3.0,
+        'trailing_stop_pct': 0.25,
+
+        # ── Reversal / Whipsaw (scaled window, fixed thresholds) ──
+        'cooldown_on_reversal': True,
+        'reversal_cooldown_seconds': 120,
+        'whipsaw_window_mins': clamp(round(H * 3), 10, 30),
+        'whipsaw_spot_move_pct': 0.4,
+        'whipsaw_caution_score': 2,
+        'whipsaw_restrict_score': 3,
+        'whipsaw_cooldown_score': 4,
+
+        # ── Lot Velocity (scaled window) ──
+        'lot_velocity_enabled': True,
+        'lot_velocity_window_mins': clamp(round(H * 3), 10, 30),
+        'lot_velocity_limit': 10,
+
+        # ── Asymmetry (fixed) ──
+        'asymmetry_7to1_hard_block': True,
+        'asymmetry_5to1_lot_reduction': 0.5,
+
+        # ── Regime Tiers (scaled — widen for longer sessions) ──
+        'regime_enabled': True,
+        'trend_tier1_pct': round(clamp(H * 0.06, 0.2, 0.5), 2),
+        'trend_tier2_pct': round(clamp(H * 0.12, 0.4, 1.0), 2),
+        'trend_tier3_pct': round(clamp(H * 0.20, 0.7, 1.5), 2),
+        'trend_tier4_pct': round(clamp(H * 0.30, 1.0, 2.5), 2),
+
+        # ── ATM Shield (scaled budget) ──
+        'atm_shield_enabled': True,
+        'atm_shield_proximity_pct': 0.3,
+        'atm_shield_target_otm_pct': 0.8,
+        'atm_shield_max_per_session': clamp(round(H * 0.4), 1, 4),
+        'atm_shield_cooldown_mins': 10,
+        'atm_shield_partial_pct': 1.0,
+
+        # ── Breakeven (fixed) ──
+        'breakeven_control_enabled': True,
+        'breakeven_warning_pct': 1.5,
+        'breakeven_danger_pct': 0.8,
+        'breakeven_critical_pct': 0.3,
+        'breakeven_aggression_max': 2.5,
+
+        # ── Perp Hedge (fixed) ──
+        'perp_hedge_enabled': True,
+        'perp_hedge_mode': 'full',
+        'perp_hedge_delta_threshold': 0.015,
+        'perp_hedge_max_lots': 10,
+        'perp_hedge_cooldown_sec': 20,
+
+        # ── Lot Lifecycle (scaled harvest age) ──
+        'scale_enabled': False,
+        'harvest_enabled': True,
+        'harvest_profit_pct': 30.0,
+        'harvest_min_age_mins': clamp(round(H * 3), 10, 30),
+        'harvest_max_per_beat': 3,
+        'harvest_pressure_threshold': 0.3,
+        'recycle_enabled': False,
+        'proactive_shift_enabled': False,
+
+        # ── Adaptive (fixed) ──
+        'adaptive_mode': 'preset',
+        'adaptive_preset': 'straddle',
+    }
+
 
 def get_preset(dte_category: str) -> Optional[Dict]:
     """Get a preset by DTE category name. Returns None if not found."""
@@ -142,6 +294,18 @@ def list_presets() -> List[Dict]:
         if 'session_window_hours' in preset:
             entry['session_window_hours'] = preset['session_window_hours']
         result.append(entry)
+
+    # Include dynamic preset with example values (5h)
+    result.append({
+        'name': SHORT_STRADDLE_CATEGORY,
+        'dynamic': True,
+        'description': 'ATM short straddle — params auto-scaled from time-to-expiry (2–12h)',
+        'adjustment_interval': 120,
+        'min_trigger_move': 8.0,
+        'max_loss_amount': 3.0,
+        'max_lots_per_side': 5,
+    })
+
     return result
 
 
@@ -150,13 +314,43 @@ def apply_preset(params: Dict, dte_category: str) -> Dict:
     Apply a DTE preset to session params.
     Preset values are applied as defaults — explicit user params override.
 
+    For SHORT_STRADDLE: dynamically builds params from hours_to_expiry.
+    For static presets: merges the static dict.
+
     Args:
         params: User-provided params (may be partial)
-        dte_category: e.g. '0DTE', '5DTE'
+        dte_category: e.g. '0DTE', '5DTE', 'SHORT_STRADDLE'
 
     Returns:
         Merged params with preset values as base layer
     """
+    if dte_category == SHORT_STRADDLE_CATEGORY:
+        # Dynamic preset: compute hours from expiry, then build scaled params
+        expiry_str = params.get('expiry', '')
+        if not expiry_str:
+            log.warning("SHORT_STRADDLE preset requires 'expiry' param")
+            return params
+        hours = compute_total_dte_hours(
+            expiry_str,
+            params.get('expiry_hour_utc', 12),
+            params.get('expiry_minute_utc', 0),
+        )
+        try:
+            preset = build_short_straddle_preset(hours)
+        except ValueError as e:
+            log.error(f"SHORT_STRADDLE preset rejected: {e}")
+            return params
+
+        merged = {}
+        merged.update(preset)
+        merged.update(params)
+        # Restore computed dte_category (user sent 'SHORT_STRADDLE' but
+        # routing needs '0DTE' from the preset)
+        merged['dte_category'] = preset['dte_category']
+        # Preserve the original preset selection for UI display
+        merged['_preset_source'] = SHORT_STRADDLE_CATEGORY
+        return merged
+
     preset = get_preset(dte_category)
     if not preset:
         log.warning(f"Unknown DTE preset: {dte_category}")

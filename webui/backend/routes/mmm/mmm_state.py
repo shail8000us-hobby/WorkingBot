@@ -593,6 +593,14 @@ DEFAULT_PARAMS = {
     'total_dte_hours': 0.0,                # total hours from creation to expiry (computed)
     'session_window_hours': 0.0,           # Short Window: 0 = disabled, >0 = auto-exit after N hours
     'global_max_loss': 50000.0,            # aggregate max loss across all active sessions ($)
+
+    # Adaptive Tuning Engine — parameter optimization per market regime
+    # See tasks/MMM_ADAPTIVE_TUNING_PLAN.md for full design
+    'adaptive_mode': 'manual',             # 'manual' | 'preset' | 'adaptive'
+    'adaptive_preset': 'strangle',         # 'strangle' | 'straddle' | 'short_window'
+    'adaptive_dry_run': False,             # compute changes but only log, don't apply
+    'atm_shield_partial_pct': 1.0,        # fraction of lots to close on shield fire (1.0 = full)
+    'atm_shield_defer_resell_beats': 0,   # beats to wait before re-sell after shield close (0 = immediate)
 }
 
 # Which parameters can be changed while algo is running
@@ -702,6 +710,9 @@ HOT_RELOAD_PARAMS = {
     'gamma_detector_enabled', 'gamma_step_pct', 'gamma_scan_steps',
     'gamma_warning_distance_pct', 'gamma_danger_distance_pct', 'gamma_detect_epsilon',
     'gamma_severity_max_multiplier',
+    # Adaptive Tuning Engine
+    'adaptive_mode', 'adaptive_preset', 'adaptive_dry_run',
+    'atm_shield_partial_pct', 'atm_shield_defer_resell_beats',
 }
 
 
@@ -733,13 +744,19 @@ def create_session(
     # Multi-Expiry: Apply DTE preset if specified
     dte_category = merged_params.get('dte_category', '')
     if dte_category:
-        from .mmm_dte_presets import apply_preset
+        from .mmm_dte_presets import apply_preset, SHORT_STRADDLE_CATEGORY
         # Preserve user overrides: extract explicit user params, re-apply on top of preset
         user_params = params or {}
         merged_params = {**DEFAULT_PARAMS}
         merged_params = apply_preset(merged_params, dte_category)
         merged_params.update(user_params)
-        merged_params['dte_category'] = dte_category
+        # For dynamic presets (SHORT_STRADDLE), apply_preset sets dte_category
+        # to '0DTE' for correct safety routing. Don't clobber it.
+        # _preset_source preserves the user's original selection for UI display.
+        if dte_category == SHORT_STRADDLE_CATEGORY:
+            merged_params['dte_category'] = merged_params.get('dte_category', '0DTE')
+        else:
+            merged_params['dte_category'] = dte_category
 
     # Multi-Expiry: Compute total_dte_hours at creation time
     expiry_str = merged_params.get('expiry', '')
