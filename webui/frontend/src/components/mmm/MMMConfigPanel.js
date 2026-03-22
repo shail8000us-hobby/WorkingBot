@@ -208,7 +208,7 @@ const StrikePreviewTable = ({ label, best, alternatives, color, onSelect }) => {
 // MMMConfigPanel
 // =============================================================================
 
-const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, sessionExpiry }) => {
+const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, sessionExpiry, isStraddle }) => {
   // ----- State -----
   const [mode, setMode] = useState(initialMode || 'fresh'); // 'fresh' | 'import' | 'manual' | 'adopt'
   const [expiries, setExpiries] = useState([]);
@@ -362,6 +362,37 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
     }
   }, [selectedExpiry, desiredCePremium, desiredPePremium]);
 
+  // ----- ATM Straddle Preview (SHORT_STRADDLE preset only) -----
+  const handlePreviewAtmStraddle = useCallback(async () => {
+    if (!selectedExpiry) {
+      setError('Please select an expiry date');
+      return;
+    }
+    setPreviewLoading(true);
+    setError(null);
+    setPreview(null);
+    setSelectedCe(null);
+    setSelectedPe(null);
+
+    try {
+      const result = await mmmService.previewAtmStraddle({ expiry: selectedExpiry });
+      if (mounted.current) {
+        if (result.success) {
+          setPreview(result);
+          setSelectedCe(result.ce);
+          setSelectedPe(result.pe);
+          setSpotPrice(result.spot_price);
+        } else {
+          setError(result.error || 'Failed to find ATM strike');
+        }
+      }
+    } catch (err) {
+      if (mounted.current) setError(err.message);
+    } finally {
+      if (mounted.current) setPreviewLoading(false);
+    }
+  }, [selectedExpiry]);
+
   // ----- Initialize Session (Mode A: Fresh) -----
   const handleInitFresh = useCallback(async () => {
     if (!selectedCe || !selectedPe) {
@@ -392,7 +423,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
         pe_strike: selectedPe.strike,
         pe_premium: selectedPe.premium,
         pe_symbol: selectedPe.symbol,
-        lots,
+        lots: isStraddle ? 1 : lots,
         expiry: selectedExpiry,
       });
 
@@ -774,11 +805,13 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
           <TextField
             label="Lots per side"
             type="number"
-            value={lots}
-            onChange={(e) => setLots(Math.max(1, parseInt(e.target.value) || 1))}
+            value={isStraddle ? 1 : lots}
+            onChange={(e) => !isStraddle && setLots(Math.max(1, parseInt(e.target.value) || 1))}
             fullWidth
             size="small"
             inputProps={{ min: 1 }}
+            disabled={isStraddle}
+            helperText={isStraddle ? 'Fixed by preset' : undefined}
           />
         </Grid>
         <Grid item xs={3}>
@@ -804,69 +837,99 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
       {/* ================================================================= */}
       {mode === 'fresh' && (
         <>
-          {/* Desired premiums */}
-          <Typography variant="subtitle2" sx={{ mb: 1 }}>
-            Desired Premiums (per lot)
-          </Typography>
-          <Grid container spacing={2} sx={{ mb: 2 }}>
-            <Grid item xs={5}>
-              <TextField
-                label="CE Premium ($)"
-                type="number"
-                value={desiredCePremium}
-                onChange={(e) => setDesiredCePremium(parseFloat(e.target.value) || 0)}
-                fullWidth
-                size="small"
-                inputProps={{ min: 0.01, step: 10 }}
-              />
+          {/* Strike selection — ATM for straddle, premium-targeted for strangle */}
+          {isStraddle ? (
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={10}>
+                <Box sx={{ p: 1.5, borderRadius: 1, border: '1px solid rgba(255,255,255,0.12)', backgroundColor: 'rgba(255,255,255,0.04)' }}>
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.3 }}>
+                    Strike Selection — Short Straddle
+                  </Typography>
+                  <Typography variant="body2">
+                    ATM strike auto-selected (closest to spot). CE and PE sold at the same strike.
+                  </Typography>
+                </Box>
+              </Grid>
+              <Grid item xs={2}>
+                <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={handlePreviewAtmStraddle}
+                  disabled={previewLoading || !selectedExpiry}
+                  fullWidth
+                  sx={{ height: '100%' }}
+                  startIcon={previewLoading ? <CircularProgress size={16} /> : <SearchIcon />}
+                >
+                  {previewLoading ? 'Scanning...' : 'Find ATM'}
+                </Button>
+              </Grid>
             </Grid>
-            <Grid item xs={5}>
-              <TextField
-                label="PE Premium ($)"
-                type="number"
-                value={desiredPePremium}
-                onChange={(e) => setDesiredPePremium(parseFloat(e.target.value) || 0)}
-                fullWidth
-                size="small"
-                inputProps={{ min: 0.01, step: 10 }}
-              />
-            </Grid>
-            <Grid item xs={2}>
-              <Button
-                variant="contained"
-                color="primary"
-                onClick={handlePreviewStrikes}
-                disabled={previewLoading || !selectedExpiry}
-                fullWidth
-                sx={{ height: '100%' }}
-                startIcon={previewLoading ? <CircularProgress size={16} /> : <SearchIcon />}
-              >
-                {previewLoading ? 'Scanning...' : 'Find'}
-              </Button>
-            </Grid>
-          </Grid>
+          ) : (
+            <>
+              <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                Desired Premiums (per lot)
+              </Typography>
+              <Grid container spacing={2} sx={{ mb: 2 }}>
+                <Grid item xs={5}>
+                  <TextField
+                    label="CE Premium ($)"
+                    type="number"
+                    value={desiredCePremium}
+                    onChange={(e) => setDesiredCePremium(parseFloat(e.target.value) || 0)}
+                    fullWidth
+                    size="small"
+                    inputProps={{ min: 0.01, step: 10 }}
+                  />
+                </Grid>
+                <Grid item xs={5}>
+                  <TextField
+                    label="PE Premium ($)"
+                    type="number"
+                    value={desiredPePremium}
+                    onChange={(e) => setDesiredPePremium(parseFloat(e.target.value) || 0)}
+                    fullWidth
+                    size="small"
+                    inputProps={{ min: 0.01, step: 10 }}
+                  />
+                </Grid>
+                <Grid item xs={2}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    onClick={handlePreviewStrikes}
+                    disabled={previewLoading || !selectedExpiry}
+                    fullWidth
+                    sx={{ height: '100%' }}
+                    startIcon={previewLoading ? <CircularProgress size={16} /> : <SearchIcon />}
+                  >
+                    {previewLoading ? 'Scanning...' : 'Find'}
+                  </Button>
+                </Grid>
+              </Grid>
+            </>
+          )}
 
           {/* Preview results */}
           {preview && (
             <Box sx={{ mb: 3 }}>
               <Typography variant="subtitle2" sx={{ mb: 1 }}>
-                Found Strikes
+                {isStraddle ? `ATM Strike — ${preview.atm_strike?.toLocaleString() ?? ''} (both legs)` : 'Found Strikes'}
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
                 <StrikePreviewTable
                   label="CE (Call)"
                   best={selectedCe}
-                  alternatives={preview.alternatives?.ce}
+                  alternatives={isStraddle ? [] : preview.alternatives?.ce}
                   color="#4caf50"
-                  onSelect={handleSelectAlternativeCe}
+                  onSelect={isStraddle ? undefined : handleSelectAlternativeCe}
                 />
                 <StrikePreviewTable
                   label="PE (Put)"
                   best={selectedPe}
-                  alternatives={preview.alternatives?.pe}
+                  alternatives={isStraddle ? [] : preview.alternatives?.pe}
                   color="#f44336"
-                  onSelect={handleSelectAlternativePe}
+                  onSelect={isStraddle ? undefined : handleSelectAlternativePe}
                 />
               </Box>
 

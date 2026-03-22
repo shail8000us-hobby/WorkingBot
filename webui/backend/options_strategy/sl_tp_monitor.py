@@ -145,14 +145,24 @@ class SLTPMonitor:
             logger.error(f"Error checking positions: {e}", exc_info=True)
     
     def _get_positions(self) -> List[Dict]:
-        """Get current options positions from shared cache (no HTTP self-call)."""
+        """Get current options positions. Uses shared cache when fresh; fetches directly when stale."""
         try:
             from webui.backend.routes.options.options_control import get_cached_positions
-            positions = get_cached_positions(max_age=30)
+            positions = get_cached_positions(max_age=15)
             if positions is not None:
                 return positions
-            logger.debug("No fresh positions cache available, skipping check")
-            return []
+            # Cache stale — fetch directly so SL/TP monitoring works even when browser tab is closed
+            logger.warning("⚠️ SL/TP monitor: positions cache stale — fetching directly")
+            try:
+                from webui.backend.routes.options.options_client import _run_async, get_unified_client
+                client = get_unified_client()
+                async def _fetch():
+                    result = await client.get_all_positions_with_options()
+                    return result.get('options', [])
+                return _run_async(_fetch(), timeout=15)
+            except Exception as fe:
+                logger.warning(f"⚠️ SL/TP monitor: direct fetch failed: {fe}")
+                return []
         except Exception as e:
             logger.error(f"Error fetching positions: {e}", exc_info=True)
             return []

@@ -2532,6 +2532,35 @@ def preview_strikes():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/preview_atm_straddle', methods=['POST'])
+def preview_atm_straddle():
+    """
+    Find the ATM strike for a SHORT_STRADDLE session.
+    Returns the same strike for both CE and PE.
+
+    Body: { expiry: str, underlying: str (optional) }
+    """
+    try:
+        data = request.get_json(force=True)
+        expiry = data.get('expiry')
+        underlying = data.get('underlying', 'BTC')
+
+        if not expiry:
+            return jsonify({'success': False, 'error': 'expiry is required'}), 400
+
+        initializer = get_initializer()
+        result = initializer.preview_atm_straddle(expiry, underlying)
+
+        if result.get('success'):
+            return jsonify(result)
+        else:
+            return jsonify(result), 400
+
+    except Exception as e:
+        log.exception("Failed to preview ATM straddle")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/check-liquidity', methods=['POST'])
 def check_liquidity():
     """
@@ -3571,6 +3600,7 @@ def reduce_position(session_id: str):
                         side='buy',
                         size=group_lots,
                         reduce_only=True,
+                        session_id=session_id,
                     )
 
                     if not result.get('success'):
@@ -3819,6 +3849,7 @@ def inject_position(session_id: str):
         if adopt:
             fill_price = adopt_fill_price
             order_id = ''
+            client_order_id = ''
             log_activity(
                 'manual_inject',
                 f'📌 Adopt: register existing {lots_param} {side_param.upper()} @ {int(strike_val)} '
@@ -3855,6 +3886,7 @@ def inject_position(session_id: str):
 
             fill_price = float(result.get('fill_price', 0))
             order_id = str(result.get('order_id', ''))
+            client_order_id = str(result.get('client_order_id', ''))
 
             # Record exchange commission from inject sell
             _od = result.get('order_details') or {}
@@ -3876,6 +3908,9 @@ def inject_position(session_id: str):
             'type': 'manual',
             'status': 'active',
             'created_at': now,
+            'fill_confirmed_at': now,           # reconciliation: settlement-lag guard
+            'order_id': order_id,               # reconciliation: verify fill via exchange
+            'client_order_id': client_order_id, # reconciliation: per-session fill attribution
             'shifted_at': None,
             'closed_at': None,
             'realized_pnl': None,
@@ -4856,7 +4891,7 @@ def get_triggers(session_id: str):
             side = session.get(side_key, {})
             if not side:
                 continue
-            snap = session.get('trigger_snapshots', {}).get(side_key, {})
+            snap = side.get('trigger_snapshot', {})
             active_strike = str(side.get('active_strike', ''))
             trigger_val = snap.get(active_strike, 0)
 
@@ -6782,4 +6817,19 @@ def get_session_events_audit(session_id: str):
     severity = request.args.get('severity')
     limit    = min(500, max(1, int(request.args.get('limit', 100))))
     rows = get_event_log().query_session(session_id, category, severity, limit)
+    return jsonify({'events': rows, 'count': len(rows)})
+
+
+@mmm_bp.route('/session/<session_id>/audit/execution-events', methods=['GET'])
+def get_session_execution_events(session_id: str):
+    """
+    GET /api/mmm/session/<id>/audit/execution-events
+    ?limit=100
+
+    Returns pre-fill execution intent events (ORDER_INTENT, ORDER_CONFIRMED,
+    EXIT_ROUND_START, EXIT_ROUND_END) for a session.
+    """
+    from .mmm_audit_log import get_event_log
+    limit = min(500, max(1, int(request.args.get('limit', 100))))
+    rows = get_event_log().query_session(session_id, category='EXECUTION_INTENT', limit=limit)
     return jsonify({'events': rows, 'count': len(rows)})

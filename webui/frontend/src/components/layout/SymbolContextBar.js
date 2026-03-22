@@ -181,7 +181,9 @@ function SymbolContextBar({ gridInfo, status, pnl, botStatus }) {
     <Box
       sx={{
         position: 'sticky',
-        top: { xs: '72px', md: '80px' }, // Below TopBar
+        // xs: accounts for TopBar height (48px) + safe-area inset (notch phones)
+        // md (900px+): fixed 80px works for larger screens
+        top: { xs: 'calc(env(safe-area-inset-top) + 56px)', md: '80px' }, // Below TopBar
         zIndex: 30,
         background:
           'linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.95) 100%)',

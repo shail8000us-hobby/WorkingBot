@@ -24,6 +24,22 @@ from typing import Dict, List
 from .mmm_state import recompute_side_lots
 from .mmm_close_at_5 import close_position, check_both_sides_closed
 
+
+def _enqueue_exit_event(sid, event_type, details):
+    """Feature 10: Fire-and-forget exit round event. Never raises."""
+    try:
+        from .mmm_audit_log import get_event_log
+        get_event_log().enqueue_event(
+            session_id=sid,
+            event_category='EXECUTION_INTENT',
+            event_type=event_type,
+            remark=f'Exit round: {event_type}',
+            severity='INFO',
+            details=details,
+        )
+    except Exception:
+        pass
+
 log = logging.getLogger('mmm_exit_all')
 
 # Max closing rounds before giving up and stopping as partial
@@ -31,6 +47,9 @@ MAX_EXIT_ROUNDS = 3
 
 # Seconds to wait between rounds (lets exchange settle)
 INTER_ROUND_DELAY_SEC = 1
+
+# Max concurrent close orders per side (limits Delta Exchange API pressure)
+MAX_CONCURRENT_CLOSES_PER_SIDE = 3
 
 
 # =============================================================================
@@ -51,6 +70,30 @@ async def run_exit_all(monitor) -> None:
     initiated_at = session.get('_exit_all_initiated_at') or datetime.now(timezone.utc).isoformat()
 
     log.warning(f"[{sid}] EXIT ALL: Global graceful exit started (initiated_at={initiated_at})")
+
+    # Feature 10: Orphan check — find ORDER_INTENT events with no ORDER_CONFIRMED.
+    # Runs on both first-time exit and restart-of-EXITING sessions.
+    # Fire-and-forget: result is logged only, never blocks exit flow.
+    try:
+        from .mmm_audit_log import get_event_log
+        orphans = get_event_log().query_execution_orphans(sid)
+        if orphans:
+            log.warning(
+                f"[{sid}] EXIT ALL: {len(orphans)} orphaned ORDER_INTENT(s) detected "
+                f"(no matching ORDER_CONFIRMED within 90s). "
+                f"order_ids={[o.get('_parsed_details', {}).get('order_id') for o in orphans]}"
+            )
+            get_event_log().enqueue_event(
+                session_id=sid,
+                event_category='RECONCILIATION',
+                event_type='ORPHAN_INTENTS_DETECTED',
+                remark=f'{len(orphans)} unconfirmed order intent(s) at exit start',
+                severity='WARNING',
+                details={'orphan_count': len(orphans),
+                         'order_ids': [o.get('_parsed_details', {}).get('order_id') for o in orphans]},
+            )
+    except Exception:
+        pass
 
     # Force-clear ALL _being_closed flags before any round begins.
     # During EXITING, the heartbeat gate blocks all normal logic so no concurrent
@@ -78,6 +121,13 @@ async def run_exit_all(monitor) -> None:
         reason = 'Exit All — all positions closed'
         log.warning(f"[{sid}] EXIT ALL COMPLETE: all positions closed")
         _emit_exit_completed(sid, completed_at, initiated_at)
+
+    # --- Exchange-side verification ---
+    # Local session state (positions[], total_lots) can be stale or inconsistent.
+    # Before stopping the monitor, query the exchange directly to confirm that
+    # no options positions remain at the strikes this session was managing.
+    # If positions are still live on the exchange, mark as partial — never silently stop.
+    await _verify_exchange_cleared(monitor, session, sid)
 
     # Zero unrealized_pnl in-memory so stop()'s full save writes 0.0.
     # Without this the last heartbeat's mark-to-market stays in DB and the
@@ -136,12 +186,18 @@ async def _run_exit_rounds(monitor) -> None:
 
     for round_num in range(1, MAX_EXIT_ROUNDS + 1):
 
-        # Check if already done
-        if check_both_sides_closed(session):
-            log.info(f"[{sid}] EXIT ALL: All positions closed (round {round_num - 1} finished cleanly)")
-            return
-
+        # Always record that this round was attempted BEFORE any early-return check.
+        # Keeping this at 0 would falsely imply "nothing was tried" if we bail early.
         session['_exit_all_rounds_attempted'] = round_num
+
+        # Short-circuit only AFTER round 1 has actually run.
+        # The pre-round-1 check was the source of a critical bug: check_both_sides_closed()
+        # reads total_lots (a derived scalar) which can be stale if recompute_side_lots()
+        # hasn't run. A false True meant zero close orders were ever fired while positions
+        # remained open on the exchange. We now only trust this check after real work is done.
+        if round_num > 1 and check_both_sides_closed(session):
+            log.info(f"[{sid}] EXIT ALL: All positions closed after round {round_num - 1}")
+            return
 
         # Build sorted position lists for this round
         ce_positions = _collect_side_positions(session, 'ce', spot_price)
@@ -156,21 +212,27 @@ async def _run_exit_rounds(monitor) -> None:
             f"[{sid}] EXIT ALL Round {round_num}/{MAX_EXIT_ROUNDS}: "
             f"CE={len(ce_positions)} pos, PE={len(pe_positions)} pos to close"
         )
+        _enqueue_exit_event(sid, 'EXIT_ROUND_START', {
+            'round_num': round_num, 'positions_to_close': total_open,
+            'ce_count': len(ce_positions), 'pe_count': len(pe_positions),
+        })
 
         _emit_exit_progress(sid, round_num, 0, total_open,
                             len(session.get('_exit_all_failed_positions', [])))
 
         closed_count = 0
 
-        # Close CE and PE concurrently within each round.
-        # asyncio.gather runs both side coroutines in parallel — each side
-        # closes its positions sequentially by ATM proximity (riskiest first).
-        # This halves wall-clock time vs the old CE[0]→PE[0]→CE[1]... loop
-        # and reduces price slippage on ITM positions.
-        async def _close_side(side_key: str, positions_list: list) -> int:
-            count = 0
-            for pos in positions_list:
-                pos_id = pos.get('_pos_id') or f"{side_key}@{pos.get('strike')}"
+        # Close CE and PE concurrently, with up to MAX_CONCURRENT_CLOSES_PER_SIDE
+        # parallel close orders within each side. This is safe because:
+        #   - asyncio is single-threaded: session mutations happen between awaits
+        #   - Each close_position gets its own position dict from the pre-collected list
+        #   - recompute_side_lots() is idempotent
+        #   - Semaphore limits API pressure on Delta Exchange
+        _sem = asyncio.Semaphore(MAX_CONCURRENT_CLOSES_PER_SIDE)
+
+        async def _close_one(side_key: str, pos: dict) -> bool:
+            pos_id = pos.get('_pos_id') or f"{side_key}@{pos.get('strike')}"
+            async with _sem:
                 try:
                     result = await close_position(
                         executor=monitor.executor,
@@ -182,24 +244,26 @@ async def _run_exit_rounds(monitor) -> None:
                         side=side_key,
                     )
                     if result.get('success'):
-                        count += 1
                         log.info(
                             f"[{sid}] EXIT ALL: Closed {side_key.upper()} @ {pos['strike']} "
                             f"({result.get('lots_closed', pos['lots'])} lots, "
                             f"pnl={result.get('realized_pnl', 0):.4f})"
                         )
+                        return True
                     else:
                         err = result.get('error', 'unknown')
                         log.warning(f"[{sid}] EXIT ALL: Failed to close {pos_id}: {err}")
                 except Exception as e:
                     log.error(f"[{sid}] EXIT ALL: Exception closing {pos_id}: {e}")
-            return count
+            return False
 
-        ce_count, pe_count = await asyncio.gather(
-            _close_side('ce', ce_positions),
-            _close_side('pe', pe_positions),
+        # Launch all close tasks across both sides — semaphore limits concurrency
+        all_tasks = (
+            [_close_one('ce', p) for p in ce_positions] +
+            [_close_one('pe', p) for p in pe_positions]
         )
-        closed_count = ce_count + pe_count
+        results = await asyncio.gather(*all_tasks)
+        closed_count = sum(1 for r in results if r)
 
         # Recompute both sides after each round
         for sk in ('ce', 'pe'):
@@ -217,6 +281,10 @@ async def _run_exit_rounds(monitor) -> None:
             f"[{sid}] EXIT ALL Round {round_num} complete: "
             f"closed={closed_count}, remaining={remaining_open}"
         )
+        _enqueue_exit_event(sid, 'EXIT_ROUND_END', {
+            'round_num': round_num, 'closed_count': closed_count,
+            'remaining_open': remaining_open, 'partial': remaining_open > 0,
+        })
 
         if remaining_open == 0:
             return
@@ -239,6 +307,72 @@ async def _run_exit_rounds(monitor) -> None:
 # =============================================================================
 # Helpers
 # =============================================================================
+
+async def _verify_exchange_cleared(monitor, session: Dict, sid: str) -> None:
+    """
+    Query the exchange for any remaining options positions at the strikes this
+    session was managing. If any are found, mark _exit_all_partial=True and
+    populate _exit_all_failed_positions so the user knows exactly what is still open.
+
+    This is the final guard against local session state lying about "all closed".
+    Called after all close rounds complete, before monitor.stop().
+    """
+    try:
+        client = monitor.executor.client
+        all_positions = await client.get_positions_for_underlying('BTC')
+    except Exception as e:
+        log.error(f"[{sid}] EXIT ALL: Exchange verification query failed: {e} — cannot confirm positions cleared")
+        # Can't verify — don't falsely claim success if we had 0 rounds attempted
+        if session.get('_exit_all_rounds_attempted', 0) == 0:
+            session['_exit_all_partial'] = True
+            session['_exit_all_failed_positions'] = _build_failed_list(session)
+            log.warning(f"[{sid}] EXIT ALL: 0 rounds attempted and exchange unverifiable — marking partial")
+        return
+
+    # Build set of all tracked strikes (any non-closed position in our ledger)
+    tracked_strikes = set()
+    for sk in ('ce', 'pe'):
+        side_state = session.get(sk, {})
+        if not isinstance(side_state, dict):
+            continue
+        for pos in side_state.get('positions', []):
+            if pos.get('status') != 'closed' and pos.get('lots', 0) > 0:
+                tracked_strikes.add(int(pos.get('strike', 0)))
+
+    # Find any options positions on the exchange matching our tracked strikes
+    # Option symbols: C-BTC-71000-210326 / P-BTC-71000-210326
+    live_on_exchange = []
+    for ep in all_positions:
+        sym = ep.get('product_symbol', '')
+        size = ep.get('size', 0)
+        if not size or size == 0:
+            continue
+        # Only check option symbols (contain '-BTC-')
+        if '-BTC-' not in sym:
+            continue
+        parts = sym.split('-')
+        if len(parts) >= 3:
+            try:
+                strike = int(parts[2])
+                if strike in tracked_strikes:
+                    live_on_exchange.append({
+                        'symbol': sym,
+                        'size': size,
+                        'strike': strike,
+                    })
+            except (ValueError, IndexError):
+                pass
+
+    if live_on_exchange:
+        session['_exit_all_partial'] = True
+        session['_exit_all_failed_positions'] = live_on_exchange
+        log.error(
+            f"[{sid}] EXIT ALL: Exchange verification found {len(live_on_exchange)} "
+            f"option position(s) still open: {live_on_exchange}"
+        )
+    else:
+        log.info(f"[{sid}] EXIT ALL: Exchange verification confirmed — no tracked options positions remain")
+
 
 def _collect_side_positions(session: Dict, side_key: str, spot_price: float) -> List[Dict]:
     """

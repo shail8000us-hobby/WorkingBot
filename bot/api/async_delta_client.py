@@ -385,7 +385,7 @@ class AsyncDeltaClient:
                             raise DeltaAPIError(f"{error_code}: {error_message}")
                         else:
                             log.error(f"Client error {response.status_code}: {error_message}")
-                            response.raise_for_status()
+                            raise DeltaAPIError(f"{error_code}: {error_message}" if error_code else f"Client error {response.status_code}: {error_message}")
                     except (json.JSONDecodeError, KeyError):
                         # Fallback if error parsing fails
                         response.raise_for_status()
@@ -661,8 +661,8 @@ class AsyncDeltaClient:
             method="GET",
             path=f"/v2/tickers/{symbol}"
         )
-        
-        return response.get("result", {})
+
+        return response.get("result") or {}
     
     async def get_all_tickers(self) -> List[Dict[str, Any]]:
         """
@@ -762,7 +762,8 @@ class AsyncDeltaClient:
         order_type: str = "limit_order",
         time_in_force: str = "gtc",
         post_only: bool = True,
-        reduce_only: bool = False
+        reduce_only: bool = False,
+        client_order_id: str = None,
     ) -> Dict[str, Any]:
         """
         Place order using symbol instead of product_id.
@@ -803,9 +804,15 @@ class AsyncDeltaClient:
             data["post_only"] = "true" if post_only else "false"
             data["reduce_only"] = "true" if reduce_only else "false"
         
+        # Tag with client_order_id for per-algo fill reconciliation (max 32 chars).
+        # Allows querying exactly which fills belong to this session — immune to
+        # manual trades / other algos at the same strike on the same account.
+        if client_order_id:
+            data["client_order_id"] = str(client_order_id)[:32]
+
         # DEBUG: Log the exact request data
         log.info(f"🔍 Placing order by symbol: {data}")
-        
+
         response = await self._request_with_retry(
             method="POST",
             path="/v2/orders",

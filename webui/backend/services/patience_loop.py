@@ -16,6 +16,7 @@ Architecture:
 Created: March 14, 2026
 """
 
+import math as _math
 import time
 import asyncio
 import threading
@@ -24,6 +25,27 @@ from typing import Dict, List, Optional, Callable
 from datetime import datetime
 
 log = logging.getLogger(__name__)
+
+
+def _parse_fill_price(raw_fill) -> float:
+    """
+    Validate and parse fill price from Delta Exchange order response.
+    Copied from mmm_executor._parse_fill_price — same rules, same safety.
+
+    Rejects: None, empty, '0', NaN, Inf, negative, > $1,000,000.
+    Raises ValueError with descriptive message on any invalid value.
+    """
+    if raw_fill is None or str(raw_fill).strip() in ('', '0'):
+        raise ValueError(f"fill_price missing or zero: {raw_fill!r}")
+    try:
+        price = float(raw_fill)
+    except (ValueError, TypeError) as e:
+        raise ValueError(f"Cannot parse fill_price {raw_fill!r}: {e}") from e
+    if _math.isnan(price) or _math.isinf(price):
+        raise ValueError(f"fill_price is NaN or Inf: {raw_fill!r}")
+    if price <= 0 or price > 1_000_000:
+        raise ValueError(f"fill_price out of range: {price}")
+    return price
 
 # Use real OS thread to avoid eventlet asyncio conflict (see lessons.md)
 try:
@@ -346,18 +368,43 @@ class PatienceLoopService:
                             continue
                         sym = matched['symbol']
                         if s_item.get('state') in ('filled', 'closed'):
-                            filled_symbols[sym] = {**matched, 'fill_price': s_item.get('fill_price')}
+                            # Validate fill price — same rules as polling path
+                            raw_fill = s_item.get('fill_price')
+                            try:
+                                validated_fill = _parse_fill_price(raw_fill)
+                            except ValueError as _fp_err:
+                                log.warning(
+                                    f"[PATIENCE-LOOP:{loop_id}] {sym} amend-400 fill_price "
+                                    f"invalid ({_fp_err}) — re-checking"
+                                )
+                                # Put back in to_place to retry
+                                orig = next((o for o in orders if o['symbol'] == sym), None)
+                                if orig:
+                                    to_place.append(orig)
+                                continue
+                            # Verify fill not partial
+                            unfilled = s_item.get('unfilled_size')
+                            if unfilled is not None and int(unfilled) > 0:
+                                log.warning(
+                                    f"[PATIENCE-LOOP:{loop_id}] {sym} amend-400 partial fill: "
+                                    f"unfilled={unfilled} — re-placing remainder"
+                                )
+                                orig = next((o for o in orders if o['symbol'] == sym), None)
+                                if orig:
+                                    to_place.append(orig)
+                                continue
+                            filled_symbols[sym] = {**matched, 'fill_price': validated_fill}
                             active_orders.pop(sym, None)
                             round_progress[sym] = {
                                 'status': 'filled', 'filled': True,
                                 'size': s_item.get('size', matched.get('size')),
                                 'orderId': oid,
-                                'fillPrice': s_item.get('fill_price'),
+                                'fillPrice': validated_fill,
                                 'leg_id': round_progress.get(sym, {}).get('leg_id'),
                             }
                             log.info(
                                 f"[PATIENCE-LOOP:{loop_id}] {sym} filled (amend-400) "
-                                f"@ {s_item.get('fill_price')}"
+                                f"@ {validated_fill}"
                             )
                         else:
                             # Cancelled externally — re-place
@@ -418,18 +465,19 @@ class PatienceLoopService:
                         'market_fallback_error', 'limit_filled', 'limit_filled_late',
                     ]
                     if exec_type in filled_types or not result.get('order_id'):
+                        imm_fill = result.get('fill_price')  # already validated in _execute_single
                         filled_symbols[sym] = result
                         active_orders.pop(sym, None)
                         round_progress[sym] = {
                             'status': 'filled', 'filled': True,
                             'size': result.get('size', 0),
                             'orderId': result.get('order_id'),
-                            'fillPrice': result.get('fill_price'),
+                            'fillPrice': imm_fill,
                             'leg_id': round_progress.get(sym, {}).get('leg_id'),
                         }
                         log.info(
                             f"[PATIENCE-LOOP:{loop_id}] {sym} filled immediately "
-                            f"@ {result.get('fill_price')}"
+                            f"@ {imm_fill}"
                         )
                     else:
                         active_orders[sym] = result   # store for amend on next retry
@@ -472,18 +520,36 @@ class PatienceLoopService:
                         order_state = os_item.get('state', '')
 
                         if order_state in ('filled', 'closed'):
+                            # Validate fill price before accepting fill
+                            raw_fill = os_item.get('fill_price')
+                            try:
+                                validated_fill = _parse_fill_price(raw_fill)
+                            except ValueError as _fp_err:
+                                log.warning(
+                                    f"[PATIENCE-LOOP:{loop_id}] {sym} order {oid} "
+                                    f"fill_price invalid ({_fp_err}) — will retry"
+                                )
+                                continue  # treat as not yet filled, retry next poll
+                            # Verify fill quantity (unfilled_size must be 0 or absent)
+                            unfilled = os_item.get('unfilled_size')
+                            if unfilled is not None and int(unfilled) > 0:
+                                log.warning(
+                                    f"[PATIENCE-LOOP:{loop_id}] {sym} order {oid} "
+                                    f"partial fill: unfilled={unfilled} — will wait"
+                                )
+                                continue  # partial fill — keep polling
                             newly_done_ids.add(oid)
-                            filled_symbols[sym] = {**matching, 'fill_price': os_item.get('fill_price')}
+                            filled_symbols[sym] = {**matching, 'fill_price': validated_fill}
                             active_orders.pop(sym, None)
                             round_progress[sym] = {
                                 'status': 'filled', 'filled': True,
                                 'size': os_item.get('size', matching.get('size')),
                                 'orderId': oid,
-                                'fillPrice': os_item.get('fill_price'),
+                                'fillPrice': validated_fill,
                                 'leg_id': round_progress.get(sym, {}).get('leg_id'),
                             }
                             log.info(
-                                f"[PATIENCE-LOOP:{loop_id}] {sym} filled @ {os_item.get('fill_price')}"
+                                f"[PATIENCE-LOOP:{loop_id}] {sym} filled @ {validated_fill}"
                             )
                         elif order_state in ('cancelled', 'not_found'):
                             # Cancelled externally — remove so next attempt re-places
@@ -606,12 +672,19 @@ class PatienceLoopService:
                 ),
                 timeout_seconds=30,
             )
-            fill_price = (
-                result.get('fill_price')
+            # Prefer average_fill_price (actual execution price) over limit_price (placement price)
+            raw_fill = (
+                result.get('average_fill_price')
+                or result.get('fill_price')
                 or result.get('limit_price')
-                or result.get('average_fill_price')
             )
+            try:
+                fill_price = _parse_fill_price(raw_fill)
+            except ValueError:
+                # Order is still pending (limit posted, not filled yet) — fill_price will come via polling
+                fill_price = None
             exec_type = result.get('execution_type', 'unknown')
+            order_id = result.get('id') or result.get('order_id')
             log.info(
                 f"✅ PatienceLoop order {index + 1}: {symbol} {side} {size} "
                 f"[{order_preference}] — {exec_type} @ {fill_price}"
@@ -623,7 +696,7 @@ class PatienceLoopService:
                 'side': side,
                 'execution_type': exec_type,
                 'fill_price': fill_price,
-                'order_id': result.get('id'),
+                'order_id': order_id,
                 'product_id': result.get('product_id'),
                 'index': index,
                 'leg_id': order_data.get('leg_id'),
@@ -658,7 +731,7 @@ class PatienceLoopService:
                             'size': info.get('size'),
                             'side': info.get('side'),
                             'state': info.get('state'),
-                            'fill_price': info.get('fill_price'),
+                            'fill_price': info.get('average_fill_price') or info.get('fill_price'),
                         })
                     else:
                         results.append({'order_id': oid, 'state': 'not_found'})

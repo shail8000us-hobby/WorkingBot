@@ -74,6 +74,7 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
   const [chainStrikes, setChainStrikes] = useState([]);
   const [strikesLoading, setStrikesLoading] = useState(false);
   const [lastPricesAt, setLastPricesAt] = useState(null);
+  const [executionStatus, setExecutionStatus] = useState(null);
 
   const cardId = card.card_id;
   const isExecuting = ['EXECUTING', 'TRIGGERED'].includes(card.status);
@@ -150,6 +151,24 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
     return () => clearInterval(id);
   }, [fetchPrices]);
 
+  // Poll execution status every 1s while card is executing
+  useEffect(() => {
+    if (!isExecuting) {
+      setExecutionStatus(null);
+      return;
+    }
+    let mounted = true;
+    const poll = async () => {
+      try {
+        const r = await patienceAPI.getExecutionStatus(cardId);
+        if (mounted) setExecutionStatus(r.data);
+      } catch (e) { /* silent */ }
+    };
+    poll();
+    const id = setInterval(poll, 1000);
+    return () => { mounted = false; clearInterval(id); };
+  }, [isExecuting, cardId]);
+
   // ── Card-level actions ──────────────────────────────────────────
   const handleArm = async () => {
     try { await patienceAPI.armCard(cardId); fetchCard(); } catch (e) { alert(e.message); }
@@ -164,6 +183,23 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
   const handleResume = async () => {
     try { await patienceAPI.resumeCard(cardId); fetchCard(); } catch (e) { alert(e.message); }
   };
+  const handleClone = async () => {
+    const newName = window.prompt('Clone name:', card.card_name + ' (copy)');
+    if (newName === null) return;
+    const newTrigger = window.prompt('Trigger price (leave blank to keep same):', card.trigger_price);
+    if (newTrigger === null) return;
+    const overrides = { card_name: newName || card.card_name + ' (copy)' };
+    if (newTrigger && !isNaN(parseFloat(newTrigger))) overrides.trigger_price = parseFloat(newTrigger);
+    try {
+      await patienceAPI.cloneCard(cardId, overrides);
+      alert('Cloned! Find the new DRAFT card in the dashboard.');
+      onRefresh?.();
+      onBack();
+    } catch (e) {
+      alert('Clone failed: ' + (e.response?.data?.error || e.message));
+    }
+  };
+
   const handleClose = async () => {
     const exitVal = window.prompt('Exit value (total premium received for closing, optional):');
     if (exitVal === null) return;
@@ -274,13 +310,21 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
             <button onClick={handlePause} style={actionBtn('#6b7280')}>PAUSE</button>
           )}
           {card.status === 'COMPLETED' && (
-            <button onClick={handleClose} style={actionBtn('#7c3aed')}>CLOSE CARD</button>
+            <>
+              <button onClick={handleClone} style={actionBtn('#7c3aed')}>↺ Repeat</button>
+              <button onClick={handleClose} style={actionBtn('#475569')}>CLOSE CARD</button>
+            </>
           )}
           {!['COMPLETED', 'CANCELLED'].includes(card.status) && (
             <button onClick={handleCancel} style={actionBtn('#ef4444')}>CANCEL</button>
           )}
         </div>
       </div>
+
+      {/* ── Live Execution Panel (shown while EXECUTING / TRIGGERED) ── */}
+      {isExecuting && executionStatus && (
+        <LiveExecutionPanel status={executionStatus} />
+      )}
 
       {/* ── Legs ────────────────────────────────────────────────── */}
       <Section title={
@@ -307,7 +351,7 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ color: '#64748b', borderBottom: '1px solid #1e293b' }}>
-                  {['#', 'Dir', 'Type', 'Strike', 'Expiry', 'Lots', 'Mode', 'Bid', 'Ask', 'Mid', 'Fill @', 'uP&L', 'Status', ''].map(h => (
+                  {['#', 'Dir', 'Type', 'Symbol', 'Strike', 'Expiry', 'Lots', 'Mode', 'Bid', 'Ask', 'Mid', 'Fill @', 'uP&L', 'Status', ''].map(h => (
                     <th key={h} style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 400, whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -331,6 +375,26 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
                       <td style={cellStyle}>{i + 1}</td>
                       <td style={{ ...cellStyle, color: leg.direction === 'BUY' ? '#22c55e' : '#ef4444', fontWeight: 700 }}>{leg.direction}</td>
                       <td style={cellStyle}>{leg.option_type}</td>
+                      {/* ── Symbol (executed symbol from DB, or reconstructed) ── */}
+                      <td style={{ ...cellStyle, fontFamily: 'monospace', fontSize: 11 }}>
+                        {(() => {
+                          // Prefer executed_symbol stored at fill time (exact exchange symbol)
+                          if (leg.executed_symbol) {
+                            return <span style={{ color: '#a78bfa' }} title="Confirmed exchange symbol">{leg.executed_symbol}</span>;
+                          }
+                          // Fallback: reconstruct from leg fields
+                          if (leg.strike && leg.expiry_date) {
+                            const prefix = leg.option_type === 'CE' ? 'C' : 'P';
+                            const parts = leg.expiry_date.split('-');
+                            const ddmmyy = parts[2] + parts[1] + parts[0].slice(2);
+                            return <span style={{ color: '#64748b' }} title="Reconstructed (not yet executed)">{prefix}-BTC-{parseInt(leg.strike)}-{ddmmyy}</span>;
+                          }
+                          if (leg.is_relative_strike) {
+                            return <span style={{ color: '#475569' }}>ATM{leg.relative_offset >= 0 ? '+' : ''}{leg.relative_offset}</span>;
+                          }
+                          return '—';
+                        })()}
+                      </td>
                       {/* ── Strike (editable for non-relative legs) ── */}
                       <td style={cellStyle}>
                         {isEditing && !leg.is_relative_strike ? (
@@ -541,6 +605,167 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
           </div>
         </div>
       </Section>
+    </div>
+  );
+}
+
+// ── Live Execution Panel ──────────────────────────────────────────
+
+const EXEC_LEG_COLORS = {
+  PLACING:  { bg: '#1e3a5f', text: '#60a5fa', label: 'PLACING'  },
+  PENDING:  { bg: '#1c2a1c', text: '#eab308', label: 'PENDING'  },
+  FILLED:   { bg: '#14291a', text: '#22c55e', label: 'FILLED'   },
+  ERROR:    { bg: '#2d1515', text: '#ef4444', label: 'ERROR'    },
+  SKIPPED:  { bg: '#1e1e2e', text: '#6b7280', label: 'SKIPPED'  },
+};
+
+function LiveExecutionPanel({ status }) {
+  const {
+    active, loop_status, current_round, total_rounds,
+    rounds_completed, elapsed_seconds, error, progress = [],
+  } = status;
+
+  const elapsed = elapsed_seconds != null
+    ? elapsed_seconds < 60
+      ? `${Math.round(elapsed_seconds)}s`
+      : `${Math.floor(elapsed_seconds / 60)}m ${Math.round(elapsed_seconds % 60)}s`
+    : '—';
+
+  const roundLabel = total_rounds > 1
+    ? `Round ${current_round ?? '?'} / ${total_rounds}`
+    : 'Single round';
+
+  const filledCount = progress.filter(p => p.filled).length;
+
+  return (
+    <div style={{
+      marginBottom: 16,
+      border: '1px solid #eab308',
+      borderRadius: 8,
+      overflow: 'hidden',
+      background: '#0f1a0f',
+    }}>
+      {/* Header bar */}
+      <div style={{
+        background: '#1a2e0a',
+        padding: '8px 16px',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 16,
+        borderBottom: '1px solid #eab308',
+      }}>
+        <span style={{ color: '#eab308', fontWeight: 700, fontSize: 13 }}>
+          ⚡ LIVE EXECUTION
+        </span>
+        <span style={{
+          background: '#eab308', color: '#000',
+          borderRadius: 3, padding: '1px 7px', fontSize: 11, fontWeight: 700,
+        }}>
+          {loop_status || 'RUNNING'}
+        </span>
+        <span style={{ color: '#94a3b8', fontSize: 12 }}>{roundLabel}</span>
+        <span style={{ color: '#64748b', fontSize: 12 }}>
+          {filledCount}/{progress.length} filled
+        </span>
+        <span style={{ marginLeft: 'auto', color: '#475569', fontSize: 12 }}>
+          ⏱ {elapsed}
+        </span>
+      </div>
+
+      {/* Error banner */}
+      {error && (
+        <div style={{ background: '#2d1515', padding: '6px 16px', color: '#ef4444', fontSize: 12, borderBottom: '1px solid #3d1818' }}>
+          ⚠ {error}
+        </div>
+      )}
+
+      {/* Per-leg progress rows */}
+      {progress.length === 0 ? (
+        <div style={{ padding: '12px 16px', color: '#475569', fontSize: 12 }}>
+          Waiting for execution to start...
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead>
+              <tr style={{ color: '#475569', borderBottom: '1px solid #1e293b' }}>
+                {['Dir', 'Symbol', 'Lots', 'Status', 'Order ID', 'Fill Price', 'Note'].map(h => (
+                  <th key={h} style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 400, whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {progress.map((p, i) => {
+                const legStatus = p.filled ? 'FILLED'
+                  : p.error ? 'ERROR'
+                  : p.status === 'placing' ? 'PLACING'
+                  : 'PENDING';
+                const colors = EXEC_LEG_COLORS[legStatus] || EXEC_LEG_COLORS.PENDING;
+                const displayOrderId = p.order_id || p.db_order_id;
+                const displayFill = p.fill_price || p.db_fill_price;
+                return (
+                  <tr key={p.leg_id || i} style={{ borderBottom: '1px solid #0f172a', background: colors.bg + '33' }}>
+                    <td style={{ padding: '6px 10px', color: p.direction === 'BUY' ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                      {p.direction}
+                    </td>
+                    <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: '#a78bfa', fontSize: 11 }}>
+                      {p.symbol || '—'}
+                    </td>
+                    <td style={{ padding: '6px 10px', color: '#94a3b8' }}>{p.lots ?? '—'}</td>
+                    <td style={{ padding: '6px 10px' }}>
+                      <span style={{
+                        background: colors.text + '22',
+                        color: colors.text,
+                        border: `1px solid ${colors.text}55`,
+                        borderRadius: 3,
+                        padding: '2px 7px',
+                        fontWeight: 700,
+                        letterSpacing: '0.5px',
+                      }}>
+                        {legStatus}
+                      </span>
+                    </td>
+                    <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: '#64748b', fontSize: 11 }}>
+                      {displayOrderId
+                        ? <span style={{ color: '#94a3b8' }}>{String(displayOrderId)}</span>
+                        : <span style={{ color: '#334155' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '6px 10px', color: '#22c55e', fontWeight: 600 }}>
+                      {displayFill ? `$${fmtPrice(displayFill)}` : <span style={{ color: '#334155' }}>—</span>}
+                    </td>
+                    <td style={{ padding: '6px 10px', color: '#ef4444', fontSize: 11 }}>
+                      {p.error || ''}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Round progress bar when multi-round */}
+      {total_rounds > 1 && (
+        <div style={{ padding: '8px 16px', borderTop: '1px solid #1e293b' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ fontSize: 11, color: '#475569', whiteSpace: 'nowrap' }}>
+              Rounds: {rounds_completed ?? 0}/{total_rounds}
+            </span>
+            <div style={{ flex: 1, height: 4, background: '#1e293b', borderRadius: 2, overflow: 'hidden' }}>
+              <div style={{
+                height: '100%',
+                width: `${Math.round(((rounds_completed ?? 0) / total_rounds) * 100)}%`,
+                background: '#eab308',
+                borderRadius: 2,
+                transition: 'width 0.3s',
+              }} />
+            </div>
+            <span style={{ fontSize: 11, color: '#64748b' }}>
+              {Math.round(((rounds_completed ?? 0) / total_rounds) * 100)}%
+            </span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

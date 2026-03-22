@@ -164,8 +164,48 @@ class MMMWatchdog:
         session = getattr(monitor, 'session', {})
         status = session.get('strategy_status', 'UNKNOWN')
 
-        # Only supervise sessions that SHOULD be running
-        if status not in ('RUNNING',):
+        # Supervise RUNNING sessions (normal operation) and EXITING sessions.
+        # EXITING was previously invisible to the watchdog — a stuck exit_all
+        # would leave positions open on the exchange with no monitor, no alert,
+        # and no recovery. If an EXITING session's thread dies or times out,
+        # mark it as partial-exit and alert rather than silently leaving it stuck.
+        if status not in ('RUNNING', 'EXITING'):
+            return
+
+        # For EXITING sessions: a stuck monitor means exit_all is hung.
+        # Mark partial and alert — do NOT silently restart (that would re-run
+        # the full algo when the user only wanted to exit).
+        if status == 'EXITING':
+            thread = getattr(monitor, '_thread', None)
+            is_running = getattr(monitor, '_running', False)
+            stuck = (is_running and (thread is None or not thread.is_alive())) or \
+                    (self._check_beat_timeout(sid, monitor, session) is not None)
+            if stuck:
+                log.error(
+                    f"[{sid}] Watchdog: EXITING session stuck (beat timeout or dead thread) — "
+                    f"exit_all did not complete. Positions may still be open on exchange."
+                )
+                session['_exit_all_partial'] = True
+                if not session.get('_exit_all_failed_positions'):
+                    # Build failed list from local state as best-effort record
+                    from .mmm_exit_all import _build_failed_list
+                    session['_exit_all_failed_positions'] = _build_failed_list(session)
+                self._emit_alert(
+                    sid,
+                    "EXIT STUCK: exit_all timed out. Positions may still be open on exchange. "
+                    "Check Delta Exchange and close manually.",
+                    level='critical',
+                )
+                try:
+                    from .mmm_storage import get_storage
+                    get_storage().update_session(sid, {
+                        'strategy_status': 'STOPPED',
+                        '_exit_all_partial': True,
+                        '_exit_all_failed_positions': session.get('_exit_all_failed_positions', []),
+                    })
+                except Exception as _se:
+                    log.error(f"[{sid}] Watchdog: could not persist EXIT STUCK state: {_se}")
+                monitor.stop(f"Watchdog: EXITING session stuck — {self._check_beat_timeout(sid, monitor, session) or 'thread dead'}")
             return
 
         thread: Optional[threading.Thread] = getattr(monitor, '_thread', None)

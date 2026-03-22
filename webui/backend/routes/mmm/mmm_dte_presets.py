@@ -170,7 +170,7 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'description': (
             f'ATM short straddle, {H:.0f}h window. '
             f'Dynamic params auto-scaled from time-to-expiry. '
-            f'Conservative lot sizing with full perp delta hedge.'
+            f'Conservative lot sizing, no adjustments, max_loss hard stop.'
         ),
 
         # ── DTE / Session ──
@@ -190,7 +190,9 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'adaptive_max_interval': clamp(round(H * 60), 180, 600),
 
         # ── Trigger Logic (fixed) ──
-        'min_trigger_move': 8.0,
+        # min_trigger_move set high — straddle legs must NOT be adjusted/shifted.
+        # Delta risk is handled by accepting the loss up to max_loss_amount.
+        'min_trigger_move': 50.0,
         'premium_buffer_pct': 0.08,
         'shift_threshold': 30,
         'shift_target_premium': 100,
@@ -209,7 +211,7 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'wind_down_on_atm': False,
 
         # ── P&L Guardrails (fixed) ──
-        'max_loss_amount': 3.0,
+        'max_loss_amount': 3000.0,
         'trailing_stop_pct': 0.25,
 
         # ── Reversal / Whipsaw (scaled window, fixed thresholds) ──
@@ -237,11 +239,15 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'trend_tier3_pct': round(clamp(H * 0.20, 0.7, 1.5), 2),
         'trend_tier4_pct': round(clamp(H * 0.30, 1.0, 2.5), 2),
 
-        # ── ATM Shield (scaled budget) ──
-        'atm_shield_enabled': True,
+        # ── ATM Shield — DISABLED for straddle ──
+        # ATM shield is strangle-centric: it fires when a leg approaches spot
+        # and shifts it further OTM, converting the straddle into a strangle.
+        # In a straddle both legs START at spot, so the shield would fire on
+        # the very first BTC move and destroy the straddle structure.
+        'atm_shield_enabled': False,
         'atm_shield_proximity_pct': 0.3,
         'atm_shield_target_otm_pct': 0.8,
-        'atm_shield_max_per_session': clamp(round(H * 0.4), 1, 4),
+        'atm_shield_max_per_session': 0,
         'atm_shield_cooldown_mins': 10,
         'atm_shield_partial_pct': 1.0,
 
@@ -252,11 +258,11 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'breakeven_critical_pct': 0.3,
         'breakeven_aggression_max': 2.5,
 
-        # ── Perp Hedge (fixed) ──
-        'perp_hedge_enabled': True,
+        # ── Perp Hedge — DISABLED (user preference: options-only straddle) ──
+        'perp_hedge_enabled': False,
         'perp_hedge_mode': 'full',
         'perp_hedge_delta_threshold': 0.015,
-        'perp_hedge_max_lots': 10,
+        'perp_hedge_max_lots': 0,
         'perp_hedge_cooldown_sec': 20,
 
         # ── Lot Lifecycle (scaled harvest age) ──
@@ -268,6 +274,19 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'harvest_pressure_threshold': 0.3,
         'recycle_enabled': False,
         'proactive_shift_enabled': False,
+
+        # ── Straddle Roll (scaled trigger, fixed caps) ──
+        'straddle_roll_enabled':            True,
+        'straddle_roll_trigger_pct':        round(clamp(0.4 + H * 0.05, 0.5, 1.5), 2),
+        'straddle_roll_max_per_session':    3,
+        'straddle_roll_cooldown_mins':      15,
+        'straddle_roll_emergency_mult':     2.0,
+        'straddle_roll_min_time_to_expiry': 90,
+        'straddle_roll_min_credit_pct':     0.30,
+        'straddle_roll_slippage_factor':    0.03,
+        'straddle_roll_loss_abort_mult':    3.0,
+        'straddle_roll_lot_scale':          1.0,
+        'straddle_roll_iv_spike_mult':      2.0,
 
         # ── Adaptive (fixed) ──
         'adaptive_mode': 'preset',
@@ -295,15 +314,18 @@ def list_presets() -> List[Dict]:
             entry['session_window_hours'] = preset['session_window_hours']
         result.append(entry)
 
-    # Include dynamic preset with example values (5h)
+    # Include dynamic preset with example values (5h) — NEW STRADDLE ROLL
     result.append({
         'name': SHORT_STRADDLE_CATEGORY,
         'dynamic': True,
-        'description': 'ATM short straddle — params auto-scaled from time-to-expiry (2–12h)',
+        'description': 'Short Straddle with Roll — auto-scaled (2–12h) + straddle roll system',
         'adjustment_interval': 120,
         'min_trigger_move': 8.0,
-        'max_loss_amount': 3.0,
+        'max_loss_amount': 3000,  # Updated to reflect actual max loss amount
         'max_lots_per_side': 5,
+        'straddle_roll_enabled': True,
+        'straddle_roll_max_per_session': 3,
+        'straddle_roll_trigger_pct': 1.0,  # Example value for 5h
     })
 
     return result

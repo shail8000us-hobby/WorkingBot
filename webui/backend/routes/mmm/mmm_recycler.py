@@ -15,6 +15,7 @@ See MMM_LOT_RECYCLING_IMPLEMENTATION_PLAN.md §4.
 Created: March 3, 2026
 """
 
+import copy
 import logging
 import math
 from typing import Dict, Any, List, Optional, Tuple
@@ -396,6 +397,18 @@ async def execute_lot_recycling(
     phase_a_fails = 0
     bought_back_positions = []  # Track successfully closed positions for rollback
 
+    # Capture canonical position objects (deep copies) before Phase A removes them.
+    # Rollback uses these to restore the exact pre-Phase-A ledger state rather than
+    # re-appending sparse frozen_positions view dicts (which triggers lifecycle drift).
+    _canonical_by_id: Dict[str, Any] = {}
+    for _sel in selected:
+        _pid = _sel.get('_pos_id')
+        if _pid:
+            for _orig in session.get(hedge_side, {}).get('positions', []):
+                if _orig.get('id') == _pid:
+                    _canonical_by_id[_pid] = copy.deepcopy(_orig)
+                    break
+
     for pos in selected:
         try:
             result = await close_position(
@@ -471,12 +484,22 @@ async def execute_lot_recycling(
         )
     except Exception as e:
         log.exception(f"[{session_id}] Recycle Phase B execution exception: {e}")
-        # Compensating transaction: restore bought-back positions to active state
+        # Compensating transaction: restore canonical pre-Phase-A position objects.
+        # Using deep-copied originals (not sparse view dicts) prevents lifecycle drift
+        # when recompute_side_lots auto-normalizes by active_strike.
         side_state = session.get(hedge_side, {})
         for pos in bought_back_positions:
-            pos['status'] = 'active'
-            pos.pop('_being_closed', None)
-            side_state.setdefault('positions', []).append(pos)
+            _pid = pos.get('_pos_id')
+            _canonical = _canonical_by_id.get(_pid) if _pid else None
+            if _canonical is not None:
+                _canonical.pop('_being_closed', None)
+                _canonical.pop('_being_closed_at', None)
+                side_state.setdefault('positions', []).append(_canonical)
+            else:
+                # Fallback: view dict restore — set 'shifted' (original lifecycle state)
+                pos['status'] = 'shifted'
+                pos.pop('_being_closed', None)
+                side_state.setdefault('positions', []).append(pos)
         recompute_side_lots(side_state)
         session[hedge_side] = side_state
         # Rollback realized P&L added by close_position() during Phase A
@@ -504,12 +527,22 @@ async def execute_lot_recycling(
             f"[{session_id}] Recycle Phase B FAILED: {error_msg}. "
             f"Phase A lots were freed."
         )
-        # Compensating transaction: restore bought-back positions to active state
+        # Compensating transaction: restore canonical pre-Phase-A position objects.
+        # Using deep-copied originals (not sparse view dicts) prevents lifecycle drift
+        # when recompute_side_lots auto-normalizes by active_strike.
         side_state = session.get(hedge_side, {})
         for pos in bought_back_positions:
-            pos['status'] = 'active'
-            pos.pop('_being_closed', None)
-            side_state.setdefault('positions', []).append(pos)
+            _pid = pos.get('_pos_id')
+            _canonical = _canonical_by_id.get(_pid) if _pid else None
+            if _canonical is not None:
+                _canonical.pop('_being_closed', None)
+                _canonical.pop('_being_closed_at', None)
+                side_state.setdefault('positions', []).append(_canonical)
+            else:
+                # Fallback: view dict restore — set 'shifted' (original lifecycle state)
+                pos['status'] = 'shifted'
+                pos.pop('_being_closed', None)
+                side_state.setdefault('positions', []).append(pos)
         recompute_side_lots(side_state)
         session[hedge_side] = side_state
         # Rollback realized P&L added by close_position() during Phase A
@@ -517,7 +550,7 @@ async def execute_lot_recycling(
         # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
         session['pnl_recycle'] = session.get('pnl_recycle', 0.0) - phase_a_pnl
         log.error(
-            "Phase B failed — restored %d positions to active state, "
+            "Phase B failed — restored %d positions to pre-Phase-A state, "
             "rolled back Phase A P&L: %.4f",
             len(bought_back_positions), phase_a_pnl,
         )

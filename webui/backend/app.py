@@ -97,6 +97,7 @@ try:
     from .routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
     from .routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from .routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
+    from .routes.user_preferences import user_preferences_bp  # MAR 2026: User UI preferences
     from .routes.market import market_bp  # JAN 2026: Market data (spot price)
     from .routes.tradingview_webhook import tradingview_bp  # FEB 2026: TradingView webhook integration
     from .routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
@@ -129,6 +130,7 @@ except ImportError:
     from routes.reconciliation import bp as reconciliation_bp  # NOV 20: Reconciliation engine
     from routes.symbols import symbols_bp  # DEC 28: Multi-symbol API (v5.0)
     from routes.settings import settings_bp  # JAN 2026: Settings API (risk limits)
+    from routes.user_preferences import user_preferences_bp  # MAR 2026: User UI preferences
     from routes.market import market_bp  # JAN 2026: Market data (spot price)
     from routes.tradingview_webhook import tradingview_bp  # FEB 2026: TradingView webhook integration
     from routes.ticker import ticker_bp  # JAN 2026: Ticker API (Greeks data)
@@ -280,6 +282,9 @@ print(f"✅ Registered reconciliation blueprint")
 # Register Settings API blueprint (JAN 2026: Risk limits)
 app.register_blueprint(settings_bp)
 print(f"✅ Registered settings blueprint")
+
+app.register_blueprint(user_preferences_bp)
+print(f"✅ Registered user_preferences blueprint")
 
 # Register Multi-Symbol API blueprint (DEC 28: v5.0 multi-symbol support)
 app.register_blueprint(symbols_bp)
@@ -571,6 +576,20 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register mmm blueprint: {e}")
     log.warning(f"MMM routes not available: {e}")
+
+# Register SSDH blueprint (Short Straddle Double Hedge — multi-leg options engine)
+try:
+    from webui.backend.routes.ssdh.ssdh_api import ssdh_bp
+    from webui.backend.routes.ssdh.ssdh_websocket import init_websocket as init_ssdh_websocket
+    from webui.backend.routes.ssdh.ssdh_activity import load_persisted_activities as _ssdh_load_activities
+    app.register_blueprint(ssdh_bp, url_prefix='/api/ssdh')
+    print("✅ Registered ssdh blueprint (Short Straddle Double Hedge)")
+    init_ssdh_websocket(socketio)
+    print("✅ SSDH WebSocket initialized")
+    _ssdh_load_activities()
+except Exception as e:
+    print(f"⚠️ Could not register ssdh blueprint: {e}")
+    log.warning(f"SSDH routes not available: {e}")
 
 # Register Claude AI blueprint (FEB 2026: Claude API integration for trading analysis)
 try:

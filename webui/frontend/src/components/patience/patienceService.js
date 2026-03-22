@@ -22,6 +22,7 @@ const patienceAPI = {
   getCard: (id) => axios.get(`${BASE}/cards/${id}`),
   updateCard: (id, data) => axios.put(`${BASE}/cards/${id}`, data),
   deleteCard: (id) => axios.delete(`${BASE}/cards/${id}`),
+  cloneCard: (id, overrides = {}) => axios.post(`${BASE}/cards/${id}/clone`, overrides),
 
   // ── Lifecycle ─────────────────────────────────────────────────────
   armCard: (id) => axios.post(`${BASE}/cards/${id}/arm`),
@@ -42,6 +43,9 @@ const patienceAPI = {
 
   // ── Execution log ─────────────────────────────────────────────────
   getLog: (cardId) => axios.get(`${BASE}/cards/${cardId}/log`),
+
+  // ── Live execution status (poll every 1s when EXECUTING) ──────────
+  getExecutionStatus: (cardId) => axios.get(`${BASE}/cards/${cardId}/execution-status`),
 
   // ── Prices (bid/ask/mark) ────────────────────────────────────────
   getPrices: (cardId) => axios.get(`${BASE}/cards/${cardId}/prices`),

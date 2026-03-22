@@ -171,6 +171,12 @@ PARAM_RULES = {
     'scale_cooldown_mins':    {'type': int,   'min': 5,    'max': 240,    'hot': True},
     'scale_target_premium':   {'type': float, 'min': 10,   'max': 5000,   'hot': True},
     'scale_min_premium':      {'type': float, 'min': 5,    'max': 1000,   'hot': True},
+    # Auto-Replenish Leg
+    'replenish_enabled':          {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'replenish_lot_mode':         {'type': str,   'min': None, 'max': None,  'hot': True},
+    'replenish_max_per_session':  {'type': int,   'min': 1,    'max': 10,    'hot': True},
+    'replenish_cooldown_sec':     {'type': int,   'min': 30,   'max': 3600,  'hot': True},
+    'replenish_min_premium':      {'type': float, 'min': 1,    'max': 500,   'hot': True},
     # ATM Shield — Close & Retreat
     'atm_shield_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
     'atm_shield_proximity_pct':        {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
@@ -215,8 +221,22 @@ PARAM_RULES = {
     'gamma_warning_distance_pct':       {'type': float, 'min': 0.1,  'max': 20.0,  'hot': True},
     'gamma_danger_distance_pct':        {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
     'gamma_detect_epsilon':             {'type': float, 'min': 0.01, 'max': 50.0,  'hot': True},
-    'gamma_severity_multiplier_enabled': {'type': bool,  'min': None, 'max': None,  'hot': False},  # requires restart when toggled
-    'gamma_severity_max_multiplier':     {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    'gamma_severity_multiplier_enabled':  {'type': bool,  'min': None, 'max': None,  'hot': False},
+    'gamma_severity_max_multiplier':      {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    'gamma_severity_proportional':        {'type': bool,  'min': None, 'max': None,  'hot': True},   # F6
+    'gamma_severity_warning_mult':        {'type': float, 'min': 1.0,  'max': 2.0,   'hot': True},   # F6
+    'gamma_severity_shift_distance_mult': {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},   # F6
+    # Feature 9: Data Confidence Gate
+    'data_confidence_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'confidence_stale_penalty':           {'type': float, 'min': 0.0,  'max': 0.5,   'hot': True},
+    'confidence_ws_failure_penalty':      {'type': float, 'min': 0.0,  'max': 0.1,   'hot': True},
+    'confidence_min_floor':               {'type': float, 'min': 0.0,  'max': 0.5,   'hot': True},
+    # Adaptive Tuning Engine
+    'adaptive_mode':                     {'type': str,   'min': None, 'max': None,  'hot': True},
+    'adaptive_preset':                   {'type': str,   'min': None, 'max': None,  'hot': True},
+    'adaptive_dry_run':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'atm_shield_partial_pct':            {'type': float, 'min': 0.1,  'max': 1.0,   'hot': True},
+    'atm_shield_defer_resell_beats':     {'type': int,   'min': 0,    'max': 5,     'hot': True},
 }
 
 
@@ -366,13 +386,8 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             "threshold must exceed band to avoid immediate rebalance on entry"
         )
 
-    # M-6 fix: warn if max_loss_amount is set dangerously low
-    max_loss = validated.get('max_loss_amount')
-    if max_loss is not None and max_loss < 10:
-        errors.append(
-            f"max_loss_amount below $10 is dangerous — session may auto-close "
-            "on normal spread fluctuation. Minimum recommended value is $100."
-        )
+    # M-6 note: max_loss_amount floor is enforced by PARAM_RULES min=1.
+    # No additional check here — $3 is valid for conservative 1-lot presets (e.g. SHORT_STRADDLE).
 
     # IMP-2: Trend tier ordering: tier1 < tier2 < tier3 < tier4
     tier_keys = ['trend_tier1_pct', 'trend_tier2_pct', 'trend_tier3_pct', 'trend_tier4_pct']
@@ -592,6 +607,12 @@ def get_param_info() -> Dict[str, Dict]:
         'scale_cooldown_mins': 'Minimum minutes between consecutive scale-up events.',
         'scale_target_premium': 'Target premium (in $) when scanning for the new OTM strike to sell during scale-up. Picks the strike closest to this premium.',
         'scale_min_premium': 'Minimum premium ($) required for the scale-up strike to be sold. Prevents selling strikes with negligible theta.',
+        # Auto-Replenish Leg
+        'replenish_enabled': 'Auto-Replenish: when one side closes to 0 lots, automatically sell a new leg on the empty side instead of pausing.',
+        'replenish_lot_mode': 'Lot sizing mode. match_active = match the open side active lots. initial = use initial_lots.',
+        'replenish_max_per_session': 'Max replenishments per session. Prevents infinite re-entry loops.',
+        'replenish_cooldown_sec': 'Min seconds between replenishments. Prevents rapid re-entry.',
+        'replenish_min_premium': 'Min premium ($) for the replenish strike. Rejects illiquid strikes.',
         # ATM Shield
         'atm_shield_enabled': 'ATM Shield: pre-emptively closes endangered positions approaching ATM and repositions at a safer OTM strike. Overrides Trend Guard at T1/T2 when active.',
         'atm_shield_proximity_pct': 'ATM proximity threshold (% of spot). When any strike is within this % of spot, Shield fires. E.g. 1.5 = fire when strike is within 1.5% of BTC price.',
@@ -608,6 +629,12 @@ def get_param_info() -> Dict[str, Dict]:
         'gamma_detect_epsilon': 'Minimum P&L slope change to count as a kink (gamma boundary). Lower = more sensitive, more false positives. Default 1.0.',
         'gamma_severity_multiplier_enabled': 'Phase 9 (RESTART REQUIRED): enable lot multiplier modulation based on gamma severity score. When ON, the gamma detector not only warns but actively scales hedge lots proportional to curvature magnitude.',
         'gamma_severity_max_multiplier': 'Maximum lot multiplier applied by gamma severity modulation (Phase 9). E.g. 2.0 = at maximum severity, double the hedge lots.',
+        # Adaptive Tuning Engine
+        'adaptive_mode': 'Parameter tuning mode. manual = you set everything; preset = loads recommended values for your strategy type; adaptive = auto-tunes ATM Shield and buffer params based on live market regime. Default: manual.',
+        'adaptive_preset': 'Strategy profile for preset/adaptive mode. strangle = standard OTM; straddle = near-ATM; short_window = 3–5 hour sessions. Loads optimized base values for ATM Shield proximity, cooldown, and buffer.',
+        'adaptive_dry_run': 'Shadow mode: compute what the adaptive engine would change but only log it — do not apply. Use to validate adaptive behavior before enabling live tuning.',
+        'atm_shield_partial_pct': 'Fraction of active positions to close on shield fire. 1.0 = close all (default). 0.5 = close half. Partial mode useful in oscillating markets — avoids crystallizing full loss on a potential reversal while still reducing gamma exposure.',
+        'atm_shield_defer_resell_beats': 'Beats to wait after closing before re-selling at new OTM strike. 0 = immediate re-sell (default). 1 = wait one heartbeat interval. Deferring lets the market settle and often catches a better premium, especially in high-volatility conditions.',
     }
 
     info = {}

@@ -216,22 +216,52 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
             border: '1px solid rgba(148, 163, 184, 0.2)'
           }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Chip
-                icon={activityData.monitorStatus?.running ?
-                  <PlayCircleIcon sx={{ color: '#22c55e !important' }} /> :
-                  <ErrorIcon sx={{ color: '#ef4444 !important' }} />
-                }
-                label={activityData.monitorStatus?.running ? 'Monitor Running' : 'Monitor Stopped'}
-                size="small"
-                sx={{
-                  bgcolor: activityData.monitorStatus?.running ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                  color: activityData.monitorStatus?.running ? '#22c55e' : '#ef4444',
-                  fontWeight: 600
-                }}
-              />
+              {(() => {
+                const s = activityData.monitorStatus || {};
+                const running = s.running;
+                const hasLimits = (activityData.activeLimits?.strike || 0) + (activityData.activeLimits?.expiry || 0) > 0;
+                const secsStale = s.secs_since_eval;
+                // Evaluations are stale if: limits exist but no eval in last 30s
+                const evalStale = hasLimits && s.eval_count > 0 && secsStale !== null && secsStale > 30;
+                // Evaluations never ran if: limits exist but eval_count is still 0
+                const evalNeverRan = hasLimits && (s.eval_count || 0) === 0;
+                const warn = evalStale || evalNeverRan;
+
+                const chipColor = !running ? '#ef4444' : warn ? '#f59e0b' : '#22c55e';
+                const chipBg = !running ? 'rgba(239,68,68,0.2)' : warn ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)';
+                const chipLabel = !running ? 'Monitor Stopped'
+                  : evalNeverRan ? 'Running — Not Evaluating'
+                  : evalStale    ? 'Running — Evaluations Stalled'
+                  : 'Monitor Running';
+                const chipIcon = !running ? <ErrorIcon sx={{ color: `${chipColor} !important` }} />
+                  : warn ? <ErrorIcon sx={{ color: `${chipColor} !important` }} />
+                  : <PlayCircleIcon sx={{ color: `${chipColor} !important` }} />;
+
+                return (
+                  <Chip
+                    icon={chipIcon}
+                    label={chipLabel}
+                    size="small"
+                    sx={{ bgcolor: chipBg, color: chipColor, fontWeight: 600 }}
+                  />
+                );
+              })()}
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>
-                Checks: {activityData.monitorStatus?.check_count || 0}
+                Loops: {activityData.monitorStatus?.check_count || 0}
               </Typography>
+              <Typography variant="caption" sx={{
+                color: (activityData.monitorStatus?.eval_count || 0) === 0 && ((activityData.activeLimits?.strike || 0) + (activityData.activeLimits?.expiry || 0)) > 0
+                  ? '#f59e0b' : '#94a3b8',
+                fontWeight: (activityData.monitorStatus?.eval_count || 0) === 0 && ((activityData.activeLimits?.strike || 0) + (activityData.activeLimits?.expiry || 0)) > 0
+                  ? 700 : 400
+              }}>
+                Evaluations: {activityData.monitorStatus?.eval_count || 0}
+              </Typography>
+              {(activityData.monitorStatus?.skipped_stale || 0) > 0 && (
+                <Typography variant="caption" sx={{ color: '#f59e0b', fontWeight: 700 }}>
+                  ⚠️ Skipped (stale): {activityData.monitorStatus.skipped_stale}
+                </Typography>
+              )}
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>
                 Interval: {activityData.monitorStatus?.check_interval || 5}s
               </Typography>

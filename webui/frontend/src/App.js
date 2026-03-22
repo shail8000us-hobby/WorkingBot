@@ -65,6 +65,7 @@ const IntelligencePage = React.lazy(() => import('./pages/IntelligencePage'));
 const OptionsChainPage = React.lazy(() => import('./pages/OptionsChainPage'));
 const StrategyBuilderPage = React.lazy(() => import('./pages/StrategyBuilderPage'));
 const MMMPage = React.lazy(() => import('./pages/MMMPage'));
+const SSDHPage = React.lazy(() => import('./pages/SSDHPage'));
 const PortfolioMarginPage = React.lazy(() => import('./pages/PortfolioMarginPage'));
 const GuardianPage = React.lazy(() => import('./pages/GuardianPage'));
 const MLTradingPage = React.lazy(() => import('./pages/MLTradingPage'));
@@ -340,7 +341,7 @@ function App() {
         />
 
         <main
-          className="relative z-0 pt-60 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
+          className="relative z-0 pt-12 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
           style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
         >
           <MobileNav
@@ -364,6 +365,7 @@ function App() {
                   <Route path="/mv_straddle" element={<MVStraddlePage />} />
                   <Route path="/mmm" element={<MMMPage socket={socket} />} />
                   <Route path="/ssr_algo" element={<SSRAlgoPage />} />
+                  <Route path="/ssdh" element={<SSDHPage />} />
                   <Route path="/risk" element={<RiskPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/tradingview" element={<TradingViewPage />} />
                   <Route path="/rsi" element={<RSIPage isMobile={isMobile} />} />
@@ -401,7 +403,7 @@ function App() {
           </Alert>
         </Snackbar>
 
-        <div className="pointer-events-none fixed inset-x-0 top-16 z-10 flex justify-center lg:pl-64">
+        <div className="pointer-events-none fixed inset-x-0 top-16 z-10 hidden lg:flex justify-center lg:pl-64">
           <span className="rounded-b-3xl border border-slate-800/40 bg-slate-900/60 px-4 py-1 text-xs font-semibold uppercase tracking-widest text-slate-500">
             Connection: {connectionState} · Quality: {connectionQuality}
           </span>

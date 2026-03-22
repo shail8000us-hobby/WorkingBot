@@ -548,10 +548,20 @@ class TakeProfitMonitor:
                 positions = None
                 try:
                     from webui.backend.routes.options.options_control import get_cached_positions
-                    positions_data = get_cached_positions(max_age=30)
+                    positions_data = get_cached_positions(max_age=15)
                     if positions_data is None:
-                        logger.debug("No fresh positions cache available, skipping TP check")
-                        return
+                        # Cache stale — fetch directly so TP monitoring works even when browser tab is closed
+                        logger.warning("⚠️ TP monitor: positions cache stale — fetching directly")
+                        try:
+                            from webui.backend.routes.options.options_client import _run_async, get_unified_client
+                            client = get_unified_client()
+                            async def _fetch_tp():
+                                result = await client.get_all_positions_with_options()
+                                return result.get('options', [])
+                            positions_data = _run_async(_fetch_tp(), timeout=15)
+                        except Exception as fe:
+                            logger.warning(f"⚠️ TP monitor: direct fetch failed: {fe}")
+                            return
                     
                     # Normalise to list
                     if isinstance(positions_data, dict):

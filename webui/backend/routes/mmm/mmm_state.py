@@ -575,6 +575,15 @@ DEFAULT_PARAMS = {
     'gamma_detect_epsilon': 0.3,              # abs threshold for detecting a kink (USD)
     'gamma_severity_multiplier_enabled': True,   # enable trading impact (lot multiplier in DANGER zone)
     'gamma_severity_max_multiplier': 1.5,     # max lot multiplier applied in DANGER zone
+    'gamma_severity_proportional': True,      # F6: smooth distance-proportional curve (False = legacy binary)
+    'gamma_severity_warning_mult': 1.1,       # F6: lot multiplier applied in WARNING zone
+    'gamma_severity_shift_distance_mult': 1.2,  # F6: widen shift distance when in DANGER zone
+
+    # Feature 9: Data Confidence Gate — scales lot sizing when market data quality degrades
+    'data_confidence_enabled': True,          # master switch; False = multiplier always 1.0 (no effect)
+    'confidence_stale_penalty': 0.25,         # subtracted from confidence per stale premium side (CE or PE)
+    'confidence_ws_failure_penalty': 0.04,    # subtracted per consecutive WS emission failure
+    'confidence_min_floor': 0.20,             # confidence never drops below this (20% = 1/5 max lots)
 
     # Guardian — heartbeat-level integrity checks
     'guardian_enabled': True,              # master switch for MMM Guardian
@@ -601,6 +610,26 @@ DEFAULT_PARAMS = {
     'adaptive_dry_run': False,             # compute changes but only log, don't apply
     'atm_shield_partial_pct': 1.0,        # fraction of lots to close on shield fire (1.0 = full)
     'atm_shield_defer_resell_beats': 0,   # beats to wait before re-sell after shield close (0 = immediate)
+
+    # Auto-Replenish Leg — re-enter empty side instead of pausing
+    'replenish_enabled': False,            # master switch — OFF by default
+    'replenish_lot_mode': 'match_active',  # 'match_active' | 'initial'
+    'replenish_max_per_session': 3,        # cap to prevent infinite re-entry
+    'replenish_cooldown_sec': 300,         # 5 min between replenishments
+    'replenish_min_premium': 30.0,         # reject strikes with premium below this ($)
+
+    # ── Straddle Roll ──
+    'straddle_roll_enabled':            False,  # off by default; preset enables it
+    'straddle_roll_trigger_pct':        1.0,
+    'straddle_roll_max_per_session':    3,
+    'straddle_roll_cooldown_mins':      15,
+    'straddle_roll_emergency_mult':     2.0,    # bypass cooldown at N× trigger distance
+    'straddle_roll_min_time_to_expiry': 90,
+    'straddle_roll_min_credit_pct':     0.30,
+    'straddle_roll_slippage_factor':    0.03,
+    'straddle_roll_loss_abort_mult':    3.0,
+    'straddle_roll_lot_scale':          1.0,
+    'straddle_roll_iv_spike_mult':      2.0,
 }
 
 # Which parameters can be changed while algo is running
@@ -713,6 +742,16 @@ HOT_RELOAD_PARAMS = {
     # Adaptive Tuning Engine
     'adaptive_mode', 'adaptive_preset', 'adaptive_dry_run',
     'atm_shield_partial_pct', 'atm_shield_defer_resell_beats',
+    # Auto-Replenish Leg
+    'replenish_enabled', 'replenish_lot_mode', 'replenish_max_per_session',
+    'replenish_cooldown_sec', 'replenish_min_premium',
+    # Straddle Roll
+    'straddle_roll_enabled', 'straddle_roll_trigger_pct',
+    'straddle_roll_max_per_session', 'straddle_roll_cooldown_mins',
+    'straddle_roll_emergency_mult', 'straddle_roll_min_time_to_expiry',
+    'straddle_roll_min_credit_pct', 'straddle_roll_slippage_factor',
+    'straddle_roll_loss_abort_mult', 'straddle_roll_lot_scale',
+    'straddle_roll_iv_spike_mult',
 }
 
 
@@ -745,17 +784,30 @@ def create_session(
     dte_category = merged_params.get('dte_category', '')
     if dte_category:
         from .mmm_dte_presets import apply_preset, SHORT_STRADDLE_CATEGORY
-        # Preserve user overrides: extract explicit user params, re-apply on top of preset
         user_params = params or {}
-        merged_params = {**DEFAULT_PARAMS}
-        merged_params = apply_preset(merged_params, dte_category)
-        merged_params.update(user_params)
-        # For dynamic presets (SHORT_STRADDLE), apply_preset sets dte_category
-        # to '0DTE' for correct safety routing. Don't clobber it.
-        # _preset_source preserves the user's original selection for UI display.
         if dte_category == SHORT_STRADDLE_CATEGORY:
-            merged_params['dte_category'] = merged_params.get('dte_category', '0DTE')
+            # Dynamic preset: must read expiry from raw user params BEFORE the
+            # DEFAULT_PARAMS reset, because DEFAULT_PARAMS has expiry=''.
+            # Build preset first, then layer: DEFAULT_PARAMS < preset < user_params.
+            from .mmm_dte_presets import compute_total_dte_hours, build_short_straddle_preset
+            _expiry = user_params.get('expiry', '')
+            if not _expiry:
+                raise ValueError("SHORT_STRADDLE preset requires 'expiry' param")
+            _hours = compute_total_dte_hours(
+                _expiry,
+                user_params.get('expiry_hour_utc', 12),
+                user_params.get('expiry_minute_utc', 0),
+            )
+            _preset = build_short_straddle_preset(_hours)
+            merged_params = {**DEFAULT_PARAMS}
+            merged_params.update(_preset)       # preset overrides DEFAULT_PARAMS
+            merged_params.update(user_params)   # user overrides preset
+            merged_params['dte_category'] = '0DTE'
+            merged_params['_preset_source'] = SHORT_STRADDLE_CATEGORY
         else:
+            merged_params = {**DEFAULT_PARAMS}
+            merged_params = apply_preset(merged_params, dte_category)
+            merged_params.update(user_params)
             merged_params['dte_category'] = dte_category
 
     # Multi-Expiry: Compute total_dte_hours at creation time
@@ -1161,4 +1213,6 @@ def get_session_summary(session: Dict) -> Dict:
         # Health & regime (for card badges)
         '_health_grade': session.get('_health_grade', ''),
         '_gamma_regime': session.get('_gamma_regime', 'NORMAL'),
+        '_gamma_zone': (session.get('_gamma_result') or {}).get('gamma_zone', 'SAFE'),
+        '_data_confidence': session.get('_data_confidence'),
     }

@@ -89,6 +89,7 @@ import MMMPerpHedgePanel from './MMMPerpHedgePanel';
 import MMMPerformancePanel from './MMMPerformancePanel';
 import MMMTradeAuditPanel from './MMMTradeAuditPanel';
 import MMMActivityFeed from './MMMActivityFeed';
+import MMMExecutionLogPanel from './MMMExecutionLogPanel';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
 import MMMGreeksPanel from './MMMGreeksPanel';
@@ -395,6 +396,35 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
                 </Typography>
               </Tooltip>
             )}
+            {/* F9: Data Quality badge — live from heartbeat, fallback to session field */}
+            {(() => {
+              const conf = heartbeat?.data_confidence ?? session._data_confidence;
+              if (conf == null) return null;
+              const pct = Math.round(conf * 100);
+              const color = conf >= 0.8 ? '#4caf50' : conf >= 0.5 ? '#ff9800' : '#f44336';
+              const bg = conf >= 0.8 ? 'rgba(76,175,80,0.15)' : conf >= 0.5 ? 'rgba(255,152,0,0.15)' : 'rgba(244,67,54,0.15)';
+              return (
+                <Tooltip title={`Data confidence: ${pct}%`}>
+                  <Chip size="small" label={`${pct}%`}
+                    sx={{ height: 16, fontSize: '0.6rem', fontWeight: 700, bgcolor: bg, color, '& .MuiChip-label': { px: 0.75 } }} />
+                </Tooltip>
+              );
+            })()}
+            {/* F6: Gamma Zone badge — hidden in SAFE, shown for WARNING/DANGER/CRITICAL */}
+            {(() => {
+              const zone = heartbeat?.gamma?.gamma_zone ?? session._gamma_zone;
+              if (!zone || zone === 'SAFE') return null;
+              const dist = heartbeat?.gamma?.nearest_distance_pct ?? session._gamma_nearest_pct;
+              const color = zone === 'WARNING' ? '#ff9800' : '#f44336';
+              const bg = zone === 'WARNING' ? 'rgba(255,152,0,0.15)' : 'rgba(244,67,54,0.15)';
+              const label = `γ${zone[0]}${dist != null ? ` ${dist.toFixed(1)}%` : ''}`;
+              return (
+                <Tooltip title={`Gamma zone: ${zone}${dist != null ? ` (${dist.toFixed(2)}% from boundary)` : ''}`}>
+                  <Chip size="small" label={label}
+                    sx={{ height: 16, fontSize: '0.6rem', fontWeight: 700, bgcolor: bg, color, '& .MuiChip-label': { px: 0.75 } }} />
+                </Tooltip>
+              );
+            })()}
           </Box>
           <StatusChip status={status} />
         </Box>
@@ -790,10 +820,24 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     try {
       // For adopt mode, create as 'fresh' on backend — adoption happens in ConfigPanel
       const backendMode = mode === 'adopt' ? 'fresh' : mode;
-      const sessionParams = { ...params };
-      // Attach DTE preset category if selected
-      if (dtePreset) {
-        sessionParams.dte_category = dtePreset;
+      let sessionParams;
+      if (dtePreset === 'SHORT_STRADDLE') {
+        // SHORT_STRADDLE: backend builds all 52 params from the preset server-side.
+        // Only send what the user explicitly controls — preset-driven values
+        // (max_loss_amount, adjustment_interval, etc.) must not be sent so they
+        // don't trip backend validation guards calibrated for other presets.
+        sessionParams = {
+          expiry: params.expiry,
+          dte_category: 'SHORT_STRADDLE',
+          initial_lots: params.initial_lots,
+          desired_ce_premium: params.desired_ce_premium,
+          desired_pe_premium: params.desired_pe_premium,
+        };
+      } else {
+        sessionParams = { ...params };
+        if (dtePreset) {
+          sessionParams.dte_category = dtePreset;
+        }
       }
       const config = { mode: backendMode, params: sessionParams };
       if (mode === 'import') {
@@ -875,7 +919,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                     {name === 'SHORT_WINDOW'
                       ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
                       : name === 'SHORT_STRADDLE'
-                      ? 'Short Straddle — Auto'
+                      ? 'Short Straddle — with Roll'
                       : name}
                     {dtePresets[name]?.max_loss_amount && (
                       <Typography
@@ -950,7 +994,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
             ) : dtePreset === 'SHORT_STRADDLE' ? (
               <>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-                  ⚡ Short Straddle — Dynamic Theta Sprint
+                  🎯 Short Straddle — with Roll System
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   Pure ATM straddle optimized for daily BTC options. All 52 parameters
@@ -961,6 +1005,11 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
                   {' • '}Trailing Stop: {(dtePresets[dtePreset].trailing_stop_pct * 100) || 25}%
                   {' • '}Adjustments: auto-scaled
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  🔄 Straddle Roll: auto-repositions at ATM when spot moves ≥ trigger %
+                  {' • '}Max {dtePresets[dtePreset].straddle_roll_max_per_session || 3} rolls/session
+                  {' • '}Cooldown {dtePresets[dtePreset].straddle_roll_cooldown_mins || 15}min
                 </Typography>
                 <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
                   ⏱ Params computed at session creation from time-to-expiry. Select today's expiry above.
@@ -988,28 +1037,52 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         {/* Core parameters */}
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>Core Parameters</Typography>
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          <Grid item xs={4}>
-            <TextField
-              label="Desired CE Premium"
-              type="number"
-              value={params.desired_ce_premium}
-              onChange={(e) => handleParamChange('desired_ce_premium', parseFloat(e.target.value) || 0)}
-              fullWidth
-              size="small"
-              inputProps={{ min: 1, step: 10 }}
-            />
-          </Grid>
-          <Grid item xs={4}>
-            <TextField
-              label="Desired PE Premium"
-              type="number"
-              value={params.desired_pe_premium}
-              onChange={(e) => handleParamChange('desired_pe_premium', parseFloat(e.target.value) || 0)}
-              fullWidth
-              size="small"
-              inputProps={{ min: 1, step: 10 }}
-            />
-          </Grid>
+          {dtePreset === 'SHORT_STRADDLE' ? (
+            /* SHORT_STRADDLE: ATM strike is auto-selected — premium fields are not applicable */
+            <Grid item xs={8}>
+              <Box sx={{
+                p: 1.5,
+                borderRadius: 1,
+                border: '1px solid rgba(255,255,255,0.12)',
+                backgroundColor: 'rgba(255,255,255,0.04)',
+              }}>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                  Strike Selection
+                </Typography>
+                <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                  ATM — auto-selected at session creation
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  CE and PE sold simultaneously at the same ATM strike. No manual premium target needed.
+                </Typography>
+              </Box>
+            </Grid>
+          ) : (
+            <>
+              <Grid item xs={4}>
+                <TextField
+                  label="Desired CE Premium"
+                  type="number"
+                  value={params.desired_ce_premium}
+                  onChange={(e) => handleParamChange('desired_ce_premium', parseFloat(e.target.value) || 0)}
+                  fullWidth
+                  size="small"
+                  inputProps={{ min: 1, step: 10 }}
+                />
+              </Grid>
+              <Grid item xs={4}>
+                <TextField
+                  label="Desired PE Premium"
+                  type="number"
+                  value={params.desired_pe_premium}
+                  onChange={(e) => handleParamChange('desired_pe_premium', parseFloat(e.target.value) || 0)}
+                  fullWidth
+                  size="small"
+                  inputProps={{ min: 1, step: 10 }}
+                />
+              </Grid>
+            </>
+          )}
           <Grid item xs={4}>
             <TextField
               label="Initial Lots"
@@ -1050,6 +1123,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               fullWidth
               size="small"
               inputProps={{ min: 10, step: 30 }}
+              disabled={dtePreset === 'SHORT_STRADDLE'}
             />
           </Grid>
           <Grid item xs={4}>
@@ -1060,7 +1134,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               onChange={(e) => handleParamChange('max_loss_amount', parseFloat(e.target.value) || 0)}
               fullWidth
               size="small"
-              inputProps={{ min: 100, step: 1000 }}
+              inputProps={{ min: dtePreset === 'SHORT_STRADDLE' ? 1 : 100, step: dtePreset === 'SHORT_STRADDLE' ? 1 : 1000 }}
             />
           </Grid>
         </Grid>
@@ -2114,6 +2188,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <Tab label="Risk" />
         <Tab label="Performance" />
         <Tab label="Audit" />
+        <Tab label="Exec Log" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -2155,6 +2230,26 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                   variant="outlined"
                   sx={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'text.secondary' }}
                 />
+              )}
+              {/* Straddle Roll badge — only for SHORT_STRADDLE sessions */}
+              {(session.params?._preset_source === 'SHORT_STRADDLE' || session.params?.dte_category === 'SHORT_STRADDLE') &&
+                session._straddle_roll_count != null && (
+                <Tooltip title={
+                  session._straddle_last_roll_at
+                    ? `Last roll: ${new Date(session._straddle_last_roll_at).toLocaleTimeString()}`
+                    : 'No rolls yet'
+                }>
+                  <Chip
+                    label={`🔄 Rolls: ${session._straddle_roll_count}/${session.params?.straddle_roll_max_per_session || 3}`}
+                    size="small"
+                    sx={{
+                      fontFamily: 'monospace',
+                      fontWeight: 600,
+                      bgcolor: session._straddle_roll_count > 0 ? 'rgba(33,150,243,0.15)' : 'rgba(255,255,255,0.06)',
+                      color: session._straddle_roll_count > 0 ? '#42a5f5' : 'text.secondary',
+                    }}
+                  />
+                </Tooltip>
               )}
             </Box>
             <StatusChip status={status} />
@@ -2959,6 +3054,13 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         </Box>
       )}
 
+      {/* Tab 17: Execution Event Log */}
+      {detailTab === 17 && (
+        <Box>
+          <MMMExecutionLogPanel sessionId={session?.session_id} />
+        </Box>
+      )}
+
       <Snackbar
         open={activeStrikeSnack.open}
         autoHideDuration={4000}
@@ -3541,6 +3643,10 @@ const MMMDashboard = () => {
                   sessionId={selectedSessionId}
                   sessionStatus={fullSession.strategy_status || fullSession.status}
                   sessionExpiry={fullSession.params?.expiry || ''}
+                  isStraddle={
+                    fullSession.params?._preset_source === 'SHORT_STRADDLE' ||
+                    fullSession.params?.dte_category === 'SHORT_STRADDLE'
+                  }
                   initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {
                     setSnackbar({ open: true, message: 'Session initialized!', severity: 'success' });

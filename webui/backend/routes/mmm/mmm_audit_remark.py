@@ -92,6 +92,12 @@ def build_trade_remark(
                 agg_up = aggressor.upper() if aggressor else '?'
                 other = 'PE' if side_up == 'CE' else 'CE'
                 loss_str = f' | loss covered ${loss_covered:.4f}' if loss_covered > 0 else ''
+                # AUDIT FIX M-1: Straddle Roll re-entry gets a dedicated remark
+                if adj_type == 'straddle_roll':
+                    return (
+                        f'Straddle Roll re-entry — {side_up} leg | '
+                        f'{lots} lots @ ${premium:.2f} | gross ${gross:.4f}{partial_tag}'
+                    )
                 if event_type == 'REVERSAL':
                     detail = (
                         'adj P&L was negative'
@@ -167,6 +173,11 @@ def build_trade_remark(
                     )
                 if mechanism == 'emergency':
                     return f'Forced close — max-loss / emergency trigger{pnl_str}{partial_tag}'
+                if mechanism == 'straddle_roll':
+                    return (
+                        f'Straddle Roll close — {side_up} leg @ strike {strike} | '
+                        f'{lots} lots @ ${premium:.2f}{pnl_str}{partial_tag}'
+                    )
                 return f'Forced exit — {mechanism or "auto_close"}{pnl_str}{partial_tag}'
 
             if event_type == 'PERP_HEDGE':

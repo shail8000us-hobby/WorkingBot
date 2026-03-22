@@ -147,6 +147,62 @@ async def alert_margin_tier_change(
     return await _send_async(msg, f"tier_change_{session_id}_{new_tier}")
 
 
+# ─────────────────────────────────────────────────────────────────────
+# Straddle Roll Alert functions (CRITICAL FIX C-3)
+# ─────────────────────────────────────────────────────────────────────
+
+def alert_half_roll_detected(session_id: str, closed_side: str, failed_side: str, stage: str):
+    """Alert user that a roll was interrupted mid-execution (sync wrapper)."""
+    try:
+        asyncio.create_task(_alert_half_roll_detected_async(session_id, closed_side, failed_side, stage))
+    except Exception:
+        pass  # fire-and-forget
+
+
+async def _alert_half_roll_detected_async(session_id: str, closed_side: str, failed_side: str, stage: str):
+    """Alert user that a roll was interrupted mid-execution."""
+    messages = {
+        'close_failed': f"🔴 *HALF-ROLL DETECTED*\n\n❌ {closed_side.upper()} closed, {failed_side.upper()} close FAILED",
+        'close_partial': f"🔴 *HALF-ROLL DETECTED*\n\n⚠️ {closed_side.upper()} closed, {failed_side.upper()} partial fill",
+        'reentry_ce_failed': "🔴 *ROLL RE-ENTRY FAILED*\n\n❌ Both legs closed, CE re-entry FAILED (naked position)",
+        'reentry_pe_failed_naked_ce': "🚨 *NAKED CE ALERT*\n\n💥 PE re-entry FAILED after CE sold\n🚨 **CLOSE CE MANUALLY**",
+    }
+
+    base_message = messages.get(stage, f"🔴 *HALF-ROLL*: Stage {stage}")
+
+    msg = f"""{base_message}
+
+🤖 Session: `{session_id}`
+⚠️ **Manual intervention required**
+📊 Check dashboard immediately
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    await _send_async(msg, f"half_roll_{session_id}_{stage}")
+
+
+def alert_half_roll_recovery_needed(session_id: str, state: str):
+    """Alert on backend restart that a session needs manual recovery (sync wrapper)."""
+    try:
+        asyncio.create_task(_alert_half_roll_recovery_needed_async(session_id, state))
+    except Exception:
+        pass
+
+
+async def _alert_half_roll_recovery_needed_async(session_id: str, state: str):
+    """Alert on backend restart that a session needs manual recovery."""
+    msg = f"""🔴 *STARTUP ALERT*
+
+🚨 Half-roll detected: `{state}`
+🛑 Session auto-STOPPED
+⚠️ Review dashboard and close/reset manually
+
+🤖 Session: `{session_id}`
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    await _send_async(msg, f"startup_half_roll_{session_id}")
+
+
+# ─────────────────────────────────────────────────────────────────────
 async def alert_emergency_close(
     session_id: str,
     reason: str,

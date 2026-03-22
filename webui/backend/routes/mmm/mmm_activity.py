@@ -133,6 +133,19 @@ ACTIVITY_TYPES = {
     'scale_up_failed': 'Scale-Up Failed',
     'scale_up_no_strikes': 'Scale-Up No Strikes',
 
+    # Adaptive Tuning Engine
+    'param_adapted': 'Param Adapted',
+
+    # Auto-Replenish Leg
+    'replenish_triggered': 'Replenish Triggered',
+    'replenish_complete': 'Replenish Complete',
+    'replenish_failed': 'Replenish Failed',
+    'replenish_blocked': 'Replenish Blocked',
+
+    # Straddle Roll
+    'straddle_roll': 'Straddle Roll',
+    'straddle_roll_blocked': 'Roll Blocked',
+
     # Hot reload
     'hot_reload': 'Hot Reload',
 
@@ -162,7 +175,10 @@ ACTIVITY_CATEGORIES = {
                     'both_sides_auto_decision',
                     'harvest', 'recycle', 'shift_recycle', 'rebalance_boost', 'trend_boost',
                     'scale_up_triggered', 'scale_up_complete', 'scale_up_failed',
-                    'scale_up_no_strikes'},
+                    'scale_up_no_strikes',
+                    'replenish_triggered', 'replenish_complete', 'replenish_failed',
+                    'replenish_blocked',
+                    'straddle_roll', 'straddle_roll_blocked'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',
@@ -172,6 +188,7 @@ ACTIVITY_CATEGORIES = {
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
                'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
+               'param_adapted',
                'info', 'warning', 'error'},
 }
 

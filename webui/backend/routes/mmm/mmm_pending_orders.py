@@ -206,6 +206,8 @@ async def check_and_resolve_pending(
                     lots=lots,
                     fill_price=fill_price,
                     adj_type=adj_type,
+                    order_id=order_id,
+                    client_order_id=order_id,  # pending recovery: use order_id as proxy
                 )
                 clear_pending(session_id, side)
                 return 'filled'

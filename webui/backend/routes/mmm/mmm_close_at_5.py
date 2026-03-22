@@ -40,7 +40,8 @@ def _check_stale_being_closed(pos: dict, label: str) -> bool:
     if not pos.get('_being_closed'):
         return False
     set_at = pos.get('_being_closed_at', 0)
-    if set_at and time.monotonic() - set_at > _BEING_CLOSED_TTL:
+    # If set_at is 0 or missing, treat as infinitely stale (no timestamp = always expired)
+    if not set_at or time.monotonic() - set_at > _BEING_CLOSED_TTL:
         log.warning(
             f"Auto-cleared stale _being_closed on {label} "
             f"(stuck >{_BEING_CLOSED_TTL}s — previous close attempt likely crashed)"
@@ -392,6 +393,7 @@ async def close_position(
             side='buy',
             size=lots,
             reduce_only=True,
+            session_id=session.get('session_id', ''),
             use_bid_entry=(mechanism == 'close_at_5'),  # Bid-entry for close_at_5: cheaper maker fill
         )
 
@@ -473,10 +475,16 @@ async def close_position(
         # Partial fill: reduce remaining lots in-state instead of removing entirely.
         # Full fill:    mark position closed (original behaviour).
         # Note: _being_closed flag is cleared by _remove_closed_position / _partial_close_position.
+        _close_oid = str(result.get('order_id', ''))
+        _close_coid = str(result.get('client_order_id', ''))
         if actual_lots < lots:
-            _partial_close_position(session, side, position, pos_type, actual_lots)
+            _partial_close_position(session, side, position, pos_type, actual_lots,
+                                    close_order_id=_close_oid,
+                                    close_client_order_id=_close_coid)
         else:
-            _remove_closed_position(session, side, position, pos_type)
+            _remove_closed_position(session, side, position, pos_type,
+                                    close_order_id=_close_oid,
+                                    close_client_order_id=_close_coid)
 
         # Register this close for post-close verification.
         # The exchange positions API takes 1-5 s to reflect a fill; without this
@@ -490,6 +498,12 @@ async def close_position(
             'lots_closed': actual_lots,
             'grace_beats': 3,          # skip mismatch for up to 3 reconciliation cycles
         }
+
+        # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+        _od = result.get('order_details') or {}
+        _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+        if _commission:
+            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
 
         # Record realized P&L
         session['realized_pnl'] = session.get('realized_pnl', 0) + realized_pnl
@@ -638,6 +652,8 @@ def _partial_close_position(
     position: Dict,
     pos_type: str,
     closed_lots: int,
+    close_order_id: str = '',
+    close_client_order_id: str = '',
 ):
     """
     Reduce a position's lot count after a partial fill.
@@ -659,6 +675,10 @@ def _partial_close_position(
         for pos in side_state.get('positions', []):
             if pos.get('id') == pos_id:
                 pos['lots'] = remaining
+                if close_order_id:
+                    pos['close_order_id'] = close_order_id
+                if close_client_order_id:
+                    pos['close_client_order_id'] = close_client_order_id
                 pos.pop('_being_closed', None)
                 if remaining <= 0:
                     # Edge-case: became 0 through rounding — treat as fully closed
@@ -702,6 +722,8 @@ def _remove_closed_position(
     side: str,
     position: Dict,
     pos_type: str,
+    close_order_id: str = '',
+    close_client_order_id: str = '',
 ):
     """
     Mark a position as closed in state.
@@ -721,6 +743,12 @@ def _remove_closed_position(
             if pos.get('id') == pos_id:
                 pos['status'] = 'closed'
                 pos['closed_at'] = now
+                if close_order_id:
+                    pos['close_order_id'] = close_order_id
+                if close_client_order_id:
+                    pos['close_client_order_id'] = close_client_order_id
+                pos.pop('_being_closed', None)
+                pos.pop('_being_closed_at', None)
                 found = True
                 break
         if not found:
@@ -729,6 +757,13 @@ def _remove_closed_position(
                 f"positions[]. Position may already be closed."
             )
         recompute_side_lots(side_state)
+        # H4 FIX (ID-based path): clear trigger_snapshot for the closed strike.
+        # Prevents stale snapshot being used as loss baseline if the same strike is
+        # re-used later (operator inject, shift back, etc.).
+        # Same fix already applied to content-match path below — now consistent.
+        closed_strike = position.get('strike', 0)
+        if closed_strike:
+            side_state.get('trigger_snapshot', {}).pop(_strike_key(closed_strike), None)
         session[side] = side_state
         return
 
@@ -742,6 +777,12 @@ def _remove_closed_position(
             if pos.get('type') == 'original' and pos.get('status') == 'active':
                 pos['status'] = 'closed'
                 pos['closed_at'] = now
+                if close_order_id:
+                    pos['close_order_id'] = close_order_id
+                if close_client_order_id:
+                    pos['close_client_order_id'] = close_client_order_id
+                pos.pop('_being_closed', None)
+                pos.pop('_being_closed_at', None)
                 break
 
     elif pos_type == 'adjustment':

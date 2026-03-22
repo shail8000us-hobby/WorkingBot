@@ -477,6 +477,11 @@ const mmmService = {
     return data;
   },
 
+  async previewAtmStraddle({ expiry, underlying = 'BTC' }) {
+    const { data } = await api.post(`${BASE_URL}/preview_atm_straddle`, { expiry, underlying });
+    return data;
+  },
+
   /**
    * Check bid-side liquidity for an option symbol
    * @param {string} symbol - Option symbol (e.g. 'C-BTC-100000-150226')
@@ -759,6 +764,14 @@ const mmmService = {
   /** Operational event log (session_event_log rows) */
   async getAuditEvents(sessionId) {
     const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/events`);
+    return data;
+  },
+
+  /** Pre-fill execution intent events (ORDER_INTENT, ORDER_CONFIRMED, EXIT_ROUND_*) */
+  async getExecutionEvents(sessionId, limit = 100) {
+    const { data } = await api.get(
+      `${BASE_URL}/session/${sessionId}/audit/execution-events?limit=${limit}`
+    );
     return data;
   },
 };

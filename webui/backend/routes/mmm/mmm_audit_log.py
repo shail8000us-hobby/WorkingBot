@@ -702,6 +702,65 @@ class MMMSessionEventLog:
             log.exception('event_log.query_session() failed')
             return []
 
+    def query_execution_orphans(
+        self,
+        session_id: str,
+        lookback_minutes: int = 120,
+        confirm_window_sec: int = 90,
+    ) -> List[Dict]:
+        """
+        Feature 10: Find ORDER_INTENT events with no matching ORDER_CONFIRMED.
+
+        An orphan is an ORDER_INTENT row whose order_id never appears in an
+        ORDER_CONFIRMED row within confirm_window_sec seconds. This indicates
+        the backend crashed between order placement and fill confirmation.
+
+        Returns list of orphaned intent dicts (empty list on any error).
+        """
+        try:
+            import json as _json
+            conn = sqlite3.connect(self._db_path, timeout=5)
+            conn.row_factory = sqlite3.Row
+            conn.execute('PRAGMA query_only=ON')
+            cutoff = (
+                datetime.now(timezone.utc) -
+                __import__('datetime').timedelta(minutes=lookback_minutes)
+            ).isoformat()
+            cur = conn.execute(
+                "SELECT * FROM session_event_log "
+                "WHERE session_id = ? AND event_category = 'EXECUTION_INTENT' "
+                "AND created_at >= ? ORDER BY created_at ASC",
+                (session_id, cutoff),
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            conn.close()
+
+            intents = [r for r in rows if r.get('event_type') == 'ORDER_INTENT']
+            confirms = [r for r in rows if r.get('event_type') == 'ORDER_CONFIRMED']
+
+            confirmed_ids = set()
+            for c in confirms:
+                try:
+                    d = _json.loads(c.get('details') or '{}')
+                    if d.get('order_id'):
+                        confirmed_ids.add(str(d['order_id']))
+                except Exception:
+                    pass
+
+            orphans = []
+            for intent in intents:
+                try:
+                    d = _json.loads(intent.get('details') or '{}')
+                    oid = str(d.get('order_id', ''))
+                    if oid and oid not in confirmed_ids:
+                        orphans.append({**intent, '_parsed_details': d})
+                except Exception:
+                    pass
+            return orphans
+        except Exception:
+            log.exception('event_log.query_execution_orphans() failed')
+            return []
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Singletons

@@ -327,6 +327,97 @@ class MMMInitializer:
             log.exception("Failed to preview strikes")
             return {'success': False, 'error': str(e)}
 
+    def preview_atm_straddle(
+        self,
+        expiry: str,
+        underlying: str = 'BTC',
+    ) -> Dict[str, Any]:
+        """
+        Find the ATM strike and return both CE and PE at that same strike.
+
+        Used by SHORT_STRADDLE preset — caller does not specify desired premiums.
+        The ATM strike is whichever chain strike is closest to current spot.
+
+        Returns:
+            {
+                success, spot_price, atm_strike,
+                ce: { strike, premium, symbol, bid, ask, delta, ... },
+                pe: { strike, premium, symbol, bid, ask, delta, ... },
+            }
+        """
+        try:
+            expiry_normalized = normalize_expiry(expiry)
+            chain_data = self.chain_service.get_chain_data(underlying, expiry_normalized)
+            if not chain_data or not chain_data.get('chain'):
+                return {
+                    'success': False,
+                    'error': f'No options chain data for {underlying} expiry {expiry_normalized}',
+                }
+
+            spot_price = chain_data.get('spot_price', 0)
+            if spot_price <= 0:
+                return {'success': False, 'error': 'Could not fetch spot price'}
+
+            chain = chain_data['chain']
+
+            # Find the chain entry whose strike is closest to spot
+            atm_entry = min(chain, key=lambda e: abs(e.get('strike', 0) - spot_price))
+            atm_strike = atm_entry.get('strike', 0)
+
+            def _make_result(option_data, option_type):
+                if not option_data:
+                    return None
+                bid = option_data.get('bid', 0)
+                ask = option_data.get('ask', 0)
+                mark = option_data.get('mark_price', 0)
+                premium = mark if mark > 0 else ((bid + ask) / 2 if bid > 0 and ask > 0 else bid)
+                mid = (bid + ask) / 2 if bid > 0 and ask > 0 else premium
+                symbol = option_data.get('symbol', self.build_symbol(
+                    option_type, underlying, atm_strike, expiry_normalized
+                ))
+                return {
+                    'strike': atm_strike,
+                    'premium': round(premium, 2),
+                    'mid_price': round(mid, 2),
+                    'symbol': symbol,
+                    'bid': round(bid, 2),
+                    'ask': round(ask, 2),
+                    'mark_price': round(mark, 2),
+                    'bid_size': option_data.get('bid_size', 0),
+                    'ask_size': option_data.get('ask_size', 0),
+                    'delta': round(option_data.get('delta', 0), 4),
+                    'gamma': round(option_data.get('gamma', 0), 6),
+                    'theta': round(option_data.get('theta', 0), 4),
+                    'iv': round(option_data.get('iv', 0), 4),
+                    'oi': option_data.get('oi', 0),
+                    'distance_from_spot': round(abs(atm_strike - spot_price), 0),
+                }
+
+            ce_result = _make_result(atm_entry.get('call'), 'call')
+            pe_result = _make_result(atm_entry.get('put'), 'put')
+
+            if not ce_result or ce_result['bid'] <= 0:
+                return {'success': False, 'error': f'No sellable CE bid at ATM strike {atm_strike}', 'spot_price': spot_price}
+            if not pe_result or pe_result['bid'] <= 0:
+                return {'success': False, 'error': f'No sellable PE bid at ATM strike {atm_strike}', 'spot_price': spot_price}
+
+            return {
+                'success': True,
+                'timestamp': datetime.now(timezone.utc),  # CRITICAL FIX C-2
+                'spot_price': spot_price,
+                'atm_strike': atm_strike,
+                'ce': ce_result,
+                'pe': pe_result,
+            }
+
+        except Exception as e:
+            log.exception("Failed to preview ATM straddle")
+            return {
+                'success': False,
+                'timestamp': datetime.now(timezone.utc),  # CRITICAL FIX C-2
+                'error': str(e)
+            }
+
     # =========================================================================
     # Public API: Validate Manual Selection
     # =========================================================================

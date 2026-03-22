@@ -456,7 +456,7 @@ class MMMStorage:
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                "SELECT session_id FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP')"
+                "SELECT session_id FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING')"
             ).fetchall()
             return [r['session_id'] for r in rows]
         except Exception as e:
@@ -522,7 +522,15 @@ class MMMStorage:
                     json_extract(params_json, '$.dte_category')           AS dte_category,
                     json_extract(data_json, '$._health_grade')            AS _health_grade,
                     json_extract(data_json, '$._gamma_regime')            AS _gamma_regime,
-                    json_extract(data_json, '$._paused_reason')           AS _paused_reason
+                    json_extract(data_json, '$._paused_reason')           AS _paused_reason,
+                    json_extract(data_json, '$._regime_action')           AS _regime_action,
+                    json_extract(data_json, '$._trend_tier')              AS _trend_tier,
+                    json_extract(data_json, '$._breakeven_result.nearest_distance_pct') AS _be_nearest_pct,
+                    json_extract(data_json, '$._breakeven_result.enabled')              AS _be_enabled,
+                    json_extract(data_json, '$._gamma_result.nearest_distance_pct')    AS _gamma_nearest_pct,
+                    json_extract(data_json, '$._gamma_result.enabled')                 AS _gamma_enabled,
+                    json_extract(data_json, '$._gamma_result.gamma_zone')              AS _gamma_zone,
+                    json_extract(data_json, '$._data_confidence')                      AS _data_confidence
                 FROM mmm_sessions
                 {where}
                 ORDER BY created_at DESC
@@ -571,6 +579,14 @@ class MMMStorage:
                     '_health_grade': r['_health_grade'] or '',
                     '_gamma_regime': r['_gamma_regime'] or 'NORMAL',
                     '_paused_reason': r['_paused_reason'] or '',
+                    '_regime_action': r['_regime_action'] or 'NORMAL',
+                    '_trend_tier': r['_trend_tier'] if r['_trend_tier'] is not None else 0,
+                    '_be_nearest_pct': r['_be_nearest_pct'],
+                    '_be_enabled': bool(r['_be_enabled']),
+                    '_gamma_nearest_pct': r['_gamma_nearest_pct'],
+                    '_gamma_enabled': bool(r['_gamma_enabled']),
+                    '_gamma_zone': r['_gamma_zone'] or 'SAFE',
+                    '_data_confidence': r['_data_confidence'],
                 })
             return summaries
         except Exception as e:

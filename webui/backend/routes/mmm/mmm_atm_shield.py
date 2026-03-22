@@ -14,11 +14,14 @@ Created: March 12, 2026
 
 import logging
 import math
+import time
 from datetime import datetime, timezone
 from typing import Dict, Optional, Tuple
 
-from .mmm_constants import LOT_SIZE_BTC
+from webui.backend.sealed import sealed
+from .mmm_constants import LOT_SIZE_BTC, strike_key
 from .mmm_close_at_5 import close_position
+from .mmm_engine import get_engine
 from .mmm_strike_shift import find_new_strike
 from .mmm_wind_down import is_wind_down_active
 
@@ -29,18 +32,21 @@ log = logging.getLogger('mmm_atm_shield')
 # Helpers
 # ---------------------------------------------------------------------------
 
+@sealed
 def _compute_time_mult(minutes_to_expiry: float) -> float:
     """Time-to-expiry multiplier: fires wider as expiry approaches."""
     hours = max(minutes_to_expiry / 60.0, 0.5)
     return min(3.0, max(1.0, 3.0 / hours))
 
 
+@sealed
 def _compute_effective_proximity(params: Dict, time_mult: float) -> float:
     """Effective proximity % scaled by time multiplier."""
     base = params.get('atm_shield_proximity_pct', 0.5)
     return base * time_mult
 
 
+@sealed
 def _compute_effective_target_otm(params: Dict, time_mult: float,
                                   shield_count: int) -> float:
     """Effective target OTM % scaled by time and progressive widening."""
@@ -49,6 +55,7 @@ def _compute_effective_target_otm(params: Dict, time_mult: float,
     return base * time_mult * progressive_mult
 
 
+@sealed
 def check_atm_proximity(
     session: Dict,
     spot: float,
@@ -76,6 +83,7 @@ def check_atm_proximity(
     return None, 0.0
 
 
+@sealed
 def _check_shield_gates(
     session: Dict,
     side: str,
@@ -192,6 +200,42 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         log.debug(f"[{sid}] ATM Shield skipped: {gate_reason}")
         return False
 
+    # ── Check for deferred re-sell from previous fire ─────────────────────
+    # If a prior fire stored a pending re-sell, execute it now before
+    # checking for new proximity.
+    pending_key = f'_atm_shield_pending_resell_{endangered_side}'
+    pending = session.get(pending_key)
+    if pending and time.time() >= pending.get('execute_after', 0):
+        session.pop(pending_key, None)
+        log.info(
+            f"[{sid}] ATM Shield: executing deferred re-sell for "
+            f"{endangered_side.upper()} — "
+            f"{pending.get('lots')} lots @ {pending.get('strike')}"
+        )
+        try:
+            engine = get_engine()
+            _dr = await engine.execute_adjustment(
+                session, endangered_side, pending['strike'], pending['lots'],
+                ce_now, pe_now, adj_type='atm_shield',
+            )
+            if _dr.get('success'):
+                side_state = session.get(endangered_side)
+                if isinstance(side_state, dict) and 'active_strike' in side_state:
+                    side_state['active_strike'] = pending['strike']
+                else:
+                    log.warning(
+                        f"[{sid}] ATM Shield deferred re-sell: "
+                        f"cannot update active_strike — {endangered_side} state missing"
+                    )
+                log.info(
+                    f"[{sid}] ATM Shield: deferred re-sell complete — "
+                    f"{pending.get('lots')} lots @ {pending.get('strike')}"
+                )
+        except Exception as _dr_e:
+            log.error(f"[{sid}] ATM Shield deferred re-sell error: {_dr_e}", exc_info=True)
+        # Return False — this beat is consumed by the deferred re-sell, not a new fire
+        return False
+
     # ── FIRE ──────────────────────────────────────────────────────────────
 
     shield_count = session.get(f'_atm_shield_count_{endangered_side}', 0)
@@ -225,6 +269,18 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         p for p in side_state.get('positions', [])
         if p.get('status') == 'active' and not p.get('_being_closed')
     ]
+
+    # Partial close: atm_shield_partial_pct < 1.0 closes only the closest positions.
+    # Positions are already ordered ATM-first (active strike is always at the front
+    # of the positions list). Take ceil(N * partial_pct) positions.
+    partial_pct = max(0.1, min(1.0, params.get('atm_shield_partial_pct', 1.0)))
+    if partial_pct < 1.0 and len(positions_to_close) > 1:
+        n_close = math.ceil(len(positions_to_close) * partial_pct)
+        positions_to_close = positions_to_close[:n_close]
+        log.info(
+            f"[{sid}] ATM Shield: partial close {n_close}/{len(side_state.get('positions', []))} "
+            f"positions (partial_pct={partial_pct:.2f})"
+        )
 
     total_realized_loss = 0.0
     total_closed_lots = 0
@@ -284,8 +340,12 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         session['_atm_prev_wind_down_enabled'] = False
 
     # ── Step 3: RE-SELL — full position shift + loss recovery ────────
-    from .mmm_engine import get_engine
     engine = get_engine()
+
+    # Deferred re-sell: when atm_shield_defer_resell_beats > 0, store the
+    # re-sell for execution on the next heartbeat. Close is always immediate.
+    defer_beats = int(params.get('atm_shield_defer_resell_beats', 0))
+    defer_resell = defer_beats > 0 and new_strike is not None
 
     # Check sell-blocking conditions (vol/gamma only — trend exempt for shield)
     from .mmm_margin_guardian import TIER_YELLOW, TIER_ORANGE
@@ -336,31 +396,67 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
         total_lots_agr = min(total_lots_agr, cap_remaining)
 
         if total_lots_agr > 0:
-            try:
-                result = await engine.execute_adjustment(
-                    session, endangered_side, new_strike, total_lots_agr,
-                    ce_now, pe_now, adj_type='atm_shield',
+            if defer_resell:
+                # Store for execution on the next heartbeat
+                adj_interval = params.get('adjustment_interval', 300)
+                execute_after = time.time() + adj_interval * defer_beats
+                session[f'_atm_shield_pending_resell_{endangered_side}'] = {
+                    'strike': new_strike,
+                    'lots': total_lots_agr,
+                    'execute_after': execute_after,
+                }
+                log.info(
+                    f"[{sid}] ATM Shield: deferring re-sell {total_lots_agr} lots "
+                    f"@ {new_strike:.0f} for {defer_beats} beat(s)"
                 )
-                if result.get('success'):
-                    lots_sold_endangered = total_lots_agr
-                    # Update active_strike to reflect new position location
-                    session[endangered_side]['active_strike'] = new_strike
-                    # Shield successfully repositioned — clear any pending wind-down
-                    # that may have fired in the same beat (step 4 runs before step 5.5)
-                    if session.get('_atm_wind_down_triggered'):
-                        session.pop('_atm_wind_down_triggered', None)
-                        params['wind_down_enabled'] = session.pop('_atm_prev_wind_down_enabled', False)
-                        log.info(f"[{sid}] ATM Shield repositioned — wind-down deactivated")
-                    log.info(
-                        f"[{sid}] ATM Shield re-sold {total_lots_agr} lots "
-                        f"({base_lots} shifted + {recovery_lots} recovery) "
-                        f"on {endangered_side.upper()} @ {new_strike:.0f} "
-                        f"(active_strike updated {endangered_strike:.0f} → {new_strike:.0f})"
+            else:
+                try:
+                    result = await engine.execute_adjustment(
+                        session, endangered_side, new_strike, total_lots_agr,
+                        ce_now, pe_now, adj_type='atm_shield',
                     )
-            except Exception as e:
-                log.error(
-                    f"[{sid}] ATM Shield re-sell error: {e}", exc_info=True,
-                )
+                    if result.get('success'):
+                        lots_sold_endangered = total_lots_agr
+                        # Update active_strike to reflect new position location
+                        session[endangered_side]['active_strike'] = new_strike
+                        # Force-set trigger snapshot at new_strike to fill_price.
+                        # execute_adjustment → update_trigger_snapshots used the OLD
+                        # active_strike key (active_strike is updated above, AFTER the
+                        # call returns). Without this, trigger_snapshot[new_strike] is
+                        # missing → evaluate_triggers sees trigger=0 → safety guard skips
+                        # BOTH sides for the entire next heartbeat.
+                        # Mirrors the identical fix in _process_strike_shift (BUG-1 FIX).
+                        try:
+                            _atm_fill_px = result.get('fill_price', 0)
+                            if _atm_fill_px > 0:
+                                session[endangered_side].setdefault(
+                                    'trigger_snapshot', {}
+                                )[strike_key(new_strike)] = _atm_fill_px
+                                log.info(
+                                    f"[{sid}] ATM Shield trigger snapshot force-set: "
+                                    f"{endangered_side.upper()}[{strike_key(new_strike)}] = "
+                                    f"${_atm_fill_px:.2f} (fill price, prevents next-beat blindness)"
+                                )
+                        except Exception as _snap_e:
+                            log.error(
+                                f"[{sid}] ATM Shield: failed to force trigger snapshot: {_snap_e}"
+                            )
+                        # Shield successfully repositioned — clear any pending wind-down
+                        # that may have fired in the same beat (step 4 runs before step 5.5)
+                        if session.get('_atm_wind_down_triggered'):
+                            session.pop('_atm_wind_down_triggered', None)
+                            params['wind_down_enabled'] = session.pop('_atm_prev_wind_down_enabled', False)
+                            log.info(f"[{sid}] ATM Shield repositioned — wind-down deactivated")
+                        log.info(
+                            f"[{sid}] ATM Shield re-sold {total_lots_agr} lots "
+                            f"({base_lots} shifted + {recovery_lots} recovery) "
+                            f"on {endangered_side.upper()} @ {new_strike:.0f} "
+                            f"(active_strike updated {endangered_strike:.0f} → {new_strike:.0f})"
+                        )
+                except Exception as e:
+                    log.error(
+                        f"[{sid}] ATM Shield re-sell error: {e}", exc_info=True,
+                    )
 
     # Safe side re-sell — loss recovery only, normal regime rules apply
     safe_premium = pe_now if safe_side == 'pe' else ce_now

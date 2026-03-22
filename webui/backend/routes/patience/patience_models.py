@@ -56,7 +56,9 @@ CREATE TABLE IF NOT EXISTS card_legs (
     mmm_handoff_eligible INTEGER DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'PENDING',
     fill_price REAL,
-    filled_at TEXT
+    filled_at TEXT,
+    order_id TEXT,
+    executed_symbol TEXT
 );
 
 CREATE TABLE IF NOT EXISTS card_templates (
@@ -131,6 +133,13 @@ class PatienceDB:
                 log.info("PatienceDB: migrated — added use_gcd column")
             except Exception:
                 pass  # column already exists
+            # Migration: add order_id + executed_symbol to card_legs (traceability)
+            for col, defn in [('order_id', 'TEXT'), ('executed_symbol', 'TEXT')]:
+                try:
+                    conn.execute(f"ALTER TABLE card_legs ADD COLUMN {col} {defn}")
+                    log.info(f"PatienceDB: migrated — added {col} column to card_legs")
+                except Exception:
+                    pass  # column already exists
         log.info(f"PatienceDB: initialized at {self.db_path}")
 
     # ── Cards ──────────────────────────────────────────────────────────

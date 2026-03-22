@@ -646,7 +646,11 @@ class MaxLossMonitor:
         self._running = False
         self._thread = None
         self._last_check = 0
-        self._check_count = 0
+        self._check_count = 0           # loop iterations (heartbeats)
+        self._eval_count = 0            # actual position evaluations with real data
+        self._skipped_stale = 0         # times skipped because cache was stale AND direct fetch failed
+        self._skipped_no_limits = 0     # times loop ran but no active limits existed
+        self._last_eval_time = 0        # monotonic time of last actual evaluation
         self._positions_cache = None
         self._cache_time = 0
         self._cache_ttl = config.get("cache_ttl", 3.0)  # Short cache for frequent checks
@@ -659,8 +663,13 @@ class MaxLossMonitor:
         
         # Close attempt tracking to prevent API spam
         self._close_attempted = {}  # symbol -> timestamp of last close attempt
-        self._close_attempt_cooldown = config.get("close_attempt_cooldown", 60)  # seconds between retry attempts
+        self._close_attempt_cooldown = config.get("close_attempt_cooldown", 15)  # seconds between retry attempts (was 60 — too slow for safety)
         self._close_attempts_lock = threading.Lock()  # Thread-safe access
+
+        # Consecutive-miss counter — prevents cleanup from removing limits on a single API hiccup
+        # A limit is only auto-removed if the position is absent for N consecutive checks in a row
+        self._symbol_miss_count = {}   # symbol -> int (consecutive misses)
+        self._CLEANUP_MISS_THRESHOLD = 3  # remove after 3 consecutive misses (≈15s at 5s interval)
         
         # API rate limiting (Delta Exchange: 10,000 units per 5min window)
         self._api_call_count = 0
@@ -705,15 +714,26 @@ class MaxLossMonitor:
             self._positions_cache = None
             self._cache_time = 0
         self._warned_symbols.clear()
-        
+        self._symbol_miss_count.clear()
+        self._eval_count = 0
+        self._skipped_stale = 0
+        self._skipped_no_limits = 0
+        self._last_eval_time = 0
+
         logger.info("⏹️ MaxLossMonitor stopped")
     
     def get_status(self) -> Dict:
         """Get monitor status"""
+        # How many seconds since the last real evaluation (not just loop heartbeat)
+        secs_since_eval = (time.monotonic() - self._last_eval_time) if self._last_eval_time > 0 else None
         return {
             "running": self._running,
             "last_check": self._last_check,
-            "check_count": self._check_count,
+            "check_count": self._check_count,           # loop heartbeats
+            "eval_count": self._eval_count,             # actual position evaluations
+            "skipped_stale": self._skipped_stale,       # skipped: no position data
+            "skipped_no_limits": self._skipped_no_limits,  # skipped: no active limits
+            "secs_since_eval": round(secs_since_eval, 1) if secs_since_eval is not None else None,
             "check_interval": self.check_interval,
             "warning_threshold": self.warning_threshold,
             "mode": "real_time"
@@ -794,7 +814,8 @@ class MaxLossMonitor:
 
                 logger.debug(f"Monitor loop {iteration}: {len(active_strike)} strike limits, {len(active_expiry)} expiry limits")
 
-                # Always count the heartbeat so "Checks" counter increments visibly
+                # _check_count = loop heartbeats (always increments — proves loop is alive)
+                # _eval_count  = actual position evaluations with real data (the meaningful counter)
                 self._check_count += 1
 
                 if active_strike or active_expiry:
@@ -815,6 +836,7 @@ class MaxLossMonitor:
                     })
                     self._check_max_loss()
                 else:
+                    self._skipped_no_limits += 1
                     # Log "no limits" only once when state first changes (not every cycle)
                     with _last_limit_state_lock:
                         prev = globals().get('_last_limit_state')
@@ -845,6 +867,33 @@ class MaxLossMonitor:
         self._api_call_count += 1
         return True
     
+    def _fetch_positions_direct(self):
+        """
+        Fetch fresh positions directly via the async client when the shared cache is stale.
+
+        BUG FIX: The shared positions cache is only refreshed when the frontend actively polls
+        /api/options/positions.  When the browser tab is closed the cache goes stale and
+        max-loss monitoring was silently skipped.  This method fetches positions independently
+        so the monitor is self-sufficient regardless of frontend activity.
+
+        Uses the same _run_async / get_unified_client path as the positions endpoint — no HTTP
+        self-call, no eventlet deadlock risk.
+        """
+        try:
+            from webui.backend.routes.options.options_client import _run_async, get_unified_client
+            client = get_unified_client()
+
+            async def _fetch():
+                result = await client.get_all_positions_with_options()
+                return result.get('options', [])
+
+            positions = _run_async(_fetch(), timeout=15)
+            logger.info(f"🔄 Max-loss monitor: fetched {len(positions)} positions directly (cache was stale)")
+            return positions
+        except Exception as e:
+            logger.warning(f"⚠️ Max-loss monitor: direct position fetch failed: {e}")
+            return None
+
     def _check_max_loss(self):
         """Check all positions against max loss limits"""
         try:
@@ -860,12 +909,22 @@ class MaxLossMonitor:
                 positions = self._test_positions
                 logger.info(f"🧪 TEST MODE: Using {len(positions)} mock positions")
             else:
-                # Use shared positions cache (no HTTP self-call — avoids eventlet deadlock)
+                # BUG FIX: Try the shared cache first (cheap).  If it is stale (frontend tab
+                # not open / not polling), fetch positions directly via the async client so
+                # max-loss monitoring is NEVER silently disabled by an inactive browser tab.
                 from webui.backend.routes.options.options_control import get_cached_positions
-                positions = get_cached_positions(max_age=30)
+                positions = get_cached_positions(max_age=15)  # tighter window than before (was 30s)
                 if positions is None:
-                    logger.debug("No fresh positions cache available, skipping max-loss check")
+                    logger.warning("⚠️ Max-loss: positions cache is stale — fetching directly")
+                    positions = self._fetch_positions_direct()
+                if positions is None:
+                    logger.warning("⚠️ Max-loss: could not obtain positions — skipping this check")
+                    self._skipped_stale += 1
                     return
+
+            # Reached here = we have real position data — count as an actual evaluation
+            self._eval_count += 1
+            self._last_eval_time = time.monotonic()
 
             # Handle dict response format {'futures': [...], 'options': [...]}
             if isinstance(positions, dict):
@@ -873,9 +932,9 @@ class MaxLossMonitor:
                 options_list = positions.get('options', [])
                 positions = futures_list + options_list
 
-            if not positions:
-                logger.debug("No positions found to check against max loss limits")
-                return
+            # Note: do NOT return early when positions is [] — the cleanup section
+            # below must still run to increment the consecutive-miss counter and
+            # eventually remove stale limits when a position truly disappears.
 
             # Filter out any non-dict items (safety check)
             if not isinstance(positions, list):
@@ -883,9 +942,6 @@ class MaxLossMonitor:
                 return
 
             positions = [p for p in positions if isinstance(p, dict)]
-            if not positions:
-                logger.warning("⚠️ No valid position dictionaries found after filtering")
-                return
 
             # Check per-strike max loss — only enabled (non-triggered) limits
             strike_limits = [s for s in self.manager.get_all_strike_max_loss() if s.get("enabled")]
@@ -1094,24 +1150,36 @@ class MaxLossMonitor:
                         active_positions_map[symbol] = pos
             
             # Check each ENABLED (non-triggered) strike max loss limit for cleanup
+            # BUG FIX: Previously a single API miss (position absent once) would permanently
+            # remove the max-loss limit as "position no longer exists".  A partial API response
+            # or momentary hiccup would silently disable protection.
+            # Fix: only remove a limit after _CLEANUP_MISS_THRESHOLD consecutive misses.
             strike_limits = [s for s in self.manager.get_all_strike_max_loss() if s.get("enabled")]
             for limit in strike_limits:
                 symbol = limit["symbol"]
                 should_remove = False
                 reason = ""
-                
+
                 # Check if position exists
                 pos = active_positions_map.get(symbol)
-                
+
                 if not pos:
-                    # Position doesn't exist anymore
-                    should_remove = True
-                    reason = "position no longer exists"
+                    # Position not in this cycle's data — increment miss counter
+                    self._symbol_miss_count[symbol] = self._symbol_miss_count.get(symbol, 0) + 1
+                    misses = self._symbol_miss_count[symbol]
+                    if misses >= self._CLEANUP_MISS_THRESHOLD:
+                        should_remove = True
+                        reason = f"position absent for {misses} consecutive checks"
+                    else:
+                        logger.debug(f"⚠️ {symbol} not in positions cache (miss {misses}/{self._CLEANUP_MISS_THRESHOLD}) — keeping limit")
                 elif abs(pos.get("size", 0)) == 0:
-                    # Position closed (size = 0)
+                    # Position definitively closed (size = 0) — remove immediately, no retry needed
                     should_remove = True
-                    reason = "position closed by user"
+                    reason = "position closed (size=0)"
+                    self._symbol_miss_count.pop(symbol, None)
                 else:
+                    # Position is present and open — reset miss counter
+                    self._symbol_miss_count.pop(symbol, None)
                     # Check if contract expired
                     settlement_time = pos.get("settlement_time")
                     if settlement_time:
@@ -1124,7 +1192,7 @@ class MaxLossMonitor:
                                 reason = "contract expired"
                         except Exception as e:
                             logger.debug(f"Failed to check expiry for {symbol}: {e}")
-                
+
                 if should_remove:
                     logger.info(f"✅ Removing max loss limit for {symbol} - {reason}")
                     add_activity_event("cleanup", f"✅ Stopped monitoring {symbol}", {
@@ -1132,6 +1200,7 @@ class MaxLossMonitor:
                         "reason": reason
                     })
                     self.manager.remove_strike_max_loss(symbol)
+                    self._symbol_miss_count.pop(symbol, None)
                     # Clean up tracking
                     with self._close_attempts_lock:
                         self._close_attempted.pop(symbol, None)

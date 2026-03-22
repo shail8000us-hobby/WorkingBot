@@ -104,7 +104,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    effective_interval: int = None,
                    next_heartbeat: str = None,
                    breakeven_data: Dict = None,
-                   gamma_data: Dict = None):
+                   gamma_data: Dict = None,
+                   data_confidence: float = None):
     """Emit heartbeat data every interval. Section 4.
 
     Args:
@@ -148,6 +149,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         payload['breakeven'] = breakeven_data
     if gamma_data:
         payload['gamma'] = gamma_data
+    if data_confidence is not None:
+        payload['data_confidence'] = round(data_confidence, 3)
     _emit('mmm_heartbeat', payload)
 
 

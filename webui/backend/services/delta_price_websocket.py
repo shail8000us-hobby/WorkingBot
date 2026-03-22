@@ -60,6 +60,11 @@ class DeltaPriceWebSocket:
         self.subscribed_options: Dict[str, bool] = {}
         self.subscribed_options_lock = _RealLock()
 
+        # Real-time option prices from l1_orderbook — accessible backend-side
+        # Key: symbol (e.g. "C-BTC-71600-20Mar26"), Value: {best_bid, best_ask, timestamp}
+        self.option_prices: Dict[str, dict] = {}
+        self._option_prices_lock = _RealLock()
+
         # Callbacks
         self.on_price_update = on_price_update
         self.on_ticker_update = on_ticker_update
@@ -94,6 +99,14 @@ class DeltaPriceWebSocket:
                             log.error(f"[DeltaWS] Price callback error: {e}")
 
                 elif msg_type == 'ticker':
+                    symbol = msg.get('symbol', '')
+                    if symbol:
+                        with self._option_prices_lock:
+                            self.option_prices[symbol] = {
+                                'best_bid': float(msg.get('best_bid', 0) or 0),
+                                'best_ask': float(msg.get('best_ask', 0) or 0),
+                                'timestamp': msg.get('timestamp', time.time()),
+                            }
                     if self.on_ticker_update:
                         try:
                             self.on_ticker_update(msg['symbol'], msg)
@@ -183,6 +196,22 @@ class DeltaPriceWebSocket:
 
     def get_all_prices(self) -> Dict[str, float]:
         return self.prices.copy()
+
+    def get_option_price(self, symbol: str, max_age_sec: float = 3.0) -> Optional[dict]:
+        """Return latest WS bid/ask for an option symbol if fresher than max_age_sec.
+
+        Returns dict with best_bid, best_ask, timestamp — or None if stale/missing.
+        Used by MMM monitor as primary (real-time) price source.
+        """
+        with self._option_prices_lock:
+            entry = self.option_prices.get(symbol)
+        if entry is None:
+            return None
+        if time.time() - entry['timestamp'] > max_age_sec:
+            return None
+        if entry['best_bid'] <= 0 and entry['best_ask'] <= 0:
+            return None
+        return entry
 
     def is_connected(self) -> bool:
         return self.connected

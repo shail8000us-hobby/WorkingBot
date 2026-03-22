@@ -1,7 +1,6 @@
 #!/bin/bash
-# Build script for frontend
+# Build script for frontend (incremental — cache preserved for speed)
 cd /Users/ssr/Projects/WorkingBot/webui/frontend
-rm -rf node_modules/.cache
 npm run build > /tmp/frontend_build.log 2>&1
 BUILD_EXIT=$?
 echo "Build exit code: $BUILD_EXIT"

@@ -127,6 +127,18 @@ def freeze_current_positions(
             pos['shifted_at'] = now
             frozen_lots += pos.get('lots', 0)
 
+    # BUG FIX: Preserve _initial_hedge_premium BEFORE recompute zeroes original_premium.
+    # recompute_side_lots() sets original_premium=0.0 when no active 'original' positions
+    # remain. activate_new_strike() reads original_premium to seed _initial_hedge_premium,
+    # but by that point it is already 0 → _initial_hedge_premium gets set to the new
+    # strike's fill premium instead of the true original entry premium.
+    # Preserving here ensures the dynamic shift threshold always references the first
+    # ever entry premium, not the shifted one.
+    if not side_state.get('_initial_hedge_premium'):
+        orig_prem = side_state.get('original_premium', 0)
+        if orig_prem > 0:
+            side_state['_initial_hedge_premium'] = orig_prem
+
     # recompute_side_lots() rebuilds frozen_positions view + resets
     # original_lots/adjustment_fills to empty (no active positions remain)
     recompute_side_lots(side_state)
@@ -300,6 +312,8 @@ def activate_new_strike(
     new_strike: float,
     fill_premium: float,
     lots: int,
+    order_id: str = '',
+    client_order_id: str = '',
 ) -> Dict:
     """
     Set the new active strike after a shift.
@@ -310,6 +324,8 @@ def activate_new_strike(
         new_strike: The new strike price
         fill_premium: Premium obtained from selling at new strike
         lots: Number of lots sold at new strike
+        order_id: Exchange order ID from the shift sell (for reconciliation)
+        client_order_id: Session-tagged client order ID (for per-session fill tracking)
 
     Returns:
         Updated session
@@ -361,6 +377,9 @@ def activate_new_strike(
         'type': 'strike_shift',
         'status': 'active',
         'created_at': now,
+        'fill_confirmed_at': now,       # reconciliation: settlement-lag guard
+        'order_id': order_id,           # reconciliation: verify fill via exchange
+        'client_order_id': client_order_id,  # reconciliation: per-session fill attribution
         'shifted_at': None,
         'closed_at': None,
         'realized_pnl': None,

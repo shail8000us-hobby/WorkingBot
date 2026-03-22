@@ -69,7 +69,6 @@ def save_todos(todos):
 # ============================================================================
 
 @todos_bp.route('/api/todos', methods=['GET'])
-@cache.cached(timeout=CACHE_TIMEOUTS['todos'])
 def get_todos():
     """
     Get all todos
@@ -139,19 +138,18 @@ def create_todo():
             data = json.loads(data)
         
         text = data.get('text', '').strip()
-        log.info(f"Creating todo with text: '{text}'")
-        
-        if not text:
-            log.error("Empty text provided")
-            return jsonify({'success': False, 'error': 'Todo text is required'}), 400
-        
+        log.info(f"Creating todo with text: '{text[:50]}'")
+
         todos = load_todos()
         log.info(f"Loaded {len(todos)} existing todos")
-        
+
         new_todo = {
             'id': str(int(time.time() * 1000)),  # Unix timestamp in milliseconds
             'text': text,
             'completed': False,
+            'priority': data.get('priority', 'medium'),
+            'category': data.get('category', None),
+            'pinned': data.get('pinned', False),
             'createdAt': datetime.now().isoformat(),
             'updatedAt': datetime.now().isoformat()
         }
@@ -203,7 +201,13 @@ def update_todo(todo_id):
                 if 'completed' in data:
                     todo['completed'] = data['completed']
                 if 'text' in data:
-                    todo['text'] = data['text'].strip()
+                    todo['text'] = data['text'].strip() if data['text'] else ''
+                if 'priority' in data:
+                    todo['priority'] = data['priority']
+                if 'category' in data:
+                    todo['category'] = data['category']
+                if 'pinned' in data:
+                    todo['pinned'] = data['pinned']
                 todo['updatedAt'] = datetime.now().isoformat()
                 break
         

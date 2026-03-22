@@ -183,6 +183,7 @@ class MMMExecutor:
         session_id: str = None,
         max_reprice_attempts: int = None,  # Override default MAX_REPRICE_ATTEMPTS
         use_bid_entry: bool = False,       # Start BUY orders at best_bid (maker, cheaper)
+        client_order_id: str = None,       # Optional override; auto-generated if None
     ) -> Dict[str, Any]:
         """
         Place order at mid-price (or bid for buys when use_bid_entry=True),
@@ -223,7 +224,20 @@ class MMMExecutor:
         _max_attempts = max_reprice_attempts if max_reprice_attempts is not None else MAX_REPRICE_ATTEMPTS
         _aggressive_from = (_max_attempts // 2) + 1  # Switch to best_bid after halfway
 
-        log.info(f"📊 MMM Smart Execute: {side.upper()} {size} {symbol}")
+        # Generate a unique client_order_id for this order if not provided.
+        # Format: mmm_{session8}_{side1}_{ts10} — max 32 chars.
+        # This lets us identify exactly which fills belong to this session on Delta Exchange,
+        # independent of other algos or manual trades at the same strike on the same account.
+        if not client_order_id:
+            import random as _random
+            _sess_tag = ''.join(
+                c for c in (session_id or 'x').replace('mmm', '').replace('-', '')
+            )[:8]
+            _side_tag = 'b' if side.lower() == 'buy' else 's'
+            _ts_tag = str(int(time.time()))[-8:]
+            client_order_id = f"mmm_{_sess_tag}_{_side_tag}_{_ts_tag}"[:32]
+
+        log.info(f"📊 MMM Smart Execute: {side.upper()} {size} {symbol} coid={client_order_id}")
 
         _log_activity('order_placing',
             f"{side.upper()} {size} lot(s) {symbol} — fetching prices...",
@@ -264,7 +278,8 @@ class MMMExecutor:
         last_error = 'Order placement failed'
         for placement_try in range(1, INITIAL_PLACEMENT_RETRIES + 1):
             order_result = await self._place_limit_order(
-                symbol, side, size, mid_price, reduce_only, rest_client
+                symbol, side, size, mid_price, reduce_only, rest_client,
+                client_order_id=client_order_id,
             )
             if order_result and order_result.get('id'):
                 break  # Success
@@ -308,6 +323,22 @@ class MMMExecutor:
             session_id=session_id, severity='info',
             details={'order_id': order_id, 'mid_price': mid_price,
                      'bid': quotes['best_bid'], 'ask': quotes['best_ask']})
+
+        # Feature 10: Durable pre-fill execution intent — written once per order placement.
+        # Survives backend crash. Used by orphan check on EXITING restore.
+        try:
+            from .mmm_audit_log import get_event_log as _get_el
+            _get_el().enqueue_event(
+                session_id=session_id or '',
+                event_category='EXECUTION_INTENT',
+                event_type='ORDER_INTENT',
+                remark=f'{side.upper()} {size} lots {symbol} @ ${mid_price:.2f}',
+                severity='INFO',
+                details={'order_id': order_id, 'client_order_id': client_order_id,
+                         'symbol': symbol, 'side': side, 'size': size, 'mid_price': mid_price},
+            )
+        except Exception:
+            pass
 
         # Step 2: Wait + Reprice loop
         while attempts < _max_attempts:
@@ -403,9 +434,25 @@ class MMMExecutor:
                     details={'order_id': order_id, 'fill_price': fill_price,
                              'elapsed': round(elapsed, 1), 'attempts': attempts})
 
+                # Feature 10: Confirm the execution intent — links to ORDER_INTENT via order_id.
+                try:
+                    from .mmm_audit_log import get_event_log as _get_el
+                    _get_el().enqueue_event(
+                        session_id=session_id or '',
+                        event_category='EXECUTION_INTENT',
+                        event_type='ORDER_CONFIRMED',
+                        remark=f'{side.upper()} {filled_size} lots @ ${fill_price:.2f}',
+                        severity='INFO',
+                        details={'order_id': order_id, 'fill_price': fill_price,
+                                 'filled_size': filled_size},
+                    )
+                except Exception:
+                    pass
+
                 return {
                     'success': True,
                     'order_id': order_id,
+                    'client_order_id': client_order_id,
                     'fill_price': fill_price,
                     'filled_size': filled_size,
                     'execution_type': 'smart_mid_price',
@@ -525,9 +572,10 @@ class MMMExecutor:
                             )
                     continue
 
-                # Place fresh order
+                # Place fresh order (same client_order_id — replacement for same intent)
                 order_result = await self._place_limit_order(
-                    symbol, side, size, new_mid, reduce_only, rest_client
+                    symbol, side, size, new_mid, reduce_only, rest_client,
+                    client_order_id=client_order_id,
                 )
                 if order_result and order_result.get('id'):
                     order_id = str(order_result['id'])
@@ -1164,7 +1212,7 @@ class MMMExecutor:
     async def _place_limit_order(
         self, symbol: str, side: str, size: int,
         price: float, reduce_only: bool = False,
-        rest_client=None,
+        rest_client=None, client_order_id: str = None,
     ) -> Optional[Dict]:
         """Place a limit post-only order. On post-only rejection (price would cross
         the book), re-fetch quotes, adjust price to best_bid (for sells) or
@@ -1189,6 +1237,7 @@ class MMMExecutor:
                     time_in_force="gtc",
                     post_only=True,
                     reduce_only=reduce_only,
+                    client_order_id=client_order_id,
                 )
 
                 result = response.get('result', response)
@@ -1203,9 +1252,12 @@ class MMMExecutor:
                     log.warning(f"⚠️ No position exists for reduce_only {side} {symbol} — aborting immediately")
                     return {'error': err_str}
 
-                is_post_only_reject = ('400' in err_str and
-                    ('post-only' in err_str.lower() or 'post_only' in err_str.lower()
-                     or 'would have matched' in err_str.lower()))
+                is_post_only_reject = (
+                    'post-only' in err_str.lower()
+                    or 'post_only' in err_str.lower()
+                    or 'immediate_execution' in err_str.lower()
+                    or 'would have matched' in err_str.lower()
+                )
 
                 if is_post_only_reject and attempt < POST_ONLY_RETRIES:
                     log.warning(

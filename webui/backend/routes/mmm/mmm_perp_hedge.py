@@ -450,6 +450,7 @@ async def _execute_hedge_order(
                 side=action,
                 size=lots,
                 reduce_only=False,  # Perp can flip direction in one order
+                session_id=session.get('session_id', ''),
             )
             if result.get('success'):
                 log.info(
@@ -682,6 +683,12 @@ async def run_perp_hedge(
     fill_price = result.get('fill_price', 0)
     filled_lots = result.get('filled_size', lots)
 
+    # Record exchange commission from perp hedge order
+    _od = result.get('order_details') or {}
+    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    if _commission:
+        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+
     # Capture old lots BEFORE state update (needed for flip event)
     old_lots = session.get('perp_hedge', {}).get('lots', 0)
 
@@ -794,6 +801,13 @@ async def close_all_perp(
 
     fill_price = result.get('fill_price', 0)
     filled_lots = result.get('filled_size', lots)
+
+    # Record exchange commission from perp close-all
+    _od = result.get('order_details') or {}
+    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    if _commission:
+        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+
     realized_pnl = update_perp_state_after_fill(
         session, action, filled_lots, fill_price, 0
     )

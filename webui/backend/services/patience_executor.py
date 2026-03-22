@@ -338,15 +338,24 @@ def execute_card(card_id: str):
             if info.get('filled'):
                 leg_id = info.get('leg_id')
                 fill_price = info.get('fillPrice')
-                fills.append(f"{sym} @ {fill_price}")
+                order_id = info.get('orderId')
+                fills.append(f"{sym} @ {fill_price} (order:{order_id})")
 
-                # Update leg status in DB
+                # Update leg status in DB — only write fill_price if it's valid
                 if leg_id:
-                    db.update_leg(
-                        leg_id,
-                        status='EXECUTING',
-                        fill_price=fill_price,
-                    )
+                    leg_update = {
+                        'status': 'EXECUTING',
+                        'executed_symbol': sym,
+                        'order_id': order_id,
+                    }
+                    if fill_price is not None:
+                        leg_update['fill_price'] = fill_price
+                    else:
+                        log.warning(
+                            f"patience_executor: fill_price missing for leg {leg_id} "
+                            f"({sym}, order:{order_id}) — will retry after completion"
+                        )
+                    db.update_leg(leg_id, **leg_update)
 
         db.log_event(
             card_id, None, 'ROUND_COMPLETE',
@@ -402,12 +411,19 @@ def _on_card_completed(card_id: str, card_name: str, resolved_legs: list):
 
     db = get_db()
 
-    # Mark all legs FILLED (loop already captured fill prices)
+    # Mark all legs FILLED (loop already captured fill prices via on_round_complete)
     for leg in resolved_legs:
         leg_id = leg.get('leg_id')
         if leg_id:
             leg_data = db.get_leg(leg_id)
             if leg_data and leg_data.get('status') != 'HANDED_TO_MMM':
+                if not leg_data.get('fill_price'):
+                    log.error(
+                        f"patience_executor: [{card_name}] leg {leg_id} "
+                        f"({leg_data.get('executed_symbol', 'unknown')}) "
+                        f"marked FILLED but fill_price is NULL — check exchange order "
+                        f"{leg_data.get('order_id', 'unknown')}"
+                    )
                 db.update_leg(
                     leg_id,
                     status='FILLED',

@@ -427,7 +427,8 @@ class MMMSafety:
 
         # ── Rule 2: Evaluate new adjustment history ───────────────────────
         history = session.get('adjustment_history', [])
-        algo_history = [h for h in history if h.get('aggressor', '') != 'OPERATOR']
+        algo_history = [h for h in history
+                        if h.get('aggressor', '') not in ('OPERATOR', 'STRADDLE_ROLL')]
 
         last_checked_idx = session.get('_whipsaw_last_checked_idx', None)
         if last_checked_idx is None:
@@ -884,7 +885,7 @@ class MMMSafety:
                     'ratio': round(ratio, 2),
                 },
             })
-        elif 0.8 < ratio < 1.0:
+        elif 0.8 <= ratio < 1.0:
             events.append({
                 'type': 'pnl_guardrail',
                 'level': 'alert',
@@ -968,8 +969,8 @@ class MMMSafety:
         history = session.get('adjustment_history', [])
         lots_in_window = 0
         for adj in history:
-            # AUDIT FIX: Skip OPERATOR (manual) injections — same as whipsaw filter
-            if adj.get('aggressor', '') == 'OPERATOR':
+            # AUDIT FIX: Skip OPERATOR/STRADDLE_ROLL injections — same as whipsaw filter
+            if adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
                 continue
             try:
                 ts = datetime.fromisoformat(adj.get('timestamp', ''))

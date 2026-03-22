@@ -46,12 +46,13 @@ const STATUS_LABELS = {
 };
 
 // ── Compact card tile ────────────────────────────────────────────────
-function CardTile({ card, btcPrice, onSelect, onArm, onDisarm, onCancel, onResume }) {
+function CardTile({ card, btcPrice, onSelect, onArm, onDisarm, onCancel, onResume, onClone }) {
   const status = card.status || 'DRAFT';
   const color = STATUS_COLORS[status] || '#9ca3af';
   const isArmed = status === 'ARMED';
   const isPaused = status === 'PAUSED';
   const isDraft = status === 'DRAFT';
+  const isCompleted = status === 'COMPLETED';
   const isExecuting = ['EXECUTING', 'TRIGGERED'].includes(status);
 
   const distance = btcPrice && card.trigger_price
@@ -106,6 +107,10 @@ function CardTile({ card, btcPrice, onSelect, onArm, onDisarm, onCancel, onResum
           {isArmed && (
             <button onClick={e => { e.stopPropagation(); onDisarm(card.card_id); }}
               style={btnStyle('#6b7280')}>DISARM</button>
+          )}
+          {isCompleted && (
+            <button onClick={e => { e.stopPropagation(); onClone(card); }}
+              style={btnStyle('#7c3aed')}>↺ Repeat</button>
           )}
           {!['COMPLETED', 'CANCELLED', 'EXECUTING'].includes(status) && (
             <button onClick={e => { e.stopPropagation(); onCancel(card.card_id); }}
@@ -277,6 +282,23 @@ export default function PatienceDashboard() {
     if (!window.confirm('DISARM ALL armed/waiting cards? Monitoring will stop.')) return;
     try { const r = await patienceAPI.disarmAll(); alert(`Disarmed ${r.data.disarmed} cards.`); fetchCards(); }
     catch (e) { setError(e.message); }
+  };
+  const cloneCard = async (card) => {
+    // Let operator override name + trigger before cloning
+    const newName = window.prompt('Clone name:', card.card_name + ' (copy)');
+    if (newName === null) return; // cancelled
+    const newTrigger = window.prompt('Trigger price (leave blank to keep same):', card.trigger_price);
+    if (newTrigger === null) return;
+    const overrides = { card_name: newName || card.card_name + ' (copy)' };
+    if (newTrigger && !isNaN(parseFloat(newTrigger))) overrides.trigger_price = parseFloat(newTrigger);
+    try {
+      const r = await patienceAPI.cloneCard(card.card_id, overrides);
+      fetchCards();
+      // Open the new clone immediately so operator can review / arm
+      setSelectedCard(r.data.card);
+    } catch (e) {
+      setError('Clone failed: ' + (e.response?.data?.error || e.message));
+    }
   };
   const toggleEngine = async () => {
     try {
@@ -490,6 +512,7 @@ export default function PatienceDashboard() {
                         onDisarm={disarmCard}
                         onCancel={cancelCard}
                         onResume={resumeCard}
+                        onClone={cloneCard}
                       />
                     ))}
                   </div>

@@ -32,6 +32,7 @@ import {
   MenuItem,
   InputLabel,
   FormControl,
+  IconButton,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -39,6 +40,8 @@ import {
   Lock as LockIcon,
   Warning as WarningIcon,
   HelpOutline as HelpIcon,
+  Star as StarIcon,
+  StarBorder as StarBorderIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
 import { HELP } from './MMMEducation';
@@ -169,6 +172,18 @@ const PARAM_GROUPS = {
       'scale_target_premium', 'scale_min_premium',
     ],
   },
+  autoReplenish: {
+    title: '\uD83D\uDD04 Auto-Replenish Leg',
+    color: '#26a69a',
+    blurb: 'When one side (CE or PE) reaches 0 positions while the other still has open lots, automatically sell a new leg on the empty side instead of pausing. Keeps the straddle/strangle hedged at all times.',
+    params: [
+      'replenish_enabled',
+      'replenish_lot_mode',
+      'replenish_max_per_session',
+      'replenish_cooldown_sec',
+      'replenish_min_premium',
+    ],
+  },
   atmShield: {
     title: '\uD83D\uDEE1\uFE0F ATM Shield \u2014 Close & Retreat',
     color: '#e91e63',
@@ -178,6 +193,18 @@ const PARAM_GROUPS = {
       'atm_shield_proximity_pct', 'atm_shield_target_otm_pct',
       'atm_shield_loss_split_aggressor',
       'atm_shield_max_per_session', 'atm_shield_cooldown_mins',
+      'atm_shield_partial_pct', 'atm_shield_defer_resell_beats',
+    ],
+  },
+  adaptiveTuning: {
+    title: '\u2699\uFE0F Adaptive Tuning',
+    color: '#00bcd4',
+    blurb: 'Automatic parameter optimization per market regime. Manual: you control every param. Preset: loads recommended values for your strategy type in one click. Adaptive: auto-tunes ATM Shield proximity, cooldown, and hedge buffer based on live volatility, trend, and whipsaw signals.',
+    sections: [
+      {
+        header: 'Mode',
+        params: ['adaptive_mode', 'adaptive_preset', 'adaptive_dry_run'],
+      },
     ],
   },
   lotVelocity: {
@@ -391,6 +418,12 @@ const PARAM_TOOLTIPS = {
   rebalance_enabled: 'M3: Enable asymmetry-aware harvest threshold relaxation. When one side accumulates many more lots than the other, the harvest thresholds on the dominant side are automatically relaxed to free capacity faster.',
   rebalance_asymmetry_threshold: 'M3: CE/PE lot ratio that triggers relaxed harvesting on the dominant side. Default 5.0 = relax when one side has 5× more lots than the other. Lower = more aggressive rebalancing.',
   rebalance_pressure_threshold: 'M3: Minimum capacity pressure on the dominant side (combined with asymmetry ratio) to activate M3. Prevents threshold relaxation when lots are still plentiful on the dominant side.',
+  // Auto-Replenish Leg
+  replenish_enabled: 'Master switch for Auto-Replenish. When one side closes to 0 lots while the other still has positions, automatically sell a new leg on the empty side instead of pausing the session. OFF by default \u2014 turn on when ready.',
+  replenish_lot_mode: 'How many lots to sell on the empty side. match_active = match the open side\'s active lot count. initial = use the session\'s initial_lots parameter. Default: match_active.',
+  replenish_max_per_session: 'Maximum number of replenishments per session. Prevents infinite re-entry loops if positions keep getting closed. Default: 3.',
+  replenish_cooldown_sec: 'Minimum seconds between replenishments. Prevents rapid re-entry if the replenished position gets closed again quickly. Default: 300 (5 minutes).',
+  replenish_min_premium: 'Minimum premium ($) for the replenish strike. Strikes below this are rejected \u2014 too little theta to justify entering. Default: $30.',
   // FSU: Favorable Scale-Up
   scale_enabled: 'Master switch for Favorable Scale-Up (FSU). When enabled and both premiums have decayed significantly, the algo opens new positions at fresh OTM strikes. Positions become standard MMM positions \u2014 included in adjustments, loss calculations, close-at-5, etc. Disabled by default.',
   scale_min_decay_pct: 'Both CE and PE premiums must have decayed by at least this percentage from the trigger snapshot before a scale-up event fires. Higher = more conservative. Default 35% means premiums must have dropped by a third.',
@@ -399,6 +432,12 @@ const PARAM_TOOLTIPS = {
   scale_cooldown_mins: 'Minimum minutes between consecutive scale-up events. Prevents rapid stacking even when conditions remain favorable. Default 30 minutes.',
   scale_target_premium: 'Target premium when scanning for new OTM strikes. The algo picks the OTM strike with premium closest to this value. Higher = further OTM (safer, less theta). Default $100.',
   scale_min_premium: 'Minimum premium threshold for scale-up strikes. Strikes below this premium are rejected \u2014 too little theta to justify the risk. Default $30.',
+  // Adaptive Tuning
+  adaptive_mode: 'Parameter tuning mode. Manual: you set every param — current behavior, nothing changes. Preset: pick a strategy profile (Strangle/Straddle/Short Window) and all adaptive params load with optimized values in one click — you can still override any value after. Adaptive: starts from preset values then auto-tunes ATM Shield proximity, cooldown, and hedge buffer every heartbeat based on live vol/trend/whipsaw signals.',
+  adaptive_preset: 'Strategy profile loaded in Preset or Adaptive mode. Strangle = standard OTM positions (wider proximity, longer cooldown). Straddle = near-ATM (tight proximity, full-close always). Short Window = 3–5 hour sessions (faster cooldown, farther retreat).',
+  adaptive_dry_run: 'Shadow mode: the adaptive engine computes what it would change but only logs — does not write to params. Use to validate adaptive behavior over 2–3 live sessions before enabling live tuning. Watch the activity log for param_adapted entries.',
+  atm_shield_partial_pct: 'Fraction of active positions to close when shield fires. 1.0 = close all (default). 0.5 = close only half the positions (closest to ATM first). Partial mode is useful in oscillating/ranging markets — avoids crystallizing the full loss if price reverses. Has no effect when there is only 1 active position per side.',
+  atm_shield_defer_resell_beats: 'Beats to wait after the close before re-selling at the new OTM strike. 0 = re-sell immediately in the same beat (default). 1 = wait one heartbeat interval before opening the new position. Deferring lets volatility settle and often captures a better premium. The close is always immediate regardless of this setting.',
   // ATM Shield
   atm_shield_enabled: 'Master switch for ATM Shield. When enabled, the algo pre-emptively closes positions approaching ATM and repositions at a safer OTM strike. Original lots are fully shifted + additional lots for loss recovery. Overrides Trend Guard T1/T2 lot reduction. Recommended ON.',
   atm_shield_proximity_pct: 'Base % proximity from active strike that triggers the shield. Scaled by time-to-expiry (wider near expiry). At 6hr+: fires when spot is within 0.5% of strike. At 1hr: fires at 1.5%. Default 0.5%.',
@@ -452,6 +491,14 @@ const formatValue = (value, type) => {
 // MMMSettingsDialog Component
 // =============================================================================
 
+// Parameters the adaptive engine can auto-tune (must match PARAM_LIMITS in mmm_adaptive.py)
+const ADAPTIVE_ENGINE_PARAMS = new Set([
+  'atm_shield_proximity_pct',
+  'atm_shield_target_otm_pct',
+  'atm_shield_cooldown_mins',
+  'premium_buffer_pct',
+]);
+
 export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo = {} }) {
   const [formValues, setFormValues] = useState({});
   const [errors, setErrors] = useState({});
@@ -461,6 +508,41 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState(null);
   const [search, setSearch] = useState('');
+
+  // Adaptive tuning indicators — derived from live session state + form values
+  const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
+  const operatorLocked = new Set(sessionData?._adaptive_operator_overrides || []);
+
+  // Pinned / Favorites — persisted to backend so they survive builds and cache clears
+  const [pinned, setPinned] = useState(new Set());
+
+  // Load pinned params from backend when dialog opens
+  useEffect(() => {
+    if (!open) return;
+    fetch('/api/user/preferences')
+      .then(r => r.json())
+      .then(data => {
+        const stored = data.pinned_params;
+        if (Array.isArray(stored)) setPinned(new Set(stored));
+      })
+      .catch(() => {}); // silent — pinned is non-critical
+  }, [open]);
+
+  const togglePin = (paramName, e) => {
+    e.stopPropagation();
+    setPinned(prev => {
+      const next = new Set(prev);
+      if (next.has(paramName)) next.delete(paramName);
+      else next.add(paramName);
+      // Persist to backend (fire-and-forget)
+      fetch('/api/user/preferences', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned_params: [...next] }),
+      }).catch(() => {});
+      return next;
+    });
+  };
 
   // Fetch session data when dialog opens
   useEffect(() => {
@@ -662,6 +744,17 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   // Badge-style hot/lock + help icons
   const renderIcons = (isHot, paramName) => (
     <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexShrink: 0 }}>
+      <Tooltip title={pinned.has(paramName) ? 'Unpin from My Controls' : 'Pin to My Controls'} placement="top">
+        <IconButton
+          size="small"
+          onClick={(e) => togglePin(paramName, e)}
+          sx={{ p: '2px', color: pinned.has(paramName) ? '#ffd700' : '#4a5568', '&:hover': { color: '#ffd700', background: 'rgba(255,215,0,0.08)' }, transition: 'color 0.15s' }}
+        >
+          {pinned.has(paramName)
+            ? <StarIcon sx={{ fontSize: 13 }} />
+            : <StarBorderIcon sx={{ fontSize: 13 }} />}
+        </IconButton>
+      </Tooltip>
       <Box component="span" sx={{
         fontSize: '0.70rem', fontWeight: isHot ? 700 : 400, letterSpacing: '0.3px',
         background: isHot ? 'rgba(255,152,0,0.12)' : 'rgba(139,148,158,0.08)',
@@ -702,6 +795,45 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const descSx = { fontSize: '0.85rem', lineHeight: 1.45, color: '#eaf0f8' };
   const keySx  = { fontSize: '0.72rem', fontFamily: 'monospace', color: 'rgba(79,156,255,0.92)', display: 'block' };
 
+  // Returns border/background override when adaptive engine is managing this param
+  const getAdaptiveCardSx = (paramName) => {
+    if (!isAdaptiveActive || !ADAPTIVE_ENGINE_PARAMS.has(paramName)) return {};
+    if (operatorLocked.has(paramName)) {
+      return { borderColor: 'rgba(255,152,0,0.5)', background: 'rgba(255,152,0,0.04)' };
+    }
+    return { borderColor: 'rgba(0,188,212,0.45)', background: 'rgba(0,188,212,0.04)' };
+  };
+
+  // Badge shown next to param description when adaptive is active
+  const renderAdaptiveBadge = (paramName) => {
+    if (!isAdaptiveActive || !ADAPTIVE_ENGINE_PARAMS.has(paramName)) return null;
+    if (operatorLocked.has(paramName)) {
+      return (
+        <Tooltip title="You manually set this — adaptive engine won't change it this session" arrow>
+          <Chip
+            icon={<LockIcon sx={{ fontSize: '0.65rem !important' }} />}
+            label="LOCKED"
+            size="small"
+            sx={{ height: 16, fontSize: '0.60rem', fontWeight: 700, color: '#ff9800',
+                  background: 'rgba(255,152,0,0.12)', border: '1px solid rgba(255,152,0,0.3)',
+                  '& .MuiChip-label': { px: '5px' }, flexShrink: 0 }}
+          />
+        </Tooltip>
+      );
+    }
+    return (
+      <Tooltip title="Adaptive engine is managing this parameter — changes automatically based on market regime" arrow>
+        <Chip
+          label="AUTO"
+          size="small"
+          sx={{ height: 16, fontSize: '0.60rem', fontWeight: 700, color: '#00bcd4',
+                background: 'rgba(0,188,212,0.12)', border: '1px solid rgba(0,188,212,0.3)',
+                '& .MuiChip-label': { px: '5px' }, flexShrink: 0 }}
+        />
+      </Tooltip>
+    );
+  };
+
   // Render parameter input
   const renderParam = (paramName, skipFilter = false) => {
     const params = paramsInfo?.params || {};
@@ -729,6 +861,16 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
     // String select params (e.g. wind_down_floor_action)
     const STRING_SELECT_OPTIONS = {
+      adaptive_mode: [
+        { value: 'manual',   label: 'Manual — you control every parameter' },
+        { value: 'preset',   label: 'Preset — load recommended values for strategy type' },
+        { value: 'adaptive', label: 'Adaptive — auto-tune based on live market regime' },
+      ],
+      adaptive_preset: [
+        { value: 'strangle',     label: 'Short Strangle — standard OTM positions' },
+        { value: 'straddle',     label: 'Short Straddle — near-ATM positions' },
+        { value: 'short_window', label: 'Short Window — 3–5 hour sessions' },
+      ],
       wind_down_floor_action: [
         { value: 'skip', label: 'Skip — let theta work' },
         { value: 'normal', label: 'Normal — allow adjustments' },
@@ -748,15 +890,20 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         { value: 'full', label: 'Full — hedge every heartbeat' },
         { value: 'atm_only', label: 'ATM Only — hedge when strike near ATM' },
       ],
+      replenish_lot_mode: [
+        { value: 'match_active', label: 'Match Active — match open side lot count' },
+        { value: 'initial', label: 'Initial — use session initial_lots' },
+      ],
     };
 
     if (type === 'str' && STRING_SELECT_OPTIONS[paramName]) {
       const options = STRING_SELECT_OPTIONS[paramName];
       return (
         <Grid item xs={12} sm={6} key={paramName}>
-          <Box sx={cardSx}>
+          <Box sx={{ ...cardSx, ...getAdaptiveCardSx(paramName) }}>
             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
               <Typography sx={{ ...descSx, flex: 1 }}>{description}</Typography>
+              {renderAdaptiveBadge(paramName)}
               {renderIcons(isHot, paramName)}
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 'auto' }}>
@@ -789,13 +936,14 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const conflictWarnings = getConflictWarnings(formValues);
       const conflictMsg = conflictWarnings[paramName];
       const isOn = Boolean(value);
+      const adaptiveBoolOverlay = getAdaptiveCardSx(paramName);
       return (
         <Grid item xs={12} key={paramName}>
           <Box
             sx={{
-              background: conflictMsg ? 'rgba(255,152,0,0.05)' : isOn ? 'rgba(56,139,253,0.07)' : '#1c2128',
+              background: conflictMsg ? 'rgba(255,152,0,0.05)' : isOn ? 'rgba(56,139,253,0.07)' : (adaptiveBoolOverlay.background || '#1c2128'),
               border: '1px solid',
-              borderColor: conflictMsg ? 'rgba(210,120,0,0.5)' : isOn ? 'rgba(56,139,253,0.4)' : '#21262d',
+              borderColor: conflictMsg ? 'rgba(210,120,0,0.5)' : isOn ? 'rgba(56,139,253,0.4)' : (adaptiveBoolOverlay.borderColor || '#21262d'),
               borderRadius: '8px',
               px: '12px', py: '9px',
               cursor: 'pointer',
@@ -821,6 +969,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   }}>
                     {description}
                   </Typography>
+                  {renderAdaptiveBadge(paramName)}
                   {renderIcons(isHot, paramName)}
                 </Box>
                 <Typography sx={{ ...keySx, mt: 0.4 }}>{paramName}</Typography>
@@ -839,9 +988,10 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     // ── Numeric ──
     return (
       <Grid item xs={12} sm={6} key={paramName}>
-        <Box sx={cardSx}>
+        <Box sx={{ ...cardSx, ...getAdaptiveCardSx(paramName) }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
             <Typography sx={{ ...descSx, flex: 1 }}>{description}</Typography>
+            {renderAdaptiveBadge(paramName)}
             {renderIcons(isHot, paramName)}
           </Box>
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mt: 'auto' }}>
@@ -947,6 +1097,30 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
         {!loading && sessionData && (
           <>
+            {/* ⭐ My Controls — always visible when any params are pinned */}
+            {pinned.size > 0 && (
+              <Box sx={{ mb: 2 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                  <Box sx={{ width: 3, height: 16, backgroundColor: '#ffd700', borderRadius: '2px', flexShrink: 0 }} />
+                  <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: '#ffd700' }}>
+                    ⭐ My Controls
+                  </Typography>
+                  <Chip
+                    label={`${pinned.size}`}
+                    size="small"
+                    sx={{ height: 16, fontSize: '0.65rem', background: 'rgba(255,215,0,0.12)', color: '#ffd700', border: '1px solid rgba(255,215,0,0.25)', '& .MuiChip-label': { px: '5px' } }}
+                  />
+                </Box>
+                <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem', pl: '11px' }}>
+                  💡 Click ⭐ on any parameter to pin or unpin it here.
+                </Typography>
+                <Grid container spacing={1}>
+                  {[...pinned].map(p => renderParam(p, true))}
+                </Grid>
+                <Divider sx={{ mt: 2, borderColor: '#21262d' }} />
+              </Box>
+            )}
+
             {search.trim() ? (
               /* Search mode: flat list, no group headers */
               (() => {

@@ -285,6 +285,77 @@ def update_leg(card_id, leg_id):
     return _ok({'card': card, 'updated_leg': leg_id, 'changes': updates})
 
 
+@patience_bp.route('/cards/<card_id>/clone', methods=['POST'])
+def clone_card(card_id):
+    """
+    POST /api/patience/cards/<card_id>/clone
+
+    Duplicate a card (any status) as a fresh DRAFT.
+    Optional body fields override the clone:
+      - card_name      (default: "<original name> (copy)")
+      - trigger_price
+      - trigger_type
+      - trigger_tolerance
+      - arm            (bool, default false) — auto-arm the clone
+    Legs are copied verbatim (strike, lots, expiry, mode) with execution
+    state (fill_price, order_id, executed_symbol, filled_at) cleared.
+    """
+    db = _db()
+    src = db.get_card(card_id)
+    if not src:
+        return _err('Card not found', 404)
+    src_legs = db.get_legs(card_id)
+
+    body = request.get_json(silent=True) or {}
+
+    try:
+        card_data = {
+            'card_name':         body.get('card_name', src['card_name'] + ' (copy)'),
+            'trigger_price':     float(body.get('trigger_price', src['trigger_price'])),
+            'trigger_type':      body.get('trigger_type', src['trigger_type']).upper(),
+            'trigger_tolerance': float(body.get('trigger_tolerance', src.get('trigger_tolerance', 50))),
+            'sustain_minutes':   src.get('sustain_minutes'),
+            'iv_percentile_min': src.get('iv_percentile_min'),
+            'iv_percentile_max': src.get('iv_percentile_max'),
+            'iv_lookback_days':  src.get('iv_lookback_days', 30),
+            'use_gcd':           src.get('use_gcd', True),
+            'parent_card_id':    None,
+            'template_id':       src.get('template_id'),
+            'status':            'DRAFT',
+        }
+
+        new_id = db.create_card(card_data)
+
+        for i, leg in enumerate(src_legs):
+            leg_data = {
+                'direction':           leg['direction'],
+                'option_type':         leg['option_type'],
+                'expiry_date':         leg['expiry_date'],
+                'strike':              leg.get('strike'),
+                'lots':                leg['lots'],
+                'is_relative_strike':  leg.get('is_relative_strike', 0),
+                'relative_offset':     leg.get('relative_offset'),
+                'post_only':           leg.get('post_only', 1),
+                'order_mode':          leg.get('order_mode', 'maker_only'),
+                'stop_loss':           leg.get('stop_loss'),
+                'mmm_handoff_eligible': leg.get('mmm_handoff_eligible', 0),
+                'leg_order':           leg.get('leg_order', i),
+            }
+            db.create_leg(leg_data, new_id)
+
+        if body.get('arm'):
+            _arm_card_internal(db, new_id)
+
+        new_card = db.get_card(new_id)
+        new_card['legs'] = db.get_legs(new_id)
+        log.info(f"patience_api: cloned card {card_id} → {new_id} ({new_card['card_name']})")
+        return jsonify({'success': True, 'card': new_card}), 201
+
+    except Exception as e:
+        log.error(f"patience_api: clone_card error: {e}", exc_info=True)
+        return _err(str(e), 500)
+
+
 @patience_bp.route('/cards/<card_id>', methods=['DELETE'])
 def delete_card(card_id):
     db = _db()
@@ -899,6 +970,99 @@ def get_card_prices(card_id):
     prices.sort(key=lambda p: p.get('leg_id', ''))
 
     return _ok({'prices': prices, 'count': len(prices)})
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# Live Execution Status (real-time loop state from PatienceLoopService)
+# ═══════════════════════════════════════════════════════════════════════
+
+@patience_bp.route('/cards/<card_id>/execution-status', methods=['GET'])
+def get_execution_status(card_id):
+    """
+    GET /api/patience/cards/<card_id>/execution-status
+
+    Returns live in-memory loop state from PatienceLoopService.
+    Poll every 1s from the frontend when card is EXECUTING.
+
+    Response includes per-symbol progress (status, orderId, fillPrice, attempts),
+    current_round, rounds_completed, and elapsed time.
+    """
+    try:
+        from webui.backend.services.patience_loop import get_patience_loop_service
+        loop_svc = get_patience_loop_service()
+        state = loop_svc.get_status(card_id)
+
+        if not state.get('exists', True) or state.get('exists') is False:
+            # No active loop — return DB leg statuses so frontend stays up to date
+            db = _db()
+            legs = db.get_legs(card_id)
+            return _ok({
+                'active': False,
+                'legs': [
+                    {
+                        'leg_id': l['leg_id'],
+                        'status': l['status'],
+                        'fill_price': l.get('fill_price'),
+                        'order_id': l.get('order_id'),
+                        'executed_symbol': l.get('executed_symbol'),
+                    }
+                    for l in legs
+                ],
+            })
+
+        # Compute elapsed time
+        started_at = state.get('started_at')
+        elapsed = None
+        if started_at:
+            try:
+                from datetime import datetime as _dt
+                started = _dt.fromisoformat(started_at)
+                elapsed = round(((_dt.now() - started).total_seconds()), 1)
+            except Exception:
+                pass
+
+        # Build per-symbol progress list (enriched with leg DB data for leg_id lookup)
+        progress_raw = state.get('progress', {})
+        db = _db()
+        legs = db.get_legs(card_id)
+        leg_map = {l['leg_id']: l for l in legs}
+
+        progress_list = []
+        for sym, info in progress_raw.items():
+            leg_id = info.get('leg_id')
+            leg_db = leg_map.get(leg_id, {})
+            progress_list.append({
+                'symbol': sym,
+                'leg_id': leg_id,
+                'direction': leg_db.get('direction'),
+                'option_type': leg_db.get('option_type'),
+                'lots': info.get('size'),
+                'status': info.get('status', 'placing'),
+                'filled': info.get('filled', False),
+                'order_id': info.get('orderId'),
+                'fill_price': info.get('fillPrice'),
+                'error': info.get('error'),
+                # If already persisted to DB, use DB values as authoritative
+                'db_fill_price': leg_db.get('fill_price'),
+                'db_order_id': leg_db.get('order_id'),
+            })
+
+        return _ok({
+            'active': True,
+            'loop_status': state.get('status'),
+            'current_round': state.get('current_round', 0),
+            'total_rounds': state.get('total_rounds', 0),
+            'rounds_completed': state.get('rounds_completed', 0),
+            'started_at': started_at,
+            'elapsed_seconds': elapsed,
+            'error': state.get('error'),
+            'stop_requested': state.get('stop_requested', False),
+            'progress': progress_list,
+        })
+
+    except Exception as e:
+        log.error(f"patience_api: execution-status error: {e}", exc_info=True)
+        return _err(str(e), 500)
 
 
 # ═══════════════════════════════════════════════════════════════════════

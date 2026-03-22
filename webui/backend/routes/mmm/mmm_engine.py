@@ -413,23 +413,49 @@ class MMMEngine:
             constraint_msg = f"{constraint_msg}; {be_msg}" if constraint_msg else be_msg
         # ── END Breakeven Multiplier ──────────────────────────────────────
 
-        # ── Gamma Severity Multiplier ─────────────────────────────────────
-        # Applies when gamma_detector finds DANGER zone — losses will accelerate rapidly.
-        # NOTE: gamma_mult above (T3-2) is the aggressor-excess gamma-aware multiplier.
-        # This is DIFFERENT — it is the gamma boundary severity multiplier.
+        # ── Gamma Severity Multiplier (Feature 6: Proportional Curve) ─────
+        # Applies when gamma_detector finds WARNING or DANGER zone.
+        # Feature 6 adds: proportional scaling by distance (smooth curve),
+        # WARNING zone effect, and shift distance widening (in mmm_strike_shift.py).
+        #
+        # Binary legacy (gamma_severity_proportional=False):
+        #   DANGER → max_multiplier (fixed)
+        # Proportional (gamma_severity_proportional=True, default):
+        #   WARNING → warning_mult (1.1x default)
+        #   DANGER  → interpolate(warning_mult, max_multiplier, by distance)
+        #              deeper into DANGER (closer to strike) → higher multiplier
         gamma_severity_mult = 1.0
         gamma_result = session.get('_gamma_result', {})
-        if (params.get('gamma_severity_multiplier_enabled', False) and
-                gamma_result.get('gamma_zone') == 'DANGER'):
-            gamma_severity_mult = params.get('gamma_severity_max_multiplier', 1.5)
-            pre_gsev = lots_to_sell
-            lots_to_sell = max(math.ceil(lots_to_sell * gamma_severity_mult), 1)
-            gsev_msg = (
-                f'Gamma Severity {gamma_severity_mult:.1f}x (DANGER zone, '
-                f'nearest={gamma_result.get("nearest_distance_pct", 0):.1f}%): '
-                f'{pre_gsev} → {lots_to_sell} lots'
-            )
-            constraint_msg = f'{constraint_msg}; {gsev_msg}' if constraint_msg else gsev_msg
+        if params.get('gamma_severity_multiplier_enabled', False):
+            zone       = gamma_result.get('gamma_zone', 'SAFE')
+            dist_pct   = gamma_result.get('nearest_distance_pct')
+            max_mult   = params.get('gamma_severity_max_multiplier', 1.5)
+            warn_mult  = params.get('gamma_severity_warning_mult', 1.1)
+            proportional = params.get('gamma_severity_proportional', True)
+
+            if zone == 'WARNING':
+                gamma_severity_mult = warn_mult
+            elif zone == 'DANGER':
+                if proportional and dist_pct is not None:
+                    danger_start = params.get('gamma_danger_distance_pct', 1.5)
+                    if danger_start > 0:
+                        # t=0 at zone edge (dist_pct=danger_start), t=1 at strike (dist_pct=0)
+                        t = max(0.0, min(1.0, 1.0 - dist_pct / danger_start))
+                        gamma_severity_mult = warn_mult + t * (max_mult - warn_mult)
+                    else:
+                        gamma_severity_mult = max_mult
+                else:
+                    gamma_severity_mult = max_mult  # legacy binary
+
+            if gamma_severity_mult > 1.0:
+                pre_gsev = lots_to_sell
+                lots_to_sell = max(math.ceil(lots_to_sell * gamma_severity_mult), 1)
+                gsev_msg = (
+                    f'GammaSev {gamma_severity_mult:.2f}x ({zone} zone, '
+                    f'nearest={dist_pct:.1f}% from boundary): '
+                    f'{pre_gsev} → {lots_to_sell} lots'
+                )
+                constraint_msg = f'{constraint_msg}; {gsev_msg}' if constraint_msg else gsev_msg
         # ── END Gamma Severity Multiplier ────────────────────────────────
 
         # ── IMP-2 + Trend Boost: Directional lot adjustment ──────────────
@@ -527,6 +553,20 @@ class MMMEngine:
                     )
                     constraint_msg = f"{constraint_msg}; {ceil_msg}" if constraint_msg else ceil_msg
         # ── END Combined Multiplier Ceiling ──────────────────────────────
+
+        # ── Feature 9: Data Confidence Gate ──────────────────────────────
+        # Scales down lots proportionally when market data quality is degraded.
+        # Applied after all amplifiers and before hard caps so it cannot be
+        # bypassed by position-cap logic. confidence=1.0 → no effect.
+        if params.get('data_confidence_enabled', True):
+            conf = session.get('_data_confidence', 1.0)
+            if conf < 1.0:
+                pre_conf = lots_to_sell
+                lots_to_sell = max(1, math.floor(lots_to_sell * conf))
+                if lots_to_sell != pre_conf:
+                    conf_msg = f'DataConf {conf:.2f}x: {pre_conf}→{lots_to_sell} lots'
+                    constraint_msg = f'{constraint_msg}; {conf_msg}' if constraint_msg else conf_msg
+        # ── END Data Confidence Gate ─────────────────────────────────────
 
         # §13.1: Position cap — Split Ledger: only active_lots count against cap
         hedge_state = session.get(hedge_side, {})
@@ -686,6 +726,7 @@ class MMMEngine:
                 symbol=symbol,
                 side='sell',
                 size=lots_to_sell,
+                session_id=session_id,
             )
 
             # ── UPDATE PENDING REGISTRY WITH REAL ORDER ID ───────────────────
@@ -719,6 +760,13 @@ class MMMEngine:
                 }
 
             fill_price = result.get('fill_price', 0)
+
+            # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+            _od = result.get('order_details') or {}
+            _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+            if _commission:
+                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+
             # P1-D: use actual filled size, not requested size (partial fill handling)
             filled_lots = result.get('filled_size', lots_to_sell)
             if filled_lots <= 0:
@@ -743,6 +791,8 @@ class MMMEngine:
                 adj_type=adj_type,
                 premium_collected=premium_collected,
                 fetch_premium_fn=fetch_premium_fn,
+                order_id=str(result.get('order_id', '')),
+                client_order_id=str(result.get('client_order_id', '')),
             )
 
             # ── CLEAR PENDING AFTER SUCCESSFUL STATE UPDATE ──────────────────
@@ -844,6 +894,8 @@ class MMMEngine:
         adj_type: str,
         premium_collected: float,
         fetch_premium_fn=None,
+        order_id: str = '',
+        client_order_id: str = '',
     ):
         """
         §6.1-6.4: Update session state after a successful adjustment.
@@ -863,6 +915,9 @@ class MMMEngine:
             'type': adj_type or 'adjustment',
             'status': 'active',
             'created_at': now,
+            'fill_confirmed_at': now,
+            'order_id': order_id,
+            'client_order_id': client_order_id,
             'shifted_at': None,
             'closed_at': None,
             'realized_pnl': None,
@@ -876,7 +931,8 @@ class MMMEngine:
 
         # §6.3: Update tracking
         session['last_aggressor'] = aggressor_side.upper()
-        session['adjustment_count'] = session.get('adjustment_count', 0) + 1
+        if adj_type != 'straddle_roll':
+            session['adjustment_count'] = session.get('adjustment_count', 0) + 1
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
         )
@@ -886,7 +942,7 @@ class MMMEngine:
         history = session.setdefault('adjustment_history', [])
         history.append({
             'side': hedge_side.upper(),
-            'aggressor': aggressor_side.upper(),
+            'aggressor': adj_type.upper() if adj_type == 'straddle_roll' else aggressor_side.upper(),
             'lots_sold': lots,
             'premium': fill_price,
             'strike': strike,

@@ -1632,7 +1632,7 @@ const OptionsPanel = () => {
     await Promise.all(
       closedSymbols.map(async (symbol) => {
         try {
-          const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`);
+          const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`, { skipCircuit: true });
           if (data?.success && data?.ticker?.quotes) {
             updates[symbol] = {
               last_bid: parseFloat(data.ticker.quotes.best_bid) || 0,

@@ -142,6 +142,13 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       group: 'Algorithms',
     },
     {
+      id: 'ssdh',
+      label: '⚡ SSDH',
+      icon: Layers3,
+      description: 'Short Straddle Double Hedge - sell ATM straddle + buy OTM wing hedges',
+      group: 'Algorithms',
+    },
+    {
       id: 'zero_dte',
       label: '⏱️ 0DTE Trading',
       icon: Timer,

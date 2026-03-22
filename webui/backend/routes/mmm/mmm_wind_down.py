@@ -24,8 +24,10 @@ log = logging.getLogger('mmm_wind_down')
 
 # H-1 fix: import from canonical source instead of duplicating the constant
 from .mmm_constants import LOT_SIZE_BTC
+from webui.backend.sealed import sealed
 
 
+@sealed
 def is_wind_down_active(session: Dict) -> bool:
     """
     Check if wind-down mode should be active based on session params.
@@ -180,6 +182,7 @@ def get_wind_down_status(session: Dict) -> Dict[str, Any]:
                 'hours_remaining': None, 'activates_in_hours': None}
 
 
+@sealed
 def compute_wind_down_action(
     session: Dict,
     aggressor_side: str,
@@ -265,6 +268,7 @@ def compute_wind_down_action(
     }
 
 
+@sealed
 def get_lifo_close_fills(
     side_state: Dict,
     lots_to_close: int,
@@ -336,6 +340,7 @@ def get_lifo_close_fills(
     return close_records
 
 
+@sealed
 def apply_lifo_removals(
     side_state: Dict,
     close_records: List[Dict],
@@ -406,6 +411,7 @@ def apply_lifo_removals(
 
 
 
+@sealed
 def get_wind_down_close_threshold(session: Dict) -> float:
     """
     During wind-down, return the elevated close threshold.

@@ -129,16 +129,20 @@ function TopBar({
               <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
             </div>
           </div>
-          
-          {/* Wallet Balance Indicator */}
-          <WalletBalanceIndicator />
-          
-          {/* Unrealized PnL Indicator */}
-          <UnrealizedPnLIndicator />
+
+          {/* Wallet Balance Indicator — hidden on small phones */}
+          <div className="hidden sm:block">
+            <WalletBalanceIndicator />
+          </div>
+
+          {/* Unrealized PnL Indicator — hidden on small phones */}
+          <div className="hidden sm:block">
+            <UnrealizedPnLIndicator />
+          </div>
         </div>
 
-        {/* Center: System Status & Symbol Selector */}
-        <div className="flex items-center gap-3">
+        {/* Center: System Status & Symbol Selector — hidden on mobile, shown on desktop */}
+        <div className="hidden lg:flex items-center gap-3">
           {/* Live Prices */}
           <StatusSection title="Market" icon={Activity} color="border-blue-500/30">
             <Badge
@@ -214,7 +218,8 @@ function TopBar({
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
-          <div className="text-[10px] text-slate-500">
+          {/* Sync timestamp — hidden on mobile */}
+          <div className="hidden sm:block text-[10px] text-slate-500">
             <span className="font-medium text-slate-400">Synced:</span>{' '}
             {formatTimestamp(lastUpdated)}
           </div>
@@ -224,12 +229,13 @@ function TopBar({
             className="group flex items-center gap-1.5 rounded-lg border border-sky-500/40 bg-sky-500/10 px-2.5 py-1.5 text-xs font-semibold text-sky-200 transition hover:border-sky-400 hover:bg-sky-500/20"
           >
             <RefreshCw className="h-3.5 w-3.5 transition group-hover:rotate-180" />
-            Sync
+            <span className="hidden sm:inline">Sync</span>
           </button>
+          {/* Reload button — hidden on mobile */}
           <button
             type="button"
             onClick={onRefresh}
-            className="rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-600 hover:bg-slate-700"
+            className="hidden sm:flex rounded-lg border border-slate-700 bg-slate-800/70 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-600 hover:bg-slate-700"
           >
             Reload
           </button>

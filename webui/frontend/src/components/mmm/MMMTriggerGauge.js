@@ -27,6 +27,7 @@ import {
   Chip,
 } from '@mui/material';
 import { HelpTooltip, HELP } from './MMMEducation';
+import { LOT_SIZE_BTC } from './MMMPositionsTable';
 
 function getGaugeColor(ratio) {
   if (ratio >= 1) return '#f44336';    // Red — exceeded
@@ -180,7 +181,7 @@ function TriggerSideGauge({
             }}
           >
             Excess: +{excess.toFixed(2)} ({excessPct.toFixed(1)}%) above trigger
-            {triggered && <span style={{ fontWeight: 400 }}> → adj loss: ~${(excess * activeLots).toFixed(1)}</span>}
+            {triggered && <span style={{ fontWeight: 400 }}> → adj loss: ~${(excess * activeLots * LOT_SIZE_BTC).toFixed(2)}</span>}
           </Typography>
         </Tooltip>
       )}
@@ -203,9 +204,10 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
   const ceTrigger = (ceState.trigger_snapshot || {})[ceStrike] || 0;
   const peTrigger = (peState.trigger_snapshot || {})[peStrike] || 0;
 
-  const hasLiveData = !!(heartbeat?.ce_premium || heartbeat?.pe_premium);
-  const ceNow = heartbeat?.ce_premium || (hasLiveData ? 0 : null);
-  const peNow = heartbeat?.pe_premium || (hasLiveData ? 0 : null);
+  // Use > 0 check (not ||) so 0 is treated as "no data", not as a valid price
+  const ceNow = (heartbeat?.ce_premium > 0) ? heartbeat.ce_premium : null;
+  const peNow = (heartbeat?.pe_premium > 0) ? heartbeat.pe_premium : null;
+  const hasLiveData = ceNow != null || peNow != null;
 
   const ceExcess = triggerData?.ce_excess || (ceNow != null ? Math.max(0, ceNow - ceTrigger) : 0);
   const peExcess = triggerData?.pe_excess || (peNow != null ? Math.max(0, peNow - peTrigger) : 0);

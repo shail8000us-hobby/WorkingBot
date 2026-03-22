@@ -24,7 +24,7 @@ const MobileNav = ({ sections = [], activeSection, onSelect }) => {
   });
 
   return (
-    <div className="sticky top-[calc(9rem+env(safe-area-inset-top))] z-20 flex w-full items-center gap-1.5 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
+    <div className="sticky top-[calc(6.5rem+env(safe-area-inset-top))] z-20 flex w-full items-center gap-1.5 overflow-x-auto border-b border-slate-800/80 bg-slate-950/80 px-4 py-3 backdrop-blur lg:hidden">
       {groups.map((g, gi) => (
         <React.Fragment key={g.group}>
           {gi > 0 && (

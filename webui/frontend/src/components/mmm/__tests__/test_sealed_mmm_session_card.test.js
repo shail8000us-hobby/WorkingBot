@@ -104,7 +104,7 @@ describe('@sealed SessionCard action buttons — CONTRACT TESTS', () => {
 
   it('C3 — RUNNING: Stop button fires onControl(stop, sessionId)', () => {
     const { onControl } = renderCard({ status: 'RUNNING' });
-    fireEvent.click(screen.getByRole('button', { name: /stop/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(onControl).toHaveBeenCalledWith('stop', SESSION_ID);
   });
 
@@ -136,7 +136,7 @@ describe('@sealed SessionCard action buttons — CONTRACT TESTS', () => {
 
   it('C8 — PAUSED: Stop button fires onControl(stop, sessionId)', () => {
     const { onControl } = renderCard({ status: 'PAUSED' });
-    fireEvent.click(screen.getByRole('button', { name: /stop/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
     expect(onControl).toHaveBeenCalledWith('stop', SESSION_ID);
   });
 
