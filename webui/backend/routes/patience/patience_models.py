@@ -440,6 +440,28 @@ class PatienceDB:
                 perf.get('closed_at', _now()),
             ))
 
+    def get_performance_for_card(self, card_id: str) -> Optional[dict]:
+        """Return the most recent performance record for a card, or None."""
+        with self._conn() as conn:
+            row = conn.execute(
+                "SELECT * FROM card_performance WHERE card_id = ? ORDER BY id DESC LIMIT 1",
+                (card_id,)
+            ).fetchone()
+        return dict(row) if row else None
+
+    def update_performance_for_card(self, card_id: str, **fields) -> None:
+        """Update the most recent performance record for a card."""
+        if not fields:
+            return
+        set_clause = ', '.join(f"{k} = ?" for k in fields)
+        values = list(fields.values()) + [card_id]
+        with self._conn() as conn:
+            conn.execute(
+                f"UPDATE card_performance SET {set_clause} "
+                f"WHERE id = (SELECT id FROM card_performance WHERE card_id = ? ORDER BY id DESC LIMIT 1)",
+                values + [card_id],
+            )
+
     def get_performance(self) -> list:
         with self._conn() as conn:
             rows = conn.execute(

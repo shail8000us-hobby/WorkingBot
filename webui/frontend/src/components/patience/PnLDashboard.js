@@ -177,7 +177,11 @@ function ActiveCardsTable({ cards }) {
                 {c.filled_count ?? 0}/{c.legs_count ?? 0}
               </td>
               <td style={{ padding: '10px 12px', color: '#94a3b8' }}>
-                {c.entry_premium != null && c.entry_premium !== 0 ? `$${fmt(c.entry_premium)}` : '—'}
+                {c.entry_premium != null && c.entry_premium !== 0
+                  ? `$${fmt(c.entry_premium)}`
+                  : c.filled_count > 0
+                    ? <span style={{ color: '#475569' }} title="Fill prices not available (pre-fix data)">$0.00 *</span>
+                    : '—'}
               </td>
               <td style={{ padding: '10px 12px', color: '#64748b', fontSize: 12 }}>
                 {c.current_value != null ? `$${fmt(c.current_value)}` : <span style={{ color: '#334155' }}>live N/A</span>}

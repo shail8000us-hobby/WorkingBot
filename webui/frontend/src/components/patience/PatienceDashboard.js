@@ -443,8 +443,9 @@ export default function PatienceDashboard() {
       <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '1px solid #334155', paddingBottom: 0 }}>
         {[
           { key: 'cards', label: '📋 Cards' },
+          { key: 'positions', label: '📊 Positions' },
           { key: 'pnl', label: '💰 P&L' },
-          { key: 'iv', label: '📊 IV' },
+          { key: 'iv', label: '📈 IV' },
           { key: 'performance', label: '🏆 Performance' },
           { key: 'templates', label: '📄 Templates' },
         ].map(tab => (
@@ -523,6 +524,7 @@ export default function PatienceDashboard() {
         </>
       )}
 
+      {activeTab === 'positions' && <PositionsPanel />}
       {activeTab === 'pnl' && <PnLDashboard />}
       {activeTab === 'iv' && <IVPanel />}
       {activeTab === 'performance' && <PerformanceHistory />}
@@ -533,6 +535,160 @@ export default function PatienceDashboard() {
             setActiveTab('cards');
           }}
         />
+      )}
+    </div>
+  );
+}
+
+// ── Positions Panel ───────────────────────────────────────────────────
+
+const pnlColor = (v) => v == null ? '#94a3b8' : v > 0 ? '#22c55e' : v < 0 ? '#ef4444' : '#94a3b8';
+const fmt2 = (v) => v == null ? '—' : v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function PositionsPanel() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [lastAt, setLastAt] = useState(null);
+
+  const fetchPositions = useCallback(async () => {
+    try {
+      const r = await patienceAPI.getPositions();
+      setData(r.data);
+      setLastAt(new Date());
+    } catch (e) { /* silent */ }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => {
+    fetchPositions();
+    const id = setInterval(fetchPositions, 10000);
+    return () => clearInterval(id);
+  }, [fetchPositions]);
+
+  if (loading) return <div style={{ color: '#64748b', padding: 20 }}>Loading positions...</div>;
+
+  const cards = data?.cards || [];
+  const summary = data?.summary || {};
+  const hasPositions = cards.length > 0;
+
+  return (
+    <div style={{ color: '#e2e8f0' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
+        <h4 style={{ margin: 0, color: '#a78bfa' }}>Consolidated Positions</h4>
+        {lastAt && (
+          <span style={{ fontSize: 11, color: '#475569' }}>
+            updated {Math.round((Date.now() - lastAt) / 1000)}s ago
+          </span>
+        )}
+        <button
+          onClick={fetchPositions}
+          style={{ marginLeft: 'auto', padding: '3px 12px', borderRadius: 4, border: '1px solid #334155', background: 'transparent', color: '#a78bfa', cursor: 'pointer', fontSize: 11 }}
+        >
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* Summary bar */}
+      {hasPositions && (
+        <div style={{ display: 'flex', gap: 16, marginBottom: 16, flexWrap: 'wrap' }}>
+          {[
+            { label: 'Total Legs', value: summary.total_legs ?? 0, color: '#94a3b8' },
+            { label: 'Live Data', value: `${summary.live_legs ?? 0}/${summary.total_legs ?? 0}`, color: '#22c55e' },
+            { label: 'Portfolio uPnL', value: summary.total_upnl != null ? `${summary.total_upnl >= 0 ? '+' : ''}$${fmt2(summary.total_upnl)}` : '—', color: pnlColor(summary.total_upnl) },
+            { label: 'Portfolio Theta', value: summary.total_theta != null ? `$${fmt2(summary.total_theta)}/day` : '—', color: summary.total_theta < 0 ? '#22c55e' : '#ef4444' },
+          ].map(m => (
+            <div key={m.label} style={{ background: '#0f172a', borderRadius: 8, padding: '10px 16px', flex: 1, minWidth: 120 }}>
+              <div style={{ fontSize: 11, color: '#64748b', marginBottom: 3 }}>{m.label}</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: m.color }}>{m.value}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!hasPositions ? (
+        <div style={{ color: '#64748b', fontSize: 13, padding: 32, textAlign: 'center', border: '1px dashed #1e293b', borderRadius: 8 }}>
+          No filled Patience legs found. Execute a card first — positions appear here once legs are filled.
+        </div>
+      ) : (
+        cards.map(card => (
+          <div key={card.card_id} style={{ marginBottom: 20, border: '1px solid #1e293b', borderRadius: 8, overflow: 'hidden' }}>
+            {/* Card header */}
+            <div style={{ background: '#0f172a', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <strong style={{ color: '#e2e8f0', fontSize: 14 }}>{card.card_name}</strong>
+              <span style={{ fontSize: 11, color: '#64748b' }}>{card.status}</span>
+              <span style={{ fontSize: 12, color: '#64748b' }}>
+                {card.live_legs}/{card.total_legs} live
+              </span>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 20 }}>
+                <span style={{ fontSize: 13, color: pnlColor(card.card_upnl), fontWeight: 700 }}>
+                  uPnL: {card.card_upnl >= 0 ? '+' : ''}${fmt2(card.card_upnl)}
+                </span>
+                {card.card_theta !== 0 && (
+                  <span style={{ fontSize: 12, color: card.card_theta < 0 ? '#22c55e' : '#ef4444' }}>
+                    Θ {card.card_theta >= 0 ? '+' : ''}${fmt2(card.card_theta)}/day
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Legs table */}
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead>
+                  <tr style={{ color: '#64748b', borderBottom: '1px solid #1e293b', background: '#0a1120' }}>
+                    {['Symbol', 'Dir', 'Lots', 'Fill @', 'Bid', 'Ask', 'Mark', 'uPnL', 'Θ/day', 'Δ', 'Status'].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 400, whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {card.legs.map(leg => (
+                    <tr key={leg.leg_id} style={{ borderBottom: '1px solid #0f172a' }}>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', color: leg.is_live ? '#a78bfa' : '#475569', fontSize: 11 }}>
+                        {leg.symbol}
+                        {leg.expiry_warning?.is_expiring_soon && (
+                          <span style={{ marginLeft: 4, color: '#f97316', fontSize: 10 }}>⚠ expiring</span>
+                        )}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: leg.direction === 'BUY' ? '#22c55e' : '#ef4444', fontWeight: 700 }}>
+                        {leg.direction}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#94a3b8' }}>{leg.lots}</td>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>
+                        {leg.fill_price ? `$${fmt2(leg.fill_price)}` : <span style={{ color: '#334155' }}>no data</span>}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#3b82f6' }}>
+                        {leg.bid != null ? `$${fmt2(leg.bid)}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#f97316' }}>
+                        {leg.ask != null ? `$${fmt2(leg.ask)}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#a78bfa' }}>
+                        {leg.mark_price != null ? `$${fmt2(leg.mark_price)}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', fontWeight: 600, color: pnlColor(leg.unrealized_pnl) }}>
+                        {leg.unrealized_pnl != null
+                          ? `${leg.unrealized_pnl >= 0 ? '+' : ''}$${fmt2(leg.unrealized_pnl)}`
+                          : <span style={{ color: '#334155' }}>—</span>}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: leg.theta < 0 ? '#22c55e' : leg.theta > 0 ? '#ef4444' : '#64748b' }}>
+                        {leg.theta != null ? `$${fmt2(leg.theta)}` : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px', color: '#64748b' }}>
+                        {leg.delta != null ? Number(leg.delta).toFixed(4) : '—'}
+                      </td>
+                      <td style={{ padding: '8px 10px' }}>
+                        {leg.is_live
+                          ? <span style={{ color: '#22c55e', fontSize: 11 }}>● live</span>
+                          : <span style={{ color: '#475569', fontSize: 11 }}>○ no data</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))
       )}
     </div>
   );

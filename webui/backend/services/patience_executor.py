@@ -438,6 +438,34 @@ def _on_card_completed(card_id: str, card_name: str, resolved_legs: list):
         f"All legs filled. Card completed at {completed_at}"
     )
 
+    # Auto-write performance record (entry_premium only; pnl/exit_value set on explicit close)
+    try:
+        entry_premium = 0.0
+        for leg in resolved_legs:
+            leg_id = leg.get('leg_id')
+            if leg_id:
+                leg_data = db.get_leg(leg_id)
+                if leg_data:
+                    fill = float(leg_data.get('fill_price') or 0)
+                    lots = int(leg_data.get('lots') or 0)
+                    sign = 1 if leg_data.get('direction') == 'SELL' else -1
+                    entry_premium += sign * fill * lots
+        if not db.get_performance_for_card(card_id):
+            db.save_performance({
+                'card_id':          card_id,
+                'card_name':        card_name,
+                'entry_premium':    round(entry_premium, 2),
+                'exit_value':       None,
+                'pnl':              None,
+                'duration_hours':   None,
+                'card_type':        'options',
+                'legs_handed_to_mmm': 0,
+                'handoff_pnl':      None,
+                'closed_at':        None,
+            })
+    except Exception as _perf_err:
+        log.warning(f"patience_executor: auto-performance write failed for {card_name}: {_perf_err}")
+
     # Auto-group via groups storage (direct import — no HTTP)
     group_id = _auto_group(card_id, card_name, resolved_legs)
     if group_id:

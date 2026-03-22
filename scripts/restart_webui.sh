@@ -5,6 +5,8 @@
 # Usage: ./scripts/restart_webui.sh
 
 launchctl stop com.gridbot.production.webui
+# Kill any lingering process on 5555 (stop can be slow on eventlet)
+sleep 1 && kill -9 $(lsof -ti:5555) 2>/dev/null || true
 launchctl start com.gridbot.production.webui
 
 for i in $(seq 1 15); do

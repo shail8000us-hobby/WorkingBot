@@ -65,6 +65,9 @@ const patienceAPI = {
   getIVHistory: (days = 30) =>
     axios.get(`${BASE}/iv/history`, { params: { days } }),
 
+  // ── Positions (live, cross-referenced with options dashboard) ────
+  getPositions: () => axios.get(`${BASE}/positions`),
+
   // ── P&L ──────────────────────────────────────────────────────────
   getPnL: () => axios.get(`${BASE}/pnl`),
 

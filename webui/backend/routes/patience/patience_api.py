@@ -569,17 +569,32 @@ def close_card(card_id):
     exit_value = float(body.get('exit_value', 0))
     pnl = exit_value - entry_premium if exit_value else None
 
-    db.save_performance({
-        'card_id': card_id,
-        'card_name': card.get('card_name'),
-        'entry_premium': entry_premium,
-        'exit_value': exit_value,
-        'pnl': pnl,
-        'duration_hours': round(duration, 2),
-        'card_type': body.get('card_type', 'unknown'),
-        'legs_handed_to_mmm': mmm_count,
-        'handoff_pnl': body.get('handoff_pnl'),
-    })
+    # Update existing auto-written record, or insert if none exists
+    existing_perf = db.get_performance_for_card(card_id)
+    if existing_perf:
+        db.update_performance_for_card(
+            card_id,
+            entry_premium=entry_premium,
+            exit_value=exit_value,
+            pnl=pnl,
+            duration_hours=round(duration, 2),
+            card_type=body.get('card_type', existing_perf.get('card_type', 'options')),
+            legs_handed_to_mmm=mmm_count,
+            handoff_pnl=body.get('handoff_pnl'),
+            closed_at=_now(),
+        )
+    else:
+        db.save_performance({
+            'card_id': card_id,
+            'card_name': card.get('card_name'),
+            'entry_premium': entry_premium,
+            'exit_value': exit_value,
+            'pnl': pnl,
+            'duration_hours': round(duration, 2),
+            'card_type': body.get('card_type', 'options'),
+            'legs_handed_to_mmm': mmm_count,
+            'handoff_pnl': body.get('handoff_pnl'),
+        })
 
     db.update_card(card_id, status='CANCELLED')  # remove from active monitoring
     return _ok({'closed': card_id, 'entry_premium': entry_premium, 'pnl': pnl})
@@ -753,6 +768,137 @@ def iv_history():
 
 
 # ═══════════════════════════════════════════════════════════════════════
+# Live Positions — cross-reference patience legs with options dashboard
+# ═══════════════════════════════════════════════════════════════════════
+
+@patience_bp.route('/positions', methods=['GET'])
+def patience_positions():
+    """
+    GET /api/patience/positions
+
+    All Patience-filled option legs enriched with live market data.
+    Fetches live positions from /api/options/dashboard (cached, no extra
+    Delta Exchange calls) and cross-references by executed_symbol.
+
+    Returns:
+      cards  — list of cards, each with .legs[] of enriched positions
+      summary — total_legs, live_legs, total_upnl, total_theta
+    """
+    db = _db()
+
+    # 1. All non-cancelled cards with at least one filled leg
+    cards = db.get_cards_by_status('EXECUTING', 'TRIGGERED', 'COMPLETED', 'ARMED', 'PAUSED')
+
+    # 2. Fetch live options positions (uses cached options dashboard data)
+    live_by_symbol = {}
+    try:
+        resp = requests.get('http://localhost:5555/api/options/dashboard', timeout=6)
+        if resp.status_code == 200:
+            for pos in resp.json().get('positions', []):
+                sym = pos.get('product_symbol')
+                if sym:
+                    live_by_symbol[sym] = pos
+    except Exception as e:
+        log.warning(f"patience_positions: options dashboard unavailable: {e}")
+
+    # 3. Build enriched groups
+    card_groups = []
+    total_upnl = 0.0
+    total_theta = 0.0
+    total_live = 0
+    total_legs = 0
+
+    for card in cards:
+        legs = db.get_legs(card['card_id'])
+        filled = [l for l in legs if l.get('status') in ('FILLED', 'HANDED_TO_MMM')
+                  and l.get('executed_symbol')]
+        if not filled:
+            continue
+
+        enriched_legs = []
+        card_upnl = 0.0
+        card_theta = 0.0
+
+        for leg in filled:
+            sym = leg['executed_symbol']
+            live = live_by_symbol.get(sym, {})
+            is_live = bool(live)
+
+            fill_price = float(leg.get('fill_price') or 0) or None
+            lots = int(leg.get('lots') or 0)
+            direction = leg.get('direction', 'BUY')
+
+            mark = float(live.get('mark_price') or 0) or None
+            mid = float(live.get('mid_price') or 0) or None
+            bid = float(live.get('best_bid') or 0) or None
+            ask = float(live.get('best_ask') or 0) or None
+
+            # Prefer exchange uPnL if available (accounts for size sign correctly)
+            upnl = float(live.get('unrealized_pnl') or 0) if is_live else None
+            if upnl is None and fill_price and mark:
+                sign = 1 if direction == 'BUY' else -1
+                upnl = sign * (mark - fill_price) * lots * 0.001  # 1 lot = 0.001 BTC
+
+            theta_raw = live.get('greeks', {}).get('theta')
+            theta = float(theta_raw) if theta_raw is not None else None
+
+            if upnl is not None:
+                card_upnl += upnl
+            if theta is not None:
+                card_theta += theta
+            if is_live:
+                total_live += 1
+
+            enriched_legs.append({
+                'leg_id':         leg.get('leg_id'),
+                'card_id':        card['card_id'],
+                'card_name':      card.get('card_name'),
+                'symbol':         sym,
+                'direction':      direction,
+                'option_type':    leg.get('option_type'),
+                'expiry_date':    leg.get('expiry_date'),
+                'lots':           lots,
+                'fill_price':     fill_price,
+                'leg_status':     leg.get('status'),
+                'bid':            bid,
+                'ask':            ask,
+                'mark_price':     mark,
+                'mid_price':      mid,
+                'unrealized_pnl': round(upnl, 2) if upnl is not None else None,
+                'pnl_pct':        float(live.get('pnl_percentage') or 0) or None if is_live else None,
+                'theta':          round(theta, 2) if theta is not None else None,
+                'delta':          float(live.get('greeks', {}).get('delta') or 0) or None if is_live else None,
+                'expiry_warning': live.get('expiry_warning'),
+                'is_live':        is_live,
+            })
+            total_legs += 1
+
+        total_upnl += card_upnl
+        total_theta += card_theta
+
+        card_groups.append({
+            'card_id':    card['card_id'],
+            'card_name':  card.get('card_name'),
+            'status':     card.get('status'),
+            'legs':       enriched_legs,
+            'card_upnl':  round(card_upnl, 2),
+            'card_theta': round(card_theta, 2),
+            'live_legs':  sum(1 for l in enriched_legs if l['is_live']),
+            'total_legs': len(enriched_legs),
+        })
+
+    return _ok({
+        'cards': card_groups,
+        'summary': {
+            'total_legs': total_legs,
+            'live_legs':  total_live,
+            'total_upnl': round(total_upnl, 2),
+            'total_theta': round(total_theta, 2),
+        }
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════
 # P&L Dashboard
 # ═══════════════════════════════════════════════════════════════════════
 
@@ -794,13 +940,45 @@ def pnl_summary():
 # Performance History
 # ═══════════════════════════════════════════════════════════════════════
 
+def _backfill_performance(db):
+    """One-time: write performance stubs for COMPLETED cards that have no record yet."""
+    try:
+        completed = db.get_cards_by_status('COMPLETED')
+        for card in completed:
+            if db.get_performance_for_card(card['card_id']):
+                continue  # already has a record
+            legs = db.get_legs(card['card_id'])
+            entry_premium = 0.0
+            for leg in legs:
+                fill = float(leg.get('fill_price') or 0)
+                lots = int(leg.get('lots') or 0)
+                sign = 1 if leg.get('direction') == 'SELL' else -1
+                entry_premium += sign * fill * lots
+            db.save_performance({
+                'card_id':          card['card_id'],
+                'card_name':        card.get('card_name'),
+                'entry_premium':    round(entry_premium, 2),
+                'exit_value':       None,
+                'pnl':              None,
+                'duration_hours':   None,
+                'card_type':        'options',
+                'legs_handed_to_mmm': 0,
+                'handoff_pnl':      None,
+                'closed_at':        None,
+            })
+            log.info(f"patience_api: backfilled performance stub for card {card['card_id']}")
+    except Exception as e:
+        log.warning(f"patience_api: performance backfill failed: {e}")
+
+
 @patience_bp.route('/performance', methods=['GET'])
 def performance_history():
     db = _db()
+    _backfill_performance(db)
     perf = db.get_performance()
 
-    # Summary stats
-    closed = [p for p in perf if p.get('pnl') is not None]
+    # Records with closed_at are explicitly closed; those without are auto-written at completion
+    closed = [p for p in perf if p.get('pnl') is not None and p.get('closed_at')]
     wins = [p for p in closed if p.get('pnl', 0) > 0]
     losses = [p for p in closed if p.get('pnl', 0) <= 0]
     total_pnl = sum(p.get('pnl', 0) for p in closed)

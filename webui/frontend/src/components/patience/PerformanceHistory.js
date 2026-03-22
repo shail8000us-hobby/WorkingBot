@@ -106,7 +106,7 @@ export default function PerformanceHistory() {
       {/* ── Records table ── */}
       {records.length === 0 ? (
         <div style={{ color: '#64748b', fontSize: 13, padding: 20, textAlign: 'center', border: '1px dashed #1e293b', borderRadius: 8 }}>
-          No closed cards yet. Performance data appears here after cards are closed.
+          No cards yet. Records appear here when cards complete.
         </div>
       ) : (
         <div style={{ background: '#0f172a', borderRadius: 8, overflow: 'auto' }}>
@@ -147,7 +147,9 @@ export default function PerformanceHistory() {
                       {r.exit_value != null ? `$${fmt(r.exit_value)}` : '—'}
                     </td>
                     <td style={{ padding: '10px 12px', fontWeight: 700, color: pnlColor(r.pnl) }}>
-                      {r.pnl != null ? `${r.pnl >= 0 ? '+' : ''}$${fmt(r.pnl)}` : '—'}
+                      {r.pnl != null
+                        ? `${r.pnl >= 0 ? '+' : ''}$${fmt(r.pnl)}`
+                        : <span style={{ color: '#475569', fontSize: 11 }}>open</span>}
                     </td>
                     <td style={{ padding: '10px 12px', color: pnlColor(r.handoff_pnl) }}>
                       {r.handoff_pnl != null ? `${r.handoff_pnl >= 0 ? '+' : ''}$${fmt(r.handoff_pnl)}` : '—'}
