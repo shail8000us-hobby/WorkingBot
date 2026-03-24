@@ -155,6 +155,13 @@ class MMMEngine:
 
         if fetch_premium_fn:
             for pos in side_state.get('frozen_positions', []):
+                # Skip positions with a close order already in-flight.
+                # _being_closed is stamped when the close order is placed and cleared
+                # after fill confirmation.  Including such positions for one heartbeat
+                # interval would overstate open loss and risk a duplicate close attempt.
+                if pos.get('_being_closed'):
+                    continue
+
                 p_strike = pos.get('strike', 0)
                 p_entry = pos.get('entry_premium', 0)
                 p_lots = pos.get('lots', 0)
@@ -217,13 +224,16 @@ class MMMEngine:
 
         # Robust v2 Fix #2: Flag calculation as incomplete if any fetch failed
         calculation_incomplete = _fetch_errors > 0
+        if not calculation_incomplete:
+            session['_fetch_error_count'] = 0  # Reset per-heartbeat counter on clean cycle
         if calculation_incomplete:
             log.warning(
                 f"CALCULATION INCOMPLETE: {_fetch_errors}/{_total_positions} "
                 f"frozen position premium fetches failed. "
                 f"Loss may be understated by missing positions."
             )
-            session['_fetch_error_count'] = session.get('_fetch_error_count', 0) + _fetch_errors
+            session['_fetch_error_count_total'] = session.get('_fetch_error_count_total', 0) + _fetch_errors
+            session['_fetch_error_count'] = _fetch_errors  # Per-heartbeat (resets each cycle)
 
         # Return float at API boundary (Fix #19: only internal arithmetic uses Decimal)
         return float(max(total_loss, zero)), calculation_incomplete
@@ -993,34 +1003,51 @@ class MMMEngine:
             side_state = session.get(side_key, {})
             option_type = 'call' if side_key == 'ce' else 'put'
 
+            # Build a set of position IDs currently being closed so we can
+            # subtract their lots from the derived scalars and skip their fills.
+            # This prevents a transient double-count during the window between
+            # realized P&L being booked and recompute_side_lots() removing them.
+            being_closed_lots_at = {}  # strike -> lots being closed
+            for pos in side_state.get('positions', []):
+                if pos.get('_being_closed') and pos.get('lots', 0) > 0:
+                    s = float(pos.get('strike', 0))
+                    being_closed_lots_at[s] = being_closed_lots_at.get(s, 0) + int(pos.get('lots', 0))
+
             # Original lots
             orig_lots = side_state.get('original_lots', 0)
             orig_prem = side_state.get('original_premium', 0)
             active_strike = side_state.get('active_strike', 0)
 
-            if orig_lots > 0 and active_strike > 0:
+            # Subtract any being-closed lots at active strike
+            orig_lots_effective = orig_lots - being_closed_lots_at.get(float(active_strike), 0)
+            if orig_lots_effective < 0:
+                orig_lots_effective = 0
+
+            if orig_lots_effective > 0 and active_strike > 0:
                 _total_positions += 1
                 try:
                     current = fetch_premium_fn(active_strike, option_type)
                     if current is None:
                         raise ValueError(f"Premium is None for {side_key}@{active_strike}")
-                    total_unrealized += (_D(orig_prem) - _D(current)) * _D(orig_lots) * _LOT
+                    total_unrealized += (_D(orig_prem) - _D(current)) * _D(orig_lots_effective) * _LOT
                 except Exception as e:
                     _fetch_errors += 1
                     log.warning(f"Failed to fetch {side_key} premium at {active_strike}: {e}")
 
-            # Adjustment fills at active strike
+            # Adjustment fills — skip fills at strikes that are fully being closed
             for fill in side_state.get('adjustment_fills', []):
                 lots = fill.get('lots', 0)
                 prem = fill.get('premium', 0)
                 strike = fill.get('strike', active_strike)
-                if lots > 0:
+                closing = being_closed_lots_at.get(float(strike), 0)
+                lots_effective = max(0, lots - closing)
+                if lots_effective > 0:
                     _total_positions += 1
                     try:
                         current = fetch_premium_fn(strike, option_type)
                         if current is None:
                             raise ValueError(f"Premium is None for {side_key}@{strike}")
-                        total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
+                        total_unrealized += (_D(prem) - _D(current)) * _D(lots_effective) * _LOT
                     except Exception as e:
                         _fetch_errors += 1
                         log.warning(f"Failed to fetch {side_key} adj premium at {strike}: {e}")

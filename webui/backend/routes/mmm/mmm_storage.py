@@ -164,6 +164,8 @@ class MMMStorage:
         session['params'] = json.loads(row['params_json'])
         # Backfill side premiums if missing — ensures restart doesn't reset to 0
         self._backfill_session_side_premiums(session)
+        # One-time: correct FillSync double-booking (BUG-1 retroactive fix)
+        self._correct_fillsync_double_booking(session)
         return session
 
     def _backfill_session_side_premiums(self, session: Dict) -> None:
@@ -195,38 +197,144 @@ class MMMStorage:
             if prem > stored:
                 session[key] = round(prem, 6)
 
+    def _correct_fillsync_double_booking(self, session: Dict) -> None:
+        """
+        One-time retroactive fix for BUG-1: FillSync double-counted P&L.
+
+        Before the fix, close paths did not stamp _estimated_pnl_booked on
+        positions. FillSyncer then treated the estimate as 0 and re-booked
+        the full P&L. The fingerprint is:
+          _fill_confirmed=True AND _estimated_pnl_booked in (0, None)
+          AND _pnl_correction_applied == _actual_pnl_booked (i.e. full re-book)
+
+        This correction runs once per session load. It subtracts the
+        double-booked amount from realized_pnl, stamps the positions so the
+        correction is idempotent, and logs the event.
+        """
+        if session.get('_fillsync_double_booking_corrected'):
+            return  # Already corrected — idempotent
+
+        total_over = 0.0
+        count = 0
+        for side_key in ('ce', 'pe'):
+            side = session.get(side_key, {})
+            for pos in side.get('positions', []):
+                if not pos.get('_fill_confirmed'):
+                    continue
+                est = pos.get('_estimated_pnl_booked')
+                corr = pos.get('_pnl_correction_applied', 0) or 0
+                actual = pos.get('_actual_pnl_booked', 0) or 0
+                # Fingerprint: estimate was 0/None and correction == actual
+                # (meaning FillSync re-booked the full amount)
+                if (est is None or est == 0) and abs(corr - actual) < 1e-8 and abs(corr) > 1e-8:
+                    total_over += corr
+                    count += 1
+                    # Stamp so this position is not corrected again
+                    pos['_estimated_pnl_booked'] = actual
+                    pos['_pnl_correction_applied'] = 0.0
+
+        if count > 0 and abs(total_over) > 1e-8:
+            session['realized_pnl'] = round(
+                session.get('realized_pnl', 0) - total_over, 8)
+            session['_fillsync_double_booking_corrected'] = True
+            session['_fillsync_correction_amount'] = round(total_over, 8)
+            session['_fillsync_correction_count'] = count
+            log.info(
+                f"[{session.get('session_id', '?')}] BUG-1 retroactive fix: "
+                f"subtracted ${total_over:.6f} double-booked P&L from "
+                f"{count} positions"
+            )
+        else:
+            # No correction needed — mark so we don't re-scan
+            session['_fillsync_double_booking_corrected'] = True
+
     def _calculate_checksum(self, session: Dict) -> str:
         """
-        Calculate a checksum of critical session fields for corruption detection.
-        
-        Critical fields: session_id, params, strategy_status, positions, fills, trade_history
+        Legacy v1 checksum — kept for backward compatibility only.
+        Prefer _calculate_checksum_v2() for new saves.
+
+        Known problems with v1:
+        - ce_frozen/pe_frozen are derived views rebuilt on load; transient
+          _being_closed flags can cause false-positive mismatch reports.
+        - fills/trade_history/positions are always [] / {} in MMM sessions;
+          checksumming them adds noise without protecting real data.
         """
         critical_data = {
             'session_id': session.get('session_id'),
             'params': session.get('params', {}),
             'strategy_status': session.get('strategy_status'),
             'positions': session.get('positions', {}),
+            'ce_positions': session.get('ce', {}).get('positions', []),
+            'pe_positions': session.get('pe', {}).get('positions', []),
+            'ce_frozen': session.get('ce', {}).get('frozen_positions', []),
+            'pe_frozen': session.get('pe', {}).get('frozen_positions', []),
             'fills': session.get('fills', []),
             'trade_history': session.get('trade_history', []),
+            'realized_pnl': session.get('realized_pnl', 0),
+            'total_fees': session.get('total_fees', 0),
         }
         # Sort keys for deterministic hashing
         data_str = json.dumps(critical_data, sort_keys=True, default=str)
+        return hashlib.sha256(data_str.encode()).hexdigest()[:16]
+
+    def _calculate_checksum_v2(self, session: Dict) -> str:
+        """
+        V2 checksum — covers only canonical (source-of-truth) fields.
+
+        Excluded intentionally:
+        - ce_frozen / pe_frozen: derived views rebuilt by recompute_side_lots();
+          may differ from saved state due to transient _being_closed stamps.
+        - fills / trade_history / positions (top-level): always [] / {} in MMM
+          sessions; checksumming empty containers hides real drift.
+
+        The canonical position data lives in ce.positions[] and pe.positions[].
+        These are the only lists that are directly written (never rebuilt from
+        another source), making them the correct integrity anchor.
+        """
+        canonical_data = {
+            'session_id': session.get('session_id'),
+            'params': session.get('params', {}),
+            'strategy_status': session.get('strategy_status'),
+            'ce_positions': session.get('ce', {}).get('positions', []),
+            'pe_positions': session.get('pe', {}).get('positions', []),
+            'realized_pnl': session.get('realized_pnl', 0),
+            'total_fees': session.get('total_fees', 0),
+        }
+        data_str = json.dumps(canonical_data, sort_keys=True, default=str)
         return hashlib.sha256(data_str.encode()).hexdigest()[:16]
 
     def _validate_checksum(self, session: Dict) -> bool:
         """
         Validate session checksum. Returns True if valid or no checksum exists.
         Logs warning on mismatch but doesn't fail (backward compatibility).
+
+        Prefers _checksum_v2 (canonical fields only) over legacy _checksum.
         """
+        session_id = session.get('session_id', '?')
+
+        # Prefer v2 checksum if present — it covers canonical fields only
+        stored_v2 = session.get('_checksum_v2')
+        if stored_v2:
+            calculated_v2 = self._calculate_checksum_v2(session)
+            if calculated_v2 != stored_v2:
+                log.warning(
+                    f"Session {session_id} checksum_v2 mismatch: "
+                    f"stored={stored_v2}, calculated={calculated_v2}. "
+                    "Possible corruption or manual edit of canonical position data."
+                )
+                return False
+            return True
+
+        # Fall back to legacy v1 checksum for older sessions
         stored_checksum = session.get('_checksum')
         if not stored_checksum:
             # No checksum = legacy session, consider valid
             return True
-        
+
         calculated = self._calculate_checksum(session)
         if calculated != stored_checksum:
             log.warning(
-                f"Session {session.get('session_id')} checksum mismatch: "
+                f"Session {session_id} checksum mismatch (v1): "
                 f"stored={stored_checksum}, calculated={calculated}. "
                 "Possible corruption or manual edit."
             )
@@ -254,8 +362,11 @@ class MMMStorage:
         now = datetime.now(timezone.utc).isoformat()
         session['updated_at'] = now
         
-        # Calculate and store checksum for corruption detection
+        # Calculate and store checksums for corruption detection.
+        # v2 covers canonical fields only (no derived views, no empty containers).
+        # v1 kept for backward compatibility with older monitoring tools.
         session['_checksum'] = self._calculate_checksum(session)
+        session['_checksum_v2'] = self._calculate_checksum_v2(session)
 
         status = session.get('strategy_status', 'IDLE')
         params = session.get('params', {})
@@ -401,49 +512,57 @@ class MMMStorage:
         """
         conn = self._get_conn()
         try:
-            row = conn.execute(
-                'SELECT * FROM mmm_sessions WHERE session_id = ?',
-                (session_id,)
-            ).fetchone()
+            # BEGIN IMMEDIATE acquires a write lock before reading,
+            # preventing another writer from modifying between our SELECT and UPDATE.
+            conn.execute('BEGIN IMMEDIATE')
+            try:
+                row = conn.execute(
+                    'SELECT * FROM mmm_sessions WHERE session_id = ?',
+                    (session_id,)
+                ).fetchone()
 
-            if not row:
-                return None
+                if not row:
+                    conn.rollback()
+                    return None
 
-            session = self._row_to_session(row)
+                session = self._row_to_session(row)
 
-            # Deep merge for nested dicts (ce, pe, params)
-            for key, value in updates.items():
-                if key in ('ce', 'pe', 'params') and isinstance(value, dict) and isinstance(session.get(key), dict):
-                    session[key].update(value)
-                else:
-                    session[key] = value
+                # Deep merge for nested dicts (ce, pe, params)
+                for key, value in updates.items():
+                    if key in ('ce', 'pe', 'params') and isinstance(value, dict) and isinstance(session.get(key), dict):
+                        session[key].update(value)
+                    else:
+                        session[key] = value
 
-            now = datetime.now(timezone.utc).isoformat()
-            session['updated_at'] = now
+                now = datetime.now(timezone.utc).isoformat()
+                session['updated_at'] = now
 
-            # Recalculate checksum after merging updates so get_session won't
-            # flag this as corrupted on the next read.
-            session['_checksum'] = self._calculate_checksum(session)
-            session.pop('_checksum_warning', None)
+                # Recalculate checksum after merging updates so get_session won't
+                # flag this as corrupted on the next read.
+                session['_checksum'] = self._calculate_checksum(session)
+                session.pop('_checksum_warning', None)
 
-            status = session.get('strategy_status', 'IDLE')
-            params = session.get('params', {})
+                status = session.get('strategy_status', 'IDLE')
+                params = session.get('params', {})
 
-            conn.execute('''
-                UPDATE mmm_sessions SET
-                    status      = ?,
-                    params_json = ?,
-                    data_json   = ?,
-                    updated_at  = ?
-                WHERE session_id = ?
-            ''', (
-                status,
-                json.dumps(params, default=str),
-                json.dumps(session, default=str),
-                now,
-                session_id,
-            ))
-            conn.commit()
+                conn.execute('''
+                    UPDATE mmm_sessions SET
+                        status      = ?,
+                        params_json = ?,
+                        data_json   = ?,
+                        updated_at  = ?
+                    WHERE session_id = ?
+                ''', (
+                    status,
+                    json.dumps(params, default=str),
+                    json.dumps(session, default=str),
+                    now,
+                    session_id,
+                ))
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
             return session
         except Exception as e:
             log.error(f"Failed to update session {session_id}: {e}")

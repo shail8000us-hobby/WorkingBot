@@ -390,6 +390,44 @@ def update_trigger_snapshots(
                         f"Failed to snapshot frozen {side_key.upper()}@{f_strike_key}: {e}"
                     )
 
+    # ── Prune stale snapshot entries (HID-2 fix) ─────────────────────────────
+    # trigger_snapshot accumulates entries for every strike ever active.
+    # In long-running sessions with many rolls/adjustments this dict grows
+    # unboundedly.  A stale entry at a re-opened strike would use an old
+    # (incorrect) baseline for incremental loss calculation.
+    # Keep: active strike + any strike with at least one open position.
+    # Remove: strikes with no open positions and not the current active strike.
+    for side_key, side_state, active_sk in [
+        ('ce', ce_side, ce_active),
+        ('pe', pe_side, pe_active),
+    ]:
+        snap = side_state.get('trigger_snapshot')
+        if not snap:
+            continue
+        # Build set of all strikes that still have open lots.
+        # Check both positions[] (canonical UPL) and frozen_positions[] (derived
+        # view) so the pruning is correct whether or not recompute_side_lots()
+        # has been called yet this beat.
+        _open_strikes: set = {active_sk}
+        for pos in side_state.get('positions', []):
+            if (
+                pos.get('status') in ('active', 'shifted')
+                and int(pos.get('lots', 0)) > 0
+            ):
+                _open_strikes.add(strike_key(pos.get('strike', 0)))
+        for pos in side_state.get('frozen_positions', []):
+            if int(pos.get('lots', 0)) > 0:
+                _open_strikes.add(strike_key(pos.get('strike', 0)))
+        # Prune entries not in open set
+        stale_keys = [k for k in list(snap.keys()) if k not in _open_strikes]
+        for k in stale_keys:
+            del snap[k]
+        if stale_keys:
+            log.debug(
+                f"Pruned {len(stale_keys)} stale trigger_snapshot entries "
+                f"for {side_key.upper()}: {stale_keys}"
+            )
+
     session['ce'] = ce_side
     session['pe'] = pe_side
 

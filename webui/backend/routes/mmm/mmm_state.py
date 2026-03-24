@@ -510,6 +510,7 @@ DEFAULT_PARAMS = {
     'consecutive_dir_limit': 3,           # after N consecutive same-dir adjustments, apply lot cap
     'consecutive_dir_lot_cap_pct': 0.25,  # lot cap = initial_lots × this fraction
     'consecutive_dir_block_after': 5,     # after N adjustments, block until force-heartbeat
+    'consecutive_dir_auto_resume_mins': 10,  # auto-clear block after N mins (0 = require manual force-heartbeat)
 
     # IMP-4: Strike shift OTM lot scaling
     'strike_shift_use_lot_scaling': False, # master switch (default off for backward compat)
@@ -630,6 +631,11 @@ DEFAULT_PARAMS = {
     'straddle_roll_loss_abort_mult':    3.0,
     'straddle_roll_lot_scale':          1.0,
     'straddle_roll_iv_spike_mult':      2.0,
+
+    # Auto-Reconciliation — periodic drift check between bot state and exchange
+    # Runs every N heartbeats; emits SAFETY_ALERT on mismatch (does not self-heal).
+    # 0 = disabled.  Default 50 beats ≈ 25 min at 30s heartbeat interval.
+    'auto_recon_interval_beats':        50,
 }
 
 # Which parameters can be changed while algo is running
@@ -702,6 +708,7 @@ HOT_RELOAD_PARAMS = {
     'asymmetry_5to1_lot_reduction', 'asymmetry_7to1_hard_block',
     # IMP-5: Consecutive direction limiter
     'consecutive_dir_limit', 'consecutive_dir_lot_cap_pct', 'consecutive_dir_block_after',
+    'consecutive_dir_auto_resume_mins',
     # IMP-4: Strike shift OTM scaling
     'strike_shift_use_lot_scaling', 'strike_shift_otm_tier1', 'strike_shift_otm_tier2',
     'strike_shift_otm_tier3',

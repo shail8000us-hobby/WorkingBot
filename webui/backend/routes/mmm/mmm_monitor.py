@@ -164,11 +164,19 @@ class MMMMonitor:
         # Last-known-good premiums — NEVER None once set.
         # Updated on every successful price fetch from any source.
         # Used as ultimate fallback so ce_now/pe_now are never None after first beat.
+        # TTL: stale prices older than _LAST_GOOD_TTL seconds are discarded.
         self._last_good_ce = None  # float
         self._last_good_pe = None  # float
+        self._last_good_ce_at = 0.0  # time.time() when last set
+        self._last_good_pe_at = 0.0
+        self._LAST_GOOD_TTL = 300  # 5 minutes max staleness
 
         # Performance Intelligence collector (zero I/O during heartbeat)
         self._perf_collector = None  # Initialized in start() when timing is known
+
+        # Fill sync — ground-truth P&L reconciliation via exchange fills
+        from .mmm_fill_sync import FillSyncer
+        self._fill_syncer = FillSyncer(self)
 
         # Lazy-loaded
         self._executor = None
@@ -323,28 +331,37 @@ class MMMMonitor:
         # Initialised once per session start for SHORT_STRADDLE presets.
         # These keys are consumed by mmm_straddle_roll.execute_straddle_roll().
         if self.session.get('params', {}).get('_preset_source') == SHORT_STRADDLE_CATEGORY:
-            if '_straddle_initial_credit' not in self.session:
-                # Capture the combined credit received at entry
-                # AUDIT FIX C-BUG-1: multiply by LOT_SIZE_BTC to match BTC-adjusted
-                # units used in Gate 9 (new_mid_credit), Gate 10 (realized_pnl),
-                # and Step 6 (new_roll_credit). Without this, initial_credit is
-                # ~1000× too large, making Gate 9 always pass and Gate 10 never fire.
+            # Re-run if key missing OR if it was computed with the old buggy logic
+            # (original_lots key doesn't exist on position dicts → was always 0).
+            # _straddle_credit_v2 flag marks sessions already fixed.
+            _needs_credit_init = (
+                '_straddle_initial_credit' not in self.session
+                or (
+                    self.session.get('_straddle_initial_credit', 0) == 0
+                    and not self.session.get('_straddle_credit_v2')
+                )
+            )
+            if _needs_credit_init:
+                # Capture the combined credit received at entry.
+                # Use 'lots' (per-position field) not 'original_lots' (side-state aggregate).
+                # Multiply by LOT_SIZE_BTC to match BTC-adjusted units used in Gate 9/10.
                 ce_state = self.session.get('ce') or {}
                 pe_state = self.session.get('pe') or {}
                 ce_prem = 0.0
                 pe_prem = 0.0
                 if isinstance(ce_state, dict):
                     for pos in ce_state.get('positions', []):
-                        ce_prem += float(pos.get('entry_premium', 0)) * int(pos.get('original_lots', 0))
+                        ce_prem += float(pos.get('entry_premium', 0)) * int(pos.get('lots', 0))
                 if isinstance(pe_state, dict):
                     for pos in pe_state.get('positions', []):
-                        pe_prem += float(pos.get('entry_premium', 0)) * int(pos.get('original_lots', 0))
+                        pe_prem += float(pos.get('entry_premium', 0)) * int(pos.get('lots', 0))
                 self.session['_straddle_initial_credit'] = round(
                     (ce_prem + pe_prem) * LOT_SIZE_BTC, 4
                 )
-                self.session['_straddle_roll_count'] = 0
-                self.session['_straddle_last_roll_at'] = None
-                self.session['_straddle_entry_iv'] = None  # lazy-captured on first heartbeat
+                self.session['_straddle_credit_v2'] = True  # marks correct computation
+                self.session.setdefault('_straddle_roll_count', 0)
+                self.session.setdefault('_straddle_last_roll_at', None)
+                self.session.setdefault('_straddle_entry_iv', None)  # lazy-captured on first heartbeat
                 log.info(
                     f"[{self.session_id}] Straddle Roll state initialised — "
                     f"initial_credit={self.session['_straddle_initial_credit']}"
@@ -996,15 +1013,12 @@ class MMMMonitor:
         sid = self.session_id
         safety_events = []  # Initialize here so it's always defined even on early returns
 
-        # H-10 fix: Reload params from storage at heartbeat start to pick up
-        # hot-reload changes (max_loss_amount, gamma_cap_enabled, etc.)
-        try:
-            from .mmm_storage import get_storage
-            fresh = get_storage().get_session(sid)
-            if fresh and isinstance(fresh.get('params'), dict):
-                session['params'].update(fresh['params'])
-        except Exception as params_e:
-            log.warning(f"[{sid}] Failed to reload params from storage: {params_e}")
+        # H-10 fix (redundant read removed): _run_loop already loads the full fresh
+        # session from storage and sets self.session = fresh_session before calling
+        # _heartbeat(). By the time we reach here, session['params'] is already the
+        # latest from storage. The extra get_session() call here added 1 SQLite read
+        # per beat with no benefit — any API param change that arrived after _run_loop's
+        # read will be picked up on the next cycle anyway.
 
         session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
         # NOTE: error_count is reset at the END of a successful heartbeat,
@@ -1087,6 +1101,17 @@ class MMMMonitor:
             await self._reconcile_exchange_positions()
         else:
             session.setdefault('_force_recon', True)
+
+        # Step 0.1: Fill sync — ground-truth P&L reconciliation via exchange fills.
+        # Runs every heartbeat. Catches any position closed outside the algo's view
+        # (expiry, manual buyback, reconciliation, crash-recovery) and books realized
+        # P&L at the ACTUAL exchange fill price. Non-blocking — errors are swallowed.
+        try:
+            _fs_rest = self._create_heartbeat_rest_client()
+            _fs_expiry = session.get('params', {}).get('expiry', '')
+            await self._fill_syncer.sync(_fs_rest, session, _fs_expiry)
+        except Exception as _fs_err:
+            log.debug(f"[{sid}] FillSync step skipped: {_fs_err}")
 
         # Step 0.5: Margin Guardian — real-time margin utilization check
         margin_result = await self._check_margin_guardian()
@@ -2015,6 +2040,29 @@ class MMMMonitor:
                 session['_regime_action'] = ACTION_NORMAL
         # ────────────────── END Regime Controls ──────────────────
 
+        # Auto-resume if session was paused by regime/gamma and regime has now normalized
+        if self._paused and not _skip_to_pnl:
+            _pause_reason = session.get('_paused_reason', '')
+            _was_regime_pause = (
+                _pause_reason.startswith('Regime pause') or
+                'Gamma emergency' in _pause_reason
+            )
+            if _was_regime_pause:
+                _current_regime_action = session.get('_regime_action', ACTION_NORMAL)
+                if _current_regime_action not in (ACTION_PAUSE, ACTION_FORCE_REDUCE):
+                    log_activity(
+                        'regime_auto_resume',
+                        f'✅ Regime normalized — auto-resuming session (was paused: {_pause_reason})',
+                        sid, 'success',
+                        {
+                            'new_regime_action': str(_current_regime_action),
+                            'vol_regime': session.get('_vol_regime', 'NORMAL'),
+                            'trend_regime': session.get('_trend_regime', 'NORMAL'),
+                            'gamma_regime': session.get('_gamma_regime', 'NORMAL'),
+                        },
+                    )
+                    self.resume('Regime normalized')
+
         # Step 4: If paused, check for both-sides-up auto-decision (30s timeout)
         if self._paused:
             status = session.get('strategy_status', '')
@@ -2287,11 +2335,16 @@ class MMMMonitor:
             else:
                 _ws_factor = 1.0
             if _ws_factor > 1.0:
-                _base_trigger = session.get(
-                    '_effective_min_trigger_move',
-                    _ws_params.get('min_trigger_move', 10.0)
-                )
-                session['_effective_min_trigger_move'] = _base_trigger * _ws_factor
+                # Always use the raw config param as base for whipsaw widening.
+                # _effective_min_trigger_move may already carry theta-acceleration
+                # (applied earlier in the heartbeat near expiry).  Multiplying that
+                # value again compounds the two factors multiplicatively (4× intended
+                # in the worst case).  Instead: compute each widening independently
+                # and take the max so whichever adjustment is larger prevails.
+                _raw_trigger = _ws_params.get('min_trigger_move', 10.0)
+                _ws_widened = _raw_trigger * _ws_factor
+                _theta_widened = session.get('_effective_min_trigger_move', _raw_trigger)
+                session['_effective_min_trigger_move'] = max(_ws_widened, _theta_widened)
                 session['_whipsaw_trigger_widened'] = True
 
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
@@ -2744,6 +2797,38 @@ class MMMMonitor:
             except Exception as e:
                 log.error(f"Failed to persist analytics: {e}")
 
+        # ── Auto-Reconcile: periodic drift check (ARCH-1 fix) ────────────────
+        # Compares audit log totals vs live session state every N beats.
+        # Detects silent drift without self-healing — emits alert for human review.
+        _recon_interval = session.get('params', {}).get('auto_recon_interval_beats', 50)
+        if _recon_interval and heartbeat_counter > 0 and heartbeat_counter % _recon_interval == 0:
+            try:
+                from .mmm_audit_reconciler import reconcile_session as _do_reconcile
+                _recon = _do_reconcile(sid, session)
+                if not _recon.get('is_clean'):
+                    _disc = _recon.get('position_discrepancies', [])
+                    _pnl_delta = _recon.get('pnl_delta', 0)
+                    _alert_msg = (
+                        f"⚠️ AUTO-RECON MISMATCH @ beat {heartbeat_counter}: "
+                        f"P&L delta=${_pnl_delta:.4f} | "
+                        f"position discrepancies={len(_disc)}"
+                    )
+                    log.warning(f"[{sid}] {_alert_msg} — {_disc}")
+                    log_activity('safety', _alert_msg, sid, 'warning', {
+                        'pnl_delta': _pnl_delta,
+                        'position_discrepancies': _disc,
+                        'auto_recon_beat': heartbeat_counter,
+                    })
+                    session['_last_auto_recon_clean'] = False
+                    session['_last_auto_recon_beat'] = heartbeat_counter
+                    session['_last_auto_recon_discrepancies'] = _disc
+                else:
+                    log.debug(f"[{sid}] Auto-recon OK @ beat {heartbeat_counter}")
+                    session['_last_auto_recon_clean'] = True
+                    session['_last_auto_recon_beat'] = heartbeat_counter
+            except Exception as _recon_err:
+                log.warning(f"[{sid}] Auto-recon failed (non-fatal): {_recon_err}")
+
         # Reset error count AFTER successful heartbeat completion
         session['error_count'] = 0
         # Circuit breaker: record success to heal open/half-open state
@@ -3086,6 +3171,27 @@ class MMMMonitor:
                     session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
                 session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
 
+                # BUG-1 FIX: Stamp _estimated_pnl_booked on freshly-closed positions
+                # so FillSyncer computes a correction (not a full re-book).
+                # Also stamp close_order_id so FillSyncer can match by order ID.
+                _wd_close_oid = str(result.get('order_id', '') or '')
+                _wd_close_coid = str(result.get('client_order_id', '') or '')
+                for _wp in side_state.get('positions', []):
+                    if (_wp.get('status') == 'closed'
+                            and _wp.get('_estimated_pnl_booked') is None):
+                        # Stamp order ID for FillSyncer matching
+                        if _wd_close_oid:
+                            _wp['close_order_id'] = _wd_close_oid
+                        if _wd_close_coid:
+                            _wp['close_client_order_id'] = _wd_close_coid
+                        _wp_entry = float(_wp.get('entry_premium', 0) or 0)
+                        _wp_lots = float(_wp.get('_closed_lots', _wp.get('lots', 0)) or 0)
+                        if _wp_lots > 0 and _wp_entry > 0:
+                            _wp['_estimated_pnl_booked'] = round(
+                                (_wp_entry - close_price) * _wp_lots * LOT_SIZE_BTC, 8)
+                            _wp['_estimated_commission_booked'] = round(
+                                abs(_commission) * _wp_lots / actual_filled, 8) if _commission and actual_filled else 0.0
+
                 # Record successful close for velocity tracking (observer + guardian)
                 try:
                     from .mmm_observer import get_observer
@@ -3384,7 +3490,7 @@ class MMMMonitor:
             record_reversal(session, session.get('last_aggressor', 'NONE'), aggressor)
 
             # Robust v2 Fix #7: Reset peak P&L on reversal — new profit phase begins
-            current_total = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0)
+            current_total = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - session.get('total_fees', 0)
             reset_peak_pnl_on_reversal(session, current_total)
             
             # Analytics: Track reversal event (no trading logic impact)
@@ -3853,6 +3959,7 @@ class MMMMonitor:
         """
         IMP-5: After N consecutive same-direction adjustments, cap lot size.
         After M consecutive, block entirely until force-heartbeat resets the counter.
+        If consecutive_dir_auto_resume_mins > 0, the block auto-clears after that timeout.
 
         Returns (adjusted_lots, updated_constraint_msg).
         """
@@ -3864,6 +3971,29 @@ class MMMMonitor:
         count = session.get('_consecutive_same_dir_count', 0)
         last_dir = session.get('_consecutive_same_dir_side', '')
 
+        # IMP-5 auto-resume: if blocked and timeout has elapsed, clear the block
+        if session.get('_consecutive_dir_blocked'):
+            auto_mins = params.get('consecutive_dir_auto_resume_mins', 10)
+            if auto_mins > 0:
+                blocked_at = session.get('_consecutive_dir_blocked_at')
+                if blocked_at is None:
+                    # Migration: timestamp not recorded (blocked before this feature).
+                    # Start the countdown from now rather than auto-clearing immediately.
+                    session['_consecutive_dir_blocked_at'] = time.time()
+                elif time.time() - blocked_at >= auto_mins * 60:
+                    session.pop('_consecutive_dir_blocked', None)
+                    session.pop('_consecutive_dir_blocked_at', None)
+                    session['_consecutive_same_dir_count'] = 0
+                    session['_consecutive_same_dir_side'] = ''
+                    count = 0
+                    last_dir = ''
+                    log_activity(
+                        'consecutive_dir_auto_resume',
+                        f'✅ CONSECUTIVE DIR BLOCK AUTO-CLEARED: {auto_mins}min timeout elapsed — resuming normally',
+                        self.session_id, 'info',
+                        {'side': aggressor, 'auto_resume_mins': auto_mins},
+                    )
+
         # If direction changed, reset counter (counter updated on success in _update_)
         if last_dir and last_dir.lower() != aggressor.lower():
             return lots, constraint_msg
@@ -3871,6 +4001,7 @@ class MMMMonitor:
         # Block entirely after block_after consecutive adjustments
         if count >= block_after:
             session['_consecutive_dir_blocked'] = True
+            session.setdefault('_consecutive_dir_blocked_at', time.time())
             return 0, f'Consecutive {aggressor.upper()} block: {count} adjustments'
 
         # Cap lot size after limit consecutive adjustments
@@ -4437,6 +4568,39 @@ class MMMMonitor:
                             sid, 'warning',
                             {'errors': _shift_errors, 'side': side.upper(),
                              'old_strike': old_strike, 'new_strike': new_strike})
+
+            # ── TRADE AUDIT: strike shift SELL at new strike ──────────────
+            try:
+                from .mmm_audit_log import get_audit_log as _get_aud
+                from .mmm_audit_remark import build_trade_remark as _btr
+                _aggressor = 'pe' if side == 'ce' else 'ce'
+                _get_aud().enqueue_trade(
+                    session_id=sid,
+                    action='SELL',
+                    option_type=side.upper(),
+                    strike=int(new_strike),
+                    quantity_requested=lots,
+                    quantity_filled=lots,
+                    premium=fill_price,
+                    event_type='ADJUSTMENT',
+                    adj_type='strike_shift',
+                    mechanism='strike_shift',
+                    aggressor_side=_aggressor,
+                    order_id=str(result.get('order_id', '')),
+                    expiry=session.get('params', {}).get('expiry', ''),
+                    spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                    whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                    margin_tier=str(session.get('_margin_tier', '') or ''),
+                    remark=_btr(
+                        'SELL', 'ADJUSTMENT',
+                        side=side, strike=int(new_strike),
+                        lots=lots, premium=fill_price,
+                        adj_type='strike_shift', aggressor=_aggressor,
+                    ),
+                )
+            except Exception:
+                pass
+            # ── END TRADE AUDIT ───────────────────────────────────────────
 
             # Breakeven + gamma cache invalidation — positions changed after strike shift
             try:
@@ -6019,6 +6183,28 @@ class MMMMonitor:
         except Exception as e:
             log.exception(f"[{sid}] CRITICAL: _auto_close_all crashed: {e}")
         finally:
+            # ── Shutdown fill sync flush ──────────────────────────────────────
+            # After placing all close orders, give exchange up to 15 s to return
+            # fills, then run one fill sync pass.  This catches the race where
+            # orders are filled milliseconds after _close_one_side returns
+            # (executor already confirmed fills, but the sync confirms the
+            # close_fill_price and locks in the final P&L).
+            # Also catches any externally-closed positions we missed.
+            try:
+                await asyncio.sleep(3)   # brief wait for fills to land
+                _shutdown_rest = self._create_heartbeat_rest_client()
+                _shutdown_expiry = session.get('params', {}).get('expiry', '')
+                _n_synced = await self._fill_syncer.sync(
+                    _shutdown_rest, session, _shutdown_expiry)
+                if _n_synced:
+                    log.info(
+                        f"[{sid}] Shutdown fill sync: confirmed {_n_synced} "
+                        f"position(s) — final P&L locked in."
+                    )
+            except Exception as _fs_e:
+                log.warning(
+                    f"[{sid}] Shutdown fill sync failed (non-critical): {_fs_e}")
+
             # AUDIT FIX: refresh unrealized before stop() so the saved session has
             # accurate net_pnl (realized was updated by closes but unrealized is stale).
             # Uses cached prices — best-effort, never blocks the stop path.
@@ -6109,10 +6295,26 @@ class MMMMonitor:
                         )
                         # Fix #23: Mark all active positions as closed in positions[]
                         _now = datetime.now(timezone.utc).isoformat()
+                        _close_oid = str(result.get('order_id', '') or '')
+                        _close_comm = abs(_comm)
                         for _pos in side_state.get('positions', []):
                             if _pos.get('status') == 'active':
                                 _pos['status'] = 'closed'
                                 _pos['closed_at'] = _now
+                                # Fill sync tracking: record close order so
+                                # FillSyncer can match fills precisely.
+                                if _close_oid:
+                                    _pos['close_order_id'] = _close_oid
+                                _pos['close_fill_price'] = round(close_price, 6)
+                                _pos['_fill_confirmed'] = True
+                                # Record what was booked so FillSyncer can
+                                # compute the correction (actual − estimated).
+                                _pos_lots = _pos.get('lots', 0)
+                                _pos_entry = float(_pos.get('entry_premium', 0) or 0)
+                                _pos['_estimated_pnl_booked'] = round(
+                                    (_pos_entry - close_price) * _pos_lots * LOT_SIZE_BTC, 8)
+                                _pos['_estimated_commission_booked'] = round(
+                                    _close_comm * (_pos_lots / max(active_lots, 1)), 8)
                         closed = True
                         break
                     else:
@@ -6162,6 +6364,17 @@ class MMMMonitor:
                                 f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
                             )
                             closed_frozen_indices.append(fi)
+                            # Fill sync tracking for frozen closes
+                            frozen['close_order_id'] = str(result.get('order_id', '') or '')
+                            frozen['close_fill_price'] = round(close_price, 6)
+                            frozen['_fill_confirmed'] = True
+                            frozen['_estimated_pnl_booked'] = round(pnl, 8)
+                            _fcomm = abs(float(
+                                (result.get('order_details') or {}).get(
+                                    'paid_commission',
+                                    (result.get('order_details') or {}).get('commission', 0)
+                                ) or 0))
+                            frozen['_estimated_commission_booked'] = round(_fcomm, 8)
                             closed = True
                             break
                         else:
@@ -6184,15 +6397,23 @@ class MMMMonitor:
         if closed_frozen_indices:
             _now = datetime.now(timezone.utc).isoformat()
             frozen_view = side_state.get('frozen_positions', [])
-            closed_ids = {
-                frozen_view[fi].get('_pos_id')
+            # Build map: _pos_id → frozen view entry (carries fill tracking fields)
+            closed_frozen_map = {
+                frozen_view[fi].get('_pos_id'): frozen_view[fi]
                 for fi in closed_frozen_indices
                 if fi < len(frozen_view)
             }
             for _pos in side_state.get('positions', []):
-                if _pos.get('id') in closed_ids:
+                if _pos.get('id') in closed_frozen_map:
+                    _fv = closed_frozen_map[_pos['id']]
                     _pos['status'] = 'closed'
                     _pos['closed_at'] = _now
+                    # Propagate fill sync tracking fields from frozen view
+                    for _field in ('close_order_id', 'close_fill_price',
+                                   '_fill_confirmed', '_estimated_pnl_booked',
+                                   '_estimated_commission_booked'):
+                        if _field in _fv:
+                            _pos[_field] = _fv[_field]
 
         # Recompute lots after clearing
         recompute_side_lots(side_state)
@@ -6463,40 +6684,64 @@ class MMMMonitor:
             return 'unknown'
 
     def _auto_correct_missing_positions(
-        self, side_state: Dict, strike: float, reason: str
+        self, side_state: Dict, strike: float, reason: str, close_price: float = 0.0
     ):
         """
         Mark ALL positions at a given strike as closed/expired in the
         Unified Position Ledger. Called when exchange shows 0 lots at a
         strike the session thinks it owns.
+
+        close_price: current market premium used to book realized P&L.
+          Defaults to 0.0 (option expired worthless).
+          Pass the live mark price when available.
         """
         from .mmm_state import recompute_side_lots
         now = datetime.now(timezone.utc).isoformat()
         removed_lots = 0
         strike_tol = 1.0  # float tolerance for strike comparison
+        _LOT_SIZE_BTC = 0.001
+        realized_gain = 0.0
 
         for pos in side_state.get('positions', []):
             if pos.get('status') in ('active', 'shifted'):
                 pos_strike = pos.get('strike', 0)
                 if abs(pos_strike - strike) < strike_tol:
-                    removed_lots += pos.get('lots', 0)
+                    pos_lots = pos.get('lots', 0)
+                    entry = float(pos.get('entry_premium', 0) or 0)
+                    pos_pnl = (entry - close_price) * pos_lots * _LOT_SIZE_BTC
+                    realized_gain += pos_pnl
+                    removed_lots += pos_lots
                     pos['status'] = 'closed'
                     pos['closed_at'] = now
                     pos['close_reason'] = f'exchange_reconciliation:{reason}'
+                    pos['close_price'] = round(close_price, 6)
+                    # Mark fill-confirmed so FillSyncer never double-books this.
+                    # Reconciliation already booked the P&L at close_price;
+                    # if a real exchange fill for this symbol arrives later,
+                    # fill sync will skip this position entirely.
+                    pos['_fill_confirmed'] = True
+                    pos['_estimated_pnl_booked'] = round(pos_pnl, 8)
+                    pos['_estimated_commission_booked'] = 0.0
 
         if removed_lots > 0:
             recompute_side_lots(side_state)
+            # Book realized P&L into session
+            self.session['realized_pnl'] = round(
+                self.session.get('realized_pnl', 0) + realized_gain, 8)
             log.warning(
                 f"[{self.session_id}] AUTO-CORRECT: Removed {removed_lots} phantom "
                 f"{side_state.get('side', '?').upper()} lots @ {strike} "
-                f"(reason: {reason}, exchange=0)"
+                f"(reason: {reason}, exchange=0, close_price={close_price:.4f}, "
+                f"pnl_booked={realized_gain:+.6f} BTC)"
             )
             log_activity('reconciliation_autocorrect',
                 f'🔧 Auto-corrected: removed {removed_lots} phantom '
                 f'{side_state.get("side", "?").upper()} lots @ {strike} '
-                f'(exchange shows 0)',
+                f'(exchange shows 0, P&L booked: {realized_gain:+.4f} BTC)',
                 self.session_id, 'warning',
-                {'strike': strike, 'removed_lots': removed_lots, 'reason': reason})
+                {'strike': strike, 'removed_lots': removed_lots, 'reason': reason,
+                 'close_price': round(close_price, 6),
+                 'realized_pnl_booked': round(realized_gain, 8)})
 
     def _auto_correct_lot_mismatch(
         self, side_state: Dict, strike: float, target_lots: int, reason: str
@@ -6867,10 +7112,17 @@ class MMMMonitor:
                                 )
                                 break
                         if _should_correct:
+                            # Pass current mark price so P&L is booked at close.
+                            # 0.0 = expired worthless (correct if option lapsed).
+                            _recon_close_price = float(
+                                (self._last_good_ce if side_key == 'ce' else self._last_good_pe)
+                                or 0.0
+                            )
                             self._auto_correct_missing_positions(
                                 side_state=side,
                                 strike=active_strike,
                                 reason='exchange_shows_zero',
+                                close_price=_recon_close_price,
                             )
                         else:
                             discrepancies[-1]['auto_corrected'] = False
@@ -6900,6 +7152,26 @@ class MMMMonitor:
                         f"(other_mmm={other_lots_at_active}) — logged only, no auto-correct. "
                         f"Verify via client_order_id if count diverges further."
                     )
+
+                    # Bug B fix: First-time alert when exchange has MORE lots than session.
+                    # Pre-existing / external positions can contaminate readings — alert operator.
+                    if exchange_size > active_lots:
+                        _warn_key = f'{side_key}_{int(active_strike)}'
+                        _warned_list = session.setdefault('_warned_size_excess_strikes', [])
+                        if _warn_key not in _warned_list:
+                            _warned_list.append(_warn_key)
+                            excess = int(round(exchange_size - active_lots))
+                            log_activity('exchange_position_warning',
+                                f'⚠️ Exchange has {excess} MORE {side_key.upper()} lots @ {active_strike} '
+                                f'than session tracks (exchange={int(exchange_size)}, '
+                                f'session={active_lots}). May be pre-existing or external positions '
+                                f'— NOT adopted. Investigate manually.',
+                                sid, 'warning',
+                                {'side': side_key, 'strike': active_strike,
+                                 'exchange_lots': int(exchange_size),
+                                 'session_lots': active_lots,
+                                 'excess': excess,
+                                 'other_mmm_lots': other_lots_at_active})
 
                 # Check frozen positions at their own strikes
                 # Aggregate frozen lots per strike first (multiple fills at same strike)
@@ -6958,10 +7230,15 @@ class MMMMonitor:
                                     )
                                     break
                             if _should_correct:
+                                _recon_close_price_f = float(
+                                    (self._last_good_ce if side_key == 'ce' else self._last_good_pe)
+                                    or 0.0
+                                )
                                 self._auto_correct_missing_positions(
                                     side_state=side,
                                     strike=f_strike,
                                     reason='frozen_exchange_shows_zero',
+                                    close_price=_recon_close_price_f,
                                 )
                             else:
                                 discrepancies[-1]['auto_corrected'] = False
@@ -7292,11 +7569,9 @@ class MMMMonitor:
             pe_rest = 0.0
             try:
                 rest = self._create_heartbeat_rest_client()
-                ce_resp = await rest._request_with_retry(
-                    method="GET", path=f"/v2/tickers/{ce_symbol}",
-                )
-                pe_resp = await rest._request_with_retry(
-                    method="GET", path=f"/v2/tickers/{pe_symbol}",
+                ce_resp, pe_resp = await asyncio.gather(
+                    rest._request_with_retry(method="GET", path=f"/v2/tickers/{ce_symbol}"),
+                    rest._request_with_retry(method="GET", path=f"/v2/tickers/{pe_symbol}"),
                 )
                 ce_data = ce_resp.get('result', ce_resp)
                 pe_data = pe_resp.get('result', pe_resp)
@@ -7330,18 +7605,29 @@ class MMMMonitor:
             pe_src = 'WS' if pe_ws_mid else ('REST' if pe_rest else None)
 
             # Update last-known-good when we have a live price
+            _now = time.time()
             if ce_final > 0:
                 self._last_good_ce = ce_final
+                self._last_good_ce_at = _now
             if pe_final > 0:
                 self._last_good_pe = pe_final
+                self._last_good_pe_at = _now
 
-            # Fall back to last-known-good if both live sources failed
+            # Fall back to last-known-good if both live sources failed (with TTL)
             if ce_final <= 0 and self._last_good_ce is not None:
-                ce_final = self._last_good_ce
-                ce_src = 'CACHED'
+                if (_now - self._last_good_ce_at) < self._LAST_GOOD_TTL:
+                    ce_final = self._last_good_ce
+                    ce_src = 'CACHED'
+                else:
+                    log.warning(f"[{self.session_id}] CE last-known-good expired ({_now - self._last_good_ce_at:.0f}s old)")
+                    ce_src = 'STALE'
             if pe_final <= 0 and self._last_good_pe is not None:
-                pe_final = self._last_good_pe
-                pe_src = 'CACHED'
+                if (_now - self._last_good_pe_at) < self._LAST_GOOD_TTL:
+                    pe_final = self._last_good_pe
+                    pe_src = 'CACHED'
+                else:
+                    log.warning(f"[{self.session_id}] PE last-known-good expired ({_now - self._last_good_pe_at:.0f}s old)")
+                    pe_src = 'STALE'
 
             log.debug(
                 f"[{self.session_id}] Price source — CE={ce_final:.2f}({ce_src}) "
@@ -7352,11 +7638,18 @@ class MMMMonitor:
 
         except Exception as e:
             log.error(f"[{self.session_id}] Error fetching premiums: {e}")
-            # Last-known-good fallback even on exception
-            ce_fallback = self._last_good_ce if self._last_good_ce is not None else None
-            pe_fallback = self._last_good_pe if self._last_good_pe is not None else None
+            # Last-known-good fallback even on exception — with TTL
+            _now = time.time()
+            ce_fallback = None
+            pe_fallback = None
+            if self._last_good_ce is not None and (_now - self._last_good_ce_at) < self._LAST_GOOD_TTL:
+                ce_fallback = self._last_good_ce
+            if self._last_good_pe is not None and (_now - self._last_good_pe_at) < self._LAST_GOOD_TTL:
+                pe_fallback = self._last_good_pe
             if ce_fallback and pe_fallback:
                 log.warning(f"[{self.session_id}] Exception fallback — last-known-good CE={ce_fallback:.2f} PE={pe_fallback:.2f}")
+            else:
+                log.error(f"[{self.session_id}] Exception fallback — no valid cached prices (expired or never set)")
             return ce_fallback, pe_fallback
 
     def _compute_data_confidence(self) -> float:
@@ -7493,17 +7786,25 @@ class MMMMonitor:
                 self._circuit.record_success()
                 return ce_final, pe_final, True
 
-            # Both live sources failed — use last-known-good as ultimate fallback
+            # Both live sources failed — use last-known-good as ultimate fallback (with TTL)
+            _now = time.time()
             if ce_final is None and self._last_good_ce is not None:
-                ce_final = self._last_good_ce
-                session['_ce_premium_stale'] = True
+                if (_now - self._last_good_ce_at) < self._LAST_GOOD_TTL:
+                    ce_final = self._last_good_ce
+                    session['_ce_premium_stale'] = True
+                else:
+                    log.warning(f"[{sid}] CE last-known-good expired ({_now - self._last_good_ce_at:.0f}s old)")
             if pe_final is None and self._last_good_pe is not None:
-                pe_final = self._last_good_pe
-                session['_pe_premium_stale'] = True
+                if (_now - self._last_good_pe_at) < self._LAST_GOOD_TTL:
+                    pe_final = self._last_good_pe
+                    session['_pe_premium_stale'] = True
+                else:
+                    log.warning(f"[{sid}] PE last-known-good expired ({_now - self._last_good_pe_at:.0f}s old)")
 
             if ce_final is not None and pe_final is not None:
                 log.warning(f"[{sid}] All live sources failed — using last-known-good CE={ce_final:.2f} PE={pe_final:.2f}")
-                return ce_final, pe_final, True
+                # ok=False: data is stale, heartbeat should skip trading decisions
+                return ce_final, pe_final, False
 
             self._circuit.record_failure('all premium sources returned invalid data')
             return None, None, False
@@ -7875,7 +8176,7 @@ class MMMMonitor:
                 # AUDIT FIX: only cache when prefetch succeeded (mark_price is not None).
                 # Failed prefetches return None; storing them as 0 would make those
                 # positions appear worthless and inflate unrealized P&L.
-                if mark_price is not None:
+                if mark_price is not None and mark_price > 0:
                     cache[key] = mark_price
                     # Store bid price: use bid if available, else fall back to mark
                     bid_cache[key] = bid_price if bid_price and bid_price > 0 else mark_price
@@ -8404,12 +8705,13 @@ class MMMMonitor:
 
     def _emit_heartbeat_data(self, ce_now: float, pe_now: float):
         """Emit heartbeat WebSocket event with premium_map for live prices."""
-        # Guarantee non-None, non-zero prices using last-known-good fallback.
+        # Guarantee non-None, non-zero prices using last-known-good fallback (with TTL).
         # Without this, the trigger gauge shows 0.0/0.0 when a side has no
         # fresh price (e.g. CE with 0 active lots but 66 frozen).
-        if not ce_now and self._last_good_ce is not None:
+        _now = time.time()
+        if not ce_now and self._last_good_ce is not None and (_now - self._last_good_ce_at) < self._LAST_GOOD_TTL:
             ce_now = self._last_good_ce
-        if not pe_now and self._last_good_pe is not None:
+        if not pe_now and self._last_good_pe is not None and (_now - self._last_good_pe_at) < self._LAST_GOOD_TTL:
             pe_now = self._last_good_pe
 
         session = self.session
@@ -8422,6 +8724,7 @@ class MMMMonitor:
 
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
+        fees = session.get('total_fees', 0)
 
         # Build premium_map from _premium_cache for frontend position pricing
         # Format: {"70600:call": 95.5, "66400:put": 107.5, ...}
@@ -8463,7 +8766,7 @@ class MMMMonitor:
             self.session_id, ce_now, pe_now,
             ce_trigger, pe_trigger,
             session.get('strategy_status', 'UNKNOWN'),
-            realized + unrealized, realized,
+            realized + unrealized - fees, realized,
             premium_map=premium_map,
             adaptive_tier=session.get('_adaptive_tier', ''),
             wind_down_active=is_wind_down_active(session),
@@ -8573,6 +8876,10 @@ def compute_live_pnl(session_id: str) -> Optional[Dict[str, float]]:
     heartbeats; this function always computes fresh from positions + the
     monitor's latest cached prices.
 
+    Staleness fix: for active-strike positions, queries the WS price service
+    directly (max_age_sec=10s) to get fresher quotes than the heartbeat cache.
+    Falls back to heartbeat cache for non-WS-covered strikes.
+
     Returns:
         {realized, unrealized, fees, net_pnl} or None if monitor not running
         or prices unavailable.
@@ -8582,9 +8889,51 @@ def compute_live_pnl(session_id: str) -> Optional[Dict[str, float]]:
     if not monitor or not monitor._running:
         return None
     try:
-        return monitor._engine.compute_total_pnl(
-            monitor.session, monitor._make_fetch_fn()
-        )
+        # Thread safety: take a snapshot under the session lock to avoid
+        # torn reads from concurrent heartbeat mutations.
+        import copy
+        with monitor._session_lock:
+            session_snap = copy.deepcopy(monitor.session)
+
+        # Build a fresh-first fetch function: try WS for a live quote,
+        # fall back to heartbeat cache. This prevents stale P&L between heartbeats.
+        cache = dict(getattr(monitor, '_premium_cache', {}))
+        try:
+            from webui.backend.services.delta_price_websocket import get_price_websocket
+            ws = get_price_websocket()
+            expiry = session_snap.get('params', {}).get('expiry', '')
+            initializer = monitor.initializer
+
+            def _ws_mid(entry):
+                if not entry:
+                    return None
+                bid = entry.get('best_bid', 0) or 0
+                ask = entry.get('best_ask', 0) or 0
+                if not (bid > 0 and ask > 0):
+                    return None
+                mid = (bid + ask) / 2.0
+                if mid <= 0 or (ask - bid) / mid > 0.50:
+                    return None
+                return mid
+
+            def fetch_live(strike, option_type):
+                key = (float(strike), option_type)
+                otype = 'call' if option_type == 'call' else 'put'
+                try:
+                    symbol = initializer.build_symbol(otype, 'BTC', float(strike), expiry)
+                    live = _ws_mid(ws.get_option_price(symbol, max_age_sec=10.0))
+                    if live is not None:
+                        return live
+                except Exception:
+                    pass
+                return cache.get(key)
+
+        except Exception:
+            # WS not available — fall back to heartbeat cache only
+            def fetch_live(strike, option_type):
+                return cache.get((float(strike), option_type))
+
+        return monitor._engine.compute_total_pnl(session_snap, fetch_live)
     except Exception:
         return None
 
