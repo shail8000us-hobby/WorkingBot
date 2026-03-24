@@ -94,7 +94,9 @@ export default function MMMSessionCard({
 
   const realized = session.realized_pnl || 0;
   const unrealized = session.unrealized_pnl || 0;
-  const netPnl = realized + unrealized;
+  const fees = session.total_fees || 0;
+  // Use pre-computed net_pnl when available (authoritative); fall back to R+U-F.
+  const netPnl = session.net_pnl ?? (realized + unrealized - fees);
   const adjCount = session.adjustment_count || 0;
 
   const isRunning = status === 'RUNNING';

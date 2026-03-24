@@ -100,6 +100,9 @@ def _overlay_live_pnl(sessions_list):
         s['unrealized_pnl'] = round(live['unrealized'], 6)
         s['total_fees'] = round(live['fees'], 6)
         s['net_pnl'] = round(live['net_pnl'], 6)
+        # Keep peak_pnl consistent: if live net_pnl exceeds stored peak, update it
+        if live['net_pnl'] > s.get('peak_pnl', 0):
+            s['peak_pnl'] = round(live['net_pnl'], 6)
 
 
 def _invalidate_sessions_cache():
@@ -1475,10 +1478,36 @@ def stop_session(session_id: str):
         old_status = status
         new_status = 'STOPPED'
 
+        # ── PNL-STOP-FIX: snapshot final P&L while monitor is still alive ─────
+        # compute_live_pnl requires an active monitor; call it BEFORE stop_session_monitor.
+        # For stopped sessions _overlay_live_pnl skips them (no monitor), so if we
+        # don't persist here net_pnl stays None forever in the DB.
+        _final_pnl_fields = {}
+        try:
+            live = compute_live_pnl(session_id)
+            if live:
+                _final_pnl_fields = {
+                    'net_pnl': round(live['net_pnl'], 6),
+                    'realized_pnl': round(live['realized'], 6),
+                    'unrealized_pnl': round(live['unrealized'], 6),
+                    'total_fees': round(live['fees'], 6),
+                }
+            else:
+                # No live monitor yet (session may never have been RUNNING) —
+                # derive net_pnl from stored components.
+                _r = session.get('realized_pnl', 0) or 0
+                _u = session.get('unrealized_pnl', 0) or 0
+                _f = session.get('total_fees', 0) or 0
+                _final_pnl_fields = {'net_pnl': round(_r + _u - _f, 6)}
+        except Exception as _pnl_err:
+            log.warning(f"[{session_id}] Could not snapshot final P&L at stop: {_pnl_err}")
+        # ── END PNL-STOP-FIX ──────────────────────────────────────────────────
+
         storage.update_session(session_id, {
             'strategy_status': new_status,
             'stopped_at': datetime.now(timezone.utc).isoformat(),
             'stop_reason': reason,
+            **_final_pnl_fields,
         })
 
         stop_session_monitor(session_id, reason)
@@ -3637,6 +3666,27 @@ def reduce_position(session_id: str):
                         session.get('manual_reduction_pnl', 0) + group_realized
                     )
 
+                    # BUG-1 FIX: Stamp _estimated_pnl_booked on freshly-closed positions
+                    # so FillSyncer computes a correction (not a full re-book).
+                    # Also stamp close_order_id so FillSyncer can match by order ID.
+                    _mr_close_oid = str(result.get('order_id', '') or '')
+                    _mr_close_coid = str(result.get('client_order_id', '') or '')
+                    for _mp in side_state.get('positions', []):
+                        if (_mp.get('status') == 'closed'
+                                and _mp.get('_estimated_pnl_booked') is None):
+                            # Stamp order ID for FillSyncer matching
+                            if _mr_close_oid:
+                                _mp['close_order_id'] = _mr_close_oid
+                            if _mr_close_coid:
+                                _mp['close_client_order_id'] = _mr_close_coid
+                            _mp_entry = float(_mp.get('entry_premium', 0) or 0)
+                            _mp_lots = float(_mp.get('_closed_lots', _mp.get('lots', 0)) or 0)
+                            if _mp_lots > 0 and _mp_entry > 0:
+                                _mp['_estimated_pnl_booked'] = round(
+                                    (_mp_entry - fill_price) * _mp_lots * LOT_SIZE_BTC, 8)
+                                _mp['_estimated_commission_booked'] = round(
+                                    abs(_commission) * _mp_lots / group_lots, 8) if _commission and group_lots else 0.0
+
                     reduction_record = {
                         'side': side_key.upper(),
                         'lots': group_lots,
@@ -3658,6 +3708,35 @@ def reduce_position(session_id: str):
                         session_id, 'success',
                         reduction_record
                     )
+
+                    # ── TRADE AUDIT: manual reduce BUY ───────────────────────────
+                    try:
+                        from .mmm_audit_log import get_audit_log as _get_aud
+                        from .mmm_audit_remark import build_trade_remark as _btr
+                        _get_aud().enqueue_trade(
+                            session_id=session_id,
+                            action='BUY',
+                            option_type=side_key.upper(),
+                            strike=int(strike_val),
+                            quantity_requested=group_lots,
+                            quantity_filled=group_lots,
+                            premium=float(fill_price),
+                            event_type='EXIT',
+                            mechanism='operator',
+                            expiry=session.get('params', {}).get('expiry', ''),
+                            spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                            whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                            margin_tier=str(session.get('_margin_tier', '') or ''),
+                            remark=_btr(
+                                'BUY', 'EXIT',
+                                side=side_key, strike=int(strike_val),
+                                lots=group_lots, premium=float(fill_price),
+                                mechanism='operator',
+                            ),
+                        )
+                    except Exception:
+                        pass
+                    # ── END TRADE AUDIT ──────────────────────────────────────────
 
         _run_async(_do_reduce())
 
@@ -4365,6 +4444,36 @@ def close_strike_route(session_id: str):
         fill_price = float(result.get('fill_price', 0))
         order_id = str(result.get('order_id', ''))
 
+        # ── TRADE AUDIT: manual close-strike BUY ──────────────────────────
+        try:
+            from .mmm_audit_log import get_audit_log as _get_aud
+            from .mmm_audit_remark import build_trade_remark as _btr
+            _get_aud().enqueue_trade(
+                session_id=session_id,
+                action='BUY',
+                option_type=side_param.upper(),
+                strike=int(strike_val),
+                quantity_requested=total_lots,
+                quantity_filled=total_lots,
+                premium=fill_price,
+                event_type='EXIT',
+                mechanism='operator',
+                order_id=order_id,
+                expiry=expiry,
+                spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                margin_tier=str(session.get('_margin_tier', '') or ''),
+                remark=_btr(
+                    'BUY', 'EXIT',
+                    side=side_param, strike=int(strike_val),
+                    lots=total_lots, premium=fill_price,
+                    mechanism='operator',
+                ),
+            )
+        except Exception:
+            pass
+        # ── END TRADE AUDIT ───────────────────────────────────────────────
+
         # Record exchange commission from close-at-strike buyback
         _od = result.get('order_details') or {}
         _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
@@ -4373,7 +4482,9 @@ def close_strike_route(session_id: str):
 
         now = datetime.now(timezone.utc).isoformat()
 
-        # Mark all target positions as closed and compute realized P&L
+        # Mark all target positions as closed and compute realized P&L.
+        # CLOSE-STRIKE-FIX: stamp _estimated_pnl_booked so fill_sync computes a
+        # correction only (not a full re-book), matching the close_at_5 pattern.
         total_realized = 0.0
         for p in target_positions:
             entry = float(p.get('entry_premium', p.get('premium', 0)))
@@ -4382,6 +4493,11 @@ def close_strike_route(session_id: str):
             p['status'] = 'closed'
             p['closed_at'] = now
             p['realized_pnl'] = round(realized, 6)
+            p['_estimated_pnl_booked'] = round(realized, 8)
+            p['_estimated_commission_booked'] = (
+                round(abs(_commission) * lots / total_lots, 8)
+                if _commission and total_lots else 0.0
+            )
             p.pop('_being_closed', None)
             total_realized += realized
 
@@ -4452,7 +4568,24 @@ def close_strike_route(session_id: str):
         except Exception as snap_err:
             log.warning(f'[{session_id}] Could not reset trigger snapshots after close-strike: {snap_err}')
 
+        # CLOSE-STRIKE-FIX: book to the canonical realized_pnl + attribution bucket
+        # immediately (same as close_at_5) so the UI is correct before fill_sync runs.
+        # fill_sync will compute correction = actual - estimated ≈ 0 and make no change.
+        session['realized_pnl'] = session.get('realized_pnl', 0) + total_realized
+        session['manual_reduction_pnl'] = (
+            session.get('manual_reduction_pnl', 0) + total_realized
+        )
         session['total_realized_pnl'] = session.get('total_realized_pnl', 0.0) + total_realized
+
+        # Refresh unrealized now that these positions are gone.
+        try:
+            _mon = get_monitor(session_id)
+            if _mon:
+                _fresh_u = _mon._engine.compute_unrealized_pnl(session, _mon._make_fetch_fn())
+                session['unrealized_pnl'] = _fresh_u
+        except Exception:
+            pass
+
         session['updated_at'] = now
         storage.save_session(session)
 
