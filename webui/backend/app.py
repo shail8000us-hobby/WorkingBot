@@ -577,6 +577,23 @@ except Exception as e:
     print(f"⚠️ Could not register mmm blueprint: {e}")
     log.warning(f"MMM routes not available: {e}")
 
+# Register IC blueprint (Iron Condor — BTC options 4-leg premium harvesting algo)
+try:
+    from webui.backend.routes.ic import ic_bp, init_ic, init_websocket as init_ic_websocket
+    app.register_blueprint(ic_bp)
+    print(f"✅ Registered ic blueprint (Iron Condor — BTC options 4-leg algo)")
+
+    # Initialize IC WebSocket for real-time events
+    init_ic_websocket(socketio)
+    print(f"✅ IC WebSocket initialized")
+
+    # Initialize IC and restore any active sessions
+    init_ic()
+    print(f"✅ IC initialized and sessions restored")
+except Exception as e:
+    print(f"⚠️ Could not register ic blueprint: {e}")
+    log.warning(f"IC routes not available: {e}")
+
 # Register SSDH blueprint (Short Straddle Double Hedge — multi-leg options engine)
 try:
     from webui.backend.routes.ssdh.ssdh_api import ssdh_bp

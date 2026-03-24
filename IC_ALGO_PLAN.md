@@ -2,8 +2,8 @@
 
 **File:** `IC_ALGO_PLAN.md`
 **Created:** 2026-03-24
-**Status:** Phase 1+2 COMPLETE — Core backend + execution/monitor implemented (17 files, 49 tests pass)
-**Last Updated:** 2026-03-24 (Phase 1+2 committed to git)
+**Status:** Phase 1+2+3 COMPLETE — Core backend + execution/monitor + API/WebSocket/Telegram (21 files, 49 tests pass)
+**Last Updated:** 2026-03-24 (Phase 3 committed to git)
 **Author:** AI + Operator
 **Target exchange:** Delta Exchange India (BTC options)
 **Instrument:** BTC 0DTE / weekly options, same as MMM
@@ -1149,14 +1149,17 @@ Files (all in `webui/backend/routes/ic/`):
 - ✅ `ic_monitor.py` — 7-phase heartbeat loop in daemon thread (252 LOC)
 - ✅ `ic_activity.py` — Activity logging with `algo='ic'` tag (78 LOC)
 
-### Phase 3 — API + WebSocket
+### Phase 3 — API + WebSocket ✅ COMPLETE
 **Deliverable:** REST API wired up, WebSocket events emitting. Testable via curl/Postman.
 
-Files:
-- `ic_websocket.py`
-- `ic_api.py`
-- `ic_telegram.py`
-- Register blueprint in `app.py`
+**Status:** All 4 files implemented. Blueprint registered in `app.py`.
+
+Files (all in `webui/backend/routes/ic/`):
+- ✅ `ic_websocket.py` — WS emit helpers with `ic_`-prefixed events, failure tracking (200 LOC)
+- ✅ `ic_api.py` — Full Flask Blueprint: CRUD, lifecycle, params, cycles, activities (480 LOC)
+- ✅ `ic_telegram.py` — Telegram alerts for all critical events with dedup (220 LOC)
+- ✅ `__init__.py` — Updated with `init_ic()` session restore on startup (70 LOC)
+- ✅ Blueprint registered in `app.py` — same pattern as MMM
 
 ### Phase 4 — WebUI
 **Deliverable:** Full React dashboard, all tabs, real-time updates.
@@ -1684,4 +1687,4 @@ For 10 lots (0.01 BTC):
 ---
 
 *End of Iron Condor Implementation Plan (Revised)*
-*Phase 1+2 complete (2026-03-24). Next step: Phase 3 (API + WebSocket + Telegram) → Phase 4 (WebUI)*
+*Phase 1+2+3 complete (2026-03-24). Next step: Phase 4 (WebUI) → Phase 5 (Testing & Hardening)*
