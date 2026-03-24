@@ -2,7 +2,8 @@
 
 **File:** `IC_ALGO_PLAN.md`
 **Created:** 2026-03-24
-**Status:** PLAN ONLY — No code written yet
+**Status:** Phase 1+2 COMPLETE — Core backend + execution/monitor implemented (17 files, 49 tests pass)
+**Last Updated:** 2026-03-24 (Phase 1+2 committed to git)
 **Author:** AI + Operator
 **Target exchange:** Delta Exchange India (BTC options)
 **Instrument:** BTC 0DTE / weekly options, same as MMM
@@ -1116,31 +1117,37 @@ New Iron Condor Session
 
 ## 16. Implementation Phases
 
-### Phase 1 — Core Backend (no UI, no live orders)
+### Phase 1 — Core Backend (no UI, no live orders) ✅ COMPLETE
 **Deliverable:** All Python modules written + unit tests passing, with a simulate mode that prints decisions without placing real orders.
 
-Files:
-- `ic_constants.py`
-- `ic_state.py`
-- `ic_config.py`
-- `ic_storage.py`
-- `ic_engine.py` (P&L formulas + tests)
-- `ic_strike_selector.py` (+ tests)
-- `ic_trigger.py` (+ tests)
-- `ic_safety.py` (+ tests)
-- `ic_exit.py` (+ tests)
-- `ic_cycle.py` (+ tests)
-- `ic_adjuster.py` (+ tests)
-- `tests/` (all unit tests)
+**Status:** All 14 files implemented. 49 unit tests passing.
 
-### Phase 2 — Execution + Monitor
+Files (all in `webui/backend/routes/ic/`):
+- ✅ `ic_constants.py` — Leg IDs, status enums, exit/safety constants (93 LOC)
+- ✅ `ic_state.py` — Session, cycle, leg state creation + helpers (247 LOC)
+- ✅ `ic_config.py` — 27 params, validation rules, hot-reload support (215 LOC)
+- ✅ `ic_storage.py` — SQLite with WAL mode, UPSERT, atomic updates (234 LOC)
+- ✅ `ic_engine.py` — All P&L formulas: net credit, dynamic max loss, unrealized, roll credit (195 LOC)
+- ✅ `ic_strike_selector.py` — Delta-targeted strike selection with quality gates (265 LOC)
+- ✅ `ic_greeks.py` — Portfolio-level Greek aggregation with sign semantics (86 LOC)
+- ✅ `ic_trigger.py` — Breach detection using distance-from-strike % (107 LOC)
+- ✅ `ic_safety.py` — 3-layer safety: session → cycle → circuit breaker (215 LOC)
+- ✅ `ic_exit.py` — Priority-ordered exits: emergency → max loss → DTE → profit (175 LOC)
+- ✅ `ic_cycle.py` — Cycle lifecycle: open → monitor → close → repeat (175 LOC)
+- ✅ `ic_adjuster.py` — Decision tree + guardrails: cooldown, max adj, negative credit, gamma guard (198 LOC)
+- ✅ `__init__.py` — Module init (8 LOC)
+- ✅ `tests/test_ic_core.py` — 49 unit tests across 9 test classes (410 LOC)
+
+### Phase 2 — Execution + Monitor ✅ COMPLETE
 **Deliverable:** Real orders can be placed. Heartbeat loop runs. Session survives backend restart.
 
-Files:
-- `ic_executor.py` (reuse smart execution pattern from mmm_executor)
-- `ic_roller.py` (roll execution logic)
-- `ic_monitor.py` (MMMMonitor-style heartbeat thread)
-- `ic_activity.py`
+**Status:** All 4 files implemented. Simulate mode fully functional.
+
+Files (all in `webui/backend/routes/ic/`):
+- ✅ `ic_executor.py` — Batch order placement with simulate mode + atomicity framework (216 LOC)
+- ✅ `ic_roller.py` — Roll execution for call-up and put-down adjustments (190 LOC)
+- ✅ `ic_monitor.py` — 7-phase heartbeat loop in daemon thread (252 LOC)
+- ✅ `ic_activity.py` — Activity logging with `algo='ic'` tag (78 LOC)
 
 ### Phase 3 — API + WebSocket
 **Deliverable:** REST API wired up, WebSocket events emitting. Testable via curl/Postman.
@@ -1677,4 +1684,4 @@ For 10 lots (0.01 BTC):
 ---
 
 *End of Iron Condor Implementation Plan (Revised)*
-*Next step: Operator review → approve plan → Phase 1 implementation begins*
+*Phase 1+2 complete (2026-03-24). Next step: Phase 3 (API + WebSocket + Telegram) → Phase 4 (WebUI)*
