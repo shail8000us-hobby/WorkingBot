@@ -65,6 +65,7 @@ const IntelligencePage = React.lazy(() => import('./pages/IntelligencePage'));
 const OptionsChainPage = React.lazy(() => import('./pages/OptionsChainPage'));
 const StrategyBuilderPage = React.lazy(() => import('./pages/StrategyBuilderPage'));
 const MMMPage = React.lazy(() => import('./pages/MMMPage'));
+const ICPage = React.lazy(() => import('./pages/ICPage'));
 const SSDHPage = React.lazy(() => import('./pages/SSDHPage'));
 const PortfolioMarginPage = React.lazy(() => import('./pages/PortfolioMarginPage'));
 const GuardianPage = React.lazy(() => import('./pages/GuardianPage'));
@@ -364,6 +365,7 @@ function App() {
                   <Route path="/strategy_builder" element={<StrategyBuilderPage onNavigateToTab={handleNavigateToTab} />} />
                   <Route path="/mv_straddle" element={<MVStraddlePage />} />
                   <Route path="/mmm" element={<MMMPage socket={socket} />} />
+                  <Route path="/ic" element={<ICPage socket={socket} />} />
                   <Route path="/ssr_algo" element={<SSRAlgoPage />} />
                   <Route path="/ssdh" element={<SSDHPage />} />
                   <Route path="/risk" element={<RiskPage isMobile={isMobile} botIsRunning={botIsRunning} />} />

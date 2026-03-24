@@ -128,6 +128,13 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       group: 'Algorithms',
     },
     {
+      id: 'ic',
+      label: '🦅 Iron Condor',
+      icon: Layers3,
+      description: 'Iron Condor - 4-leg defined-risk premium harvesting',
+      group: 'Algorithms',
+    },
+    {
       id: 'patience',
       label: '🎯 Patience',
       icon: Timer,

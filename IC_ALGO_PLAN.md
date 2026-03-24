@@ -1161,21 +1161,29 @@ Files (all in `webui/backend/routes/ic/`):
 - ✅ `__init__.py` — Updated with `init_ic()` session restore on startup (70 LOC)
 - ✅ Blueprint registered in `app.py` — same pattern as MMM
 
-### Phase 4 — WebUI
+### Phase 4 — WebUI ✅ COMPLETE
 **Deliverable:** Full React dashboard, all tabs, real-time updates.
 
-Files (in order of priority):
-1. `ICContext.js` + `icService.js` + `useICWebSocket.js`
-2. `ICPage.js` + router entry
-3. `ICSessionList.js` + `ICSessionCard.js`
-4. `ICStatusBanner.js`
-5. `ICLegTable.js`
-6. `ICStrikeMap.js`
-7. `ICPayoffDiagram.js`
-8. `ICPnLChart.js`
-9. `ICAdjustmentLog.js`
-10. `ICCycleHistory.js`
-11. `ICConfigPanel.js`
+**Status:** All 13 files implemented. Route at `/ic`, sidebar nav entry added.
+
+Files (in `webui/frontend/src/components/ic/`):
+- ✅ `icService.js` — API client for `/api/ic` endpoints (110 LOC)
+- ✅ `ICContext.js` — State management + WS listeners + polling (250 LOC)
+- ✅ `ICDashboard.js` — Main dashboard: session list, P&L banner, 7-tab content, create dialog (310 LOC)
+- ✅ `ICLegTable.js` — 4-leg position table: LP/SP/SC/LC with entry/mark/P&L (105 LOC)
+- ✅ `ICStrikeMap.js` — Visual strike map with put/call wings, profit zone, proximity bars (120 LOC)
+- ✅ `ICPayoffDiagram.js` — Payoff at expiry chart using Recharts (110 LOC)
+- ✅ `ICPnLChart.js` — P&L over time chart with current/cumulative toggle (95 LOC)
+- ✅ `ICAdjustmentLog.js` — Roll/adjustment history grouped by cycle (100 LOC)
+- ✅ `ICCycleHistory.js` — Cycle history table with realized/unrealized P&L (115 LOC)
+- ✅ `ICConfigPanel.js` — Parameter management with 7 groups, dirty tracking, hot-reload (170 LOC)
+- ✅ `ICErrorBoundary.js` — Error boundary (45 LOC)
+- ✅ `index.js` — Barrel exports (15 LOC)
+
+Integration files:
+- ✅ `ICPage.js` — Page wrapper in `webui/frontend/src/pages/`
+- ✅ Route registered in `App.js` at `/ic`
+- ✅ Sidebar nav entry in `navigationSections.js` under Algorithms group
 
 ### Phase 5 — Testing & Hardening
 **Deliverable:** Testnet run for 48h. All edge cases validated.
