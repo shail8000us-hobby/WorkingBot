@@ -13482,6 +13482,15 @@ Priority 6: Gamma soft limit                                   → warn only
 
 **Rule:** When controls conflict, **the more conservative action wins**. Risk reduction is always allowed.
 
+### D.3a Regime Auto-Resume (2026-03-24)
+
+When a session is paused by regime controls (`ACTION_PAUSE` — vol/trend — or `ACTION_FORCE_REDUCE` — gamma emergency), it previously required a manual resume. This is now automated:
+
+- Every heartbeat, after the regime check runs, if `self._paused` is True and `_paused_reason` starts with `'Regime pause'` or contains `'Gamma emergency'`, the monitor checks `session['_regime_action']`
+- If the current regime action is no longer `ACTION_PAUSE` or `ACTION_FORCE_REDUCE` (i.e., the underlying condition has cleared), the session auto-resumes and logs `regime_auto_resume`
+- Safe ordering: the regime check runs first → sets `_regime_action` → then auto-resume check reads it. On the same beat that the pause fires, `_skip_to_pnl=True` prevents immediate re-resume
+- Safety pauses (max_loss, whipsaw, margin) are **not** affected — their `_paused_reason` strings don't match the regime pattern
+
 ### D.4 Aggregate Regime Computation
 
 Each heartbeat produces a single `_regime_action` flag consumed by the trigger/adjustment logic:
@@ -16667,7 +16676,7 @@ Save probabilistic and learning layers for when the control loop is provably sta
 | IMP-2 Tiered trend guard | 4-tier system (0.5%/1.0%/1.5%/2.0%) | ✅ IMPLEMENTED (§2.12 of context) |
 | IMP-3 Asymmetry hard block at 7:1 | Only 3:1 warn + 5:1 alert exist | ❌ PENDING |
 | IMP-4 Strike shift lot reduction | No OTM-proximity scaling | ❌ PENDING |
-| IMP-5 Consecutive same-direction limiter | Not in codebase | ❌ PENDING |
+| IMP-5 Consecutive same-direction limiter | Implemented with auto-resume (2026-03-24) | ✅ IMPLEMENTED |
 | IMP-6 Max loss scaling | Hard-coded, not position-scaled | ❌ PENDING |
 | IMP-7 Options buyback capability | Algo cannot buy back CE/PE at all | ❌ PENDING (high effort) |
 | IMP-8 Pre-entry regime check | No entry momentum check | ❌ PENDING |
@@ -16864,21 +16873,21 @@ A closer-to-ATM strike has higher delta per lot. Selling the same number of lots
 
 ---
 
-### IMP-5: Consecutive Same-Direction Adjustment Limiter (Highest ROI Change)
+### IMP-5: Consecutive Same-Direction Adjustment Limiter ✅ IMPLEMENTED (2026-03-24)
 
-**Files:** `mmm_engine.py`, `mmm_state.py` (new param + counter)
+**Files:** `mmm_monitor.py` (`_apply_consecutive_dir_limit`, `_update_consecutive_dir_counter`), `mmm_state.py`
 **Risk level:** Medium
-**Effort:** 1 day
+**Status:** Live in production with auto-resume extension
 
-**Current behavior:**
-The whipsaw check counts *alternating* adjustments (CE then PE then CE). There is **no check for runs** — consecutive same-direction adjustments (CE 5 times in a row).
+**Original behavior (before fix):**
+The whipsaw check counts *alternating* adjustments (CE then PE then CE). There was **no check for runs** — consecutive same-direction adjustments (CE 5 times in a row).
 
-**What happened in the session:**
+**What happened in the session that motivated this:**
 Adjustments #3, #4, #6, #7, #8, #9, #10, #11 were all CE aggressor (PE hedge). That is 8 consecutive adjustments in one direction. The algo's formula treated each as an independent event and calculated lots fresh each time, leading to explosive PE accumulation.
 
-**Proposed rule:**
-After 3 consecutive same-direction adjustments, cap the lot size for that direction at `initial_lots × 0.25`.
-After 5 consecutive same-direction adjustments, require a force-heartbeat manual confirmation before any further sells in that direction.
+**Implemented rule:**
+After `consecutive_dir_limit` (default 3) consecutive same-direction adjustments, cap lot size at `initial_lots × consecutive_dir_lot_cap_pct` (default 25%).
+After `consecutive_dir_block_after` (default 5) consecutive same-direction adjustments, block further adjustments in that direction until the auto-resume timeout elapses.
 
 **Concrete example:**
 Session has `initial_lots = 100`. BTC in a bull run.
@@ -16887,14 +16896,24 @@ Session has `initial_lots = 100`. BTC in a bull run.
 - Adj #2 (CE aggressor): formula says 54 PE lots → **54 lots sold** (counter = 2)
 - Adj #3 (CE aggressor): formula says 48 PE lots → **cap kicks in: min(48, 100×0.25=25) → 25 lots sold** (counter = 3)
 - Adj #4 (CE aggressor): formula says 60 PE lots → **25 lots sold** (counter = 4)
-- Adj #5 (CE aggressor): **BLOCK — requires force heartbeat confirmation** (counter = 5)
+- Adj #5 (CE aggressor): **BLOCKED** — auto-clears after `consecutive_dir_auto_resume_mins` (default 10 min)
 
 Without the fix: After 8 adjustments, PE = 132 + 71 + 54 + 48 + 34 + 45 + 88 + 75 = **547 lots** accumulated. Cap hit.
-With the fix: After 8 adjustments, PE = 132 + 71 + 54 + **25 + 25 + BLOCKED** = **307 lots maximum** before the manual gate fires.
+With the fix: After 8 adjustments, PE = 132 + 71 + 54 + **25 + 25 + BLOCKED** = **307 lots maximum** before the auto-gate fires.
 
-**Impact:** The post-mortem document calls this "the single most profitable change." It does not eliminate the session loss — but it slows accumulation so there is still hedge capacity available when BTC eventually moves the other way. Lower accumulation per session × more sessions that survive = better long-term P&L.
+**Impact:** The post-mortem document calls this "the single most profitable change." It does not eliminate the session loss — but it slows accumulation so there is still hedge capacity available when BTC eventually moves the other way.
 
-**Parameters to add:** `consecutive_dir_limit` (default 3), `consecutive_dir_lot_cap_pct` (default 0.25), `consecutive_dir_block_after` (default 5).
+**Parameters (all hot-reloadable, in MMMSettingsDialog → "↕️ Consecutive Direction Limiter"):**
+- `consecutive_dir_limit` (default 3) — adjustments before lot cap kicks in
+- `consecutive_dir_lot_cap_pct` (default 0.25) — cap = this × initial_lots
+- `consecutive_dir_block_after` (default 5) — adjustments before full block fires
+- `consecutive_dir_auto_resume_mins` (default 10) — minutes before block auto-clears; 0 = require manual force-heartbeat
+
+**Session state fields:**
+- `_consecutive_same_dir_count` — running count of same-direction adjustments
+- `_consecutive_same_dir_side` — which side (`'ce'` or `'pe'`) the streak is on
+- `_consecutive_dir_blocked` — True when fully blocked
+- `_consecutive_dir_blocked_at` — `time.time()` when block was set (used for auto-resume timeout)
 
 ---
 
@@ -17357,14 +17376,17 @@ When adopting positions, auto-detect appropriate scale and apply profile. User c
 - CE exposure was completely unhedged while PE kept triggering
 
 ### Root cause
-The blocker was designed for mean-reverting markets (prevent runaway hedging in a choppy market). In a trending market, it does the opposite — it prevents needed hedges. There is also **no auto-reset**: once triggered, only a manual "force-heartbeat" clears it.
+The blocker was designed for mean-reverting markets (prevent runaway hedging in a choppy market). In a trending market, it does the opposite — it prevents needed hedges. There was also **no auto-reset**: once triggered, only a manual "force-heartbeat" cleared it.
 
-### The fix needed
-Two-part fix:
-1. **Auto-timeout reset**: if same side has been blocked for > `consecutive_dir_timeout_min` (default 5), allow 1 pass-through with a warning log. Resets the counter.
-2. **Trend-aware bypass**: if regime/trend detectors are active and confirm directional move, waive the consecutive block and log why.
+### Fix implemented (2026-03-24)
+**Auto-timeout reset** via `consecutive_dir_auto_resume_mins` (default 10 minutes):
+- When the block fires, `_consecutive_dir_blocked_at` records `time.time()`
+- Each heartbeat, `_apply_consecutive_dir_limit` checks if `time.time() - blocked_at >= auto_mins * 60`
+- On timeout: block cleared, counter reset to 0 — identical to a manual force-heartbeat
+- Migration-safe: if `_consecutive_dir_blocked_at` is missing (old session), timer starts from current beat (no instant auto-clear)
+- Set `consecutive_dir_auto_resume_mins = 0` to revert to manual-only force-heartbeat behavior
 
-The goal: prevent gambling in choppy markets, but don't prevent hedging when market is clearly trending.
+The goal: prevent gambling in choppy markets, but don't lock the bot out when market is clearly trending.
 
 ---
 
@@ -22623,7 +22645,7 @@ Every module, what it does, what triggers it, what it outputs.
 | **Total Exposure Ceiling** | `max_total_exposure=0 (auto: 2×cap)` | active+frozen >= ceiling | Warn (NOT stop) | Does NOT trigger M2; only warns |
 | **Lot Velocity Limiter** | `lot_velocity_limit=30`, `lot_velocity_window_mins=30` | lots added in window > limit | Block new lot additions | Window doesn't scale with `adjustment_interval` |
 | **Asymmetry 3-tier** | `asymmetry_5to1_lot_reduction=0.5`, `asymmetry_7to1_hard_block=True` | CE:PE ratio exceeds N | 50% reduction at 5:1; hard block at 7:1 | Uses total_lots (including frozen) — correct |
-| **Consecutive Direction Limiter** | `consecutive_dir_limit=3`, `consecutive_dir_lot_cap_pct=0.25`, `consecutive_dir_block_after=5` | N consecutive same-dir adjustments | Cap lots at 25% of initial; block at 5 | Independent from whipsaw; similar goal |
+| **Consecutive Direction Limiter** | `consecutive_dir_limit=3`, `consecutive_dir_lot_cap_pct=0.25`, `consecutive_dir_block_after=5`, `consecutive_dir_auto_resume_mins=10` | N consecutive same-dir adjustments | Cap lots at 25% of initial; block at 5; auto-clears after 10 min | Set auto_resume_mins=0 for manual-only force-heartbeat |
 | **M2 Lot Recycling** | `recycle_min_premium_ratio=2.5`, `recycle_*` | Position cap reached | Buyback frozen + resell at better strike | Only triggers on "Position cap reached" string — fragile |
 
 ### 2C. Lot Sizing Multipliers (SELL MORE)

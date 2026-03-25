@@ -223,8 +223,7 @@ def start_session(session_id: str):
 
         old_status = status
         session['status'] = STATUS_RUNNING
-        if session.get('strategy_status') == STRATEGY_IDLE:
-            session['strategy_status'] = STRATEGY_IDLE  # Will transition to ENTRY_PENDING in monitor
+        # strategy_status will transition to ENTRY_PENDING in the monitor loop
 
         storage.save_session(session)
 

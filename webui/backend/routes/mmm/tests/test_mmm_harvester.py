@@ -103,11 +103,13 @@ def _make_session(
         },
         'ce': {
             'total_lots': ce_total,
+            'active_lots': ce_total,
             'frozen_positions': ce_frozen or [],
             'positions': [],
         },
         'pe': {
             'total_lots': pe_total,
+            'active_lots': pe_total,
             'frozen_positions': pe_frozen or [],
             'positions': [],
         },

@@ -118,6 +118,9 @@ ACTIVITY_TYPES = {
     'whipsaw_guard': 'Whipsaw Guard',
     'atm_shield': 'ATM Shield',
 
+    # Ghost-close recovery
+    'ghost_close_recovered': 'Ghost Close Recovered',
+
     # Breakeven Engine
     'breakeven_zone_change': 'Breakeven Zone Change',
     'breakeven_band_contracting': 'Breakeven Band Contracting',
@@ -215,6 +218,17 @@ class MMMActivityLog:
         os.makedirs(os.path.dirname(ACTIVITY_FILE), exist_ok=True)
         self._load_from_disk()
         self._counter = 0
+        # Initialize _id_counter above the highest persisted ID to prevent
+        # collisions after restart (IDs look like act_20260323_085500_000042).
+        max_seen = 0
+        for act in self._activities:
+            act_id = act.get('id', '')
+            if act_id.startswith('act_') and act_id.count('_') >= 3:
+                try:
+                    max_seen = max(max_seen, int(act_id.rsplit('_', 1)[-1]))
+                except (ValueError, IndexError):
+                    pass
+        self._id_counter = max_seen
         # Recommendation #6: Activity log dedup tracking
         # Maps (type, session_id, message_prefix) → last_logged_timestamp
         self._dedup_cache: Dict[tuple, datetime] = {}
@@ -348,7 +362,7 @@ class MMMActivityLog:
                 break
 
         # Audit fix: monotonic _id_counter guarantees uniqueness (collision with same-second + same-index is fixed)
-        self._id_counter = getattr(self, '_id_counter', 0) + 1
+        self._id_counter += 1
         activity = {
             'id': f"act_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{self._id_counter:06d}",
             'timestamp': datetime.now(timezone.utc).isoformat(),

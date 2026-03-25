@@ -396,6 +396,10 @@ async def execute_lot_recycling(
     phase_a_lots = 0
     phase_a_fails = 0
     bought_back_positions = []  # Track successfully closed positions for rollback
+    _fees_before_phase_a = session.get('total_fees', 0)  # Snapshot for rollback
+    # PnlCore: snapshot ledger length for rollback
+    from .mmm_pnl_core import ledger_snapshot as _pnl_snapshot, rollback_closes_since as _pnl_rollback
+    _ledger_snapshot_len = _pnl_snapshot(session)
 
     # Capture canonical position objects (deep copies) before Phase A removes them.
     # Rollback uses these to restore the exact pre-Phase-A ledger state rather than
@@ -502,14 +506,12 @@ async def execute_lot_recycling(
                 side_state.setdefault('positions', []).append(pos)
         recompute_side_lots(side_state)
         session[hedge_side] = side_state
-        # Rollback realized P&L added by close_position() during Phase A
-        session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
-        # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
-        session['pnl_recycle'] = session.get('pnl_recycle', 0.0) - phase_a_pnl
+        # PnlCore: remove Phase A ledger entries via public API
+        _rolled = _pnl_rollback(session, _ledger_snapshot_len)
         log.error(
             "Phase B exception — restored %d positions to active state, "
-            "rolled back Phase A P&L: %.4f",
-            len(bought_back_positions), phase_a_pnl,
+            "rolled back %d ledger entries (Phase A P&L: %.4f)",
+            len(bought_back_positions), _rolled, phase_a_pnl,
         )
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
@@ -545,14 +547,12 @@ async def execute_lot_recycling(
                 side_state.setdefault('positions', []).append(pos)
         recompute_side_lots(side_state)
         session[hedge_side] = side_state
-        # Rollback realized P&L added by close_position() during Phase A
-        session['realized_pnl'] = session.get('realized_pnl', 0) - phase_a_pnl
-        # T2-5: Roll back pnl_recycle attribution (mirrors realized_pnl rollback)
-        session['pnl_recycle'] = session.get('pnl_recycle', 0.0) - phase_a_pnl
+        # PnlCore: remove Phase A ledger entries via public API
+        _rolled = _pnl_rollback(session, _ledger_snapshot_len)
         log.error(
             "Phase B failed — restored %d positions to pre-Phase-A state, "
-            "rolled back Phase A P&L: %.4f",
-            len(bought_back_positions), phase_a_pnl,
+            "rolled back %d ledger entries (Phase A P&L: %.4f)",
+            len(bought_back_positions), _rolled, phase_a_pnl,
         )
         session['recycle_attempt_count'] = session.get('recycle_attempt_count', 0) + 1
         session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()

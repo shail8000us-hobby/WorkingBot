@@ -466,13 +466,19 @@ def cancel_card(card_id):
     if card.get('status') in ('COMPLETED', 'CANCELLED'):
         return _err(f"Card already in terminal status {card['status']}")
     db.update_card(card_id, status='CANCELLED')
-    db.log_event(card_id, None, 'PAUSE', 'Manually cancelled by user')
+    db.log_event(card_id, None, 'CANCEL', 'Manually cancelled by user')
     # Stop any running execution loop immediately to prevent further orders
     try:
         from webui.backend.services.patience_loop import get_patience_loop_service
         get_patience_loop_service().stop_loop(card_id)
     except Exception as e:
         log.warning(f"cancel_card: could not stop loop for {card_id}: {e}")
+    # Remove from trigger tracking so a re-armed card with the same ID can fire normally
+    try:
+        _trigger()._triggered_cards.discard(card_id)
+        _trigger()._sustain_tracker.pop(card_id, None)
+    except Exception:
+        pass
     return _ok({'cancelled': card_id})
 
 
@@ -492,6 +498,14 @@ def execute_now(card_id):
     if status not in ('DRAFT', 'ARMED', 'PAUSED'):
         return _err(f"Can only execute NOW from DRAFT/ARMED/PAUSED status (current: {status})")
 
+    # Verify trigger engine is running before queuing
+    trigger = _trigger()
+    if not trigger.is_running():
+        return _err(
+            'Patience trigger engine is not running — start it first via /engine/start',
+            status=409,
+        )
+
     # Mark as TRIGGERED and queue directly (bypasses price/IV gate checks)
     db.update_card(card_id, status='TRIGGERED')
     db.log_event(
@@ -501,7 +515,6 @@ def execute_now(card_id):
 
     # Queue for execution via trigger
     try:
-        trigger = _trigger()
         card_name = card.get('card_name', card_id)
 
         with trigger._exec_lock:
@@ -545,13 +558,24 @@ def close_card(card_id):
     body = request.get_json(silent=True) or {}
     legs = db.get_legs(card_id)
 
-    # Calculate entry premium from fills
+    # Detect partially-filled cards (legs still in EXECUTING — not yet filled)
+    executing_legs = [l for l in legs if l.get('status') == 'EXECUTING']
+    is_partial = len(executing_legs) > 0
+
+    # Calculate entry premium from fills (EXECUTING legs contribute 0 — flagged as partial)
+    # Apply 0.001 BTC multiplier (1 lot = 0.001 BTC) — consistent with pnl_summary() and executor
     entry_premium = 0.0
     for leg in legs:
         fill = float(leg.get('fill_price') or 0)
         lots = int(leg.get('lots') or 0)
         sign = 1 if leg.get('direction') == 'SELL' else -1   # received premium if SELL
-        entry_premium += sign * fill * lots
+        entry_premium += sign * fill * lots * 0.001
+
+    if is_partial:
+        log.warning(
+            f"patience_api: close_card [{card_id}] has {len(executing_legs)} EXECUTING leg(s) "
+            f"— entry_premium {entry_premium:.2f} is partial. Performance record flagged."
+        )
 
     # Legs handed to MMM
     mmm_count = sum(1 for l in legs if l.get('status') == 'HANDED_TO_MMM')
@@ -594,10 +618,17 @@ def close_card(card_id):
             'card_type': body.get('card_type', 'options'),
             'legs_handed_to_mmm': mmm_count,
             'handoff_pnl': body.get('handoff_pnl'),
+            'triggered_at': card.get('triggered_at'),
+            'closed_at': _now(),
         })
 
-    db.update_card(card_id, status='CANCELLED')  # remove from active monitoring
-    return _ok({'closed': card_id, 'entry_premium': entry_premium, 'pnl': pnl})
+    db.update_card(card_id, status='CLOSED')  # remove from active monitoring
+    return _ok({
+        'closed': card_id,
+        'entry_premium': entry_premium,
+        'pnl': pnl,
+        'partial_fill_warning': f"{len(executing_legs)} leg(s) were still EXECUTING — entry_premium is incomplete" if is_partial else None,
+    })
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -659,7 +690,7 @@ def _build_symbol_from_leg(leg: dict) -> str:
     expiry_date = leg.get('expiry_date', '')
     if expiry_date and len(expiry_date) >= 10:
         parts = expiry_date.split('-')
-        ddmmyy = parts[2] + parts[1] + parts[0][2:]
+        ddmmyy = parts[2].zfill(2) + parts[1].zfill(2) + parts[0][2:]
     else:
         ddmmyy = 'XXXXXX'
     return f"{prefix}-BTC-{strike}-{ddmmyy}"
@@ -805,23 +836,24 @@ def patience_positions():
     card_groups = []
     total_upnl = 0.0
     total_theta = 0.0
+    total_delta = 0.0
     total_live = 0
     total_legs = 0
 
     for card in cards:
         legs = db.get_legs(card['card_id'])
-        filled = [l for l in legs if l.get('status') in ('FILLED', 'HANDED_TO_MMM')
-                  and l.get('executed_symbol')]
+        filled = [l for l in legs if l.get('status') in ('FILLED', 'ROUND_FILLED', 'HANDED_TO_MMM')]
         if not filled:
             continue
 
         enriched_legs = []
         card_upnl = 0.0
         card_theta = 0.0
+        card_delta = 0.0
 
         for leg in filled:
-            sym = leg['executed_symbol']
-            live = live_by_symbol.get(sym, {})
+            sym = leg.get('executed_symbol')  # may be None for pre-fix executions
+            live = live_by_symbol.get(sym, {}) if sym else {}
             is_live = bool(live)
 
             fill_price = float(leg.get('fill_price') or 0) or None
@@ -839,13 +871,26 @@ def patience_positions():
                 sign = 1 if direction == 'BUY' else -1
                 upnl = sign * (mark - fill_price) * lots * 0.001  # 1 lot = 0.001 BTC
 
-            theta_raw = live.get('greeks', {}).get('theta')
-            theta = float(theta_raw) if theta_raw is not None else None
+            # Extract per-contract greeks and scale correctly
+            # Ref: dashboard.py calculate_portfolio_greeks() lines 86-99
+            # API returns greeks per 1 BTC notional, must scale by position size
+            per_contract_theta = float(live.get('greeks', {}).get('theta') or 0) if is_live else None
+            per_contract_delta = float(live.get('greeks', {}).get('delta') or 0) if is_live else None
+
+            # Apply correct scaling (matching dashboard.py sealed logic):
+            # - Delta: per_contract * size * 0.001
+            # - Theta: (per_contract / 1000) * size (theta/vega use /1000 for USD conversion)
+            # Size sign: BUY = positive, SELL = negative
+            size_signed = lots if direction == 'BUY' else -lots
+            theta = (per_contract_theta / 1000) * size_signed if per_contract_theta is not None else None
+            delta = (per_contract_delta * size_signed * 0.001) if per_contract_delta is not None else None
 
             if upnl is not None:
                 card_upnl += upnl
             if theta is not None:
                 card_theta += theta
+            if delta is not None:
+                card_delta += delta
             if is_live:
                 total_live += 1
 
@@ -857,6 +902,7 @@ def patience_positions():
                 'direction':      direction,
                 'option_type':    leg.get('option_type'),
                 'expiry_date':    leg.get('expiry_date'),
+                'strike':         leg.get('strike'),
                 'lots':           lots,
                 'fill_price':     fill_price,
                 'leg_status':     leg.get('status'),
@@ -867,7 +913,7 @@ def patience_positions():
                 'unrealized_pnl': round(upnl, 2) if upnl is not None else None,
                 'pnl_pct':        float(live.get('pnl_percentage') or 0) or None if is_live else None,
                 'theta':          round(theta, 2) if theta is not None else None,
-                'delta':          float(live.get('greeks', {}).get('delta') or 0) or None if is_live else None,
+                'delta':          round(delta, 4) if delta is not None else None,
                 'expiry_warning': live.get('expiry_warning'),
                 'is_live':        is_live,
             })
@@ -875,6 +921,7 @@ def patience_positions():
 
         total_upnl += card_upnl
         total_theta += card_theta
+        total_delta += card_delta
 
         card_groups.append({
             'card_id':    card['card_id'],
@@ -883,6 +930,7 @@ def patience_positions():
             'legs':       enriched_legs,
             'card_upnl':  round(card_upnl, 2),
             'card_theta': round(card_theta, 2),
+            'card_delta': round(card_delta, 4),
             'live_legs':  sum(1 for l in enriched_legs if l['is_live']),
             'total_legs': len(enriched_legs),
         })
@@ -890,10 +938,11 @@ def patience_positions():
     return _ok({
         'cards': card_groups,
         'summary': {
-            'total_legs': total_legs,
-            'live_legs':  total_live,
-            'total_upnl': round(total_upnl, 2),
+            'total_legs':  total_legs,
+            'live_legs':   total_live,
+            'total_upnl':  round(total_upnl, 2),
             'total_theta': round(total_theta, 2),
+            'total_delta': round(total_delta, 4),
         }
     })
 
@@ -907,6 +956,19 @@ def pnl_summary():
     """Real-time P&L across all active Patience cards."""
     db = _db()
     cards = db.get_cards_by_status('EXECUTING', 'COMPLETED', 'ARMED')
+
+    # Fetch live marks once for all positions (reuse dashboard cache)
+    live_by_symbol = {}
+    try:
+        resp = requests.get('http://localhost:5555/api/options/dashboard', timeout=6)
+        if resp.status_code == 200:
+            for pos in resp.json().get('positions', []):
+                sym = pos.get('product_symbol')
+                if sym:
+                    live_by_symbol[sym] = pos
+    except Exception as e:
+        log.warning(f"pnl_summary: options dashboard unavailable: {e}")
+
     result = []
 
     for card in cards:
@@ -914,20 +976,38 @@ def pnl_summary():
         filled_legs = [l for l in legs if l.get('status') in ('FILLED', 'HANDED_TO_MMM')]
 
         entry_premium = 0.0
+        current_value = 0.0
+        value_missing = False
+
         for leg in filled_legs:
             fill = float(leg.get('fill_price') or 0)
             lots = int(leg.get('lots') or 0)
             sign = 1 if leg.get('direction') == 'SELL' else -1
-            entry_premium += sign * fill * lots
+            # Apply 0.001 BTC multiplier (1 lot = 0.001 BTC)
+            entry_premium += sign * fill * lots * 0.001
 
-        # Current mark value: Phase 1 stub (Phase 3 fetches live marks)
+            # Fetch current mark price for live P&L
+            sym = leg.get('executed_symbol')
+            if sym:
+                live = live_by_symbol.get(sym, {})
+                mark = float(live.get('mark_price') or 0)
+                if mark:
+                    current_value += sign * mark * lots * 0.001
+                else:
+                    value_missing = True
+
+        # Calculate unrealized P&L if we have all values
+        unrealized_pnl = None
+        if not value_missing and filled_legs:
+            unrealized_pnl = current_value - entry_premium
+
         result.append({
             'card_id': card['card_id'],
             'card_name': card.get('card_name'),
             'status': card.get('status'),
             'entry_premium': round(entry_premium, 2),
-            'current_value': None,   # Phase 3: fetch live marks
-            'unrealized_pnl': None,  # Phase 3: current_value - entry_premium
+            'current_value': round(current_value, 2) if not value_missing else None,
+            'unrealized_pnl': round(unrealized_pnl, 2) if unrealized_pnl is not None else None,
             'legs_count': len(legs),
             'filled_count': len(filled_legs),
             'mmm_legs': sum(1 for l in legs if l.get('status') == 'HANDED_TO_MMM'),
@@ -941,25 +1021,32 @@ def pnl_summary():
 # ═══════════════════════════════════════════════════════════════════════
 
 def _backfill_performance(db):
-    """One-time: write performance stubs for COMPLETED cards that have no record yet."""
+    """Write performance stubs for COMPLETED cards that have no record yet.
+    Also patches existing records missing triggered_at."""
     try:
         completed = db.get_cards_by_status('COMPLETED')
         for card in completed:
-            if db.get_performance_for_card(card['card_id']):
-                continue  # already has a record
+            existing = db.get_performance_for_card(card['card_id'])
+            if existing:
+                # Patch triggered_at if missing
+                if not existing.get('triggered_at') and card.get('triggered_at'):
+                    db.update_performance_for_card(card['card_id'], triggered_at=card['triggered_at'])
+                continue  # record already exists
             legs = db.get_legs(card['card_id'])
             entry_premium = 0.0
             for leg in legs:
                 fill = float(leg.get('fill_price') or 0)
                 lots = int(leg.get('lots') or 0)
                 sign = 1 if leg.get('direction') == 'SELL' else -1
-                entry_premium += sign * fill * lots
+                # Apply 0.001 BTC multiplier (1 lot = 0.001 BTC)
+                entry_premium += sign * fill * lots * 0.001
             db.save_performance({
                 'card_id':          card['card_id'],
                 'card_name':        card.get('card_name'),
                 'entry_premium':    round(entry_premium, 2),
                 'exit_value':       None,
                 'pnl':              None,
+                'triggered_at':     card.get('triggered_at'),
                 'duration_hours':   None,
                 'card_type':        'options',
                 'legs_handed_to_mmm': 0,
@@ -978,21 +1065,23 @@ def performance_history():
     perf = db.get_performance()
 
     # Records with closed_at are explicitly closed; those without are auto-written at completion
+    open_stubs = [p for p in perf if p.get('pnl') is None]
     closed = [p for p in perf if p.get('pnl') is not None and p.get('closed_at')]
     wins = [p for p in closed if p.get('pnl', 0) > 0]
     losses = [p for p in closed if p.get('pnl', 0) <= 0]
-    total_pnl = sum(p.get('pnl', 0) for p in closed)
-    avg_pnl = total_pnl / len(closed) if closed else 0
+    total_pnl = sum(p.get('pnl', 0) for p in closed) if closed else None
+    avg_pnl = (total_pnl / len(closed)) if closed else None
 
     return _ok({
         'records': perf,
         'summary': {
             'total_cards': len(closed),
+            'open_cards': len(open_stubs),
             'wins': len(wins),
             'losses': len(losses),
-            'win_rate': round(len(wins) / len(closed) * 100, 1) if closed else 0,
-            'total_pnl': round(total_pnl, 2),
-            'avg_pnl': round(avg_pnl, 2),
+            'win_rate': round(len(wins) / len(closed) * 100, 1) if closed else None,
+            'total_pnl': round(total_pnl, 2) if total_pnl is not None else None,
+            'avg_pnl': round(avg_pnl, 2) if avg_pnl is not None else None,
         }
     })
 
@@ -1009,7 +1098,7 @@ def _build_symbol(leg):
 
     if len(expiry_date) >= 10:
         parts = expiry_date.split('-')
-        ddmmyy = parts[2] + parts[1] + parts[0][2:]  # DDMMYY — Delta Exchange format (e.g. 170326 = 2026-03-17)
+        ddmmyy = parts[2].zfill(2) + parts[1].zfill(2) + parts[0][2:]  # DDMMYY — Delta Exchange format (e.g. 170326 = 2026-03-17)
         return f"{prefix}-BTC-{strike}-{ddmmyy}"
     return None
 

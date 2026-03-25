@@ -101,6 +101,18 @@ except ImportError:
 log = logging.getLogger('mmm_monitor')
 
 
+def _is_user_awake_hours() -> bool:
+    """Return True if current IST time is between 8:00 AM and 11:00 PM.
+
+    IST = UTC+5:30. Awake window: [08:00, 23:00) IST.
+    Outside this window (11PM–8AM IST) the user is assumed to be asleep,
+    and the auto-stop behavior applies for unhedged/both-sides-closed conditions.
+    """
+    IST = timezone(timedelta(hours=5, minutes=30))
+    now_ist = datetime.now(IST)
+    return 8 <= now_ist.hour < 23
+
+
 class MMMMonitor:
     """
     Background heartbeat monitor for an MMM session.
@@ -717,7 +729,22 @@ class MMMMonitor:
             except Exception as e:
                 log.debug(f"[{self.session_id}] Failed to persist health: {e}")
         
-        _save_session(target, self._my_generation)
+        saved = _save_session(target, self._my_generation)
+        # H-4 SECONDARY GUARD: If _save_session returned False (stale generation
+        # rejected the save), this monitor must stop immediately. It has already
+        # placed an order it cannot persist — continuing would create more phantom
+        # positions. The _run_loop's primary guard should have caught this before
+        # any order was placed, but this acts as a failsafe for in-flight saves.
+        if saved is False and self._running:
+            log.error(
+                f"[{self.session_id}] STALE MONITOR (post-trade): save rejected "
+                f"(gen={self._my_generation}). Stopping to prevent further phantom orders."
+            )
+            self._running = False
+            self._stop_event.set()
+            # Flag for _run_loop to send Telegram after run_until_complete returns.
+            # Cannot call run_until_complete here (we're already inside it).
+            self._stale_abort_gen = self._my_generation
 
     def _should_stop(self) -> bool:
         """Bug #11 fix: check if stop has been requested (use in long operations)."""
@@ -736,18 +763,33 @@ class MMMMonitor:
         if not self._running:
             return False
         self._force_event.set()
+        _cleared_consecutive = False
+        _cleared_cooldown = False
         # IMP-5: A force-heartbeat from the operator confirms they want to
         # continue despite the consecutive same-direction block — clear it
         # and reset the counter so it doesn't immediately re-block.
+        # Also clear active cooldown: cooldown is designed to prevent rapid
+        # automatic re-triggering; an explicit operator force-heartbeat should
+        # not be silently blocked by it (operators use force to urgently hedge).
         with self._session_lock:
-            if self.session and self.session.get('_consecutive_dir_blocked'):
-                self.session.pop('_consecutive_dir_blocked', None)
-                self.session['_consecutive_same_dir_count'] = 0
-                self.session['_consecutive_same_dir_side'] = ''
-                log.info(
-                    f"[{self.session_id}] IMP-5: consecutive direction block and counter "
-                    f"cleared by force-heartbeat"
-                )
+            if self.session:
+                if self.session.get('_consecutive_dir_blocked'):
+                    self.session.pop('_consecutive_dir_blocked', None)
+                    self.session['_consecutive_same_dir_count'] = 0
+                    self.session['_consecutive_same_dir_side'] = ''
+                    _cleared_consecutive = True
+                if self.session.get('cooldown_active'):
+                    self.session['cooldown_active'] = False
+                    self.session['cooldown_until'] = None
+                    self.session.pop('_cooldown_block_logged', None)
+                    _cleared_cooldown = True
+        if _cleared_consecutive:
+            log.info(
+                f"[{self.session_id}] IMP-5: consecutive direction block and counter "
+                f"cleared by force-heartbeat"
+            )
+        if _cleared_cooldown:
+            log.info(f"[{self.session_id}] Force heartbeat cleared active cooldown")
         log.info(f"[{self.session_id}] ⚡ Force heartbeat requested")
         return True
 
@@ -800,9 +842,46 @@ class MMMMonitor:
                     )
                     continue
                 if fresh_session:
+                    # H-4 STALE-MONITOR GUARD: If the stored generation exceeds
+                    # this monitor's generation, a newer monitor instance has taken
+                    # over. This thread is stale — its saves are already blocked by
+                    # _save_session(). Without this guard, it would continue placing
+                    # orders on the exchange that it can NEVER persist, creating
+                    # phantom positions (untracked lots) on every heartbeat.
+                    # Fix: detect the staleness here and stop before doing anything.
+                    _stored_gen = fresh_session.get('_monitor_generation', 0)
+                    if _stored_gen > self._my_generation and self._my_generation > 0:
+                        log.error(
+                            f"[{self.session_id}] STALE MONITOR: my_gen={self._my_generation} "
+                            f"< stored_gen={_stored_gen}. Stopping to prevent phantom orders."
+                        )
+                        self._running = False
+                        # Send Telegram + WebSocket safety alert so user is notified
+                        # even if sleeping. This fires BEFORE any order is placed.
+                        try:
+                            from .mmm_telegram import alert_stale_monitor as _tg_stale
+                            self._loop.run_until_complete(_tg_stale(
+                                self.session_id,
+                                self._my_generation,
+                                _stored_gen,
+                                context='pre-heartbeat (no orders placed this cycle)',
+                            ))
+                        except Exception as _tg_err:
+                            log.warning(f"[{self.session_id}] Stale monitor Telegram failed: {_tg_err}")
+                        try:
+                            emit_safety(
+                                self.session_id, 'stale_monitor', 'critical',
+                                f'STALE MONITOR stopped: gen={self._my_generation} < stored={_stored_gen}. '
+                                f'No orders were placed this cycle.',
+                                {'my_gen': self._my_generation, 'stored_gen': _stored_gen},
+                            )
+                        except Exception:
+                            pass
+                        break
+
                     old_params = self.session.get('params', {})
                     new_params = fresh_session.get('params', {})
-                    
+
                     # Clear _save_disabled from freshly loaded session so
                     # this monitor instance can save normally.
                     fresh_session.pop('_save_disabled', None)
@@ -898,9 +977,40 @@ class MMMMonitor:
                 ).isoformat()
 
                 hb_start = time.monotonic()
+                _hb_exc = None
                 try:
                     self._loop.run_until_complete(self._heartbeat())
                 except Exception as e:
+                    _hb_exc = e
+
+                # H-4 SECONDARY GUARD follow-up: if _save_my_session flagged a stale
+                # abort during the heartbeat, send Telegram now that run_until_complete
+                # has returned (we cannot call run_until_complete from within itself).
+                if hasattr(self, '_stale_abort_gen'):
+                    _abort_gen = self._stale_abort_gen
+                    del self._stale_abort_gen
+                    try:
+                        from .mmm_telegram import alert_stale_monitor as _tg_stale2
+                        self._loop.run_until_complete(_tg_stale2(
+                            self.session_id,
+                            _abort_gen,
+                            0,
+                            context='post-trade (order placed — ghost positions may exist on exchange)',
+                        ))
+                    except Exception as _tg_err2:
+                        log.warning(f"[{self.session_id}] Post-trade stale Telegram failed: {_tg_err2}")
+                    try:
+                        emit_safety(
+                            self.session_id, 'stale_monitor_post_trade', 'critical',
+                            f'STALE MONITOR stopped AFTER trade: gen={_abort_gen}. '
+                            f'Ghost positions may exist — check exchange immediately.',
+                            {'my_gen': _abort_gen},
+                        )
+                    except Exception:
+                        pass
+
+                if _hb_exc is not None:
+                    e = _hb_exc
                     log.exception(f"Heartbeat error for {self.session_id}: {e}")
                     self.session['last_error'] = str(e)
 
@@ -1066,6 +1176,16 @@ class MMMMonitor:
         _guardian_snapshot = None
         if hasattr(self, '_guardian') and self._guardian:
             _guardian_snapshot = self._guardian.pre_beat_snapshot(session)
+            # G5: stale monitor detection — check before any trading logic
+            _g5_violation = self._guardian.check_generation_integrity(
+                session, self._my_generation
+            )
+            if _g5_violation:
+                self._guardian.handle_stale_monitor(
+                    self, self._my_generation,
+                    session.get('_monitor_generation', 0),
+                )
+                return  # handle_stale_monitor sets _running=False and _stale_abort_gen
             _beat_deadline = self._guardian.get_beat_deadline(
                 session, beat_start_mono,
             )
@@ -1112,6 +1232,23 @@ class MMMMonitor:
             await self._fill_syncer.sync(_fs_rest, session, _fs_expiry)
         except Exception as _fs_err:
             log.debug(f"[{sid}] FillSync step skipped: {_fs_err}")
+
+        # H-4: Stale estimate check — alert if any close estimate is unconfirmed
+        # for >10 min. Means fill_sync hasn't seen the fill (order may not have
+        # executed or exchange API is failing). Read-only: does not modify P&L.
+        try:
+            from .mmm_pnl_core import check_stale_estimates as _pnl_stale
+            _stale = _pnl_stale(session, max_age_minutes=10.0)
+            if _stale:
+                emit_safety(
+                    sid, 'stale_estimate', 'warning',
+                    f"{len(_stale)} unconfirmed P&L estimate(s) >10min old — "
+                    f"fill_sync may be failing or order(s) did not execute.",
+                    {'stale_orders': [e.get('order_id') for e in _stale[:5]],
+                     'oldest_age_sec': max(e.get('_age_sec', 0) for e in _stale)},
+                )
+        except Exception as _stale_err:
+            log.debug(f"[{sid}] Stale estimate check skipped: {_stale_err}")
 
         # Step 0.5: Margin Guardian — real-time margin utilization check
         margin_result = await self._check_margin_guardian()
@@ -1569,7 +1706,12 @@ class MMMMonitor:
             await self._process_harvest()
 
         # Check if both sides fully closed
-        if check_both_sides_closed(session):
+        _both_closed = check_both_sides_closed(session)
+        if not _both_closed:
+            # Clear alert flag when new positions have been entered so the
+            # next close cycle sends a fresh Telegram notification.
+            session.pop('_both_sides_closed_alerted', None)
+        if _both_closed:
             # P1-C fix: clear ATM wind-down flag so a re-initialized round starts clean.
             # When the ATM trigger fired it auto-set wind_down_enabled=True and stored
             # the original value in _atm_prev_wind_down_enabled.  We pop the trigger
@@ -1587,6 +1729,47 @@ class MMMMonitor:
                         session, self.executor,
                         'both_sides_closed — options expired worthless'
                     )
+            # ── USER AWAKE HOURS GUARD ───────────────────────────────────────
+            # 8AM–11PM IST: do NOT auto-stop. The user is awake and near the
+            # computer. Send a Telegram alert once and keep the session alive
+            # so the user can manually decide (re-enter positions or stop).
+            # Outside these hours (11PM–8AM IST): stop as before.
+            if _is_user_awake_hours():
+                if not session.get('_both_sides_closed_alerted'):
+                    session['_both_sides_closed_alerted'] = True
+                    _bsc_pnl = (session.get('unrealized_pnl', 0)
+                                + session.get('realized_pnl', 0)
+                                - session.get('total_fees', 0))
+                    log.warning(
+                        f"[{sid}] Both sides fully closed during awake hours "
+                        f"(8AM-11PM IST) — Telegram alert sent, session kept alive."
+                    )
+                    log_activity(
+                        'both_sides_closed_awake',
+                        '🔔 Both sides at 0 lots (awake hours) — session kept running. '
+                        'Manual action required.',
+                        sid, 'warning',
+                        {'pnl': round(_bsc_pnl, 4)},
+                    )
+                    try:
+                        from .mmm_telegram import alert_both_sides_closed_awake as _tg_bsc
+                        asyncio.ensure_future(_tg_bsc(sid, _bsc_pnl))
+                    except Exception:
+                        pass
+                # Emit heartbeat so dashboard stays live; save state; continue.
+                try:
+                    current_pnl = (session.get('unrealized_pnl', 0)
+                                   + session.get('realized_pnl', 0)
+                                   - session.get('total_fees', 0))
+                    update_peak_pnl(session, current_pnl)
+                    self._emit_heartbeat_data(ce_now, pe_now)
+                    self._save_my_session(session)
+                    latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                    self._health.record_beat('ok', latency_ms=latency_ms)
+                except Exception as _cleanup_err:
+                    log.error(f"[{sid}] Heartbeat after both-sides-closed (awake) failed: {_cleanup_err}")
+                return
+            # Off-hours: stop as before
             self.stop('Both sides fully closed — strategy complete!')
             # ── SESSION EVENT: lifecycle completed ────────────────────────
             try:
@@ -1647,13 +1830,15 @@ class MMMMonitor:
                         pass
                     break
 
-                # ── FALLBACK: PAUSE (only on first detection) ──
+                # ── FALLBACK: PAUSE (awake hours) or STOP (off-hours) — only on first detection ──
                 if not session.get(_ocs_flag):
                     session[_ocs_flag] = True
+                    _ocs_awake = _is_user_awake_hours()
+                    _ocs_action = 'PAUSED' if _ocs_awake else 'STOPPED (off-hours auto-stop)'
                     _ocs_msg = (
                         f'{_cs.upper()} fully closed (all positions at or below threshold) '
                         f'but {_os.upper()} has {_os_lots} lot(s) still open — '
-                        f'one-sided exposure detected. Session PAUSED. '
+                        f'one-sided exposure detected. Session {_ocs_action}. '
                         f'Action required: close {_os.upper()} positions or '
                         f're-enter {_cs.upper()} at a new strike.'
                     )
@@ -1661,7 +1846,7 @@ class MMMMonitor:
                     log_activity(
                         'safety_block',
                         f'⛔ ONE-SIDE CLOSE: {_cs.upper()}=0 lots, '
-                        f'{_os.upper()}={_os_lots} lots open — unhedged. PAUSED.',
+                        f'{_os.upper()}={_os_lots} lots open — unhedged. {_ocs_action}.',
                         sid, 'error',
                         {'closed_side': _cs, 'open_side': _os, 'open_lots': _os_lots},
                     )
@@ -1669,7 +1854,62 @@ class MMMMonitor:
                         sid, 'one_side_closed', 'critical', _ocs_msg,
                         {'closed_side': _cs, 'open_side': _os, 'open_lots': _os_lots},
                     )
-                    self.pause(f'{_cs.upper()} fully closed — {_os.upper()} unhedged')
+                    if _ocs_awake:
+                        # Awake hours: pause, set AWAITING_USER_ACTION flag, fire Telegram.
+                        _ocs_pnl = (session.get('unrealized_pnl', 0)
+                                    + session.get('realized_pnl', 0)
+                                    - session.get('total_fees', 0))
+                        _os_strike = session.get(_os, {}).get('active_strike', 0)
+                        _IST = timezone(timedelta(hours=5, minutes=30))
+                        _detected_ist = datetime.now(_IST).strftime('%d %b %Y, %H:%M IST')
+
+                        # Persist AWAITING_USER_ACTION flags so WebUI can show banner
+                        session['_awaiting_user_action'] = True
+                        session['_awaiting_user_action_reason'] = (
+                            f'{_cs.upper()} fully closed — '
+                            f'{_os.upper()} unhedged ({_os_lots} lots @ {_os_strike})'
+                        )
+                        session['_awaiting_user_action_details'] = {
+                            'closed_side': _cs,
+                            'open_side': _os,
+                            'open_lots': _os_lots,
+                            'open_strike': _os_strike,
+                            'current_pnl': round(_ocs_pnl, 2),
+                            'detected_at_ist': _detected_ist,
+                            'session_id': sid,
+                        }
+
+                        # Telegram alert — 30-minute wall-clock cooldown
+                        _tg_last = session.get('_ocs_telegram_sent_at', 0)
+                        if time.time() - _tg_last > 1800:
+                            session['_ocs_telegram_sent_at'] = time.time()
+                            try:
+                                from .mmm_telegram import alert_active_hours_unhedged_pause as _tg_ahup
+                                asyncio.ensure_future(
+                                    _tg_ahup(sid, _cs, _os, _os_lots, _ocs_pnl,
+                                              session['_awaiting_user_action_details'])
+                                )
+                            except Exception:
+                                pass
+
+                        self.pause(f'{_cs.upper()} fully closed — {_os.upper()} unhedged')
+                    else:
+                        # Off-hours (11PM–8AM IST): stop the session — user is asleep
+                        # and unhedged exposure with no one monitoring is unsafe.
+                        _ocs_pnl_v = (session.get('unrealized_pnl', 0)
+                                      + session.get('realized_pnl', 0)
+                                      - session.get('total_fees', 0))
+                        try:
+                            from .mmm_telegram import alert_offhours_unhedged_stop as _tg_ohs
+                            asyncio.ensure_future(
+                                _tg_ohs(sid, _cs, _os, _os_lots, _ocs_pnl_v)
+                            )
+                        except Exception:
+                            pass
+                        self.stop(
+                            f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
+                            f'(off-hours auto-stop)'
+                        )
                     try:
                         _ocs_pnl = (session.get('unrealized_pnl', 0)
                                     + session.get('realized_pnl', 0)
@@ -1680,13 +1920,22 @@ class MMMMonitor:
                         latency_ms = (time.monotonic() - beat_start_mono) * 1000
                         self._health.record_beat('ok', latency_ms=latency_ms)
                     except Exception as _ocs_err:
-                        log.error(f"[{sid}] Cleanup after one-side-close pause failed: {_ocs_err}")
+                        log.error(f"[{sid}] Cleanup after one-side-close action failed: {_ocs_err}")
                     return
                 # Flag already set (user resumed or subsequent heartbeat) — let run continue
                 break
             else:
-                # Clear flag when the closed side has regained lots
+                # Clear flag when the closed side has regained lots.
+                # Only clear AWAITING_USER_ACTION if THIS side was the one flagged —
+                # prevents the healthy side's else-branch from wiping flags that
+                # belong to the still-closed OTHER side.
+                _was_flagged = session.get(_ocs_flag)
                 session.pop(_ocs_flag, None)
+                if _was_flagged:
+                    session.pop('_awaiting_user_action', None)
+                    session.pop('_awaiting_user_action_reason', None)
+                    session.pop('_awaiting_user_action_details', None)
+                    session.pop('_ocs_telegram_sent_at', None)
         # ── END ONE-SIDE CLOSE GUARD + AUTO-REPLENISH ────────────────────────
 
         # NOTE: Proactive wind-down (buying back on every heartbeat) was removed.
@@ -1722,8 +1971,9 @@ class MMMMonitor:
                         sid, 'error',
                         {'fetch_errors': session.get('_pnl_fetch_errors', 0)})
             self.pause('P&L calculation incomplete — data unreliable')
-            # H-3 fix: update peak P&L even when pausing for incomplete data
-            current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+            # H-1: use single canonical formula for peak tracking
+            from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
+            current_pnl = _pnl_total(session)
             update_peak_pnl(session, current_pnl)
             self._emit_heartbeat_data(ce_now, pe_now)
             self._save_my_session(session)
@@ -2151,7 +2401,15 @@ class MMMMonitor:
 
         # Step 5: Cooldown check (§14.3)
         if not _skip_to_pnl and is_cooldown_active(session):
-            # Cooldown status shown in live heartbeat summary
+            # Log once per cooldown activation so the activity log shows WHY
+            # force-heartbeat or a normal beat produced no hedge.
+            if not session.get('_cooldown_block_logged'):
+                log_activity('cooldown_blocking',
+                             f'⏰ Cooldown active — trigger evaluation skipped '
+                             f'(until {str(session.get("cooldown_until", "?"))[:19]})',
+                             sid, 'info',
+                             {'cooldown_until': session.get('cooldown_until')})
+                session['_cooldown_block_logged'] = True
             _skip_to_pnl = True
 
         # Step 5.3: Adaptive Tuning Engine — parameter optimization per market regime
@@ -3167,19 +3425,29 @@ class MMMMonitor:
                 # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
                 _od = result.get('order_details') or {}
                 _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-                if _commission:
-                    session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
-                session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
 
-                # BUG-1 FIX: Stamp _estimated_pnl_booked on freshly-closed positions
-                # so FillSyncer computes a correction (not a full re-book).
-                # Also stamp close_order_id so FillSyncer can match by order ID.
+                # ── P&L via ledger (single source of truth) ──────────
                 _wd_close_oid = str(result.get('order_id', '') or '')
+                from .mmm_pnl_core import record_close as _pnl_record
+                _pnl_record(
+                    session=session,
+                    order_id=_wd_close_oid,
+                    symbol=result.get('symbol', ''),
+                    option_side=aggressor,
+                    strike=strike_val,
+                    lots=int(actual_filled),
+                    entry_premium=float(avg_entry),
+                    close_premium=float(close_price),
+                    commission=abs(float(_commission)) if _commission else 0.0,
+                    source='wind_down',
+                )
+                # ── END P&L via ledger ───────────────────────────────
+
+                # Stamp close_order_id on positions for FillSyncer matching
                 _wd_close_coid = str(result.get('client_order_id', '') or '')
                 for _wp in side_state.get('positions', []):
                     if (_wp.get('status') == 'closed'
                             and _wp.get('_estimated_pnl_booked') is None):
-                        # Stamp order ID for FillSyncer matching
                         if _wd_close_oid:
                             _wp['close_order_id'] = _wd_close_oid
                         if _wd_close_coid:
@@ -3522,6 +3790,16 @@ class MMMMonitor:
             skip, skip_reason = should_skip_reversal_adjustment(session, adj_pnl)
             if skip:
                 log.info(f"[{sid}] {skip_reason}")
+                log_activity('reversal_skip',
+                             f'↩️ Reversal skip: {aggressor.upper()} triggered but '
+                             f'{session.get("last_aggressor", "?")} adjustments still profitable '
+                             f'(adj_pnl=${adj_pnl:.2f}) — no CE/PE hedge placed',
+                             sid, 'info',
+                             {
+                                 'aggressor': aggressor.upper(),
+                                 'prev_aggressor': session.get('last_aggressor', ''),
+                                 'adj_pnl': adj_pnl,
+                             })
                 emit_reversal(
                     sid, session.get('last_aggressor', ''),
                     aggressor.upper(), adj_pnl, 'skip_profitable',
@@ -4388,11 +4666,13 @@ class MMMMonitor:
         if result.get('success'):
             fill_price = result.get('fill_price', 0)
 
-            # Record exchange commission from strike shift sell
+            # Record exchange commission via ledger (CRIT-1 fix)
             _od = result.get('order_details') or {}
             _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
             if _commission:
-                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+                from .mmm_pnl_core import record_fee as _pnl_fee
+                _pnl_fee(session, _commission, 'sell_adjustment',
+                         order_id=str(result.get('order_id', '')), side=side)
 
             # AUDIT BUG-2 FIX: Use actual filled size, not requested lots.
             # smart_execute() can return partial fills; recording requested
@@ -5055,11 +5335,13 @@ class MMMMonitor:
 
         ce_fill = ce_result.get('fill_price', 0)
 
-        # Record exchange commission from scale-up CE sell
+        # Record exchange commission via ledger (CRIT-1 fix)
         _od = ce_result.get('order_details') or {}
         _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
         if _commission:
-            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+            from .mmm_pnl_core import record_fee as _pnl_fee
+            _pnl_fee(session, _commission, 'sell_scale_up',
+                     order_id=str(ce_result.get('order_id', '')), side='ce')
 
         # Step 4: Execute PE sell
         try:
@@ -5095,12 +5377,14 @@ class MMMMonitor:
 
         pe_fill = pe_result.get('fill_price', 0) if pe_result.get('success') else 0
 
-        # Record exchange commission from scale-up PE sell
+        # Record exchange commission via ledger (CRIT-1 fix)
         if pe_result.get('success'):
             _od = pe_result.get('order_details') or {}
             _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
             if _commission:
-                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+                from .mmm_pnl_core import record_fee as _pnl_fee
+                _pnl_fee(session, _commission, 'sell_scale_up',
+                         order_id=str(pe_result.get('order_id', '')), side='pe')
 
         # Step 5: Register positions in the unified ledger
         from .mmm_constants import LOT_SIZE_BTC, strike_key as _sk
@@ -5428,11 +5712,13 @@ class MMMMonitor:
         side_state.setdefault('trigger_snapshot', {})[_strike_key(strike)] = fill_price
         session[closed_side] = side_state
 
-        # Record commission
+        # Record commission via ledger (CRIT-1 fix)
         _od = result.get('order_details') or {}
         _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
         if _commission:
-            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+            from .mmm_pnl_core import record_fee as _pnl_fee
+            _pnl_fee(session, _commission, 'sell_replenish',
+                     order_id=str(result.get('order_id', '')), side=closed_side)
 
         # Update premium collected
         premium_collected = fill_price * filled_lots * LOT_SIZE_BTC
@@ -6283,11 +6569,22 @@ class MMMMonitor:
                         # Record exchange commission from auto-close active
                         _od = result.get('order_details') or {}
                         _comm = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-                        if _comm:
-                            session['total_fees'] = session.get('total_fees', 0) + abs(_comm)
-                        session['realized_pnl'] = (
-                            session.get('realized_pnl', 0) + pnl
+                        # ── P&L via ledger ────────────────────────────
+                        _ac_oid = str(result.get('order_id', '') or '')
+                        from .mmm_pnl_core import record_close as _pnl_ac_rec
+                        _pnl_ac_rec(
+                            session=session,
+                            order_id=_ac_oid,
+                            symbol=symbol,
+                            option_side=side_key,
+                            strike=active_strike,
+                            lots=int(active_lots),
+                            entry_premium=float(avg_entry),
+                            close_premium=float(close_price),
+                            commission=abs(float(_comm)) if _comm else 0.0,
+                            source='auto_close_active',
                         )
+                        # ── END P&L via ledger ────────────────────────
                         log.info(
                             f"[{sid}] Closed {active_lots} active "
                             f"{side_key.upper()} @ {active_strike}, "
@@ -6354,11 +6651,22 @@ class MMMMonitor:
                             # Record exchange commission from auto-close frozen
                             _od = result.get('order_details') or {}
                             _comm = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-                            if _comm:
-                                session['total_fees'] = session.get('total_fees', 0) + abs(_comm)
-                            session['realized_pnl'] = (
-                                session.get('realized_pnl', 0) + pnl
+                            # ── P&L via ledger ────────────────────────
+                            _fz_oid = str(result.get('order_id', '') or '')
+                            from .mmm_pnl_core import record_close as _pnl_fz_rec
+                            _pnl_fz_rec(
+                                session=session,
+                                order_id=_fz_oid,
+                                symbol=symbol,
+                                option_side=side_key,
+                                strike=frozen_strike,
+                                lots=int(frozen_lots),
+                                entry_premium=float(frozen_entry),
+                                close_premium=float(close_price),
+                                commission=abs(float(_comm)) if _comm else 0.0,
+                                source='auto_close_frozen',
                             )
+                            # ── END P&L via ledger ────────────────────
                             log.info(
                                 f"[{sid}] Closed {frozen_lots} frozen "
                                 f"{side_key.upper()} @ {frozen_strike}, P&L: {pnl:.2f}"
@@ -6707,41 +7015,57 @@ class MMMMonitor:
                 pos_strike = pos.get('strike', 0)
                 if abs(pos_strike - strike) < strike_tol:
                     pos_lots = pos.get('lots', 0)
-                    entry = float(pos.get('entry_premium', 0) or 0)
-                    pos_pnl = (entry - close_price) * pos_lots * _LOT_SIZE_BTC
-                    realized_gain += pos_pnl
                     removed_lots += pos_lots
                     pos['status'] = 'closed'
                     pos['closed_at'] = now
                     pos['close_reason'] = f'exchange_reconciliation:{reason}'
                     pos['close_price'] = round(close_price, 6)
-                    # Mark fill-confirmed so FillSyncer never double-books this.
-                    # Reconciliation already booked the P&L at close_price;
-                    # if a real exchange fill for this symbol arrives later,
-                    # fill sync will skip this position entirely.
-                    pos['_fill_confirmed'] = True
-                    pos['_estimated_pnl_booked'] = round(pos_pnl, 8)
-                    pos['_estimated_commission_booked'] = 0.0
+                    # DO NOT set _fill_confirmed — let FillSyncer process any
+                    # actual fill that arrives later and book correct P&L.
+                    # DO NOT book estimated P&L — reconciliation is READ-ONLY.
 
         if removed_lots > 0:
             recompute_side_lots(side_state)
-            # Book realized P&L into session
-            self.session['realized_pnl'] = round(
-                self.session.get('realized_pnl', 0) + realized_gain, 8)
-            log.warning(
-                f"[{self.session_id}] AUTO-CORRECT: Removed {removed_lots} phantom "
-                f"{side_state.get('side', '?').upper()} lots @ {strike} "
-                f"(reason: {reason}, exchange=0, close_price={close_price:.4f}, "
-                f"pnl_booked={realized_gain:+.6f} BTC)"
+            # ── PnlCore: flag discrepancy, do NOT book P&L ──────────
+            # Reconciliation is read-only. Human reviews and uses
+            # manual_close endpoint to record actual close price + P&L.
+            from .mmm_pnl_core import flag_discrepancy as _pnl_flag
+            _side_label = side_state.get('side', '?').upper()
+            _pnl_flag(
+                session=self.session,
+                symbol=f'{_side_label}-BTC-{int(strike)}',
+                option_side=side_state.get('side', ''),
+                strike=strike,
+                session_lots=removed_lots,
+                exchange_lots=0,
+                reason=reason,
             )
+            log.warning(
+                f"[{self.session_id}] RECON-FLAG: {removed_lots} phantom "
+                f"{_side_label} lots @ {strike} removed from session "
+                f"(reason: {reason}, exchange=0). P&L NOT booked — "
+                f"awaiting fill_sync or manual close."
+            )
+            # Emit safety alert for human review
+            try:
+                from .mmm_websocket import emit_safety
+                emit_safety(self.session_id, 'POSITION_MISSING_FROM_EXCHANGE', {
+                    'side': _side_label,
+                    'strike': strike,
+                    'lots': removed_lots,
+                    'reason': reason,
+                    'action': 'HUMAN_REVIEW — use manual close to book P&L',
+                })
+            except Exception:
+                pass
             log_activity('reconciliation_autocorrect',
-                f'🔧 Auto-corrected: removed {removed_lots} phantom '
-                f'{side_state.get("side", "?").upper()} lots @ {strike} '
-                f'(exchange shows 0, P&L booked: {realized_gain:+.4f} BTC)',
+                f'RECON-FLAG: removed {removed_lots} phantom '
+                f'{_side_label} lots @ {strike} '
+                f'(exchange shows 0, P&L NOT booked — needs manual close)',
                 self.session_id, 'warning',
                 {'strike': strike, 'removed_lots': removed_lots, 'reason': reason,
                  'close_price': round(close_price, 6),
-                 'realized_pnl_booked': round(realized_gain, 8)})
+                 'pnl_action': 'PENDING_MANUAL_CLOSE'})
 
     def _auto_correct_lot_mismatch(
         self, side_state: Dict, strike: float, target_lots: int, reason: str
@@ -7342,6 +7666,32 @@ class MMMMonitor:
                             )
                             continue  # Do NOT add to discrepancies this beat
                         # ── end grace period ─────────────────────────────────────────────
+
+                        # ── Known external position suppression ───────────────────────
+                        # If this untracked position was already classified as external
+                        # (manual trade / other algo) in a prior reconciliation cycle,
+                        # suppress repeat warnings.  Re-alert only if the lot count
+                        # changes (e.g., external trade partially closed or added to).
+                        _ext_key = f"{side_key.upper()}@{int(ex_strike)}"
+                        _known_ext = session.setdefault('_known_external_positions', {})
+                        _last_size = _known_ext.get(_ext_key)
+                        if _last_size is not None and _last_size == ex_size:
+                            continue  # already known, size unchanged — suppress noise
+                        # First detection or size changed — record and warn once.
+                        # If size INCREASED (growing ghost positions), send Telegram so
+                        # user is alerted even if sleeping. Stale monitors produce this
+                        # pattern: untracked lot count grows every ~5min heartbeat.
+                        _size_grew = (_last_size is not None and ex_size > _last_size)
+                        _known_ext[_ext_key] = ex_size
+                        if _size_grew or _last_size is None:
+                            try:
+                                from .mmm_telegram import alert_ghost_positions_growing as _tg_ghost
+                                asyncio.ensure_future(_tg_ghost(
+                                    sid, side_key.upper(), ex_strike, ex_size,
+                                ))
+                            except Exception as _ge:
+                                log.warning(f"[{sid}] Ghost position Telegram failed: {_ge}")
+                        # ── end known external suppression ────────────────────────────
 
                         discrepancies.append({
                             'side': side_key.upper(),
@@ -8779,6 +9129,8 @@ class MMMMonitor:
             breakeven_data=session.get('_breakeven_result'),
             gamma_data=session.get('_gamma_result'),
             data_confidence=session.get('_data_confidence'),
+            awaiting_user_action=session.get('_awaiting_user_action', False),
+            awaiting_user_action_details=session.get('_awaiting_user_action_details'),
         )
 
         # Also emit as standalone breakeven event for subscribers
@@ -8820,6 +9172,31 @@ def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
     if existing:
         log.warning(f"Monitor already exists for {session_id}, stopping old one")
         existing.stop('Replaced by new monitor')  # Outside lock — can take time
+        # ROOT-CAUSE FIX: Wait for the old thread to actually finish before
+        # starting the new one. Without this, the old thread can still be
+        # mid-heartbeat when the new monitor starts. The new monitor increments
+        # _monitor_generation, but the old thread reloads the session each cycle
+        # (clearing _save_disabled) — so it keeps trading and placing phantom
+        # orders whose saves are blocked. Joining here guarantees the old thread
+        # is dead before the new monitor's first heartbeat.
+        # Timeout=15s: a heartbeat in-flight takes at most ~60-120s for order fill,
+        # but stop() sets _stop_event which interrupts the wait loop within 1 cycle.
+        # If the thread is stuck beyond 15s, proceed anyway — the generation guard
+        # (primary + secondary) is the final backstop.
+        thread = existing._thread
+        if thread is not None and thread.is_alive():
+            log.warning(
+                f"[{session_id}] Waiting for old monitor thread to exit "
+                f"(gen={existing._my_generation})..."
+            )
+            thread.join(timeout=15)
+            if thread.is_alive():
+                log.error(
+                    f"[{session_id}] Old monitor thread did NOT exit within 15s "
+                    f"(gen={existing._my_generation}). Generation guard is the backstop."
+                )
+            else:
+                log.info(f"[{session_id}] Old monitor thread exited cleanly.")
 
     monitor = MMMMonitor(session_id, session)
 
@@ -8933,7 +9310,8 @@ def compute_live_pnl(session_id: str) -> Optional[Dict[str, float]]:
             def fetch_live(strike, option_type):
                 return cache.get((float(strike), option_type))
 
-        return monitor._engine.compute_total_pnl(session_snap, fetch_live)
+        from .mmm_pnl_core import get_pnl as _pnl_get
+        return _pnl_get(session_snap, fetch_live)
     except Exception:
         return None
 
@@ -8960,7 +9338,7 @@ def _save_session(session: Dict, my_generation: int = 0):
             f"[{session.get('session_id')}] _save_session blocked: "
             f"monitor was stopped (save_disabled flag set)"
         )
-        return
+        return False
     try:
         storage = get_storage()
         sid = session.get('session_id')
@@ -8975,7 +9353,7 @@ def _save_session(session: Dict, my_generation: int = 0):
                             f"[{sid}] _save_session blocked: stale monitor "
                             f"gen={my_generation} < stored_gen={stored_gen}"
                         )
-                        return
+                        return False  # Signal to caller that save was rejected
                 if 'params' in stored:
                     session['params'] = stored['params']
                     # BUG FIX (mmm01mar26-1): Re-apply session-level auto-trigger overrides
@@ -9056,5 +9434,6 @@ def _save_session(session: Dict, my_generation: int = 0):
                                 f"(set-active-strike during in-flight heartbeat)"
                             )
         storage.save_session(session)
+        return True
     except Exception as e:
         log.error(f"Failed to save session: {e}")

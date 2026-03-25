@@ -86,7 +86,7 @@ def _leg_to_symbol(leg: dict) -> str:
     if expiry_date and len(expiry_date) >= 10:
         parts = expiry_date.split('-')
         # ddmmyy: day(2)+month(2)+year(2 last digits) — Delta Exchange DDMMYY format
-        ddmmyy = parts[2] + parts[1] + parts[0][2:]
+        ddmmyy = parts[2].zfill(2) + parts[1].zfill(2) + parts[0][2:]
     else:
         log.error(f"patience_executor: invalid expiry_date '{expiry_date}' for leg {leg.get('leg_id')}")
         ddmmyy = 'XXXXXX'
@@ -236,6 +236,7 @@ def execute_card(card_id: str):
         db.log_event(card_id, None, 'PAUSE', 'Guardian signal is STOP')
         _notify(f"Patience: [{card_name}] blocked — Guardian signal is STOP.")
         log.warning(f"patience_executor: [{card_name}] blocked by Guardian")
+        _release_execution_lock(card_id)
         return
 
     # ── Pre-fire check 2: Price feed ──────────────────────────────────
@@ -244,20 +245,24 @@ def execute_card(card_id: str):
         db.update_card(card_id, status='PAUSED')
         db.log_event(card_id, None, 'PAUSE', 'BTC price feed unavailable')
         _notify(f"Patience: [{card_name}] PAUSED — BTC price feed unavailable.")
+        _release_execution_lock(card_id)
         return
 
     # ── Pre-fire check 3: Resolve relative strikes ────────────────────
     try:
         loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
             resolved_legs = loop.run_until_complete(_resolve_strikes(legs, spot))
         finally:
             loop.close()
+            # Do NOT call asyncio.set_event_loop(loop) — the loop is closed and
+            # setting it would leave the thread's event loop reference pointing at
+            # a closed object, breaking any subsequent asyncio usage in this thread.
     except Exception as e:
         db.update_card(card_id, status='PAUSED')
         db.log_event(card_id, None, 'PAUSE', f'Strike resolution failed: {e}')
         _notify(f"Patience: [{card_name}] PAUSED — Strike resolution error: {e}")
+        _release_execution_lock(card_id)
         return
 
     # ── Pre-fire check 4: Portfolio Greeks ───────────────────────────
@@ -273,6 +278,7 @@ def execute_card(card_id: str):
             f"Patience: [{card_name}] would push portfolio delta to "
             f"{total_delta:+.0f}. Paused for review."
         )
+        _release_execution_lock(card_id)
         return
 
     # ── Compute execution schedule (GCD or flat single-round) ─────────
@@ -284,13 +290,14 @@ def execute_card(card_id: str):
             db.update_card(card_id, status='PAUSED')
             db.log_event(card_id, None, 'PAUSE', f'GCD schedule error: {e}')
             _notify(f"Patience: [{card_name}] PAUSED — GCD error: {e}")
+            _release_execution_lock(card_id)
             return
     else:
         # Flat: execute all lots in a single round, no GCD splitting
         schedule = {
             'gcd': 1,
             'total_rounds': 1,
-            'per_round': [{**leg, 'lots_this_round': leg['lots']} for leg in resolved_legs],
+            'per_round': [{**leg, 'lots_this_round': leg.get('lots', 1)} for leg in resolved_legs],
         }
         log.info(f"patience_executor: [{card_name}] GCD disabled — flat single-round execution")
 
@@ -344,7 +351,7 @@ def execute_card(card_id: str):
                 # Update leg status in DB — only write fill_price if it's valid
                 if leg_id:
                     leg_update = {
-                        'status': 'EXECUTING',
+                        'status': 'ROUND_FILLED',
                         'executed_symbol': sym,
                         'order_id': order_id,
                     }
@@ -421,9 +428,10 @@ def _on_card_completed(card_id: str, card_name: str, resolved_legs: list):
                     log.error(
                         f"patience_executor: [{card_name}] leg {leg_id} "
                         f"({leg_data.get('executed_symbol', 'unknown')}) "
-                        f"marked FILLED but fill_price is NULL — check exchange order "
-                        f"{leg_data.get('order_id', 'unknown')}"
+                        f"has NULL fill_price — NOT marking FILLED, leaving in ROUND_FILLED for manual review. "
+                        f"Check exchange order {leg_data.get('order_id', 'unknown')}"
                     )
+                    continue  # skip — don't mark FILLED without a fill price
                 db.update_leg(
                     leg_id,
                     status='FILLED',
@@ -449,7 +457,8 @@ def _on_card_completed(card_id: str, card_name: str, resolved_legs: list):
                     fill = float(leg_data.get('fill_price') or 0)
                     lots = int(leg_data.get('lots') or 0)
                     sign = 1 if leg_data.get('direction') == 'SELL' else -1
-                    entry_premium += sign * fill * lots
+                    # Apply 0.001 BTC multiplier (1 lot = 0.001 BTC)
+                    entry_premium += sign * fill * lots * 0.001
         if not db.get_performance_for_card(card_id):
             db.save_performance({
                 'card_id':          card_id,
@@ -499,7 +508,7 @@ def _auto_group(card_id: str, card_name: str, resolved_legs: list) -> Optional[s
         expiry_date = resolved_legs[0].get('expiry_date', '') if resolved_legs else ''
         if expiry_date:  # 'YYYY-MM-DD' → 'DDMMYY' (e.g. 2026-03-17 → '170326')
             parts = expiry_date.split('-')
-            expiry_key = parts[2] + parts[1] + parts[0][2:] if len(parts) == 3 else 'unknown'
+            expiry_key = parts[2].zfill(2) + parts[1].zfill(2) + parts[0][2:] if len(parts) == 3 else 'unknown'
         else:
             expiry_key = 'unknown'
 
@@ -519,7 +528,7 @@ def _auto_group(card_id: str, card_name: str, resolved_legs: list) -> Optional[s
                 leg_expiry_date = leg.get('expiry_date', expiry_date)
                 if leg_expiry_date:
                     leg_parts = leg_expiry_date.split('-')
-                    leg_expiry_key = leg_parts[2] + leg_parts[1] + leg_parts[0][2:] if len(leg_parts) == 3 else expiry_key
+                    leg_expiry_key = leg_parts[2].zfill(2) + leg_parts[1].zfill(2) + leg_parts[0][2:] if len(leg_parts) == 3 else expiry_key
                 else:
                     leg_expiry_key = expiry_key
                 try:

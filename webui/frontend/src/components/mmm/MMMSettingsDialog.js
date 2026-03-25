@@ -217,6 +217,17 @@ const PARAM_GROUPS = {
       'lot_velocity_window_mins',
     ],
   },
+  consecutiveDir: {
+    title: '↕️ Consecutive Direction Limiter',
+    color: '#ef5350',
+    blurb: 'Prevents runaway selling in one direction. After N consecutive same-direction adjustments the algo caps lot size; after M it blocks entirely. The block auto-clears after a configurable timeout — no manual force-heartbeat needed.',
+    params: [
+      'consecutive_dir_limit',
+      'consecutive_dir_lot_cap_pct',
+      'consecutive_dir_block_after',
+      'consecutive_dir_auto_resume_mins',
+    ],
+  },
   closeAt5Watcher: {
     title: '⚡ Close-at-5 Watcher',
     color: '#4caf50',
@@ -449,6 +460,11 @@ const PARAM_TOOLTIPS = {
   lot_velocity_enabled: 'Master switch for the lot velocity limiter. When ON, the algo counts how many lots have been sold in the rolling window and blocks further adjustments once the limit is reached. When OFF, no velocity check is performed — the algo can sell unlimited lots in any time period.',
   lot_velocity_limit: 'Maximum lots that can be sold across both CE and PE sides within the rolling window. When this count is reached, adjustments are blocked until enough time passes that older sales fall outside the window. OPERATOR (manual) injections are excluded from the count. Default 30.',
   lot_velocity_window_mins: 'Rolling window in minutes for the velocity count. Lots sold more than this many minutes ago no longer count towards the limit. Smaller window = more responsive but allows short bursts. Default 30 minutes.',
+  // Consecutive Direction Limiter
+  consecutive_dir_limit: 'After this many consecutive same-direction adjustments (e.g. CE aggressor 3 times in a row), lot size is capped at consecutive_dir_lot_cap_pct × initial_lots. Prevents explosive accumulation during sustained trends. Default 3.',
+  consecutive_dir_lot_cap_pct: 'Lot cap fraction applied once consecutive_dir_limit is reached. 0.25 = cap at 25% of initial_lots. Example: initial_lots=10 → max 2 lots per adjustment while the streak continues. Default 0.25.',
+  consecutive_dir_block_after: 'After this many consecutive same-direction adjustments, all further adjustments in that direction are blocked until the auto-resume timeout elapses (or a manual force-heartbeat). The counter resets automatically when the direction changes. Default 5.',
+  consecutive_dir_auto_resume_mins: 'Minutes before the consecutive-direction block auto-clears. After this timeout the counter resets and the algo resumes normally — no manual force-heartbeat needed. Set to 0 to require manual intervention (original behavior). Default 10.',
   // Breakeven Engine
   breakeven_control_enabled: 'Enable real-time breakeven band tracking and defensive aggression. When enabled, the algo calculates where spot would make the portfolio unprofitable and boosts hedging as spot approaches that boundary. Non-directional — applies to any triggered adjustment. Safe to enable: defaults to 1x (no change) until spot enters Warning zone.',
   breakeven_warning_pct: 'Distance from nearest breakeven (as % of spot) that triggers Warning zone. At 2% with BTC at $87k, Warning fires when spot is within ~$1,740 of breakeven. Multiplier ramps from 1.0× to 1.3×. Must be greater than Danger threshold.',
@@ -1008,7 +1024,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                 onChange={(e) => handleChange(paramName, e.target.value, type)}
                 size="small"
                 error={Boolean(error)}
-                inputProps={{ min: info.min, max: info.max, step: type === 'int' ? 1 : 0.01 }}
+                inputProps={{ min: info.min, max: info.max, step: (type === 'int' || Number.isInteger(Number(value))) ? 1 : 0.01 }}
                 sx={{
                   width: 90,
                   '& .MuiOutlinedInput-root': {

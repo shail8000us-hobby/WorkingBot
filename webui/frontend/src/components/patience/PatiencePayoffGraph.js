@@ -18,7 +18,7 @@ function parseExpiryDate(expiryStr) {
   const year = parseInt(parts[0]);
   const month = parseInt(parts[1]) - 1;
   const day = parseInt(parts[2]);
-  return new Date(Date.UTC(year, month, day, 12, 0, 0));
+  return new Date(Date.UTC(year, month, day, 0, 0, 0));
 }
 
 function calculateDaysToExpiry(expiryDate) {

@@ -53,7 +53,7 @@ def decide_adjustment(
     Returns:
         Decision constant (DECISION_*)
     """
-    if not cycle or not call_threatened and not put_threatened:
+    if not cycle or (not call_threatened and not put_threatened):
         return DECISION_NO_ACTION
 
     params = session.get('params', {})
@@ -159,7 +159,7 @@ def create_adjustment_event(
     §9.4 format.
     """
     return {
-        'event_id': f"adj_{int(time.time())}",
+        'event_id': f"adj_{time.time():.6f}",
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'type': adj_type,
         'trigger': trigger,

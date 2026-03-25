@@ -1,0 +1,56 @@
+[
+  {
+    "type": "session_created",
+    "label": "Session Created",
+    "message": "Session ssdh_220326_bc79ac created",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "info",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:16.313400+00:00"
+  },
+  {
+    "type": "entry_starting",
+    "label": "Starting Entry",
+    "message": "Placing 4 legs in parallel",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "progress",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:16.400759+00:00"
+  },
+  {
+    "type": "entry_failed",
+    "label": "Entry Failed",
+    "message": "Entry failed (4/4 legs): C-BTC-68500-270326: no quotes for sell; P-BTC-68500-270326: no quotes for sell; C-BTC-71500-270326: no quotes for buy; P-BTC-65500-270326: no quotes for buy",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "error",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:20.987853+00:00"
+  },
+  {
+    "type": "entry_rollback",
+    "label": "Rolling Back Entry",
+    "message": "Rolling back 0 filled leg(s)",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "warning",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:20.994839+00:00"
+  },
+  {
+    "type": "entry_rollback_ok",
+    "label": "Entry Rollback Complete",
+    "message": "All rollback closes confirmed",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "success",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:21.019176+00:00"
+  },
+  {
+    "type": "session_stopped",
+    "label": "Session Stopped",
+    "message": "Entry failed: C-BTC-68500-270326: no quotes for sell; P-BTC-68500-270326: no quotes for sell; C-BTC-71500-270326: no quotes for buy; P-BTC-65500-270326: no quotes for buy",
+    "session_id": "ssdh_220326_bc79ac",
+    "severity": "error",
+    "details": {},
+    "timestamp": "2026-03-22T09:29:21.033191+00:00"
+  }
+]

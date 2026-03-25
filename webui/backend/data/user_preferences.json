@@ -1,0 +1,14 @@
+{
+  "pinned_params": [
+    "adjustment_interval",
+    "max_loss_amount",
+    "min_trigger_move",
+    "shift_threshold",
+    "shift_target_premium",
+    "close_at_threshold",
+    "max_adjustments",
+    "max_lots_per_side",
+    "lot_velocity_limit",
+    "shift_recycle_enabled"
+  ]
+}

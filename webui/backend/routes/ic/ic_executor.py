@@ -187,11 +187,73 @@ class ICExecutor:
                     legs[leg_key]['order_id'] = str(order_res.get('id', ''))
                     legs[leg_key]['fill_status'] = FILL_PENDING
 
-            # TODO: Monitor fills with timeout and atomicity rollback
-            # For now, mark as filled (will be enhanced in production)
-            for leg_key, leg in legs.items():
-                leg['fill_status'] = FILL_FILLED
-                leg['fill_time'] = datetime.now(timezone.utc).isoformat()
+            # AUDIT C1: Monitor fills with timeout and atomicity rollback
+            total_start = time.time()
+            all_filled = False
+
+            while (time.time() - total_start) < self._total_timeout_sec:
+                pending_count = 0
+                for leg_key, leg in legs.items():
+                    if leg.get('fill_status') == FILL_PENDING and leg.get('order_id'):
+                        try:
+                            order_status = self.api.get_order(leg['order_id'])
+                            if order_status and order_status.get('state') == 'filled':
+                                leg['fill_status'] = FILL_FILLED
+                                leg['fill_time'] = datetime.now(timezone.utc).isoformat()
+                                # Use actual fill price if available
+                                fill_price = order_status.get('average_fill_price')
+                                if fill_price:
+                                    leg['entry_premium'] = float(fill_price)
+                                log.info(f"Leg {leg_key} filled at {leg.get('entry_premium')}")
+                            elif order_status and order_status.get('state') in ('cancelled', 'rejected'):
+                                leg['fill_status'] = FILL_CANCELLED
+                                log.warning(f"Leg {leg_key} order cancelled/rejected")
+                            else:
+                                pending_count += 1
+                        except Exception as e:
+                            log.warning(f"Fill check error for {leg_key}: {e}")
+                            pending_count += 1
+
+                if pending_count == 0:
+                    all_filled = True
+                    break
+
+                time.sleep(3)  # Poll every 3 seconds
+
+            # Check for partial fills — NEVER leave a partial structure
+            filled_count = sum(1 for l in legs.values() if l.get('fill_status') == FILL_FILLED)
+            if not all_filled or filled_count < len(legs):
+                log.error(
+                    f"Partial fill detected: {filled_count}/{len(legs)} legs filled. "
+                    f"Initiating atomicity rollback."
+                )
+                # Cancel all pending orders
+                for leg_key, leg in legs.items():
+                    if leg.get('fill_status') == FILL_PENDING and leg.get('order_id'):
+                        try:
+                            self.api.cancel_order(leg['order_id'])
+                            leg['fill_status'] = FILL_CANCELLED
+                        except Exception:
+                            pass
+
+                # Close any filled legs to restore neutral
+                for leg_key, leg in legs.items():
+                    if leg.get('fill_status') == FILL_FILLED:
+                        try:
+                            close_side = 'buy' if leg['action'] == 'sell' else 'sell'
+                            self.api.create_order({
+                                'product_symbol': leg.get('product_symbol', ''),
+                                'size': leg['lots'],
+                                'side': close_side,
+                                'order_type': 'market',
+                            })
+                            leg['fill_status'] = FILL_CANCELLED
+                            log.info(f"Rollback: closed filled leg {leg_key}")
+                        except Exception as e:
+                            log.error(f"CRITICAL: Rollback failed for {leg_key}: {e}")
+
+                session['strategy_status'] = STRATEGY_ENTRY_FAILED
+                return False, legs
 
             return True, legs
 
@@ -245,7 +307,27 @@ class ICExecutor:
                 log.error(f"Batch close order failed: {result}")
                 return False, close_premiums
 
-            # Record close premiums
+            # AUDIT C1: Monitor close fills with timeout
+            order_ids = []
+            order_results = result.get('result', [])
+            for i, order_res in enumerate(order_results):
+                order_ids.append(str(order_res.get('id', '')))
+
+            total_start = time.time()
+            while (time.time() - total_start) < self._total_timeout_sec:
+                all_done = True
+                for oid in order_ids:
+                    try:
+                        status = self.api.get_order(oid)
+                        if status and status.get('state') not in ('filled', 'cancelled', 'rejected'):
+                            all_done = False
+                    except Exception:
+                        all_done = False
+                if all_done:
+                    break
+                time.sleep(3)
+
+            # Record actual close premiums from fills
             for leg_key, leg in legs.items():
                 if leg.get('status') == 'open':
                     close_premiums[leg_key] = leg.get('mark_premium', 0)

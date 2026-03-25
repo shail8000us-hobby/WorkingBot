@@ -211,12 +211,9 @@ class MMMSafety:
         if max_loss <= 0:
             return events
 
-        realized = session.get('realized_pnl', 0)
-        unrealized = session.get('unrealized_pnl', 0)
-        # Fix #26: Include perp hedge P&L in total for accurate max-loss check
-        perp = session.get('perp_hedge', {})
-        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
-        total_pnl = realized + unrealized + perp_pnl
+        # H-1: use single canonical formula (includes fees + perp)
+        from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
+        total_pnl = _pnl_total(session)
 
         if total_pnl <= -max_loss:
             events.append({
@@ -230,9 +227,14 @@ class MMMSafety:
                 'details': {
                     'total_pnl': total_pnl,
                     'max_loss': max_loss,
-                    'realized': realized,
-                    'unrealized': unrealized,
-                    'perp_pnl': round(perp_pnl, 4),
+                    'realized': session.get('realized_pnl', 0),
+                    'unrealized': session.get('unrealized_pnl', 0),
+                    'fees': session.get('total_fees', 0),
+                    'perp_pnl': round(
+                        float(session.get('perp_hedge', {}).get('realized_pnl', 0) or 0)
+                        + float(session.get('perp_hedge', {}).get('unrealized_pnl', 0) or 0),
+                        4,
+                    ),
                 },
             })
         elif total_pnl <= -max_loss * 0.8:
@@ -247,7 +249,6 @@ class MMMSafety:
                 'details': {
                     'total_pnl': total_pnl,
                     'max_loss': max_loss,
-                    'perp_pnl': round(perp_pnl, 4),
                 },
             })
 
@@ -1037,12 +1038,9 @@ class MMMSafety:
         if peak <= 0:
             return events  # No profit to protect
 
-        realized = session.get('realized_pnl', 0)
-        unrealized = session.get('unrealized_pnl', 0)
-        # Fix #26: Include perp hedge P&L for accurate trailing stop tracking
-        perp = session.get('perp_hedge', {})
-        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
-        current = realized + unrealized + perp_pnl
+        # H-1: use single canonical formula (includes fees + perp)
+        from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
+        current = _pnl_total(session)
 
         threshold = peak * trailing_pct
         if current < threshold:

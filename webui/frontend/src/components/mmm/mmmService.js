@@ -268,6 +268,22 @@ const mmmService = {
   },
 
   /**
+   * Manually increase or decrease active lots on one side.
+   * Positive delta → SELL at active_strike (add lots).
+   * Negative delta → BUY at active_strike (partial close).
+   * @param {string} sessionId
+   * @param {string} side  - 'ce' or 'pe'
+   * @param {number} delta - lots to add (positive) or remove (negative)
+   */
+  async adjustActiveLots(sessionId, side, delta) {
+    const { data } = await api.post(
+      `${BASE_URL}/session/${sessionId}/adjust-active-lots`,
+      { side, delta }
+    );
+    return data;
+  },
+
+  /**
    * Buy back ALL lots at a specific strike and remove from the algo ledger.
    * Used to close a risky near-ATM strike before re-establishing farther away.
    * @param {string} sessionId
@@ -772,6 +788,12 @@ const mmmService = {
     const { data } = await api.get(
       `${BASE_URL}/session/${sessionId}/audit/execution-events?limit=${limit}`
     );
+    return data;
+  },
+
+  /** Available OTM strikes with live premiums for the inject position strike picker */
+  async getOptionChain(sessionId) {
+    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/option-chain`);
     return data;
   },
 };

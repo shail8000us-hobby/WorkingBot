@@ -872,13 +872,18 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     session['ce']['trigger_snapshot'] = {ce_strike_key: ce_fill}
     session['pe']['trigger_snapshot'] = {pe_strike_key: pe_fill}
 
-    # Record exchange commissions from initial entry sells — Delta uses 'paid_commission'
+    # Record exchange commissions via ledger (CRIT-1 fix)
     _ce_od = ce_res.get('order_details') or {}
     _pe_od = pe_res.get('order_details') or {}
     _ce_comm = float(_ce_od.get('paid_commission', 0) or _ce_od.get('commission', 0) or 0)
     _pe_comm = float(_pe_od.get('paid_commission', 0) or _pe_od.get('commission', 0) or 0)
-    if _ce_comm or _pe_comm:
-        session['total_fees'] = session.get('total_fees', 0) + abs(_ce_comm) + abs(_pe_comm)
+    from .mmm_pnl_core import record_fee as _pnl_fee
+    if _ce_comm:
+        _pnl_fee(session, _ce_comm, 'sell_initial',
+                 order_id=str(ce_res.get('order_id', '')), side='ce')
+    if _pe_comm:
+        _pnl_fee(session, _pe_comm, 'sell_initial',
+                 order_id=str(pe_res.get('order_id', '')), side='pe')
 
     actual_premium = (ce_fill + pe_fill) * lots * LOT_SIZE_BTC
     session['actual_total_premium'] = actual_premium
@@ -1240,11 +1245,13 @@ def _retry_partial_leg_background(
     session[side]['entry_order_id'] = result.get('order_id')
     session[side]['original_premium'] = fill_price
 
-    # Record exchange commission from retry leg fill — Delta uses 'paid_commission'
+    # Record exchange commission via ledger (CRIT-1 fix)
     _od = result.get('order_details') or {}
     _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
     if _commission:
-        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+        from .mmm_pnl_core import record_fee as _pnl_fee
+        _pnl_fee(session, _commission, 'sell_retry',
+                 order_id=str(result.get('order_id', '')), side=side)
 
     # Update trigger snapshot for retried side
     retried_strike_key = strike_key(session[side].get('active_strike', 0))
@@ -1478,39 +1485,44 @@ def stop_session(session_id: str):
         old_status = status
         new_status = 'STOPPED'
 
-        # ── PNL-STOP-FIX: snapshot final P&L while monitor is still alive ─────
-        # compute_live_pnl requires an active monitor; call it BEFORE stop_session_monitor.
-        # For stopped sessions _overlay_live_pnl skips them (no monitor), so if we
-        # don't persist here net_pnl stays None forever in the DB.
-        _final_pnl_fields = {}
-        try:
-            live = compute_live_pnl(session_id)
-            if live:
-                _final_pnl_fields = {
-                    'net_pnl': round(live['net_pnl'], 6),
-                    'realized_pnl': round(live['realized'], 6),
-                    'unrealized_pnl': round(live['unrealized'], 6),
-                    'total_fees': round(live['fees'], 6),
-                }
-            else:
-                # No live monitor yet (session may never have been RUNNING) —
-                # derive net_pnl from stored components.
-                _r = session.get('realized_pnl', 0) or 0
-                _u = session.get('unrealized_pnl', 0) or 0
-                _f = session.get('total_fees', 0) or 0
-                _final_pnl_fields = {'net_pnl': round(_r + _u - _f, 6)}
-        except Exception as _pnl_err:
-            log.warning(f"[{session_id}] Could not snapshot final P&L at stop: {_pnl_err}")
-        # ── END PNL-STOP-FIX ──────────────────────────────────────────────────
-
+        # ── Step 1: Mark session STOPPED in DB ────────────────────────────────
         storage.update_session(session_id, {
             'strategy_status': new_status,
             'stopped_at': datetime.now(timezone.utc).isoformat(),
             'stop_reason': reason,
-            **_final_pnl_fields,
         })
 
+        # ── Step 2: Stop monitor — triggers _save_my_session() inside ─────────
+        # monitor.stop() sets session['strategy_status']='STOPPED' then calls
+        # _save_my_session() (full save_session / data_json replace) then sets
+        # _save_disabled=True.  After this point the monitor CANNOT write to DB.
+        # This full save persists final realized_pnl / unrealized_pnl / total_fees
+        # from the in-memory session but leaves net_pnl=None (never set by hb).
         stop_session_monitor(session_id, reason)
+
+        # ── Step 3: Compute and persist net_pnl from the now-final DB state ───
+        # We read back the values that _save_my_session() just wrote so we get
+        # the most accurate R/U/F, then write only net_pnl.  No monitor is alive
+        # so no further save_session() can overwrite this.
+        try:
+            _final = storage.get_session(session_id)
+            if _final:
+                # Derive final P&L from ledger (single source of truth)
+                from .mmm_pnl_core import compute_realized_pnl as _pnl_r, compute_fees as _pnl_f
+                _r = _pnl_r(_final)
+                _u = _final.get('unrealized_pnl', 0) or 0
+                _f = _pnl_f(_final)
+                storage.update_session(session_id, {
+                    'net_pnl': round(_r + _u - _f, 6),
+                })
+                log.info(
+                    f"[{session_id}] Final P&L persisted (ledger-derived): "
+                    f"R={_r:.4f} U={_u:.4f} F={_f:.4f} "
+                    f"net={round(_r + _u - _f, 6):.4f}"
+                )
+        except Exception as _pnl_err:
+            log.warning(f"[{session_id}] Could not persist final net_pnl: {_pnl_err}")
+        # ── END PNL-STOP-FIX ──────────────────────────────────────────────────
         emit_status_change(session_id, old_status, new_status, reason)
         log.info(f"MMM session {session_id} stopped: {reason}")
 
@@ -3659,22 +3671,29 @@ def reduce_position(session_id: str):
                     # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
                     _od = result.get('order_details') or {}
                     _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-                    if _commission:
-                        session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
-                    session['realized_pnl'] = session.get('realized_pnl', 0) + group_realized
-                    session['manual_reduction_pnl'] = (
-                        session.get('manual_reduction_pnl', 0) + group_realized
-                    )
 
-                    # BUG-1 FIX: Stamp _estimated_pnl_booked on freshly-closed positions
-                    # so FillSyncer computes a correction (not a full re-book).
-                    # Also stamp close_order_id so FillSyncer can match by order ID.
+                    # ── P&L via ledger (single source of truth) ──────
                     _mr_close_oid = str(result.get('order_id', '') or '')
+                    from .mmm_pnl_core import record_close as _pnl_mr_rec
+                    _pnl_mr_rec(
+                        session=session,
+                        order_id=_mr_close_oid,
+                        symbol=result.get('symbol', ''),
+                        option_side=side_key,
+                        strike=strike_val,
+                        lots=int(group_lots),
+                        entry_premium=float(avg_entry),
+                        close_premium=float(fill_price),
+                        commission=abs(float(_commission)) if _commission else 0.0,
+                        source='manual_reduce',
+                    )
+                    # ── END P&L via ledger ────────────────────────────
+
+                    # Stamp close_order_id for FillSyncer matching
                     _mr_close_coid = str(result.get('client_order_id', '') or '')
                     for _mp in side_state.get('positions', []):
                         if (_mp.get('status') == 'closed'
                                 and _mp.get('_estimated_pnl_booked') is None):
-                            # Stamp order ID for FillSyncer matching
                             if _mr_close_oid:
                                 _mp['close_order_id'] = _mr_close_oid
                             if _mr_close_coid:
@@ -3816,6 +3835,82 @@ def reduce_position(session_id: str):
 
     except Exception as e:
         log.exception(f'Failed to reduce position for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/option-chain', methods=['GET'])
+def get_option_chain(session_id: str):
+    """
+    Return all available OTM strikes for this session's expiry with live premiums.
+    Used by the Inject Position dialog strike picker.
+
+    Returns:
+        {
+            success: bool,
+            spot_price: float,
+            ce: [{ strike, premium, bid, ask, mark_price, delta, oi }, ...],
+            pe: [{ strike, premium, bid, ask, mark_price, delta, oi }, ...],
+        }
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        expiry = session.get('params', {}).get('expiry', '')
+        underlying = session.get('params', {}).get('underlying', 'BTC')
+        if not expiry:
+            return jsonify({'success': False, 'error': 'Session has no expiry'}), 400
+
+        initializer = get_initializer()
+        from .mmm_initializer import normalize_expiry
+        expiry_norm = normalize_expiry(expiry)
+        chain_data = initializer.chain_service.get_chain_data(underlying, expiry_norm)
+        if not chain_data or not chain_data.get('chain'):
+            return jsonify({'success': False, 'error': f'No chain data for {expiry_norm}'}), 404
+
+        spot_price = chain_data.get('spot_price', 0)
+        chain = chain_data['chain']
+
+        ce_strikes, pe_strikes = [], []
+        for entry in chain:
+            strike = entry.get('strike', 0)
+            if not strike:
+                continue
+            for opt_type, above_spot, bucket in [('call', True, ce_strikes), ('put', False, pe_strikes)]:
+                if above_spot and strike <= spot_price:
+                    continue
+                if not above_spot and strike >= spot_price:
+                    continue
+                od = entry.get(opt_type) or {}
+                bid = od.get('bid', 0) or 0
+                ask = od.get('ask', 0) or 0
+                mark = od.get('mark_price', 0) or 0
+                premium = mark if mark > 0 else ((bid + ask) / 2 if bid > 0 and ask > 0 else bid)
+                if premium <= 0:
+                    continue
+                bucket.append({
+                    'strike': strike,
+                    'premium': round(premium, 2),
+                    'bid': round(bid, 2),
+                    'ask': round(ask, 2),
+                    'mark_price': round(mark, 2),
+                    'delta': round(od.get('delta', 0) or 0, 3),
+                    'oi': od.get('oi', 0) or 0,
+                })
+
+        ce_strikes.sort(key=lambda x: x['strike'])
+        pe_strikes.sort(key=lambda x: x['strike'], reverse=True)
+
+        return jsonify({
+            'success': True,
+            'spot_price': round(spot_price, 0),
+            'ce': ce_strikes,
+            'pe': pe_strikes,
+        })
+    except Exception as e:
+        log.exception(f'get_option_chain failed for {session_id}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -3967,11 +4062,14 @@ def inject_position(session_id: str):
             order_id = str(result.get('order_id', ''))
             client_order_id = str(result.get('client_order_id', ''))
 
-            # Record exchange commission from inject sell
+            # Record exchange commission via ledger (CRIT-1 fix)
             _od = result.get('order_details') or {}
             _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
             if _commission:
-                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+                from .mmm_pnl_core import record_fee as _pnl_fee
+                _pnl_fee(session, _commission, 'sell_inject',
+                         order_id=str(result.get('order_id', '')),
+                         side=side_param)
 
         now = datetime.now(timezone.utc).isoformat()
 
@@ -4474,11 +4572,9 @@ def close_strike_route(session_id: str):
             pass
         # ── END TRADE AUDIT ───────────────────────────────────────────────
 
-        # Record exchange commission from close-at-strike buyback
+        # Extract commission for ledger recording (pnl_core handles session['total_fees'])
         _od = result.get('order_details') or {}
         _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-        if _commission:
-            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
 
         now = datetime.now(timezone.utc).isoformat()
 
@@ -4568,14 +4664,30 @@ def close_strike_route(session_id: str):
         except Exception as snap_err:
             log.warning(f'[{session_id}] Could not reset trigger snapshots after close-strike: {snap_err}')
 
-        # CLOSE-STRIKE-FIX: book to the canonical realized_pnl + attribution bucket
-        # immediately (same as close_at_5) so the UI is correct before fill_sync runs.
-        # fill_sync will compute correction = actual - estimated ≈ 0 and make no change.
-        session['realized_pnl'] = session.get('realized_pnl', 0) + total_realized
-        session['manual_reduction_pnl'] = (
-            session.get('manual_reduction_pnl', 0) + total_realized
+        # ── P&L via ledger (single source of truth) ──────────────────
+        # Record the aggregate close for this strike group.
+        # fill_sync will confirm with actual exchange fill later.
+        from .mmm_pnl_core import record_close as _pnl_cbs_rec
+        # Compute weighted avg entry across all target positions
+        _cbs_w_sum = sum(
+            float(p.get('entry_premium', p.get('premium', 0))) * p.get('lots', 0)
+            for p in target_positions
+        )
+        _cbs_avg_entry = _cbs_w_sum / total_lots if total_lots > 0 else 0
+        _pnl_cbs_rec(
+            session=session,
+            order_id=order_id,
+            symbol=symbol,
+            option_side=side_param,
+            strike=strike_val,
+            lots=int(total_lots),
+            entry_premium=float(_cbs_avg_entry),
+            close_premium=float(fill_price),
+            commission=abs(float(_commission)) if _commission else 0.0,
+            source='close_by_strike',
         )
         session['total_realized_pnl'] = session.get('total_realized_pnl', 0.0) + total_realized
+        # ── END P&L via ledger ────────────────────────────────────────
 
         # Refresh unrealized now that these positions are gone.
         try:
@@ -4675,6 +4787,384 @@ def close_strike_route(session_id: str):
 
     except Exception as e:
         log.exception(f'Failed to close strike for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/adjust-active-lots', methods=['POST'])
+def adjust_active_lots(session_id: str):
+    """
+    Operator manual: Increase or decrease active lots on one side by placing
+    an order at the current active strike.
+
+    - delta > 0: SELL delta lots at active_strike (adds to ledger as 'manual' position)
+    - delta < 0: BUY |delta| lots at active_strike (partial close, LIFO from active positions)
+
+    Body (JSON):
+        side  : str — 'ce' or 'pe'
+        delta : int — lots to add (positive) or remove (negative), nonzero
+
+    Safety guards:
+        - Session must be RUNNING or PAUSED
+        - Guardian signal must be GO
+        - For increase: active_lots + delta must not exceed max_lots_per_side
+        - For decrease: |delta| must not exceed current active_lots at active_strike
+
+    Returns:
+        { success, side, delta, active_strike, fill_price, order_id, new_active_lots,
+          realized_pnl (decrease only) }
+    """
+    from .mmm_trigger import update_trigger_snapshots
+    from .mmm_executor import get_executor
+    from .mmm_activity import log_activity
+    from .mmm_initializer import get_initializer
+    from .mmm_state import recompute_side_lots as _recompute
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        delta = int(data.get('delta', 0))
+
+        if side_param not in ('ce', 'pe'):
+            return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
+        if delta == 0:
+            return jsonify({'success': False, 'error': 'delta must be nonzero'}), 400
+
+        signal = _check_guardian_signal()
+        if signal != 'GO':
+            return jsonify({'success': False, 'error': f'Guardian signal is {signal}'}), 403
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED'):
+            return jsonify({'success': False,
+                            'error': f'Session must be RUNNING or PAUSED. Current: {status}'}), 400
+
+        side_state = session.get(side_param, {})
+        active_strike = side_state.get('active_strike', 0)
+        if not active_strike:
+            return jsonify({'success': False,
+                            'error': f'No active strike for {side_param.upper()}'}), 400
+
+        positions = side_state.get('positions', [])
+        params = session.get('params', {})
+        expiry = params.get('expiry', '')
+        option_type = 'call' if side_param == 'ce' else 'put'
+        initializer = get_initializer()
+        executor = get_executor()
+        symbol = initializer.build_symbol(option_type, 'BTC', active_strike, expiry)
+        now = datetime.now(timezone.utc).isoformat()
+
+        if delta > 0:
+            # ── INCREASE: sell delta lots at active_strike ─────────────────
+            active_lots = side_state.get('active_lots', 0)
+            max_lots = params.get('max_lots_per_side', 999)
+            if active_lots + delta > max_lots:
+                return jsonify({'success': False,
+                                'error': f'Would exceed max_lots_per_side ({max_lots}). '
+                                         f'Current active: {active_lots}'}), 400
+
+            log_activity(
+                'manual_adjust_lots',
+                f'➕ Adjust Lots: SELL {delta} {side_param.upper()} @ {int(active_strike)}',
+                session_id, 'info',
+                {'side': side_param.upper(), 'strike': active_strike,
+                 'lots': delta, 'direction': 'increase'},
+            )
+
+            result = _run_async(executor.smart_execute(
+                symbol=symbol, side='sell', size=delta, session_id=session_id,
+            ))
+
+            if not result.get('success'):
+                err = result.get('error', 'execution failed')
+                log_activity(
+                    'manual_adjust_lots',
+                    f'➕ Adjust Lots FAILED: {side_param.upper()} @ {int(active_strike)} '
+                    f'+{delta} — {err}',
+                    session_id, 'error',
+                    {'side': side_param.upper(), 'strike': active_strike,
+                     'lots': delta, 'error': err},
+                )
+                return jsonify({'success': False, 'error': err}), 500
+
+            fill_price = float(result.get('fill_price', 0))
+            order_id = str(result.get('order_id', ''))
+
+            _od = result.get('order_details') or {}
+            _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+            if _commission:
+                try:
+                    from .mmm_pnl_core import record_fee as _pnl_fee
+                    _pnl_fee(session, _commission, 'sell_adjust',
+                             order_id=order_id, side=side_param)
+                except Exception:
+                    pass
+
+            positions.append({
+                'id': f"{side_param}_adj_{now.replace(':', '').replace('-', '').replace('.', '')[:18]}",
+                'strike': active_strike,
+                'lots': delta,
+                'entry_premium': fill_price,
+                'premium': fill_price,
+                'type': 'manual',
+                'status': 'active',
+                'created_at': now,
+                'shifted_at': None,
+                'closed_at': None,
+                'realized_pnl': None,
+                'timestamp': now,
+                'source': 'operator_adjust',
+                'order_id': order_id,
+            })
+            side_state['positions'] = positions
+            side_state = _recompute(side_state)
+            session[side_param] = side_state
+
+            try:
+                from .mmm_audit_log import get_audit_log as _get_aud
+                from .mmm_audit_remark import build_trade_remark as _btr
+                _get_aud().enqueue_trade(
+                    session_id=session_id,
+                    action='SELL', option_type=side_param.upper(),
+                    strike=int(active_strike),
+                    quantity_requested=delta, quantity_filled=delta,
+                    premium=fill_price, event_type='ENTRY', mechanism='operator',
+                    order_id=order_id, expiry=expiry,
+                    spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                    whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                    margin_tier=str(session.get('_margin_tier', '') or ''),
+                    remark=_btr('SELL', 'ENTRY', side=side_param,
+                                strike=int(active_strike), lots=delta,
+                                premium=fill_price, mechanism='operator'),
+                )
+            except Exception:
+                pass
+
+            try:
+                # Set the adjusted side's trigger snapshot to fill_price so the
+                # next heartbeat does not immediately re-trigger on stale excess.
+                # Only update the adjusted side — we don't know current market
+                # price for the other side and it wasn't part of this adjustment.
+                side_state = session.get(side_param, {})
+                if 'trigger_snapshot' not in side_state:
+                    side_state['trigger_snapshot'] = {}
+                side_state['trigger_snapshot'][strike_key(active_strike)] = fill_price
+            except Exception as snap_err:
+                log.warning(f'[{session_id}] Could not reset trigger snapshots after adjust: {snap_err}')
+
+            session['updated_at'] = now
+            storage.save_session(session)
+
+            try:
+                from .mmm_websocket import emit_manual_injection
+                emit_manual_injection(
+                    session_id=session_id, side=side_param.upper(),
+                    lots=delta, strike=active_strike,
+                    fill_price=fill_price, order_id=order_id,
+                )
+            except Exception:
+                pass
+
+            log_activity(
+                'manual_adjust_lots',
+                f'➕ Adjust Lots OK: +{delta} {side_param.upper()} @ {int(active_strike)} '
+                f'fill ${fill_price:.2f} (active: {side_state.get("active_lots", 0)})',
+                session_id, 'success',
+                {'side': side_param.upper(), 'strike': active_strike,
+                 'lots': delta, 'fill_price': fill_price},
+            )
+
+            return jsonify({
+                'success': True,
+                'side': side_param,
+                'delta': delta,
+                'active_strike': active_strike,
+                'fill_price': fill_price,
+                'order_id': order_id,
+                'new_active_lots': side_state.get('active_lots', 0),
+            })
+
+        else:
+            # ── DECREASE: buy back |delta| lots from active_strike ─────────
+            abs_delta = abs(delta)
+            active_lots = side_state.get('active_lots', 0)
+            if abs_delta > active_lots:
+                return jsonify({'success': False,
+                                'error': f'Cannot remove {abs_delta} lots — only '
+                                         f'{active_lots} active on {side_param.upper()}'}), 400
+
+            target_positions = [
+                p for p in positions
+                if p.get('status') == 'active'
+                and abs(float(p.get('strike', 0)) - active_strike) < 1
+                and not p.get('_being_closed')
+            ]
+            if not target_positions:
+                return jsonify({'success': False,
+                                'error': f'No active positions at {int(active_strike)} '
+                                         f'to reduce on {side_param.upper()}'}), 400
+
+            total_available = sum(p.get('lots', 0) for p in target_positions)
+            if abs_delta > total_available:
+                return jsonify({'success': False,
+                                'error': f'Active lots at {int(active_strike)}: '
+                                         f'{total_available}, requested: {abs_delta}'}), 400
+
+            # LIFO: reduce newest positions first
+            target_positions.sort(key=lambda p: p.get('created_at', ''), reverse=True)
+
+            # In-flight guard before placing order
+            for p in target_positions:
+                p['_being_closed'] = True
+
+            log_activity(
+                'manual_adjust_lots',
+                f'➖ Adjust Lots: BUY {abs_delta} {side_param.upper()} @ {int(active_strike)} '
+                f'(partial close)',
+                session_id, 'info',
+                {'side': side_param.upper(), 'strike': active_strike,
+                 'lots': abs_delta, 'direction': 'decrease'},
+            )
+
+            result = _run_async(executor.smart_execute(
+                symbol=symbol, side='buy', size=abs_delta,
+                reduce_only=True, session_id=session_id,
+            ))
+
+            if not result.get('success'):
+                err = result.get('error', 'execution failed')
+                for p in target_positions:
+                    p.pop('_being_closed', None)
+                log_activity(
+                    'manual_adjust_lots',
+                    f'➖ Adjust Lots FAILED: {side_param.upper()} @ {int(active_strike)} '
+                    f'-{abs_delta} — {err}',
+                    session_id, 'error',
+                    {'side': side_param.upper(), 'strike': active_strike,
+                     'lots': abs_delta, 'error': err},
+                )
+                return jsonify({'success': False, 'error': err}), 500
+
+            fill_price = float(result.get('fill_price', 0))
+            order_id = str(result.get('order_id', ''))
+            _od = result.get('order_details') or {}
+            _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+
+            # Distribute lot reduction across positions (LIFO)
+            remaining = abs_delta
+            total_realized = 0.0
+            for p in target_positions:
+                if remaining <= 0:
+                    break
+                p_lots = p.get('lots', 0)
+                to_remove = min(remaining, p_lots)
+                entry = float(p.get('entry_premium', p.get('premium', 0)))
+                realized = (entry - fill_price) * to_remove * LOT_SIZE_BTC
+                comm_share = (
+                    round(abs(_commission) * to_remove / abs_delta, 8)
+                    if _commission else 0.0
+                )
+
+                if to_remove >= p_lots:
+                    # Close this position entirely
+                    p['lots'] = 0
+                    p['status'] = 'closed'
+                    p['closed_at'] = now
+                    p['realized_pnl'] = round(realized, 6)
+                    p['_estimated_pnl_booked'] = round(realized, 8)
+                    p['_estimated_commission_booked'] = comm_share
+                else:
+                    # Partial: split off a closed sub-position, keep remainder active
+                    closed_pos = dict(p)
+                    ts_suffix = now.replace(':', '').replace('-', '').replace('.', '')[:14]
+                    closed_pos['id'] = f"{p['id']}_partial_{ts_suffix}"
+                    closed_pos['lots'] = to_remove
+                    closed_pos['status'] = 'closed'
+                    closed_pos['closed_at'] = now
+                    closed_pos['realized_pnl'] = round(realized, 6)
+                    closed_pos['_estimated_pnl_booked'] = round(realized, 8)
+                    closed_pos['_estimated_commission_booked'] = comm_share
+                    closed_pos.pop('_being_closed', None)
+                    positions.append(closed_pos)
+                    p['lots'] = p_lots - to_remove
+
+                p.pop('_being_closed', None)
+                total_realized += realized
+                remaining -= to_remove
+
+            if _commission:
+                try:
+                    from .mmm_pnl_core import record_fee as _pnl_fee
+                    _pnl_fee(session, _commission, 'buy_adjust',
+                             order_id=order_id, side=side_param)
+                except Exception:
+                    pass
+
+            side_state['positions'] = positions
+            side_state = _recompute(side_state)
+            session[side_param] = side_state
+
+            try:
+                from .mmm_audit_log import get_audit_log as _get_aud
+                from .mmm_audit_remark import build_trade_remark as _btr
+                _get_aud().enqueue_trade(
+                    session_id=session_id,
+                    action='BUY', option_type=side_param.upper(),
+                    strike=int(active_strike),
+                    quantity_requested=abs_delta, quantity_filled=abs_delta,
+                    premium=fill_price, event_type='EXIT', mechanism='operator',
+                    order_id=order_id, expiry=expiry,
+                    spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                    whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                    margin_tier=str(session.get('_margin_tier', '') or ''),
+                    remark=_btr('BUY', 'EXIT', side=side_param,
+                                strike=int(active_strike), lots=abs_delta,
+                                premium=fill_price, mechanism='operator'),
+                )
+            except Exception:
+                pass
+
+            session['updated_at'] = now
+            storage.save_session(session)
+
+            try:
+                from .mmm_websocket import emit_manual_injection
+                emit_manual_injection(
+                    session_id=session_id, side=side_param.upper(),
+                    lots=-abs_delta, strike=active_strike,
+                    fill_price=fill_price, order_id=order_id,
+                )
+            except Exception:
+                pass
+
+            log_activity(
+                'manual_adjust_lots',
+                f'➖ Adjust Lots OK: -{abs_delta} {side_param.upper()} @ {int(active_strike)} '
+                f'fill ${fill_price:.2f} P&L ${total_realized:.4f} '
+                f'(active: {side_state.get("active_lots", 0)})',
+                session_id, 'success',
+                {'side': side_param.upper(), 'strike': active_strike,
+                 'lots': abs_delta, 'fill_price': fill_price,
+                 'realized_pnl': total_realized},
+            )
+
+            return jsonify({
+                'success': True,
+                'side': side_param,
+                'delta': delta,
+                'active_strike': active_strike,
+                'fill_price': fill_price,
+                'order_id': order_id,
+                'realized_pnl': round(total_realized, 6),
+                'new_active_lots': side_state.get('active_lots', 0),
+            })
+
+    except Exception as e:
+        log.exception(f'Failed to adjust active lots for {session_id}')
         return jsonify({'success': False, 'error': str(e)}), 500
 
 

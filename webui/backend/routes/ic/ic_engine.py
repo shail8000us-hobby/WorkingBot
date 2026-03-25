@@ -76,8 +76,15 @@ def compute_max_loss(
     max_wing = max(wing_put, wing_call)
 
     if max_wing <= 0:
-        log.warning("Max wing width is <= 0 — invalid condor structure")
-        return 0.0
+        log.error(
+            f"Max wing width is <= 0 — invalid condor structure. "
+            f"SP={short_put_strike}, LP={long_put_strike}, SC={short_call_strike}, LC={long_call_strike}"
+        )
+        raise ValueError(
+            f"Invalid condor structure: max wing width={max_wing}. "
+            f"Strikes: SP={short_put_strike}, LP={long_put_strike}, "
+            f"SC={short_call_strike}, LC={long_call_strike}"
+        )
 
     max_loss_per_btc = max_wing - effective_net_credit
     max_loss_usd = -(max_loss_per_btc * lots * LOT_SIZE_BTC)

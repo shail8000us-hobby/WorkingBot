@@ -1,0 +1,92 @@
+{
+  "ssdh_220326_bc79ac": {
+    "session_id": "ssdh_220326_bc79ac",
+    "strategy": "ssdh",
+    "status": "ABORTED",
+    "entry_state": "ENTRY_ABORTED",
+    "params": {
+      "initial_lots": 1,
+      "long_hedge_lots_ratio": 2.0,
+      "expiry": "27032026",
+      "trailing_stop_pct": 0.5,
+      "vega_exit_multiplier": 1.5,
+      "vega_exit_auto": false,
+      "adjustment_interval": 30,
+      "adaptive_interval_enabled": true,
+      "adaptive_max_interval": 60,
+      "adaptive_min_interval": 10,
+      "margin_yellow_pct": 0.65,
+      "combined_margin_limit": 0.7,
+      "max_retries_on_fill": 4,
+      "circuit_breaker_threshold": 5,
+      "guardian_max_beat_sec": 90,
+      "entry_timeout_seconds": 180,
+      "min_otm_spread_pct": 0.2,
+      "min_otm_depth_lots": 2,
+      "intraday_max_loss_multiplier": 1.75,
+      "structure_integrity_check": true,
+      "strategy": "ssdh",
+      "session_window_hours": 4,
+      "wind_down_mins_before_end": 30,
+      "legs": [
+        {
+          "leg_id": "short_ce",
+          "side": "CE",
+          "direction": "short",
+          "pos_type": "core",
+          "strike": 68500,
+          "lots": 1,
+          "target_premium": 1947,
+          "symbol": "C-BTC-68500-270326"
+        },
+        {
+          "leg_id": "short_pe",
+          "side": "PE",
+          "direction": "short",
+          "pos_type": "core",
+          "strike": 68500,
+          "lots": 1,
+          "target_premium": 1740,
+          "symbol": "P-BTC-68500-270326"
+        },
+        {
+          "leg_id": "long_ce",
+          "side": "CE",
+          "direction": "long",
+          "pos_type": "hedge",
+          "strike": 71500,
+          "lots": 2,
+          "target_premium": 713,
+          "symbol": "C-BTC-71500-270326"
+        },
+        {
+          "leg_id": "long_pe",
+          "side": "PE",
+          "direction": "long",
+          "pos_type": "hedge",
+          "strike": 65500,
+          "lots": 2,
+          "target_premium": 760,
+          "symbol": "P-BTC-65500-270326"
+        }
+      ],
+      "max_loss_amount": 1.9356750000000003
+    },
+    "positions": [],
+    "realized_pnl": 0.0,
+    "unrealized_pnl": 0.0,
+    "total_fees": 0.0,
+    "net_pnl": 0.0,
+    "peak_net_pnl": 0.0,
+    "roll_count": 0,
+    "created_at": "2026-03-22T09:29:16.304715+00:00",
+    "started_at": "2026-03-22T09:29:16.304747+00:00",
+    "closed_at": null,
+    "close_reason": null,
+    "entry_started_at": "2026-03-22T09:29:16.369236+00:00",
+    "session_end_time": "2026-03-22T13:29:16.304747+00:00",
+    "entry_fills": {},
+    "close_metadata": {},
+    "spot_at_entry": 0.0
+  }
+}

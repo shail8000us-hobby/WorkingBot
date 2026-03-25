@@ -386,6 +386,8 @@ def apply_lifo_removals(
             pos_id = record.get('_pos_id')
             if pos_id and pos_id in pos_index:
                 pos = pos_index[pos_id]
+                # Track how many lots were closed (for P&L stamping after LIFO)
+                pos['_closed_lots'] = pos.get('_closed_lots', 0) + lots
                 pos['lots'] = max(0, pos['lots'] - lots)
                 if pos['lots'] == 0:
                     pos['status'] = 'closed'

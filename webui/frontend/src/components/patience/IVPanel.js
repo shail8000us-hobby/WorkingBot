@@ -23,9 +23,10 @@ export default function IVPanel() {
           patienceAPI.getCards(),
         ]);
         setCurrent(c.data);
-        setHistory((h.data?.history || []).slice(0, 120).reverse());
+        // Keep chronological order (oldest first) so chart renders left=old, right=recent
+        setHistory((h.data?.history || []).slice(-120));
         const all = cardsRes.data?.cards || [];
-        setArmedCards(all.filter(c => ['ARMED', 'WAITING'].includes(c.status) && (c.iv_percentile_min || c.iv_percentile_max)));
+        setArmedCards(all.filter(c => ['ARMED', 'WAITING'].includes(c.status) && (c.iv_percentile_min != null || c.iv_percentile_max != null)));
       } catch (e) { /* silent */ }
       finally { setLoading(false); }
     };
@@ -126,10 +127,10 @@ export default function IVPanel() {
             <div style={{ background: '#0f172a', borderRadius: 8, padding: 16 }}>
               <div style={{ fontSize: 11, color: '#64748b', marginBottom: 10 }}>30-Day DVOL History</div>
               <div style={{ display: 'flex', alignItems: 'flex-end', gap: 1, height: chartHeight }}>
-                {history.slice(-60).map((h, i) => {
+                {history.slice(-60).map((h, i, arr) => {
                   const v = h.dvol_value;
                   const barH = v != null ? ((v - minV) / range) * chartHeight : 0;
-                  const isCurrentDay = i === history.slice(-60).length - 1;
+                  const isCurrentDay = i === arr.length - 1;
                   return (
                     <div
                       key={i}

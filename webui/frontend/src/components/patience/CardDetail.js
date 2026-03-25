@@ -25,6 +25,7 @@ const EVENT_COLORS = {
   LEG_FAIL: '#ef4444',
   COMPLETE: '#22c55e',
   PAUSE: '#ef4444',
+  CANCEL: '#6b7280',
   MMM_HANDOFF: '#a78bfa',
   SL_ACTIVATED: '#eab308',
 };
@@ -36,6 +37,7 @@ const STATUS_COLORS = {
   TRIGGERED: '#f97316',
   EXECUTING: '#eab308',
   COMPLETED: '#22c55e',
+  CLOSED: '#22c55e',
   PAUSED: '#ef4444',
   CANCELLED: '#6b7280',
 };
@@ -43,6 +45,7 @@ const STATUS_COLORS = {
 const LEG_STATUS_COLORS = {
   PENDING: '#64748b',
   EXECUTING: '#eab308',
+  ROUND_FILLED: '#a3e635',
   FILLED: '#22c55e',
   FAILED: '#ef4444',
   CANCELLED: '#6b7280',
@@ -75,6 +78,17 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
   const [strikesLoading, setStrikesLoading] = useState(false);
   const [lastPricesAt, setLastPricesAt] = useState(null);
   const [executionStatus, setExecutionStatus] = useState(null);
+  // FIX 3: engine guard + pre-click indicator
+  const [engineGuardError, setEngineGuardError] = useState(null);
+  const [engineRunning, setEngineRunning] = useState(null); // null = unknown, true/false
+  // FIX 7: parent card name
+  const [parentCard, setParentCard] = useState(null);
+  // FIX 8: inline close form
+  const [showCloseForm, setShowCloseForm] = useState(false);
+  const [closeExitValue, setCloseExitValue] = useState('');
+  const [closeEntryPremium, setCloseEntryPremium] = useState(null);
+  const [closeLoading, setCloseLoading] = useState(false);
+  const [partialFillWarning, setPartialFillWarning] = useState(null);
 
   const cardId = card.card_id;
   const isExecuting = ['EXECUTING', 'TRIGGERED'].includes(card.status);
@@ -136,7 +150,27 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
     fetchCard();
     fetchLog();
     fetchPrices();
+    patienceAPI.getStatus().then(r => setEngineRunning(!!r.data?.running)).catch(() => setEngineRunning(null));
   }, [fetchCard, fetchLog, fetchPrices]);
+
+  // FIX 7: fetch parent card name when parent_card_id is set
+  useEffect(() => {
+    if (!card.parent_card_id) return;
+    patienceAPI.getCard(card.parent_card_id)
+      .then(r => setParentCard(r.data.card))
+      .catch(() => {});
+  }, [card.parent_card_id]);
+
+  // FIX 8: fetch entry premium when close form opens
+  useEffect(() => {
+    if (!showCloseForm) return;
+    patienceAPI.getPerformance()
+      .then(r => {
+        const rec = (r.data?.records || []).find(x => x.card_id === cardId);
+        if (rec?.entry_premium != null) setCloseEntryPremium(rec.entry_premium);
+      })
+      .catch(() => {});
+  }, [showCloseForm, cardId]);
 
   // Poll while executing
   useEffect(() => {
@@ -145,11 +179,13 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
     return () => clearInterval(id);
   }, [isExecuting, fetchCard, fetchLog]);
 
-  // Auto-refresh prices every 5s
+  // Auto-refresh prices every 5s — skip for terminal cards (no live market data needed)
+  const isTerminal = ['CANCELLED', 'CLOSED', 'COMPLETED'].includes(card.status);
   useEffect(() => {
+    if (isTerminal) return;
     const id = setInterval(fetchPrices, 5000);
     return () => clearInterval(id);
-  }, [fetchPrices]);
+  }, [fetchPrices, isTerminal]);
 
   // Poll execution status every 1s while card is executing
   useEffect(() => {
@@ -184,11 +220,16 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
     try { await patienceAPI.resumeCard(cardId); fetchCard(); } catch (e) { alert(e.message); }
   };
   const handleClone = async () => {
-    const newName = window.prompt('Clone name:', card.card_name + ' (copy)');
+    const now = new Date();
+    const stamp = now.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })
+      + ' ' + now.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const baseName = card.card_name.replace(/\s*\(copy[^)]*\)\s*$/, '').trim();
+    const suggested = `${baseName} (copy ${stamp})`;
+    const newName = window.prompt('Clone name:', suggested);
     if (newName === null) return;
     const newTrigger = window.prompt('Trigger price (leave blank to keep same):', card.trigger_price);
     if (newTrigger === null) return;
-    const overrides = { card_name: newName || card.card_name + ' (copy)' };
+    const overrides = { card_name: newName || suggested };
     if (newTrigger && !isNaN(parseFloat(newTrigger))) overrides.trigger_price = parseFloat(newTrigger);
     try {
       await patienceAPI.cloneCard(cardId, overrides);
@@ -200,16 +241,41 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
     }
   };
 
-  const handleClose = async () => {
-    const exitVal = window.prompt('Exit value (total premium received for closing, optional):');
-    if (exitVal === null) return;
+  const handleClose = () => {
+    // FIX 8: open inline close form instead of window.prompt
+    setShowCloseForm(true);
+    setCloseExitValue('');
+    setPartialFillWarning(null);
+  };
+  const submitClose = async () => {
+    setCloseLoading(true);
     try {
-      await patienceAPI.closeCard(cardId, { exit_value: exitVal ? parseFloat(exitVal) : 0 });
-      onRefresh?.();
-      onBack();
-    } catch (e) { alert(e.message); }
+      const r = await patienceAPI.closeCard(cardId, {
+        exit_value: parseFloat(closeExitValue) || 0,
+        card_type: 'options',
+      });
+      if (r.data?.partial_fill_warning) {
+        setPartialFillWarning(r.data.partial_fill_warning);
+      } else {
+        onRefresh?.();
+        onBack();
+      }
+    } catch (e) {
+      alert('Close failed: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setCloseLoading(false);
+    }
   };
   const handleExecuteNow = async () => {
+    // FIX 3: check engine is running before executing
+    try {
+      const res = await patienceAPI.getStatus();
+      if (!res.data?.running) {
+        setEngineGuardError('Engine is not running. Start the Patience engine before executing.');
+        return;
+      }
+    } catch { /* proceed anyway if status check fails */ }
+    setEngineGuardError(null);
     if (!window.confirm('Execute NOW (bypass trigger)? This will queue the card for immediate execution.')) return;
     try {
       await patienceAPI.executeNow(cardId);
@@ -298,7 +364,13 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
             {card.status}
           </span>
           {EDITABLE_STATUSES.includes(card.status) && (
-            <button onClick={handleExecuteNow} style={actionBtn('#dc2626')}>⚡ EXECUTE NOW</button>
+            <button
+              onClick={handleExecuteNow}
+              title={engineRunning === false ? 'Engine is not running — click to see details' : 'Execute all legs immediately'}
+              style={{ ...actionBtn(engineRunning === false ? '#92400e' : '#dc2626'), opacity: engineRunning === false ? 0.7 : 1 }}
+            >
+              {engineRunning === false ? '⚡ EXECUTE NOW ⚠' : '⚡ EXECUTE NOW'}
+            </button>
           )}
           {card.status === 'DRAFT' && (
             <button onClick={handleArm} style={actionBtn('#3b82f6')}>ARM</button>
@@ -320,6 +392,33 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
           )}
         </div>
       </div>
+
+      {/* FIX 3: engine guard error banner */}
+      {engineGuardError && (
+        <div style={{ background: '#7f1d1d', borderRadius: 6, padding: '10px 16px', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10, fontSize: 13 }}>
+          <span>⚠ {engineGuardError}</span>
+          <button
+            onClick={async () => { await patienceAPI.startEngine(); setEngineGuardError(null); }}
+            style={{ padding: '3px 10px', borderRadius: 4, border: 'none', background: '#22c55e', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600, marginLeft: 'auto' }}
+          >
+            Start Engine
+          </button>
+          <button onClick={() => setEngineGuardError(null)} style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: 16 }}>✕</button>
+        </div>
+      )}
+
+      {/* FIX 7: WAITING card — parent chain context */}
+      {card.status === 'WAITING' && card.parent_card_id && (
+        <div style={{ background: '#1e1b40', borderRadius: 6, padding: '10px 16px', marginBottom: 12, border: '1px solid #a78bfa55', fontSize: 13, color: '#a78bfa' }}>
+          ⛓ Waiting for parent card to complete before arming.
+          {parentCard && (
+            <span style={{ marginLeft: 6 }}>
+              Parent: <strong style={{ color: '#c4b5fd' }}>{parentCard.card_name}</strong>
+              <span style={{ marginLeft: 6, fontSize: 11, color: '#6b7280' }}>({parentCard.status})</span>
+            </span>
+          )}
+        </div>
+      )}
 
       {/* ── Live Execution Panel (shown while EXECUTING / TRIGGERED) ── */}
       {isExecuting && executionStatus && (
@@ -413,9 +512,12 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
                             ))}
                           </select>
                         ) : (
-                          leg.is_relative_strike
-                            ? `ATM${leg.relative_offset >= 0 ? '+' : ''}${leg.relative_offset}`
-                            : leg.strike?.toLocaleString()
+                          // FIX 1: if is_relative_strike AND strike is 0/null → show "ATM ± offset"
+                          leg.is_relative_strike && (leg.strike === 0 || leg.strike == null)
+                            ? `ATM ± ${Math.abs(leg.relative_offset ?? 0)}`
+                            : leg.is_relative_strike
+                              ? `ATM${(leg.relative_offset ?? 0) >= 0 ? '+' : ''}${leg.relative_offset}`
+                              : leg.strike?.toLocaleString() ?? '—'
                         )}
                       </td>
 
@@ -482,7 +584,10 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
                       </td>
 
                       <td style={{ ...cellStyle, color: '#22c55e' }}>
-                        {leg.fill_price ? `$${fmtPrice(leg.fill_price)}` : '—'}
+                        {/* FIX 2: EXECUTING + no fill → spinner instead of $0 */}
+                        {leg.status === 'EXECUTING' && !leg.fill_price
+                          ? <span style={{ color: '#f97316', fontStyle: 'italic', fontSize: 11 }}>⟳ Awaiting fill…</span>
+                          : leg.fill_price ? `$${fmtPrice(leg.fill_price)}` : '—'}
                       </td>
                       <td style={{ ...cellStyle, fontSize: 11 }}>
                         {(() => {
@@ -556,23 +661,107 @@ export default function CardDetail({ card: initialCard, onBack, onRefresh, btcPr
           <div style={{ color: '#64748b', fontSize: 13 }}>No events yet.</div>
         ) : (
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {[...log].reverse().map(event => (
-              <div key={event.id} style={{ display: 'flex', gap: 12, padding: '8px 0', borderBottom: '1px solid #0f172a', fontSize: 12 }}>
-                <div style={{ color: '#475569', whiteSpace: 'nowrap', minWidth: 145 }}>
-                  {event.created_at?.slice(0, 19).replace('T', ' ')}
+            {[...log].reverse().map(event => {
+              // FIX 5/6: parse data field for special event types
+              let parsedData = null;
+              try { parsedData = event.data ? JSON.parse(event.data) : null; } catch {}
+
+              return (
+                <div key={event.id} style={{ padding: '8px 0', borderBottom: '1px solid #0f172a', fontSize: 12 }}>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div style={{ color: '#475569', whiteSpace: 'nowrap', minWidth: 145 }}>
+                      {event.created_at?.slice(0, 19).replace('T', ' ')}
+                    </div>
+                    <div style={{
+                      color: EVENT_COLORS[event.event_type] || '#94a3b8',
+                      fontWeight: 700, whiteSpace: 'nowrap', minWidth: 120,
+                    }}>
+                      {event.event_type}
+                    </div>
+                    <div style={{ color: '#94a3b8', flex: 1 }}>{event.message}</div>
+                  </div>
+                  {/* FIX 5: IV_BLOCKED extra detail */}
+                  {event.event_type === 'IV_BLOCKED' && parsedData && (
+                    <div style={{ marginLeft: 277, marginTop: 4, background: '#1e1b0a', borderRadius: 4, padding: '4px 10px', fontSize: 11, color: '#eab308', border: '1px solid #eab30855' }}>
+                      IV gate blocked — current: <strong>{parsedData.current_percentile ?? parsedData.percentile ?? '?'}%</strong>
+                      {' '} | required: <strong>{parsedData.iv_min ?? '?'}%–{parsedData.iv_max ?? '?'}%</strong>
+                    </div>
+                  )}
+                  {/* FIX 6: GREEKS_BLOCKED extra detail */}
+                  {event.event_type === 'GREEKS_BLOCKED' && parsedData && (
+                    <div style={{ marginLeft: 277, marginTop: 4, background: '#1e0f00', borderRadius: 4, padding: '4px 10px', fontSize: 11, color: '#f97316', border: '1px solid #f9731655' }}>
+                      Delta limit blocked — portfolio Δ would be <strong>{parsedData.total_delta ?? '?'}</strong>
+                      {' '} (limit: ±<strong>{parsedData.limit ?? '?'}</strong>)
+                    </div>
+                  )}
                 </div>
-                <div style={{
-                  color: EVENT_COLORS[event.event_type] || '#94a3b8',
-                  fontWeight: 700, whiteSpace: 'nowrap', minWidth: 120,
-                }}>
-                  {event.event_type}
-                </div>
-                <div style={{ color: '#94a3b8', flex: 1 }}>{event.message}</div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Section>
+
+      {/* ── Section D: Close Card (FIX 8) — inline form for COMPLETED / PAUSED ── */}
+      {(['COMPLETED', 'PAUSED'].includes(card.status)) && (
+        <Section title="Close Card — Record Exit">
+          {partialFillWarning && (
+            <div style={{ background: '#7f1d1d', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 13, color: '#ef4444' }}>
+              ⚠ {partialFillWarning} — entry_premium may be inaccurate.
+            </div>
+          )}
+          {!showCloseForm ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <span style={{ fontSize: 13, color: '#94a3b8' }}>
+                Record exit value and close this card to track P&L in Performance.
+              </span>
+              <button onClick={handleClose} style={actionBtn('#475569')}>Open Close Form</button>
+            </div>
+          ) : (
+            <div style={{ maxWidth: 420 }}>
+              {closeEntryPremium != null && (
+                <div style={{ background: '#0f172a', borderRadius: 6, padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>
+                  <span style={{ color: '#64748b' }}>Entry Premium:</span>
+                  <strong style={{ color: '#e2e8f0', marginLeft: 8 }}>${fmtPrice(closeEntryPremium)}</strong>
+                </div>
+              )}
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 12, color: '#94a3b8', display: 'block', marginBottom: 4 }}>
+                  Exit Value (BTC USD total received)
+                </label>
+                <input
+                  type="number"
+                  value={closeExitValue}
+                  onChange={e => setCloseExitValue(e.target.value)}
+                  placeholder="0.00"
+                  style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#e2e8f0', padding: '6px 10px', fontSize: 13, width: 200 }}
+                />
+              </div>
+              {closeEntryPremium != null && closeExitValue !== '' && !isNaN(parseFloat(closeExitValue)) && (
+                <div style={{ marginBottom: 14, fontSize: 14, fontWeight: 700 }}>
+                  {(() => {
+                    const pnl = parseFloat(closeExitValue) - closeEntryPremium;
+                    return (
+                      <span style={{ color: pnl >= 0 ? '#22c55e' : '#ef4444' }}>
+                        P&L Preview: {pnl >= 0 ? '+' : ''}${fmtPrice(pnl)}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button
+                  onClick={submitClose}
+                  disabled={closeLoading}
+                  style={actionBtn(closeLoading ? '#334155' : '#22c55e')}
+                >
+                  {closeLoading ? 'Closing…' : '✓ Close Card'}
+                </button>
+                <button onClick={() => setShowCloseForm(false)} style={actionBtn('#475569')}>Cancel</button>
+              </div>
+            </div>
+          )}
+        </Section>
+      )}
 
       {/* ── Meta info ────────────────────────────────────────────── */}
       <Section title="Card Info">

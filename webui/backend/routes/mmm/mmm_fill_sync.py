@@ -102,49 +102,78 @@ class FillSyncer:
         if now_us <= cursor_us:
             return 0  # Clock skew / nothing to fetch
 
-        # ── Fetch fills from exchange ────────────────────────────────────
-        try:
-            resp = await rest_client._request_with_retry(
-                method='GET',
-                path='/v2/fills',
-                params={
-                    'start_time': cursor_us,
-                    'end_time': now_us,
-                    'page_size': 100,
-                },
-            )
-        except Exception as e:
-            log.warning(f"[{sid}] FillSync: /v2/fills request failed: {e}")
-            return 0
+        # ── Fetch fills from exchange — H-7: paginate up to 3 pages ────────
+        _PAGE_SIZE = 100
+        _MAX_PAGES = 3
+        all_fills = []
+        page_cursor_us = cursor_us
+        truncated = False
 
-        fills = resp.get('result', [])
-        if not isinstance(fills, list):
+        for _page in range(_MAX_PAGES):
+            try:
+                resp = await rest_client._request_with_retry(
+                    method='GET',
+                    path='/v2/fills',
+                    params={
+                        'start_time': page_cursor_us,
+                        'end_time': now_us,
+                        'page_size': _PAGE_SIZE,
+                    },
+                )
+            except Exception as e:
+                log.warning(f"[{sid}] FillSync: /v2/fills page {_page+1} failed: {e}")
+                break
+
+            page_fills = resp.get('result', [])
+            if not isinstance(page_fills, list) or not page_fills:
+                break
+
+            all_fills.extend(page_fills)
+
+            if len(page_fills) < _PAGE_SIZE:
+                break  # Last page — no more fills
+
+            # More pages may exist: advance page cursor past newest fill on this page
+            newest_on_page = page_cursor_us
+            for f in page_fills:
+                ts = _parse_ts_us(f.get('created_at', ''))
+                if ts > newest_on_page:
+                    newest_on_page = ts
+            if newest_on_page <= page_cursor_us:
+                break  # No timestamp progress — stop to prevent infinite loop
+            page_cursor_us = newest_on_page + 1
+
+            if _page == _MAX_PAGES - 1:
+                truncated = True
+                log.warning(
+                    f"[{sid}] FillSync: fetched {_PAGE_SIZE * _MAX_PAGES}+ fills — "
+                    f"possible truncation. Consider reducing heartbeat interval."
+                )
+
+        if not all_fills:
             return 0
 
         # ── Filter to session symbols only ───────────────────────────────
         relevant = []
         newest_fill_us = cursor_us
-        for fill in fills:
+        for fill in all_fills:
             sym = (fill.get('product', {}).get('symbol', '')
                    or fill.get('product_symbol', ''))
-            if sym not in session_symbols:
-                continue
-            # Parse fill timestamp → microseconds
+            # Track newest timestamp across ALL fills (not just session symbols)
+            # so the cursor advances past unrelated fills too.
             created_raw = fill.get('created_at', '')
             fill_us = _parse_ts_us(created_raw)
             if fill_us > newest_fill_us:
                 newest_fill_us = fill_us
+            if sym not in session_symbols:
+                continue
             relevant.append((fill, sym, fill_us))
 
-        # Advance cursor past the newest fill we saw — intentionally unconditional.
-        # Retrying unmatched fills next heartbeat would produce the same result:
-        # fills with no matching session position can never be processed by this
-        # module (that's Bug-B / reconciliation territory). Advancing prevents
-        # endlessly re-fetching old fills on every heartbeat.
-        if newest_fill_us > cursor_us:
-            session['_fill_sync_cursor_us'] = newest_fill_us + 1
-
         if not relevant:
+            # H-3: advance cursor after processing (even if no relevant fills) —
+            # prevents endlessly re-fetching unmatched fills (Bug-B territory).
+            if newest_fill_us > cursor_us:
+                session['_fill_sync_cursor_us'] = newest_fill_us + 1
             return 0
 
         # ── Reconcile each fill ──────────────────────────────────────────
@@ -177,6 +206,14 @@ class FillSyncer:
                 expiry=expiry,
             )
             updated += n
+
+        # H-3: Advance cursor AFTER reconcile loop completes — not before.
+        # If we crash between fetch and here, fills are refetched next heartbeat.
+        # confirm_fill() deduplicates by fill_id so re-processing is safe.
+        # Unmatched fills (no session position) still advance the cursor to
+        # prevent endless re-fetch (same reasoning as before, just later).
+        if newest_fill_us > cursor_us:
+            session['_fill_sync_cursor_us'] = newest_fill_us + 1
 
         if updated:
             log.info(f"[{sid}] FillSync: updated {updated} position(s) from exchange fills")
@@ -270,34 +307,49 @@ class FillSyncer:
         # so a partial fill never over-books P&L.
         lots_closed = min(fill_size, float(pos_lots)) if pos_lots > 0 else fill_size
 
-        # ── P&L reconciliation ──────────────────────────────────────
+        # ── P&L via ledger (single source of truth) ──────────────────
         actual_pnl = (entry - fill_price) * lots_closed * LOT_SIZE_BTC
 
-        # How much P&L was already booked for this position?
+        # pos_type is needed by both the record path and log_activity below.
+        # Define it here (before the conditional) so it is always bound.
+        pos_type = pos.get('type', '')
+
+        # Try to confirm an existing estimate in the ledger first.
+        # If no estimate exists (e.g. external fill), record a new confirmed entry.
+        from .mmm_pnl_core import confirm_fill as _pnl_confirm, record_close as _pnl_record
+        _close_oid = pos.get('close_order_id', '') or ''
+        _confirmed = _pnl_confirm(
+            session=session,
+            order_id=_close_oid,
+            fill_id=fill_id,
+            actual_fill_price=fill_price,
+            actual_commission=commission,
+            actual_lots=int(lots_closed),
+        )
+        if _confirmed is None and _close_oid:
+            # No estimate in ledger — record as a fresh confirmed fill
+            _pnl_record(
+                session=session,
+                order_id=_close_oid,
+                symbol=pos.get('symbol', ''),
+                option_side=matched_side_key,
+                strike=pos_strike,
+                lots=int(lots_closed),
+                entry_premium=entry,
+                close_premium=fill_price,
+                commission=commission,
+                source='initial' if pos_type == 'original' else 'adjustment',
+                position_id=pos.get('id', ''),
+                confirmed=True,
+                fill_id=fill_id,
+            )
+
+        # Compute corrections for logging (actual vs estimated)
         estimated_booked = float(pos.get('_estimated_pnl_booked', 0) or 0)
         pnl_correction = actual_pnl - estimated_booked
-
-        # Apply correction to session totals (both positive and negative —
-        # negative = overstated estimate / maker rebate).
-        # FILL-SYNC-ROUND-FIX: only touch realized_pnl when there is an actual
-        # correction.  The previous unconditional round(realized + 0.0, 8) call
-        # silently truncated the last few ULP digits of realized_pnl on every
-        # fill confirmation even when nothing changed, causing a slow ratchet
-        # divergence from pnl_adjustment (which was guarded and never touched).
-        pos_type = pos.get('type', '')
-        attr_key = 'pnl_initial' if pos_type == 'original' else 'pnl_adjustment'
-        if abs(pnl_correction) > 1e-9:
-            session['realized_pnl'] = round(
-                session.get('realized_pnl', 0) + pnl_correction, 8)
-            session[attr_key] = round(
-                session.get(attr_key, 0.0) + pnl_correction, 8)
-
-        # Commission correction (both directions — negative = rebate).
-        estimated_comm = float(pos.get('_estimated_commission_booked', 0) or 0)
-        comm_correction = commission - estimated_comm
-        if abs(comm_correction) > 1e-9:
-            session['total_fees'] = round(
-                session.get('total_fees', 0) + comm_correction, 8)
+        estimated_comm_booked = float(pos.get('_estimated_commission_booked', 0) or 0)
+        comm_correction = commission - estimated_comm_booked
+        # ── END P&L via ledger ───────────────────────────────────────
 
         # ── Update position ─────────────────────────────────────────
         if status != 'closed':

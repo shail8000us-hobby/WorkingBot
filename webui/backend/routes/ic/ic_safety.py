@@ -202,7 +202,7 @@ def check_circuit_breaker(session: Dict) -> Optional[Dict]:
         try:
             cb_time = datetime.fromisoformat(cb_until.replace('Z', '+00:00'))
             if datetime.now(timezone.utc) < cb_time:
-                remaining_mins = (cb_time - datetime.now(timezone.utc)).seconds / 60
+                remaining_mins = (cb_time - datetime.now(timezone.utc)).total_seconds() / 60
                 return create_safety_event(
                     'circuit_breaker_active',
                     SAFETY_ALERT,
@@ -226,6 +226,10 @@ def check_circuit_breaker(session: Dict) -> Optional[Dict]:
     session['recent_adjustment_times'] = recent_times
 
     if len(recent_times) >= 3:
+        # AUDIT FIX C5: Actually activate the circuit breaker timer
+        # so it auto-resets after 30 minutes instead of blocking indefinitely
+        if not session.get('circuit_breaker_active'):
+            activate_circuit_breaker(session, pause_minutes=30)
         return create_safety_event(
             'circuit_breaker_triggered',
             SAFETY_CRITICAL,

@@ -201,18 +201,17 @@ class MMMStorage:
         """
         One-time retroactive fix for BUG-1: FillSync double-counted P&L.
 
-        Before the fix, close paths did not stamp _estimated_pnl_booked on
-        positions. FillSyncer then treated the estimate as 0 and re-booked
-        the full P&L. The fingerprint is:
-          _fill_confirmed=True AND _estimated_pnl_booked in (0, None)
-          AND _pnl_correction_applied == _actual_pnl_booked (i.e. full re-book)
-
-        This correction runs once per session load. It subtracts the
-        double-booked amount from realized_pnl, stamps the positions so the
-        correction is idempotent, and logs the event.
+        NOTE: For sessions with a _fill_ledger, this fix is no longer needed —
+        the ledger's dedup by fill_id prevents double-booking entirely.
+        Kept for backward compatibility with pre-ledger sessions only.
         """
         if session.get('_fillsync_double_booking_corrected'):
             return  # Already corrected — idempotent
+
+        # Sessions with fill ledger don't need this fix
+        if session.get('_fill_ledger'):
+            session['_fillsync_double_booking_corrected'] = True
+            return
 
         total_over = 0.0
         count = 0
@@ -224,12 +223,9 @@ class MMMStorage:
                 est = pos.get('_estimated_pnl_booked')
                 corr = pos.get('_pnl_correction_applied', 0) or 0
                 actual = pos.get('_actual_pnl_booked', 0) or 0
-                # Fingerprint: estimate was 0/None and correction == actual
-                # (meaning FillSync re-booked the full amount)
                 if (est is None or est == 0) and abs(corr - actual) < 1e-8 and abs(corr) > 1e-8:
                     total_over += corr
                     count += 1
-                    # Stamp so this position is not corrected again
                     pos['_estimated_pnl_booked'] = actual
                     pos['_pnl_correction_applied'] = 0.0
 
@@ -245,7 +241,6 @@ class MMMStorage:
                 f"{count} positions"
             )
         else:
-            # No correction needed — mark so we don't re-scan
             session['_fillsync_double_booking_corrected'] = True
 
     def _calculate_checksum(self, session: Dict) -> str:
@@ -537,9 +532,10 @@ class MMMStorage:
                 now = datetime.now(timezone.utc).isoformat()
                 session['updated_at'] = now
 
-                # Recalculate checksum after merging updates so get_session won't
+                # Recalculate checksums after merging updates so get_session won't
                 # flag this as corrupted on the next read.
                 session['_checksum'] = self._calculate_checksum(session)
+                session['_checksum_v2'] = self._calculate_checksum_v2(session)
                 session.pop('_checksum_warning', None)
 
                 status = session.get('strategy_status', 'IDLE')

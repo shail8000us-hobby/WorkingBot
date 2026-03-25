@@ -194,5 +194,29 @@
     "completed": false,
     "createdAt": "2026-03-15T12:45:40.457384",
     "updatedAt": "2026-03-15T12:45:40.457391"
+  },
+  {
+    "id": "1774073579353",
+    "text": "kill -9 $(lsof -ti:5555)  # launchd auto-restarts after ~30s (KeepAlive)",
+    "completed": false,
+    "createdAt": "2026-03-21T11:42:59.353525",
+    "updatedAt": "2026-03-21T11:42:59.353535"
+  },
+  {
+    "id": "1774075007655",
+    "text": "tasks/MMM_STRIKE_SHIFT_REDESIGN.md",
+    "completed": false,
+    "createdAt": "2026-03-21T12:06:47.655678",
+    "updatedAt": "2026-03-21T12:06:47.655686"
+  },
+  {
+    "id": "1774077892257",
+    "text": "",
+    "completed": false,
+    "priority": "medium",
+    "category": null,
+    "pinned": false,
+    "createdAt": "2026-03-21T12:54:52.257379",
+    "updatedAt": "2026-03-21T12:54:52.257386"
   }
 ]

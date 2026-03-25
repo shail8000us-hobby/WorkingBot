@@ -29,15 +29,39 @@ import {
 import { HelpTooltip, HELP } from './MMMEducation';
 import { LOT_SIZE_BTC } from './MMMPositionsTable';
 
-function getGaugeColor(ratio) {
-  if (ratio >= 1) return '#f44336';    // Red — exceeded
-  if (ratio >= 0.8) return '#ff9800';  // Yellow — approaching
-  return '#4caf50';                     // Green — safe
+// Color zones use ENTRY PREMIUM as the green/yellow boundary (not trigger_snapshot).
+//
+// Why: trigger_snapshot is RESET after every adjustment (update_trigger_snapshots
+// sets both sides to current premium). After a CE hedge fires, PE trigger_snapshot
+// gets set to the depressed PE price at that moment. Any tiny tick up in PE then
+// shows "Approaching" — even though PE is far below its original sell price (= profit).
+//
+// For options sellers: green = premium is BELOW what we sold it for (profit territory).
+//                      yellow = premium ABOVE entry but below fire level (at a loss, trigger approaching).
+//                      red = fire level crossed (adjustment imminent).
+//
+// Zones:
+//   currentPremium <  safeCeiling                    → GREEN  (below entry premium → profitable)
+//   currentPremium >= safeCeiling but < fireLevel    → YELLOW (above entry → at a loss, approaching fire)
+//   currentPremium >= fireLevel                      → RED    (fire level crossed)
+//
+// where safeCeiling = entryPremium if > 0, else triggerLevel (pre-adjustment sessions)
+// where fireLevel   = triggerLevel × (1 + minTriggerMove/100)
+function getGaugeColor(currentPremium, triggerLevel, minTriggerMove = 10, entryPremium = 0) {
+  if (triggerLevel <= 0) return '#4caf50';
+  const fireLevel = triggerLevel * (1 + minTriggerMove / 100);
+  if (currentPremium >= fireLevel) return '#f44336';
+  const safeCeiling = entryPremium > 0 ? entryPremium : triggerLevel;
+  if (currentPremium >= safeCeiling) return '#ff9800';
+  return '#4caf50';
 }
 
-function getGaugeLabel(ratio) {
-  if (ratio >= 1) return 'TRIGGERED';
-  if (ratio >= 0.8) return 'Approaching';
+function getGaugeLabel(currentPremium, triggerLevel, minTriggerMove = 10, entryPremium = 0) {
+  if (triggerLevel <= 0) return 'Safe';
+  const fireLevel = triggerLevel * (1 + minTriggerMove / 100);
+  if (currentPremium >= fireLevel) return 'TRIGGERED';
+  const safeCeiling = entryPremium > 0 ? entryPremium : triggerLevel;
+  if (currentPremium >= safeCeiling) return 'Approaching';
   return 'Safe';
 }
 
@@ -51,6 +75,7 @@ function TriggerSideGauge({
   currentPremium = 0,
   triggerLevel = 0,
   minTriggerMove = 10,
+  entryPremium = 0,
   activeStrike = 0,
   activeLots = 0,
   totalLots = 0,
@@ -65,8 +90,8 @@ function TriggerSideGauge({
   const ratio = triggerThreshold > 0 ? currentPremium / triggerThreshold : 0;
   const clampedRatio = Math.min(Math.max(ratio, 0), 1.5);
   const progressValue = Math.min(clampedRatio * 100, 100);
-  const color = getGaugeColor(clampedRatio);
-  const statusLabel = getGaugeLabel(clampedRatio);
+  const color = getGaugeColor(currentPremium, triggerLevel, minTriggerMove, entryPremium);
+  const statusLabel = getGaugeLabel(currentPremium, triggerLevel, minTriggerMove, entryPremium);
 
   return (
     <Paper
@@ -127,9 +152,25 @@ function TriggerSideGauge({
             },
           }}
         />
-        {/* Trigger line marker */}
+        {/* Entry premium marker (breakeven line) */}
+        {triggerThreshold > 0 && entryPremium > 0 && (
+          <Tooltip title={`Entry premium: ${entryPremium.toFixed(1)} — your average sell price. Below this = profitable. Above this = at a loss.`} arrow>
+            <Box
+              sx={{
+                position: 'absolute',
+                left: `${Math.min((entryPremium / triggerThreshold) * 100, 100)}%`,
+                top: -2,
+                width: 2,
+                height: 16,
+                bgcolor: '#ff9800',
+                opacity: 0.7,
+              }}
+            />
+          </Tooltip>
+        )}
+        {/* Trigger snapshot marker */}
         {triggerThreshold > 0 && (
-          <Tooltip title={`Trigger level: ${triggerLevel.toFixed(1)} — losses up to this level are covered. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment.`} arrow>
+          <Tooltip title={`Trigger snapshot: ${triggerLevel.toFixed(1)} — last reset point. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment.`} arrow>
             <Box
               sx={{
                 position: 'absolute',
@@ -147,12 +188,12 @@ function TriggerSideGauge({
 
       {/* Values */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <Tooltip title={`Current premium: ${currentPremium.toFixed(1)} — Trigger level: ${triggerLevel.toFixed(1)}. You profit when premium decays toward 0. Loss increases when premium rises above trigger.`} arrow>
+        <Tooltip title={`Current premium: ${currentPremium.toFixed(1)} — Entry premium: ${entryPremium > 0 ? entryPremium.toFixed(1) : 'N/A'} — Trigger snapshot: ${triggerLevel.toFixed(1)}. Green = below entry (profitable). Yellow = above entry but below fire level. Red = trigger fired.`} arrow>
           <Box sx={{ cursor: 'help' }}>
             <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
               {currentPremium.toFixed(1)}{' '}
               <Typography component="span" variant="caption" color="text.secondary">
-                / {triggerLevel.toFixed(1)}
+                / entry {entryPremium > 0 ? entryPremium.toFixed(1) : '–'}
               </Typography>
             </Typography>
           </Box>
@@ -198,15 +239,29 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
   const ceState = session.ce || {};
   const peState = session.pe || {};
 
+  // original_premium = lot-weighted average entry price across all positions (incl. adj. lots).
+  // This is what we sold the option for on average — the "safe zone" ceiling.
+  // When current < original_premium, the options seller is in profit.
+  const ceEntryPremium = ceState.original_premium || 0;
+  const peEntryPremium = peState.original_premium || 0;
+
   const ceStrike = String(Math.floor(ceState.active_strike || 0));
   const peStrike = String(Math.floor(peState.active_strike || 0));
 
   const ceTrigger = (ceState.trigger_snapshot || {})[ceStrike] || 0;
   const peTrigger = (peState.trigger_snapshot || {})[peStrike] || 0;
 
+  // Fallback chain: heartbeat (WS) → _premium_map (persisted by backend on every heartbeat)
+  // _premium_map is the same source used by the CE/PE side cards, so both stay in sync.
+  const premiumMap = session?._premium_map || {};
+  const ceMapKey = ceState.active_strike > 0 ? `${Math.round(ceState.active_strike)}:call` : null;
+  const peMapKey = peState.active_strike > 0 ? `${Math.round(peState.active_strike)}:put` : null;
+  const cePremiumFromMap = ceMapKey && premiumMap[ceMapKey] > 0 ? premiumMap[ceMapKey] : null;
+  const pePremiumFromMap = peMapKey && premiumMap[peMapKey] > 0 ? premiumMap[peMapKey] : null;
+
   // Use > 0 check (not ||) so 0 is treated as "no data", not as a valid price
-  const ceNow = (heartbeat?.ce_premium > 0) ? heartbeat.ce_premium : null;
-  const peNow = (heartbeat?.pe_premium > 0) ? heartbeat.pe_premium : null;
+  const ceNow = (heartbeat?.ce_premium > 0) ? heartbeat.ce_premium : cePremiumFromMap;
+  const peNow = (heartbeat?.pe_premium > 0) ? heartbeat.pe_premium : pePremiumFromMap;
   const hasLiveData = ceNow != null || peNow != null;
 
   const ceExcess = triggerData?.ce_excess || (ceNow != null ? Math.max(0, ceNow - ceTrigger) : 0);
@@ -231,9 +286,10 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
         <TriggerSideGauge
           label="CE Side"
           sideColor="#2196f3"
-          currentPremium={ceNow ?? ceTrigger}
+          currentPremium={ceNow ?? 0}
           triggerLevel={ceTrigger}
           minTriggerMove={minTriggerMove}
+          entryPremium={ceEntryPremium}
           activeStrike={ceState.active_strike}
           activeLots={ceState.active_lots || 0}
           totalLots={ceState.total_lots || 0}
@@ -247,9 +303,10 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
         <TriggerSideGauge
           label="PE Side"
           sideColor="#9c27b0"
-          currentPremium={peNow ?? peTrigger}
+          currentPremium={peNow ?? 0}
           triggerLevel={peTrigger}
           minTriggerMove={minTriggerMove}
+          entryPremium={peEntryPremium}
           activeStrike={peState.active_strike}
           activeLots={peState.active_lots || 0}
           totalLots={peState.total_lots || 0}

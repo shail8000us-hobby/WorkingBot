@@ -1696,3 +1696,12 @@ For 10 lots (0.01 BTC):
 
 *End of Iron Condor Implementation Plan (Revised)*
 *Phase 1+2+3 complete (2026-03-24). Next step: Phase 4 (WebUI) → Phase 5 (Testing & Hardening)*
+
+---
+
+## Appendix F — Known Simulation Mode Runtime Errors
+
+**Bug 1: 405 Method Not Allowed on Session Endpoints**
+- **Symptom:** Operations like `DELETE /api/ic/sessions/<id>` and `POST /api/ic/sessions/<id>/stop` fail with HTTP 500 (Internal Server Error) logging a `405 Method Not Allowed` Werkzeug routing exception in the backend logs (`webui_production_error.log`).
+- **Root Cause:** There is an endpoint mismatch in `ic_api.py`. The session control routes (delete, start, stop, pause, resume) are registered with the singular path `@ic_bp.route('/session/<session_id>...')` (e.g. line 164), but the UI/scripts query the plural path `/sessions/`.
+- **Action Required:** Update `ic_api.py` to change `/session/` to `/sessions/` across all 5 session control endpoints.

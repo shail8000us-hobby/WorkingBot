@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MMM Settings — Design Mockup</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0d1117;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: #e6edf3;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+  }
+
+  .dialog {
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 12px;
+    width: 960px;
+    max-width: 100%;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+    overflow: hidden;
+  }
+
+  /* ── Header ── */
+  .dialog-header {
+    background: #1c2128;
+    border-bottom: 1px solid #30363d;
+    padding: 16px 20px 12px;
+  }
+  .dialog-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .dialog-title-row h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #e6edf3;
+    flex: 1;
+  }
+  .session-chip {
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 20px;
+    padding: 2px 10px;
+    font-size: 0.7rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #8b949e;
+  }
+  .settings-icon { font-size: 1.1rem; }
+
+  .search-box {
+    width: 100%;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 0.82rem;
+    color: #8b949e;
+    outline: none;
+  }
+  .search-box:focus { border-color: #388bfd; color: #e6edf3; }
+
+  /* ── Hot reload banner ── */
+  .hot-banner {
+    margin: 0;
+    background: rgba(56,139,253,0.1);
+    border-bottom: 1px solid rgba(56,139,253,0.25);
+    padding: 8px 20px;
+    font-size: 0.75rem;
+    color: #79c0ff;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  /* ── Content ── */
+  .dialog-content {
+    padding: 16px 20px;
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+  .dialog-content::-webkit-scrollbar { width: 6px; }
+  .dialog-content::-webkit-scrollbar-track { background: transparent; }
+  .dialog-content::-webkit-scrollbar-thumb { background: #30363d; border-radius: 3px; }
+
+  /* ── Group ── */
+  .group { margin-bottom: 24px; }
+  .group + .group { border-top: 1px solid #21262d; padding-top: 20px; }
+
+  .group-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 4px;
+  }
+  .group-accent {
+    width: 3px;
+    height: 18px;
+    border-radius: 2px;
+  }
+  .group-title {
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .critical-chip {
+    margin-left: auto;
+    background: rgba(210,120,0,0.2);
+    border: 1px solid rgba(210,120,0,0.5);
+    color: #f0883e;
+    font-size: 0.64rem;
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 10px;
+    letter-spacing: 0.5px;
+  }
+  .group-blurb {
+    font-size: 0.69rem;
+    color: #6e7681;
+    font-style: italic;
+    margin-bottom: 12px;
+    padding-left: 11px;
+  }
+
+  /* ── Param Grid ── */
+  .param-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+  }
+  .param-grid .full-width { grid-column: 1 / -1; }
+
+  /* ── Param Card ── */
+  .param-card {
+    background: #1c2128;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 10px 12px 8px;
+    transition: border-color 0.15s;
+  }
+  .param-card:hover { border-color: #388bfd44; }
+
+  .param-top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+  }
+  .param-desc {
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: #c9d1d9;
+    flex: 1;
+  }
+  .param-icons {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .icon-hot {
+    font-size: 0.7rem;
+    background: rgba(255,152,0,0.15);
+    border: 1px solid rgba(255,152,0,0.3);
+    color: #ffa726;
+    border-radius: 4px;
+    padding: 1px 4px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+  }
+  .icon-lock {
+    font-size: 0.7rem;
+    background: rgba(139,148,158,0.12);
+    border: 1px solid rgba(139,148,158,0.2);
+    color: #6e7681;
+    border-radius: 4px;
+    padding: 1px 4px;
+  }
+  .icon-help {
+    font-size: 0.65rem;
+    color: #6e7681;
+    cursor: help;
+    padding: 1px 3px;
+  }
+
+  .param-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .param-key {
+    font-size: 0.62rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #388bfd88;
+    letter-spacing: 0.2px;
+  }
+  .param-input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .param-range {
+    font-size: 0.6rem;
+    color: #3d444d;
+    white-space: nowrap;
+  }
+
+  input[type="number"] {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #79c0ff;
+    width: 80px;
+    text-align: right;
+    outline: none;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  input[type="number"]:focus { border-color: #388bfd; }
+  input[type="number"]::-webkit-inner-spin-button { opacity: 0.4; }
+
+  select {
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 4px 28px 4px 10px;
+    font-size: 0.78rem;
+    color: #c9d1d9;
+    outline: none;
+    width: 100%;
+    appearance: none;
+    cursor: pointer;
+  }
+  select:focus { border-color: #388bfd; }
+  .select-wrapper { position: relative; flex: 1; }
+  .select-wrapper::after {
+    content: '▾';
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.65rem;
+    color: #6e7681;
+    pointer-events: none;
+  }
+
+  /* ── Bool Card ── */
+  .bool-card {
+    background: #1c2128;
+    border: 1px solid #21262d;
+    border-radius: 8px;
+    padding: 9px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+  .bool-card:hover { border-color: #388bfd44; }
+  .bool-card.on {
+    border-color: rgba(56,139,253,0.4);
+    background: rgba(56,139,253,0.07);
+  }
+  .bool-card.conflict {
+    border-color: rgba(210,120,0,0.5);
+    background: rgba(210,120,0,0.06);
+  }
+  .bool-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* Toggle switch */
+  .toggle {
+    flex-shrink: 0;
+    width: 32px;
+    height: 18px;
+    background: #30363d;
+    border-radius: 9px;
+    position: relative;
+    margin-top: 2px;
+    transition: background 0.2s;
+    cursor: pointer;
+  }
+  .toggle.on { background: #1f6feb; }
+  .toggle::after {
+    content: '';
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: white;
+    border-radius: 50%;
+    top: 3px;
+    left: 3px;
+    transition: left 0.2s;
+  }
+  .toggle.on::after { left: 17px; }
+
+  .bool-text { flex: 1; }
+  .bool-desc {
+    font-size: 0.74rem;
+    line-height: 1.45;
+    color: #6e7681;
+    user-select: none;
+    transition: color 0.15s;
+  }
+  .bool-card.on .bool-desc { color: #c9d1d9; }
+  .bool-key {
+    font-size: 0.62rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    color: #388bfd88;
+    margin-top: 3px;
+    display: block;
+  }
+  .bool-icons { flex-shrink: 0; display: flex; gap: 3px; align-items: center; }
+
+  /* Conflict alert */
+  .conflict-alert {
+    margin-top: 6px;
+    background: rgba(210,120,0,0.12);
+    border: 1px solid rgba(210,120,0,0.3);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.68rem;
+    color: #f0883e;
+    line-height: 1.4;
+  }
+
+  /* ── Section sub-header ── */
+  .section-header {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    color: #6e7681;
+    padding: 10px 0 6px;
+    border-bottom: 1px dashed #21262d;
+    margin-bottom: 6px;
+  }
+
+  /* ── Footer ── */
+  .dialog-footer {
+    background: #1c2128;
+    border-top: 1px solid #30363d;
+    padding: 12px 20px;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+  }
+  .btn-cancel {
+    background: transparent;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 6px 16px;
+    font-size: 0.82rem;
+    color: #8b949e;
+    cursor: pointer;
+  }
+  .btn-cancel:hover { border-color: #8b949e; color: #e6edf3; }
+  .btn-save {
+    background: #1f6feb;
+    border: 1px solid #388bfd;
+    border-radius: 6px;
+    padding: 6px 20px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: white;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .btn-save:hover { background: #388bfd; }
+</style>
+</head>
+<body>
+
+<div class="dialog">
+
+  <!-- Header -->
+  <div class="dialog-header">
+    <div class="dialog-title-row">
+      <span class="settings-icon">⚙️</span>
+      <h2>Strategy Settings</h2>
+      <span class="session-chip">Session: mmm20mar26-1</span>
+    </div>
+    <input class="search-box" type="text" placeholder="Search parameters…" />
+  </div>
+
+  <!-- Hot reload banner -->
+  <div class="hot-banner">
+    <span>⚡</span>
+    <span><strong>Hot Reload:</strong> Changes take effect on the next heartbeat. Parameters with 🔒 require session restart.</span>
+  </div>
+
+  <!-- Content -->
+  <div class="dialog-content">
+
+    <!-- GROUP: Core Parameters -->
+    <div class="group">
+      <div class="group-header">
+        <div class="group-accent" style="background:#2196f3"></div>
+        <span class="group-title" style="color:#2196f3">Core Parameters</span>
+      </div>
+      <div class="group-blurb">💡 Fundamental settings that define position size, check frequency, and hard stop.</div>
+      <div class="param-grid">
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Starting lots per side at entry (display/analytics only — actual entry lots set via API)</span>
+            <div class="param-icons"><span class="icon-lock">🔒</span><span class="icon-help">?</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">initial_lots</span>
+            <div class="param-input-row">
+              <span class="param-range">1–1000</span>
+              <input type="number" value="30">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Seconds between heartbeat checks</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span><span class="icon-help">?</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">adjustment_interval</span>
+            <div class="param-input-row">
+              <span class="param-range">10–3600</span>
+              <input type="number" value="600">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Absolute dollar hard stop — close all positions if this loss is breached</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">max_loss_amount</span>
+            <div class="param-input-row">
+              <span class="param-range">1–1B</span>
+              <input type="number" value="100">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- GROUP: Trigger & Adjustment -->
+    <div class="group">
+      <div class="group-header">
+        <div class="group-accent" style="background:#4caf50"></div>
+        <span class="group-title" style="color:#4caf50">Trigger &amp; Adjustment</span>
+      </div>
+      <div class="group-blurb">💡 Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.</div>
+      <div class="param-grid">
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Minimum % premium must move above trigger to fire an adjustment (e.g. 15 = 15%)</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span><span class="icon-help">?</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">min_trigger_move</span>
+            <div class="param-input-row">
+              <span class="param-range">0.1–100</span>
+              <input type="number" value="20">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Minimum premium at hedge strike to avoid a strike shift</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span><span class="icon-help">?</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">shift_threshold</span>
+            <div class="param-input-row">
+              <span class="param-range">1–5000</span>
+              <input type="number" value="40">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Dynamic shift threshold as % of current entry premium. 0.30 = shift when hedge drops below 30% of entry. Overrides fixed shift_threshold when non-zero.</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">shift_threshold_pct</span>
+            <div class="param-input-row">
+              <span class="param-range">0–1</span>
+              <input type="number" value="0">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Target premium for new strike when shifting — picks the strike closest to this value</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span><span class="icon-help">?</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">shift_target_premium</span>
+            <div class="param-input-row">
+              <span class="param-range">10–5000</span>
+              <input type="number" value="70">
+            </div>
+          </div>
+        </div>
+
+        <!-- Bool -->
+        <div class="bool-card on full-width">
+          <div class="bool-row">
+            <div class="toggle on"></div>
+            <div class="bool-text">
+              <span class="bool-desc">Delta-neutral balance: when shifting strikes, sell at least as many lots as the opposite side has active. Prevents directional bias from lot asymmetry. Recommended: ON.</span>
+              <span class="bool-key">shift_match_opposite_lots</span>
+            </div>
+            <div class="bool-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Maximum number of adjustment events per session</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">max_adjustments</span>
+            <div class="param-input-row">
+              <span class="param-range">1–1000</span>
+              <input type="number" value="30">
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- GROUP: Safety Limits -->
+    <div class="group">
+      <div class="group-header">
+        <div class="group-accent" style="background:#ff9800"></div>
+        <span class="group-title" style="color:#ff9800">Safety Limits</span>
+        <span class="critical-chip">⚠ CRITICAL</span>
+      </div>
+      <div class="group-blurb">💡 Guard rails to prevent runaway exposure. Adjust carefully.</div>
+      <div class="param-grid">
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Maximum total lots allowed per side (CE or PE)</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">max_lots_per_side</span>
+            <div class="param-input-row">
+              <span class="param-range">1–500</span>
+              <input type="number" value="100">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">Absolute ceiling on active+frozen lots per side. 0 = auto (2× max_lots_per_side)</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">max_total_exposure</span>
+            <div class="param-input-row">
+              <span class="param-range">0–1000</span>
+              <input type="number" value="0">
+            </div>
+          </div>
+        </div>
+
+        <!-- Bool OFF state -->
+        <div class="bool-card full-width">
+          <div class="bool-row">
+            <div class="toggle"></div>
+            <div class="bool-text">
+              <span class="bool-desc">Auto-close all positions if any original strike becomes ATM (spot ≈ strike)</span>
+              <span class="bool-key">close_at_atm</span>
+            </div>
+            <div class="bool-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+        </div>
+
+        <!-- Bool with conflict -->
+        <div class="bool-card conflict on full-width">
+          <div class="bool-row">
+            <div class="toggle on" style="background:#f0883e"></div>
+            <div class="bool-text">
+              <span class="bool-desc" style="color:#c9d1d9">Wind-down mode: reduce positions instead of adding when triggered near expiry</span>
+              <span class="bool-key">wind_down_enabled</span>
+            </div>
+            <div class="bool-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="conflict-alert">⚠ <strong>Conflict:</strong> ATM Shield and Wind-Down (manual) are both enabled. Wind-down will block ATM Shield re-sells. Disable Wind-Down while ATM Shield is active.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- GROUP: Position Lifecycle -->
+    <div class="group">
+      <div class="group-header">
+        <div class="group-accent" style="background:#4caf50"></div>
+        <span class="group-title" style="color:#4caf50">🌾 Position Lifecycle</span>
+      </div>
+      <div class="group-blurb">💡 M1 Profit Harvesting, M2 Lot Recycling, Shift-Time Recycle.</div>
+      <div class="param-grid">
+
+        <div class="bool-card on full-width">
+          <div class="bool-row">
+            <div class="toggle on"></div>
+            <div class="bool-text">
+              <span class="bool-desc">M1: Enable proactive profit harvesting of frozen positions that have significantly decayed</span>
+              <span class="bool-key">harvest_enabled</span>
+            </div>
+            <div class="bool-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">M1: Minimum profit % (entry vs current) to harvest a frozen position</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">harvest_profit_pct</span>
+            <div class="param-input-row">
+              <span class="param-range">5–95</span>
+              <input type="number" value="40">
+            </div>
+          </div>
+        </div>
+
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">M1: Minimum capacity pressure (total_lots/max_lots) before harvesting activates</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">harvest_pressure_threshold</span>
+            <div class="param-input-row">
+              <span class="param-range">0–1</span>
+              <input type="number" value="0.7">
+            </div>
+          </div>
+        </div>
+
+        <!-- Select example -->
+        <div class="param-card">
+          <div class="param-top">
+            <span class="param-desc">When at min lots during wind-down: skip, fall back to normal hedge, or pause and ask operator</span>
+            <div class="param-icons"><span class="icon-hot">⚡ HOT</span></div>
+          </div>
+          <div class="param-bottom">
+            <span class="param-key">wind_down_floor_action</span>
+            <div class="select-wrapper">
+              <select>
+                <option selected>Skip — let theta work</option>
+                <option>Normal — allow adjustments</option>
+                <option>Pause — require decision</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer -->
+  <div class="dialog-footer">
+    <button class="btn-cancel">Cancel</button>
+    <button class="btn-save">Save Changes</button>
+  </div>
+
+</div>
+
+<script>
+  // Make toggles clickable for demo
+  document.querySelectorAll('.bool-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const tog = card.querySelector('.toggle');
+      const desc = card.querySelector('.bool-desc');
+      tog.classList.toggle('on');
+      card.classList.toggle('on');
+      if (!card.classList.contains('conflict')) {
+        if (tog.style.background) tog.style.background = '';
+      }
+    });
+  });
+</script>
+</body>
+</html>

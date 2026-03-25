@@ -100,7 +100,8 @@ CREATE TABLE IF NOT EXISTS card_performance (
     card_type TEXT,
     legs_handed_to_mmm INTEGER DEFAULT 0,
     handoff_pnl REAL,
-    closed_at TEXT
+    closed_at TEXT,
+    triggered_at TEXT
 );
 """
 
@@ -140,6 +141,12 @@ class PatienceDB:
                     log.info(f"PatienceDB: migrated — added {col} column to card_legs")
                 except Exception:
                     pass  # column already exists
+            # Migration: add triggered_at to card_performance
+            try:
+                conn.execute("ALTER TABLE card_performance ADD COLUMN triggered_at TEXT")
+                log.info("PatienceDB: migrated — added triggered_at to card_performance")
+            except Exception:
+                pass  # column already exists
         log.info(f"PatienceDB: initialized at {self.db_path}")
 
     # ── Cards ──────────────────────────────────────────────────────────
@@ -373,7 +380,6 @@ class PatienceDB:
             )
 
     def get_dvol_history(self, days: int = 30) -> list:
-        cutoff = datetime.utcnow().isoformat()[:10]  # crude date cutoff
         with self._conn() as conn:
             rows = conn.execute("""
                 SELECT timestamp, dvol_value FROM dvol_history
@@ -425,8 +431,9 @@ class PatienceDB:
             conn.execute("""
                 INSERT INTO card_performance (
                     card_id, card_name, entry_premium, exit_value, pnl,
-                    duration_hours, card_type, legs_handed_to_mmm, handoff_pnl, closed_at
-                ) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    duration_hours, card_type, legs_handed_to_mmm, handoff_pnl, closed_at,
+                    triggered_at
+                ) VALUES (?,?,?,?,?,?,?,?,?,?,?)
             """, (
                 perf.get('card_id'),
                 perf.get('card_name'),
@@ -438,6 +445,7 @@ class PatienceDB:
                 perf.get('legs_handed_to_mmm', 0),
                 perf.get('handoff_pnl'),
                 perf.get('closed_at', _now()),
+                perf.get('triggered_at'),
             ))
 
     def get_performance_for_card(self, card_id: str) -> Optional[dict]:
@@ -454,12 +462,13 @@ class PatienceDB:
         if not fields:
             return
         set_clause = ', '.join(f"{k} = ?" for k in fields)
+        # values: one per SET field, then card_id for the WHERE subquery
         values = list(fields.values()) + [card_id]
         with self._conn() as conn:
             conn.execute(
                 f"UPDATE card_performance SET {set_clause} "
                 f"WHERE id = (SELECT id FROM card_performance WHERE card_id = ? ORDER BY id DESC LIMIT 1)",
-                values + [card_id],
+                values,
             )
 
     def get_performance(self) -> list:

@@ -213,6 +213,89 @@ class MMMGuardian:
     # Post-beat validation
     # =========================================================================
 
+    # =========================================================================
+    # G5: Monitor Generation Integrity (stale monitor detection)
+    # =========================================================================
+
+    def check_generation_integrity(
+        self,
+        session: Dict,
+        my_generation: int,
+    ) -> Optional[str]:
+        """
+        G5: Stale Monitor Detection.
+
+        A stale monitor is an old instance still running after a newer monitor
+        (with a higher _monitor_generation) has taken over the session.
+
+        When a stale monitor executes a heartbeat:
+        - It places SELL orders on the exchange
+        - _save_session() blocks the state update (gen guard)
+        - Next cycle reloads the same pre-trade state → fires again → phantom loop
+
+        Max-loss, lot limits, and P&L are ALL blind to these phantom positions.
+
+        Called from the monitor at the start of _heartbeat(), before any trading.
+        Returns violation reason string if stale, None if OK.
+
+        Action: STOP (not pause) — a paused stale monitor would resume and trade.
+        """
+        if my_generation <= 0:
+            return None  # Generation not yet set (first beat before init)
+        stored_gen = session.get('_monitor_generation', 0)
+        if stored_gen > my_generation:
+            return (
+                f'Guardian G5: stale monitor detected — '
+                f'my_gen={my_generation} < stored_gen={stored_gen}. '
+                f'A newer monitor has taken over. Stopping to prevent phantom orders.'
+            )
+        return None
+
+    def handle_stale_monitor(self, monitor, my_generation: int, stored_gen: int) -> None:
+        """
+        Stop a stale monitor and alert via Telegram + WebSocket.
+        Called when G5 fires. Uses STOP not PAUSE — stale monitors must not resume.
+        """
+        sid = getattr(monitor, 'session_id', '?')
+        violation = (
+            f'Guardian G5: stale monitor stopped — '
+            f'gen={my_generation} < stored_gen={stored_gen}'
+        )
+        log.critical(f"[{sid}] GUARDIAN G5 VIOLATION: {violation}")
+
+        try:
+            from .mmm_activity import log_activity
+            from .mmm_websocket import emit_safety
+            log_activity(
+                'guardian_violation',
+                f'🛡️ {violation}',
+                sid, 'error',
+                {'my_gen': my_generation, 'stored_gen': stored_gen},
+            )
+            emit_safety(sid, 'stale_monitor_g5', 'critical', violation,
+                        {'my_gen': my_generation, 'stored_gen': stored_gen})
+        except Exception as e:
+            log.warning(f"[{sid}] G5 alert emit failed: {e}")
+
+        # Telegram alert — fire-and-forget via asyncio (called from async heartbeat)
+        try:
+            import asyncio
+            from .mmm_telegram import alert_stale_monitor
+            asyncio.ensure_future(alert_stale_monitor(
+                sid, my_generation, stored_gen,
+                context='Guardian G5 — detected at heartbeat start, no orders placed',
+            ))
+        except Exception as e:
+            log.warning(f"[{sid}] G5 Telegram failed: {e}")
+
+        # STOP, not pause — a paused stale monitor would resume and trade again
+        try:
+            monitor._running = False
+            monitor._stop_event.set()
+            monitor._stale_abort_gen = my_generation  # triggers post-hb Telegram in _run_loop
+        except Exception as e:
+            log.error(f"[{sid}] G5 stop failed: {e}")
+
     def post_beat_check(
         self, session: Dict, snapshot: Dict,
     ) -> List[str]:

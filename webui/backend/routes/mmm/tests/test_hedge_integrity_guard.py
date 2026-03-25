@@ -92,12 +92,13 @@ class TestHedgeIntegrityGuard:
         
         result = await close_position(
             mock_executor,
-            mock_initializer, 
+            mock_initializer,
             session,
             position_all,
-            hedge_guard=True,  # Guard enabled (default)
+            hedge_guard=True,
+            mechanism='recycler',  # Non-whitelisted mechanism triggers G1 hedge check
         )
-        
+
         # GUARD MUST BLOCK THIS
         assert result['success'] is False
         assert result.get('hedge_guard_blocked') is True
@@ -280,8 +281,9 @@ class TestHedgeIntegrityGuard:
             session,
             position,
             hedge_guard=True,
+            mechanism='recycler',  # Non-whitelisted mechanism triggers G1 hedge check
         )
-        
+
         # GUARD MUST BLOCK THIS
         assert result['success'] is False
         assert result.get('hedge_guard_blocked') is True
@@ -391,8 +393,9 @@ class TestSequentialCloseSimulation:
             session,
             position_last,
             hedge_guard=True,
+            mechanism='recycler',  # Non-whitelisted mechanism triggers G1 hedge check
         )
-        
+
         # THIS MUST BE BLOCKED
         assert result['success'] is False
         assert result.get('hedge_guard_blocked') is True
@@ -436,10 +439,11 @@ class TestSequentialCloseSimulation:
             session,
             position,
             hedge_guard=True,
+            mechanism='recycler',  # Non-whitelisted mechanism triggers G1 hedge check
         )
-        
+
         assert result['success'] is False
         assert result.get('hedge_guard_blocked') is True
-        
+
         # In _process_close_at_5, this would trigger early break
         # The calling loop should check hedge_guard_blocked and break

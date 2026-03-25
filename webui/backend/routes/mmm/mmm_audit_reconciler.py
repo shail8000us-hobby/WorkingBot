@@ -71,7 +71,10 @@ def reconcile_session(session_id: str, session: Dict) -> Dict:
             strike_val = float(row.get('strike', 0) or 0)
             audit_open = int(row.get('open_qty', 0) or 0)
 
-            # Count lots in session positions[] at this strike
+            # Count lots in session positions[] at this strike.
+            # positions[] is the single source of truth (Unified Position Ledger).
+            # frozen_positions[] is a derived view of positions[status='shifted']
+            # rebuilt by recompute_side_lots(), so counting both would double-count.
             side_state = session.get(side, {})
             session_lots = 0
             for pos in side_state.get('positions', []):

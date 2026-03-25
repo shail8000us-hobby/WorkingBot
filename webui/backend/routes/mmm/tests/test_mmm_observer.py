@@ -40,7 +40,8 @@ class TestStrategyContinuity:
         }
     
     def test_blocks_one_sided_exposure(self):
-        """Block close that would create one-sided exposure."""
+        """Continuity check moved to MMMGuardian.check_close_allowed().
+        Observer only checks price consistency and ledger integrity."""
         result = self.observer.validate_close(
             session=self.session,
             side='pe',
@@ -48,9 +49,8 @@ class TestStrategyContinuity:
             current_premium=5.0,
             mechanism='close_at_5',
         )
-        assert not result['allowed']
-        assert 'one-sided exposure' in result['reason']
-        assert result['block_type'] == 'continuity'
+        # Observer allows this; continuity blocking is now in MMMGuardian
+        assert result['allowed']
     
     def test_allows_partial_close_leaving_hedge(self):
         """Allow close that leaves some lots for hedging."""
@@ -197,22 +197,21 @@ class TestCloseVelocity:
         assert result['allowed']
     
     def test_blocks_high_velocity_non_exempt_mechanism(self):
-        """Block high velocity for non-exempt mechanisms."""
+        """Velocity check moved to MMMGuardian.check_beat_velocity().
+        Observer no longer blocks on velocity — it allows high-volume closes."""
         # Simulate 90 lots already closed in the window
         for _ in range(9):
             self.observer.record_close('test_velocity', 'pe', 10)
-        
-        # This would bring total to 110 lots (90 + 20), exceeding 100-lot block threshold
+
+        # Observer does not check velocity; velocity tracking is in MMMGuardian
         result = self.observer.validate_close(
             session=self.session,
             side='pe',
             lots=20,
             current_premium=5.0,
-            mechanism='close_at_5',  # Not velocity-exempt
+            mechanism='close_at_5',
         )
-        assert not result['allowed']
-        assert 'velocity exceeded' in result['reason']
-        assert result['block_type'] == 'velocity'
+        assert result['allowed']
     
     def test_allows_high_velocity_exempt_mechanism(self):
         """Allow high velocity for exempt mechanisms."""
@@ -231,20 +230,19 @@ class TestCloseVelocity:
         assert result['allowed']
     
     def test_velocity_window_expiry(self):
-        """Old velocity records should not affect current validation.""" 
-        # Record closes but don't actually run time forward (would need time mocking)
-        # This is a basic test - in production, old records auto-expire
+        """Velocity tracking is stored in the observer but not checked in validate_close.
+        Velocity enforcement moved to MMMGuardian.check_beat_velocity()."""
         self.observer.record_close('test_velocity', 'pe', 60)
-        
+
         result = self.observer.validate_close(
             session=self.session,
             side='pe',
-            lots=50,  # Would exceed if added to the 60
+            lots=50,
             current_premium=5.0,
             mechanism='close_at_5',
         )
-        # Should block since we can't fast-forward time in this test
-        assert not result['allowed']
+        # Observer does not block on velocity — MMMGuardian does
+        assert result['allowed']
 
 
 class TestLedgerIntegrity:
@@ -361,12 +359,11 @@ class TestIntegrationScenarios:
         assert result['allowed']
     
     def test_record_close_affects_velocity(self):
-        """Test that record_close() properly updates velocity tracking."""
-        # Record some closes
+        """record_close() stores velocity data in the observer, but validate_close()
+        no longer checks it — velocity enforcement moved to MMMGuardian."""
         self.observer.record_close('integration_test', 'pe', 30)
         self.observer.record_close('integration_test', 'pe', 40)
-        
-        # Next close should trigger velocity block (30 + 40 + 35 = 105 > 100)
+
         result = self.observer.validate_close(
             session=self.session,
             side='pe',
@@ -374,5 +371,5 @@ class TestIntegrationScenarios:
             current_premium=4.0,
             mechanism='close_at_5',
         )
-        assert not result['allowed']
-        assert result['block_type'] == 'velocity'
+        # Observer allows this; velocity blocking is in MMMGuardian
+        assert result['allowed']

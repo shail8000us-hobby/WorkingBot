@@ -101,7 +101,7 @@ class TestDefaultParams:
         assert d['harvest_profit_pct'] == 40.0
         assert d['harvest_min_age_mins'] == 30
         assert d['harvest_max_per_beat'] == 3
-        assert d['harvest_pressure_threshold'] == 0.6
+        assert d['harvest_pressure_threshold'] == 0.5
 
     def test_recycle_defaults(self):
         state_mod = _load_mmm_module('mmm_state')
@@ -122,7 +122,7 @@ class TestDefaultParams:
 
         assert d['rebalance_enabled'] is True
         assert d['rebalance_asymmetry_threshold'] == 5.0
-        assert d['rebalance_pressure_threshold'] == 0.8
+        assert d['rebalance_pressure_threshold'] == 0.7
 
 
 # =============================================================================

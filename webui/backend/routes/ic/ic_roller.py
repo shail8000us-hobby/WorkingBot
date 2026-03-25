@@ -69,8 +69,12 @@ def execute_roll_call_up(
             f"LC@{old_lc.get('strike')}"
         )
     else:
-        # TODO: Real close via executor
-        pass
+        # AUDIT C3: Place real close orders for old call spread
+        close_legs = {LEG_SC: old_sc, LEG_LC: old_lc}
+        success, _ = executor.place_close_orders(close_legs, lots, session)
+        if not success:
+            log.error("Failed to close old call spread during roll")
+            return False
 
     # Mark old legs as rolled
     old_sc['status'] = LEG_ROLLED
@@ -182,6 +186,13 @@ def execute_roll_put_down(
             f"[SIMULATE] Roll put down: close SP@{old_sp.get('strike')} + "
             f"LP@{old_lp.get('strike')}"
         )
+    else:
+        # AUDIT C3: Place real close orders for old put spread
+        close_legs = {LEG_SP: old_sp, LEG_LP: old_lp}
+        success, _ = executor.place_close_orders(close_legs, lots, session)
+        if not success:
+            log.error("Failed to close old put spread during roll")
+            return False
 
     old_sp['status'] = LEG_ROLLED
     old_sp['close_premium'] = old_close_premiums[LEG_SP]

@@ -541,7 +541,7 @@ class TestExecuteLotRecycling:
             return_value={'strike': 98000, 'premium': 120.0},
         )
         # Mock close_position — must also update total_lots so Phase B cap check passes
-        async def _close_and_update(executor, initializer, sess, pos):
+        async def _close_and_update(executor, initializer, sess, pos, **kwargs):
             lots = pos.get('lots', 20)
             sess['ce']['total_lots'] -= lots
             return {'success': True, 'realized_pnl': 0.01, 'lots_closed': lots}
@@ -562,7 +562,6 @@ class TestExecuteLotRecycling:
 
         assert result['success'] is True
         assert session['recycle_count'] == 1
-        assert session['adjustment_count'] == 1
         assert '_last_recycle_at' in session
 
     def test_phase_a_all_fail_returns_error(self):

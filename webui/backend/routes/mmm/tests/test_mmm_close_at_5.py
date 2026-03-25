@@ -45,7 +45,7 @@ def _make_session():
             'frozen_total_lots': 0,
             'adjustment_fills': [],
             'frozen_positions': [
-                {'strike': 88000, 'premium': 80.0, 'lots': 5},
+                {'strike': 88000, 'entry_premium': 80.0, 'lots': 5},
             ],
             'symbol': 'P-BTC-90000-260215',
         },
@@ -83,7 +83,7 @@ class TestScanCloseable:
         session = _make_session()
 
         # Mock fetch function returning low premiums
-        positions = scan_closeable_positions(session, lambda s: 3.0)
+        positions = scan_closeable_positions(session, lambda s, t: 3.0)
 
         if hasattr(positions, '__await__'):
             import asyncio

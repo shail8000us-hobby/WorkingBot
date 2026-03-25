@@ -771,11 +771,14 @@ class MMMEngine:
 
             fill_price = result.get('fill_price', 0)
 
-            # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+            # Record exchange commission via ledger (CRIT-1 fix: sell fees must go through pnl_core)
             _od = result.get('order_details') or {}
             _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
             if _commission:
-                session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
+                from .mmm_pnl_core import record_fee as _pnl_fee
+                _pnl_fee(session, _commission, 'sell_adjustment',
+                         order_id=str(result.get('order_id', '')),
+                         symbol=symbol, side=hedge_side)
 
             # P1-D: use actual filled size, not requested size (partial fill handling)
             filled_lots = result.get('filled_size', lots_to_sell)
@@ -988,119 +991,26 @@ class MMMEngine:
         """
         Compute unrealized P&L across all open positions.
 
-        For sold options: P&L = (entry_premium - current_premium) × lots
-        (Positive = option decayed = profit for seller)
-
-        Robust v2 Fix #2: Tracks fetch failures and stores _pnl_fetch_errors
-        in session state. If >50% of positions fail, sets _pnl_calculation_incomplete.
+        Delegates to mmm_pnl_core.compute_unrealized_pnl() which is the
+        canonical implementation. Kept as instance method for backward compat.
         """
-        # Fix #19: Use Decimal internally to prevent float rounding accumulation
-        total_unrealized = _D(0)
-        _fetch_errors = 0
-        _total_positions = 0
-
-        for side_key in ['ce', 'pe']:
-            side_state = session.get(side_key, {})
-            option_type = 'call' if side_key == 'ce' else 'put'
-
-            # Build a set of position IDs currently being closed so we can
-            # subtract their lots from the derived scalars and skip their fills.
-            # This prevents a transient double-count during the window between
-            # realized P&L being booked and recompute_side_lots() removing them.
-            being_closed_lots_at = {}  # strike -> lots being closed
-            for pos in side_state.get('positions', []):
-                if pos.get('_being_closed') and pos.get('lots', 0) > 0:
-                    s = float(pos.get('strike', 0))
-                    being_closed_lots_at[s] = being_closed_lots_at.get(s, 0) + int(pos.get('lots', 0))
-
-            # Original lots
-            orig_lots = side_state.get('original_lots', 0)
-            orig_prem = side_state.get('original_premium', 0)
-            active_strike = side_state.get('active_strike', 0)
-
-            # Subtract any being-closed lots at active strike
-            orig_lots_effective = orig_lots - being_closed_lots_at.get(float(active_strike), 0)
-            if orig_lots_effective < 0:
-                orig_lots_effective = 0
-
-            if orig_lots_effective > 0 and active_strike > 0:
-                _total_positions += 1
-                try:
-                    current = fetch_premium_fn(active_strike, option_type)
-                    if current is None:
-                        raise ValueError(f"Premium is None for {side_key}@{active_strike}")
-                    total_unrealized += (_D(orig_prem) - _D(current)) * _D(orig_lots_effective) * _LOT
-                except Exception as e:
-                    _fetch_errors += 1
-                    log.warning(f"Failed to fetch {side_key} premium at {active_strike}: {e}")
-
-            # Adjustment fills — skip fills at strikes that are fully being closed
-            for fill in side_state.get('adjustment_fills', []):
-                lots = fill.get('lots', 0)
-                prem = fill.get('premium', 0)
-                strike = fill.get('strike', active_strike)
-                closing = being_closed_lots_at.get(float(strike), 0)
-                lots_effective = max(0, lots - closing)
-                if lots_effective > 0:
-                    _total_positions += 1
-                    try:
-                        current = fetch_premium_fn(strike, option_type)
-                        if current is None:
-                            raise ValueError(f"Premium is None for {side_key}@{strike}")
-                        total_unrealized += (_D(prem) - _D(current)) * _D(lots_effective) * _LOT
-                    except Exception as e:
-                        _fetch_errors += 1
-                        log.warning(f"Failed to fetch {side_key} adj premium at {strike}: {e}")
-
-            # Frozen positions
-            for frozen in side_state.get('frozen_positions', []):
-                lots = frozen.get('lots', 0)
-                prem = frozen.get('entry_premium', 0)
-                strike = frozen.get('strike', 0)
-                if lots > 0 and strike > 0:
-                    _total_positions += 1
-                    try:
-                        current = fetch_premium_fn(strike, option_type)
-                        if current is None:
-                            raise ValueError(f"Premium is None for {side_key}@{strike}")
-                        total_unrealized += (_D(prem) - _D(current)) * _D(lots) * _LOT
-                    except Exception as e:
-                        _fetch_errors += 1
-                        log.warning(f"Failed to fetch {side_key} frozen premium at {strike}: {e}")
-
-        # Robust v2 Fix #2: Track incomplete calculations in session state
-        session['_pnl_fetch_errors'] = _fetch_errors
-        if _total_positions > 0 and _fetch_errors > (_total_positions * 0.5):
-            session['_pnl_calculation_incomplete'] = True
-            log.error(
-                f"P&L CALCULATION INCOMPLETE: {_fetch_errors}/{_total_positions} "
-                f"position premium fetches failed (>50%). P&L is unreliable."
-            )
-        else:
-            session.pop('_pnl_calculation_incomplete', None)
-
-        # Fix #19: Return float at API boundary (Decimal was internal only)
-        return float(total_unrealized)
+        from .mmm_pnl_core import compute_unrealized_pnl as _pnl_unrealized
+        return _pnl_unrealized(session, fetch_premium_fn)
 
     def compute_total_pnl(self, session: Dict, fetch_premium_fn) -> Dict[str, float]:
         """
         Compute complete P&L breakdown.
 
+        Delegates to mmm_pnl_core.get_pnl() which derives all values from the
+        fill ledger. Kept for backward compatibility.
+
         Returns:
             {realized, unrealized, fees, net_pnl, total_premium_collected}
         """
-        realized = session.get('realized_pnl', 0)
-        fees = session.get('total_fees', 0)
-        unrealized = self.compute_unrealized_pnl(session, fetch_premium_fn)
-        premium = session.get('total_premium_collected', 0)
-
-        return {
-            'realized': realized,
-            'unrealized': round(unrealized, 2),
-            'fees': fees,
-            'net_pnl': round(realized + unrealized - fees, 2),
-            'total_premium_collected': premium,
-        }
+        from .mmm_pnl_core import get_pnl as _pnl_get
+        result = _pnl_get(session, fetch_premium_fn)
+        result['total_premium_collected'] = session.get('total_premium_collected', 0)
+        return result
 
     # =========================================================================
     # §14.5: P&L Reconciliation

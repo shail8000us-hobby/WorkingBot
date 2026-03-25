@@ -278,6 +278,61 @@ async def alert_max_loss_breach(
     return await _send_async(msg, f"max_loss_{session_id}")
 
 
+async def alert_stale_monitor(
+    session_id: str,
+    my_gen: int,
+    stored_gen: int,
+    context: str = 'pre-heartbeat',
+) -> bool:
+    """CRITICAL: Alert when a stale monitor is detected placing phantom orders.
+
+    A stale monitor is an old bot instance that is still running after a newer
+    instance has taken over. It places SELL orders on the exchange but cannot
+    persist state — creating ghost positions the bot has no record of.
+    Max loss, lot limits, and position tracking are ALL blind to these.
+    """
+    msg = (
+        f"🚨 *STALE MONITOR — GHOST ORDERS PLACED* — session `{session_id}`\n\n"
+        f"A stale bot instance (gen=*{my_gen}*) was running while a newer instance "
+        f"(gen=*{stored_gen}*) had already taken over.\n\n"
+        f"The stale monitor placed SELL orders on the exchange that it could NOT persist — "
+        f"creating phantom (untracked) positions.\n\n"
+        f"Context: `{context}`\n"
+        f"⛔ Stale monitor has been *automatically stopped*.\n\n"
+        f"⚠️ *IMMEDIATE ACTION REQUIRED*: Check exchange positions vs bot dashboard. "
+        f"Ghost positions are NOT tracked by max loss or lot limits.\n\n"
+        f"⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"
+    )
+    return await _send_async(msg, key=f'stale_monitor_{session_id}_{my_gen}')
+
+
+async def alert_ghost_positions_growing(
+    session_id: str,
+    side: str,
+    strike: float,
+    lots: float,
+) -> bool:
+    """Alert when reconciler detects growing untracked positions on the exchange.
+
+    Ghost positions are NOT tracked by the bot — max loss and lot limits are
+    blind to them. Growing lot count means a stale monitor or external algo is
+    actively adding shorts that the session cannot account for.
+    """
+    msg = (
+        f"🚨 *GHOST POSITIONS GROWING* — session `{session_id}`\n\n"
+        f"Exchange now has *{int(lots)} lots* of {side} @ {int(strike)} strike "
+        f"that this session has NO record of.\n\n"
+        f"⚠️ *These positions are NOT tracked* — max loss, lot limits, and P&L "
+        f"calculations are all BLIND to them.\n\n"
+        f"Possible causes:\n"
+        f"• Stale bot instance still running\n"
+        f"• External algo or manual trade\n\n"
+        f"*MANUAL REVIEW REQUIRED* — Check exchange positions immediately.\n\n"
+        f"⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"
+    )
+    return await _send_async(msg, key=f'ghost_positions_{session_id}_{side}_{int(strike)}')
+
+
 async def alert_both_sides_up(
     session_id: str,
     ce_now: float,
@@ -301,3 +356,94 @@ This requires human judgement. Log in and decide:
 ⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"both_sides_up_{session_id}")
+
+
+async def alert_both_sides_closed_awake(
+    session_id: str,
+    pnl: float,
+) -> bool:
+    """Alert when both CE and PE reach 0 lots during user awake hours (8AM-11PM IST).
+    Session is kept running — no auto-stop during awake hours."""
+    msg = f"""🔔 *MMM ALL POSITIONS CLOSED — ACTION NEEDED*
+
+🤖 Session: `{session_id}`
+✅ Both CE and PE sides are now at *0 lots*.
+
+⏳ *Session is STILL RUNNING* — you are in active hours (8AM–11PM IST).
+
+📋 *Next steps (manual action required):*
+  • Enter fresh positions to start a new round, OR
+  • Stop the session manually from the dashboard.
+
+💰 Net P\\&L: *${pnl:+.2f}*
+
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    return await _send_async(msg, f"both_sides_closed_awake_{session_id}")
+
+
+async def alert_offhours_unhedged_stop(
+    session_id: str,
+    closed_side: str,
+    open_side: str,
+    open_lots: int,
+    pnl: float,
+) -> bool:
+    """Alert when session auto-stops after 11PM IST: one side eliminated,
+    replenish failed — unhedged exposure with user asleep is unsafe."""
+    msg = f"""🛑 *MMM AUTO-STOPPED — OFF-HOURS UNHEDGED EXPOSURE*
+
+🤖 Session: `{session_id}`
+⚠️ *{closed_side.upper()}* fully closed (0 lots).
+📊 *{open_side.upper()}* has *{open_lots} lot(s)* — unhedged.
+🔄 Auto-replenish failed — cannot restore hedged exposure.
+
+⏰ *Outside active hours (8AM–11PM IST): session stopped automatically.*
+
+💰 Net P\\&L at stop: *${pnl:+.2f}*
+
+_Session requires manual restart._
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    return await _send_async(msg, f"offhours_unhedged_stop_{session_id}")
+
+
+async def alert_active_hours_unhedged_pause(
+    session_id: str,
+    closed_side: str,
+    open_side: str,
+    open_lots: int,
+    pnl: float,
+    details: dict = None,
+) -> bool:
+    """HIGH-PRIORITY alert: one leg wiped during active hours (8AM-11PM IST).
+    Session is PAUSED — human decision required. No auto-stop was triggered."""
+    details = details or {}
+    open_strike = details.get('open_strike', 0)
+    detected_at = details.get('detected_at_ist', datetime.now(timezone.utc).strftime('%H:%M UTC'))
+
+    strike_line = f'\n📍 Open strike: *{open_strike}*' if open_strike else ''
+    pnl_color = '🟢' if pnl >= 0 else '🔴'
+
+    msg = f"""🚨 *HUMAN ACTION REQUIRED — SESSION PAUSED* 🚨
+
+🤖 Session: `{session_id}`
+⏰ Detected: *{detected_at}* (active hours)
+
+❌ *{closed_side.upper()}* fully closed — *0 lots remaining*
+⚠️ *{open_side.upper()}* has *{open_lots} lot(s)* — UNHEDGED exposure{strike_line}
+🔄 Auto-replenish failed — hedge not restored
+
+{pnl_color} P\\&L at pause: *${pnl:+.2f}*
+
+*No auto-stop — you are in active hours.*
+Bot is PAUSED. No new trades will execute.
+
+📋 *Action required (choose one):*
+  • Close {open_side.upper()} positions manually, OR
+  • Re-enter {closed_side.upper()} at a new strike to restore hedge, OR
+  • Stop the session from the dashboard.
+
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    return await _send_async(msg, f"activehours_unhedged_pause_{session_id}")

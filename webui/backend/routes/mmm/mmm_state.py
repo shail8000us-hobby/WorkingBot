@@ -951,6 +951,9 @@ def create_session(
         # Heartbeat history for P&L chart
         'pnl_history': [],  # [{timestamp, total_pnl, realized, unrealized, ce_premium, pe_premium}]
 
+        # Fill ledger — single source of truth for realized P&L (mmm_pnl_core)
+        '_fill_ledger': [],
+
         # Error tracking
         'last_error': None,
         'error_count': 0,

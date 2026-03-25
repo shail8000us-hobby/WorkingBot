@@ -76,6 +76,11 @@ class PatienceTrigger:
         self._running = True
         self._recover_on_startup()
 
+        # Wire up the execution-done callback so _release_execution_lock() in
+        # patience_executor can advance the queue when a card finishes/pauses.
+        from webui.backend.services.patience_executor import register_execution_lock_callback
+        register_execution_lock_callback(self._on_execution_done)
+
         self._thread = _RealThread(
             target=self._run,
             daemon=True,
@@ -421,7 +426,7 @@ class PatienceTrigger:
         cancelled = 0
         for card in db.get_cards_by_status('ARMED', 'WAITING', 'TRIGGERED'):
             db.update_card(card['card_id'], status='CANCELLED')
-            db.log_event(card['card_id'], None, 'PAUSE', 'Kill switch activated')
+            db.log_event(card['card_id'], None, 'CANCEL', 'Kill switch activated')
             cancelled += 1
 
         log.warning(f"PatienceTrigger: KILL SWITCH — {cancelled} cards cancelled")

@@ -48,6 +48,7 @@ import {
   Switch,
   FormControlLabel,
   Slider,
+  Autocomplete,
 } from '@mui/material';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import {
@@ -56,6 +57,7 @@ import {
   Pause as PauseIcon,
   Stop as StopIcon,
   Add as AddIcon,
+  Remove as RemoveIcon,
   Delete as DeleteIcon,
   Settings as SettingsIcon,
   TrendingUp as TrendingUpIcon,
@@ -1641,7 +1643,7 @@ const MMMReduceModal = ({ open, session, onClose }) => {
 const MMMInjectModal = ({ open, session, onClose }) => {
   const [side, setSide] = useState('ce');
   const [lots, setLots] = useState(1);
-  // 'active' = use algo's current active strike; 'custom' = operator types one
+  // 'active' = use algo's current active strike; 'custom' = operator picks from chain
   const [strikeMode, setStrikeMode] = useState('active');
   const [customStrike, setCustomStrike] = useState('');
   const [adopt, setAdopt] = useState(false);
@@ -1650,8 +1652,27 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState('');
+  // Strike chain for picker
+  const [chain, setChain] = useState({ ce: [], pe: [], spot_price: 0 });
+  const [chainLoading, setChainLoading] = useState(false);
+  const [chainError, setChainError] = useState('');
 
   if (!session) return null;
+
+  // Fetch option chain whenever custom mode is activated or side changes
+  const fetchChain = async () => {
+    setChainLoading(true);
+    setChainError('');
+    try {
+      const data = await mmmService.getOptionChain(session.session_id);
+      if (data.success) setChain(data);
+      else setChainError(data.error || 'Failed to load strikes');
+    } catch (e) {
+      setChainError('Could not load strikes from exchange');
+    } finally {
+      setChainLoading(false);
+    }
+  };
 
   const activeStrike = session[side]?.active_strike || 0;
   const effectiveStrike = strikeMode === 'active' ? activeStrike : Number(customStrike);
@@ -1661,11 +1682,24 @@ const MMMInjectModal = ({ open, session, onClose }) => {
     setResult(null); setError(''); setLots(1); setSide('ce');
     setStrikeMode('active'); setCustomStrike(''); setConfirmed(false);
     setAdopt(false); setAdoptFillPrice('');
+    setChain({ ce: [], pe: [], spot_price: 0 }); setChainError('');
   };
 
   const handleClose = () => { if (loading) return; resetForm(); onClose(); };
 
-  const handleSideChange = (_, v) => { if (v) { setSide(v); setLots(1); setStrikeMode('active'); setCustomStrike(''); } };
+  const handleSideChange = (_, v) => {
+    if (v) {
+      setSide(v); setLots(1); setStrikeMode('active'); setCustomStrike('');
+      // Re-fetch not needed — chain has both sides already
+    }
+  };
+
+  const handleStrikeModeChange = (_, v) => {
+    if (!v) return;
+    setStrikeMode(v);
+    setCustomStrike('');
+    if (v === 'custom' && chain.ce.length === 0) fetchChain();
+  };
 
   const handleSubmit = async () => {
     if (!confirmed || !isValid) return;
@@ -1775,7 +1809,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
               <ToggleButtonGroup
                 value={strikeMode}
                 exclusive
-                onChange={(_, v) => { if (v) { setStrikeMode(v); setCustomStrike(''); } }}
+                onChange={handleStrikeModeChange}
                 size="small"
                 sx={{ width: '100%', mb: 1 }}
               >
@@ -1788,7 +1822,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
                     : <Typography component="span" sx={{ color: 'text.disabled', fontSize: '0.8rem' }}>—</Typography>
                   }
                 </ToggleButton>
-                <ToggleButton value="custom" sx={{ flex: 1 }}>Custom Strike</ToggleButton>
+                <ToggleButton value="custom" sx={{ flex: 1 }}>Pick Strike</ToggleButton>
               </ToggleButtonGroup>
 
               {strikeMode === 'active' ? (
@@ -1810,19 +1844,73 @@ const MMMInjectModal = ({ open, session, onClose }) => {
                   </Typography>
                 </Box>
               ) : (
-                <TextField
-                  label="Enter strike price"
-                  type="number"
-                  value={customStrike}
-                  onChange={e => setCustomStrike(e.target.value)}
-                  size="small"
-                  fullWidth
-                  autoFocus
-                  placeholder={activeStrike > 0 ? `e.g. ${activeStrike}` : 'e.g. 72000'}
-                  inputProps={{ min: 1000, step: 100 }}
-                  error={customStrike !== '' && Number(customStrike) < 1000}
-                  helperText={customStrike !== '' && Number(customStrike) < 1000 ? 'Enter a valid BTC strike' : ''}
-                />
+                /* Strike picker — loads live option chain from exchange */
+                <Box>
+                  {chainLoading && (
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, py: 1 }}>
+                      <CircularProgress size={14} />
+                      <Typography variant="caption" color="text.secondary">Loading strikes from exchange…</Typography>
+                    </Box>
+                  )}
+                  {chainError && (
+                    <Alert severity="warning" sx={{ mb: 1, fontSize: '0.78rem' }}>
+                      {chainError} —{' '}
+                      <Box component="span" sx={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={fetchChain}>retry</Box>
+                    </Alert>
+                  )}
+                  {!chainLoading && (chain[side] || []).length > 0 && (
+                    <>
+                      {chain.spot_price > 0 && (
+                        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+                          BTC Spot: <strong>${Number(chain.spot_price).toLocaleString()}</strong>
+                        </Typography>
+                      )}
+                      <Autocomplete
+                        options={chain[side] || []}
+                        getOptionLabel={opt => `${Number(opt.strike).toLocaleString()}  —  $${opt.premium.toFixed(2)}`}
+                        value={(chain[side] || []).find(o => o.strike === Number(customStrike)) || null}
+                        onChange={(_, opt) => setCustomStrike(opt ? String(opt.strike) : '')}
+                        size="small"
+                        autoHighlight
+                        renderOption={(props, opt) => (
+                          <Box component="li" {...props} sx={{ fontFamily: 'monospace', fontSize: '0.82rem' }}>
+                            <Box sx={{ display: 'flex', width: '100%', justifyContent: 'space-between', gap: 2 }}>
+                              <Typography sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                                {Number(opt.strike).toLocaleString()}
+                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 1.5, color: 'text.secondary', fontSize: '0.78rem' }}>
+                                <span>Mark <strong style={{ color: '#4caf50' }}>${opt.mark_price > 0 ? opt.mark_price.toFixed(1) : opt.premium.toFixed(1)}</strong></span>
+                                <span>Bid <strong>${opt.bid.toFixed(1)}</strong></span>
+                                <span>Ask <strong>${opt.ask.toFixed(1)}</strong></span>
+                                {opt.delta !== 0 && <span>Δ {opt.delta.toFixed(2)}</span>}
+                              </Box>
+                            </Box>
+                          </Box>
+                        )}
+                        renderInput={params => (
+                          <TextField
+                            {...params}
+                            label="Select strike"
+                            placeholder="Search by strike…"
+                            size="small"
+                            autoFocus
+                          />
+                        )}
+                      />
+                      {customStrike && (chain[side] || []).find(o => o.strike === Number(customStrike)) && (() => {
+                        const sel = (chain[side] || []).find(o => o.strike === Number(customStrike));
+                        return (
+                          <Box sx={{ mt: 0.75, px: 1, py: 0.5, borderRadius: 1, backgroundColor: 'rgba(255,152,0,0.08)', border: '1px solid rgba(255,152,0,0.3)', fontFamily: 'monospace', fontSize: '0.8rem' }}>
+                            <Typography variant="caption">
+                              Strike <strong>{Number(sel.strike).toLocaleString()}</strong> · Mark <strong>${(sel.mark_price || sel.premium).toFixed(2)}</strong> · Bid <strong>${sel.bid.toFixed(2)}</strong> / Ask <strong>${sel.ask.toFixed(2)}</strong>
+                              {sel.delta !== 0 && <> · Δ <strong>{sel.delta.toFixed(3)}</strong></>}
+                            </Typography>
+                          </Box>
+                        );
+                      })()}
+                    </>
+                  )}
+                </Box>
               )}
             </Box>
 
@@ -1910,6 +1998,11 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   // Close-strike confirmation dialog state
   const [closeStrikeDlg, setCloseStrikeDlg] = useState({
     open: false, side: '', strike: 0, lots: 0, currentPremium: null, loading: false, error: '',
+  });
+  // Adjust-lots dialog state (+ or - lots on CE/PE side)
+  const [adjustLotsDlg, setAdjustLotsDlg] = useState({
+    open: false, side: '', direction: 'add', activeLots: 0, activeStrike: 0,
+    qty: 1, loading: false, error: '',
   });
 
   // M-30 fix: Reset tab when session changes (avoids showing empty P&L tab on fresh session)
@@ -2066,6 +2159,36 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
     }
   };
 
+  // --- Adjust Active Lots (+/-) ---
+  const handleAdjustLotsRequest = (sideKey, direction, activeLots, activeStrike) => {
+    setAdjustLotsDlg({
+      open: true, side: sideKey, direction, activeLots, activeStrike,
+      qty: 1, loading: false, error: '',
+    });
+  };
+
+  const handleAdjustLotsConfirm = async () => {
+    const { side, direction, qty } = adjustLotsDlg;
+    const delta = direction === 'add' ? qty : -qty;
+    setAdjustLotsDlg(d => ({ ...d, loading: true, error: '' }));
+    try {
+      const res = await mmmService.adjustActiveLots(session.session_id, side, delta);
+      if (res.success) {
+        setAdjustLotsDlg(d => ({ ...d, open: false, loading: false }));
+      } else {
+        setAdjustLotsDlg(d => ({ ...d, loading: false, error: res.error || 'Adjust failed' }));
+      }
+    } catch (e) {
+      const msg = e?.response?.data?.error || e.message;
+      setAdjustLotsDlg(d => ({
+        ...d, loading: false,
+        error: msg.includes('fetch') || msg.includes('Network')
+          ? 'Backend unreachable — server may be restarting. Please try again.'
+          : msg,
+      }));
+    }
+  };
+
   // BUG FIX: Compute proper per-side P&L from individual position rows.
   // The old formula used (entry_fill_price - activePremium) × totalLots which is wrong
   // because it applies one entry premium and one live premium to ALL lots including
@@ -2110,18 +2233,31 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const isLive = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status);
 
   // P&L calculations — H-14 fix: use ?? 0 to prevent NaN when backend returns null
-  // Prefer session.net_pnl (kept fresh by mmm_pnl_update event) over locally-recomputed value,
-  // since realized/unrealized can be from different time snapshots and sum incorrectly.
+  // Prefer session.net_pnl (kept fresh by mmm_pnl_update event) over locally-recomputed value.
+  // Use session.unrealized_pnl directly — _overlay_live_pnl sets all 4 values atomically so
+  // they are always from the same snapshot. Deriving unrealized = net - realized incorrectly
+  // merged fees into the unrealized display (net - R = U - F, not U).
   const realized = session.realized_pnl ?? 0;
   const fees = session.total_fees ?? 0;
   const netPnl = session.net_pnl ?? ((session.realized_pnl ?? 0) + (session.unrealized_pnl ?? 0) - fees);
-  const unrealized = netPnl - realized;
+  const unrealized = session.unrealized_pnl ?? 0;
   const totalPremium = session.total_premium_collected ?? 0;
   const cePremiumCollected = session.ce_premium_collected ?? 0;
   const pePremiumCollected = session.pe_premium_collected ?? 0;
   const peakPnl = session.peak_pnl ?? 0;
   // L-11: Compute drawdown from peak for display
   const peakDrawdown = peakPnl - netPnl;
+
+  // Warnings card — aggregate active recon discrepancies + checksum flag
+  const _reconDiscs = session?._last_auto_recon_discrepancies || [];
+  const _warnTotal = _reconDiscs.length + (session?._checksum_warning ? 1 : 0);
+  const _warnValue = _warnTotal === 0 ? '✓ Clear' : `⚠ ${_warnTotal} active`;
+  const _warnSub = _warnTotal === 0 ? null
+    : session?._checksum_warning ? 'Checksum mismatch'
+    : (_reconDiscs[0]?.type || '').replace(/_/g, ' ').toLowerCase();
+  const _warnColor = _warnTotal === 0 ? '#66bb6a' : '#ff9800';
+  const _warnBg    = _warnTotal === 0 ? 'rgba(102,187,106,0.08)' : 'rgba(255,152,0,0.08)';
+  const _warnBorder= _warnTotal === 0 ? 'rgba(102,187,106,0.3)'  : 'rgba(255,152,0,0.3)';
 
   // Current premium from heartbeat for CE/PE cards.
   // Fallback to session._premium_map (persisted by backend on every heartbeat) when
@@ -2303,12 +2439,14 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                 border: 'rgba(171,71,188,0.3)',
               },
               {
-                label: 'Duration',
-                help: 'session_duration',
-                value: sessionDuration || '—',
-                color: '#78909c',
-                bg: 'rgba(120,144,156,0.08)',
-                border: 'rgba(120,144,156,0.3)',
+                label: 'Warnings',
+                help: 'session_warnings',
+                value: _warnValue,
+                sub: _warnSub,
+                subColor: '#ff9800',
+                color: _warnColor,
+                bg: _warnBg,
+                border: _warnBorder,
               },
             ].map(({ label, help, value, sub, subColor, color, bg, border }) => (
               <Grid item xs={4} sm={2} key={label}>
@@ -2519,6 +2657,63 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                       </Box>
                     </Grid>
                   </Grid>
+
+                  {/* Manual lot adjustment — only when session is live */}
+                  {isLive && (
+                    <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 0.5, mt: 1, pt: 1, borderTop: `1px solid ${color}22` }}>
+                      <Tooltip
+                        title={
+                          (data.active_lots ?? data.total_lots ?? 0) === 0
+                            ? `No active ${key} lots to remove`
+                            : `Remove lots from ${key} @ ${Number(data.active_strike || 0).toLocaleString()} — currently ${data.active_lots ?? data.total_lots ?? 0} active`
+                        }
+                        arrow
+                      >
+                        <span>
+                          <IconButton
+                            size="small"
+                            onClick={() => handleAdjustLotsRequest(
+                              key.toLowerCase(), 'remove',
+                              data.active_lots ?? data.total_lots ?? 0,
+                              data.active_strike,
+                            )}
+                            disabled={(data.active_lots ?? data.total_lots ?? 0) === 0}
+                            sx={{
+                              color: '#f44336',
+                              border: '1px solid rgba(244,67,54,0.35)',
+                              borderRadius: 1,
+                              p: 0.4,
+                              '&:hover': { backgroundColor: 'rgba(244,67,54,0.12)' },
+                            }}
+                          >
+                            <RemoveIcon sx={{ fontSize: 16 }} />
+                          </IconButton>
+                        </span>
+                      </Tooltip>
+                      <Tooltip
+                        title={`Add lots to ${key} @ ${Number(data.active_strike || 0).toLocaleString()} — currently ${data.active_lots ?? data.total_lots ?? 0} active`}
+                        arrow
+                      >
+                        <IconButton
+                          size="small"
+                          onClick={() => handleAdjustLotsRequest(
+                            key.toLowerCase(), 'add',
+                            data.active_lots ?? data.total_lots ?? 0,
+                            data.active_strike,
+                          )}
+                          sx={{
+                            color,
+                            border: `1px solid ${color}55`,
+                            borderRadius: 1,
+                            p: 0.4,
+                            '&:hover': { backgroundColor: `${color}18` },
+                          }}
+                        >
+                          <AddIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  )}
                 </Paper>
               </Grid>
             ))}
@@ -3060,6 +3255,72 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
           <MMMExecutionLogPanel sessionId={session?.session_id} />
         </Box>
       )}
+
+      {/* Adjust-Lots Dialog — mounted outside all tab blocks so it works from any tab */}
+      <Dialog
+        open={adjustLotsDlg.open}
+        onClose={() => !adjustLotsDlg.loading && setAdjustLotsDlg(d => ({ ...d, open: false }))}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700, color: adjustLotsDlg.direction === 'add' ? '#4caf50' : '#ef5350' }}>
+          {adjustLotsDlg.direction === 'add' ? '➕' : '➖'}{' '}
+          {adjustLotsDlg.direction === 'add' ? 'Add' : 'Remove'} Lots —{' '}
+          {adjustLotsDlg.side?.toUpperCase()} Side
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 1 }}>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Active strike: <strong>{Number(adjustLotsDlg.activeStrike || 0).toLocaleString()}</strong>
+              {' · '}Current active: <strong>{adjustLotsDlg.activeLots} lot{adjustLotsDlg.activeLots !== 1 ? 's' : ''}</strong>
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 2 }}>
+              {adjustLotsDlg.direction === 'add'
+                ? 'A SELL order will be placed at the active strike and registered in the ledger.'
+                : 'A BUY order will be placed at the active strike to partially close the position.'}
+            </Typography>
+            <TextField
+              label="Lots"
+              type="number"
+              size="small"
+              fullWidth
+              value={adjustLotsDlg.qty}
+              onChange={e => {
+                const v = Math.max(1, parseInt(e.target.value, 10) || 1);
+                const max = adjustLotsDlg.direction === 'remove' ? adjustLotsDlg.activeLots : 999;
+                setAdjustLotsDlg(d => ({ ...d, qty: Math.min(v, max) }));
+              }}
+              inputProps={{ min: 1, max: adjustLotsDlg.direction === 'remove' ? adjustLotsDlg.activeLots : 999 }}
+              sx={{ mb: 1 }}
+            />
+            {adjustLotsDlg.error && (
+              <Typography color="error" variant="body2" sx={{ mt: 1 }}>
+                {adjustLotsDlg.error}
+              </Typography>
+            )}
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setAdjustLotsDlg(d => ({ ...d, open: false }))}
+            disabled={adjustLotsDlg.loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color={adjustLotsDlg.direction === 'add' ? 'success' : 'error'}
+            onClick={handleAdjustLotsConfirm}
+            disabled={adjustLotsDlg.loading || adjustLotsDlg.qty < 1}
+            startIcon={adjustLotsDlg.loading ? <CircularProgress size={16} color="inherit" /> : null}
+          >
+            {adjustLotsDlg.loading
+              ? 'Placing order...'
+              : `${adjustLotsDlg.direction === 'add' ? 'Add' : 'Remove'} ${adjustLotsDlg.qty} lot${adjustLotsDlg.qty !== 1 ? 's' : ''}`
+            }
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={activeStrikeSnack.open}
@@ -3655,6 +3916,57 @@ const MMMDashboard = () => {
                   }}
                 />
               )}
+              {/* AWAITING_USER_ACTION banner — one leg wiped during active hours */}
+              {(() => {
+                const _aua = wsData?.heartbeat?.awaiting_user_action || fullSession?._awaiting_user_action;
+                const _aud = wsData?.heartbeat?.awaiting_user_action_details || fullSession?._awaiting_user_action_details;
+                if (!_aua || !_aud) return null;
+                const closedSide = (_aud.closed_side || '').toUpperCase();
+                const openSide   = (_aud.open_side   || '').toUpperCase();
+                const pnl        = _aud.current_pnl || 0;
+                const pnlColor   = pnl >= 0 ? '#a5d6a7' : '#ef9a9a';
+                return (
+                  <Alert
+                    severity="error"
+                    variant="filled"
+                    icon={false}
+                    sx={{ mx: 0, mb: 1, borderRadius: 0, borderBottom: '2px solid #b71c1c' }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                      <Typography sx={{ fontSize: '1.3rem', lineHeight: 1, mt: 0.2 }}>🚨</Typography>
+                      <Box sx={{ flex: 1 }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', mb: 0.3 }}>
+                          HUMAN ACTION REQUIRED — Session Paused (Active Hours)
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.82rem', lineHeight: 1.6 }}>
+                          <strong>{closedSide}</strong> fully closed (0 lots).{' '}
+                          <strong>{openSide}</strong> has{' '}
+                          <strong>{_aud.open_lots} lot{_aud.open_lots !== 1 ? 's' : ''}</strong> open — unhedged.
+                          {_aud.open_strike ? ` Strike: ${_aud.open_strike}.` : ''}
+                        </Typography>
+                        <Box sx={{ display: 'flex', gap: 3, mt: 0.4, flexWrap: 'wrap', alignItems: 'center' }}>
+                          <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.85)' }}>
+                            P&L:{' '}
+                            <strong style={{ color: pnlColor }}>
+                              ${pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
+                            </strong>
+                          </Typography>
+                          {_aud.detected_at_ist && (
+                            <Typography sx={{ fontSize: '0.78rem', color: 'rgba(255,255,255,0.75)' }}>
+                              Detected: {_aud.detected_at_ist}
+                            </Typography>
+                          )}
+                        </Box>
+                        <Typography sx={{ fontSize: '0.78rem', mt: 0.4, color: 'rgba(255,255,255,0.85)' }}>
+                          Action: Close <strong>{openSide}</strong> manually, or re-enter{' '}
+                          <strong>{closedSide}</strong> at a new strike to restore hedge.
+                        </Typography>
+                      </Box>
+                    </Box>
+                  </Alert>
+                );
+              })()}
+
               <Paper sx={{ overflow: 'auto' }}>
                 {/* H-15 fix: Show fetch error alert when non-404 error occurs */}
                 {fetchError && (

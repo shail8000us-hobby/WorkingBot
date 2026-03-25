@@ -296,3 +296,123 @@ def select_new_strikes_for_roll(
         return None
 
     return short_data, long_data
+
+
+def select_roll_strikes(
+    decision: str,
+    cycle: Dict,
+    spot_price: float,
+    params: Dict,
+    chain_fetcher=None,
+    expiry: str = '',
+) -> Optional[Dict]:
+    """
+    Select new strikes for a roll adjustment.
+
+    Uses the same strike selection logic as initial entry but centered
+    on the current spot price after the breach.
+
+    Args:
+        decision: DECISION_ROLL_CALL, DECISION_ROLL_PUT, or DECISION_ROLL_BOTH
+        cycle: Current cycle state
+        spot_price: Current BTC spot price
+        params: Session parameters
+        chain_fetcher: MMMInitializer for chain data
+        expiry: Expiry date string
+
+    Returns:
+        Dict with 'success' and new strike data (new_sc, new_lc, new_sp, new_lp)
+    """
+    from .ic_adjuster import DECISION_ROLL_CALL, DECISION_ROLL_PUT, DECISION_ROLL_BOTH
+
+    result = {'success': False}
+
+    try:
+        # Get available strikes from exchange
+        available_strikes = []
+        if chain_fetcher and expiry:
+            chain_data = chain_fetcher.get_full_chain(expiry, 'BTC')
+            if chain_data and chain_data.get('success'):
+                for entry in chain_data.get('chain', []):
+                    strike = entry.get('strike', 0)
+                    call_data = entry.get('call', {})
+                    put_data = entry.get('put', {})
+                    available_strikes.append({
+                        'strike': strike,
+                        'call': call_data,
+                        'put': put_data,
+                    })
+
+        if not available_strikes:
+            log.error("No available strikes from exchange for roll")
+            return result
+
+        wing_width_usd = params.get('wing_width_usd', 1000)
+        delta_target_call = params.get('short_call_delta_target', 0.16)
+        delta_target_put = params.get('short_put_delta_target', 0.16)
+
+        # Roll call side up
+        if decision in (DECISION_ROLL_CALL, DECISION_ROLL_BOTH):
+            call_strikes = [s for s in available_strikes if s['strike'] > spot_price]
+            call_candidates = []
+            for s in call_strikes:
+                call_opt = s.get('call', {})
+                if call_opt:
+                    call_candidates.append({
+                        'strike': s['strike'],
+                        'delta': abs(call_opt.get('delta', 0)),
+                        'bid': call_opt.get('bid', 0),
+                        'ask': call_opt.get('ask', 0),
+                        'premium': call_opt.get('mark_price', 0),
+                        'symbol': call_opt.get('symbol', ''),
+                    })
+
+            new_sc = _select_by_delta(call_candidates, delta_target_call, 'call')
+            if new_sc:
+                # Wing strike
+                lc_target = new_sc['strike'] + wing_width_usd
+                lc_candidates = [s for s in call_candidates if s['strike'] > new_sc['strike']]
+                new_lc = _select_wing_strike(lc_candidates, lc_target, 'above')
+                if new_lc:
+                    result['new_sc'] = new_sc
+                    result['new_lc'] = new_lc
+
+        # Roll put side down
+        if decision in (DECISION_ROLL_PUT, DECISION_ROLL_BOTH):
+            put_strikes = [s for s in available_strikes if s['strike'] < spot_price]
+            put_candidates = []
+            for s in put_strikes:
+                put_opt = s.get('put', {})
+                if put_opt:
+                    put_candidates.append({
+                        'strike': s['strike'],
+                        'delta': abs(put_opt.get('delta', 0)),
+                        'bid': put_opt.get('bid', 0),
+                        'ask': put_opt.get('ask', 0),
+                        'premium': put_opt.get('mark_price', 0),
+                        'symbol': put_opt.get('symbol', ''),
+                    })
+
+            new_sp = _select_by_delta(put_candidates, delta_target_put, 'put')
+            if new_sp:
+                lp_target = new_sp['strike'] - wing_width_usd
+                lp_candidates = [s for s in put_candidates if s['strike'] < new_sp['strike']]
+                new_lp = _select_wing_strike(lp_candidates, lp_target, 'below')
+                if new_lp:
+                    result['new_sp'] = new_sp
+                    result['new_lp'] = new_lp
+
+        # Check if we got what we needed
+        if decision == DECISION_ROLL_CALL and 'new_sc' in result:
+            result['success'] = True
+        elif decision == DECISION_ROLL_PUT and 'new_sp' in result:
+            result['success'] = True
+        elif decision == DECISION_ROLL_BOTH and 'new_sc' in result and 'new_sp' in result:
+            result['success'] = True
+
+        return result
+
+    except Exception as e:
+        log.error(f"Roll strike selection error: {e}", exc_info=True)
+        return result
+

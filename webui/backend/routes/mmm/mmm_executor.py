@@ -229,13 +229,17 @@ class MMMExecutor:
         # This lets us identify exactly which fills belong to this session on Delta Exchange,
         # independent of other algos or manual trades at the same strike on the same account.
         if not client_order_id:
-            import random as _random
             _sess_tag = ''.join(
                 c for c in (session_id or 'x').replace('mmm', '').replace('-', '')
             )[:8]
             _side_tag = 'b' if side.lower() == 'buy' else 's'
             _ts_tag = str(int(time.time()))[-8:]
-            client_order_id = f"mmm_{_sess_tag}_{_side_tag}_{_ts_tag}"[:32]
+            # Include first char of symbol ('c'=CE, 'p'=PE) so concurrent entry
+            # orders on the same session get distinct client_order_ids.
+            # Without this, asyncio.gather fires CE+PE at the same timestamp →
+            # identical IDs → exchange rejects second order with duplicate_client_order_id.
+            _opt_tag = (symbol[0].lower() if symbol else 'x')[:1]
+            client_order_id = f"mmm_{_sess_tag}_{_side_tag}{_opt_tag}_{_ts_tag}"[:32]
 
         log.info(f"📊 MMM Smart Execute: {side.upper()} {size} {symbol} coid={client_order_id}")
 
@@ -285,6 +289,35 @@ class MMMExecutor:
                 break  # Success
 
             last_error = order_result.get('error', 'Order placement failed') if order_result else 'Order placement failed'
+
+            # Defensive: duplicate_client_order_id means the first placement landed on
+            # the exchange but the response was lost (network drop between server and us).
+            # Retrying with the same client_order_id will always fail — instead look up
+            # the already-placed open order and continue monitoring it.
+            if 'duplicate_client_order_id' in str(last_error).lower():
+                log.warning(
+                    f"⚠️ {symbol}: duplicate_client_order_id — order already exists on exchange. "
+                    f"Searching open orders for client_order_id={client_order_id}..."
+                )
+                try:
+                    open_orders = await rest_client.get_open_orders_by_symbol(symbol)
+                    matched = next(
+                        (o for o in open_orders if str(o.get('client_order_id', '')) == str(client_order_id)),
+                        None
+                    )
+                    if matched and matched.get('id'):
+                        log.info(
+                            f"✅ Found existing order {matched['id']} via client_order_id lookup — resuming monitor"
+                        )
+                        _log_activity('order_placing',
+                            f"{side.upper()} {symbol}: Found existing order {matched['id']} via client_order_id lookup",
+                            session_id=session_id, severity='info',
+                            details={'order_id': matched['id'], 'client_order_id': client_order_id})
+                        order_result = matched
+                        break
+                except Exception as _dup_e:
+                    log.warning(f"Could not look up duplicate order: {_dup_e}")
+
             if placement_try < INITIAL_PLACEMENT_RETRIES:
                 log.warning(
                     f"⚠️ Initial placement attempt {placement_try}/{INITIAL_PLACEMENT_RETRIES} failed: {last_error}. "
@@ -548,7 +581,17 @@ class MMMExecutor:
                                     if _cancel_filled > 0:
                                         _cancel_fill_size = _cancel_filled
                                     else:
-                                        _cancel_fill_size = size
+                                        # unfilled_size == size means nothing was actually
+                                        # filled despite the order showing 'filled' state.
+                                        # This is an exchange data race on reduce_only orders
+                                        # (e.g. position already closed by a concurrent order).
+                                        # Do NOT return success — treat as failed and continue.
+                                        log.error(
+                                            f"❌ Order {order_id} shows state=filled but "
+                                            f"unfilled_size={_cancel_raw_uf} == size={size} "
+                                            f"(0 lots actually filled). Treating as failed."
+                                        )
+                                        break  # exit reprice loop → fall through to _failure()
                                 except (ValueError, TypeError):
                                     _cancel_fill_size = size
                             else:

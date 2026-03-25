@@ -294,20 +294,20 @@ class MMMTradeAuditLog:
                 'is_partial_fill':      1 if qty_fill < qty_req else 0,
                 'premium':              prem,
                 'gross_premium_usd':    gross,
-                'closing_entry_premium': _safe_float(closing_entry_premium) or None,
+                'closing_entry_premium': _safe_float(closing_entry_premium),
                 'closing_entry_lots':   _safe_int(closing_entry_lots) or None,
-                'realized_pnl_usd':     _safe_float(realized_pnl_usd) or None,
+                'realized_pnl_usd':     _safe_float(realized_pnl_usd),
                 'event_type':           event_type,
                 'adj_type':             adj_type or None,
                 'mechanism':            mechanism or None,
                 'aggressor_side':       aggressor_side or None,
-                'trigger_premium':      _safe_float(trigger_premium) or None,
-                'trigger_snapshot_at':  _safe_float(trigger_snapshot_at) or None,
-                'loss_covered_usd':     _safe_float(loss_covered_usd) or None,
+                'trigger_premium':      _safe_float(trigger_premium),
+                'trigger_snapshot_at':  _safe_float(trigger_snapshot_at),
+                'loss_covered_usd':     _safe_float(loss_covered_usd),
                 'whipsaw_state':        whipsaw_state or None,
                 'margin_tier':          margin_tier or None,
                 'regime_action':        str(regime_action) if regime_action else None,
-                'spot_price_usd':       _safe_float(spot_price_usd) or None,
+                'spot_price_usd':       _safe_float(spot_price_usd),
                 'remark':               remark or '',
                 '_table':               'trade',
             }
@@ -364,11 +364,20 @@ class MMMTradeAuditLog:
                         batch.clear()
                         last_flush = now
                     except sqlite3.Error as e:
-                        log.error('audit_log writer DB error: %s — will retry next cycle', e)
+                        log.error('audit_log writer DB error: %s — dropping %d entries to prevent infinite retry', e, len(batch))
                         try:
                             conn.rollback()
                         except Exception:
                             pass
+                        # Drop the failed batch to prevent infinite retry loop
+                        batch.clear()
+                        # Close broken connection so next cycle recreates it
+                        try:
+                            if conn is not None:
+                                conn.close()
+                        except Exception:
+                            pass
+                        conn = None
 
             except Exception:
                 log.exception('audit_log writer_loop unexpected error')
@@ -437,9 +446,9 @@ class MMMTradeAuditLog:
     def get_strike_summary(self, session_id: str) -> List[Dict]:
         """
         Aggregate per (strike, option_type):
-          total_sell_qty, total_buy_qty, avg_sell_price, avg_buy_price,
-          realized_pnl_usd (SUM of stored per-close values),
-          open_qty, trade_count, status (ACTIVE/CLOSED).
+          sell_qty, buy_qty, avg_sell_premium, avg_buy_premium,
+          gross_premium_usd, realized_pnl_usd, open_qty, trade_count,
+          status (ACTIVE/CLOSED).
         """
         try:
             conn = sqlite3.connect(self._db_path, timeout=5)
@@ -450,15 +459,17 @@ class MMMTradeAuditLog:
                     COALESCE(strike, 0)  AS strike,
                     option_type,
                     SUM(CASE WHEN action='SELL' THEN quantity_filled ELSE 0 END)
-                        AS total_sell_qty,
+                        AS sell_qty,
                     SUM(CASE WHEN action='BUY'  THEN quantity_filled ELSE 0 END)
-                        AS total_buy_qty,
+                        AS buy_qty,
                     SUM(CASE WHEN action='SELL' THEN quantity_filled * premium ELSE 0.0 END)
                         / NULLIF(SUM(CASE WHEN action='SELL' THEN quantity_filled ELSE 0 END), 0)
-                        AS avg_sell_price,
+                        AS avg_sell_premium,
                     SUM(CASE WHEN action='BUY'  THEN quantity_filled * premium ELSE 0.0 END)
                         / NULLIF(SUM(CASE WHEN action='BUY'  THEN quantity_filled ELSE 0 END), 0)
-                        AS avg_buy_price,
+                        AS avg_buy_premium,
+                    SUM(CASE WHEN action='SELL' THEN COALESCE(gross_premium_usd, 0.0) ELSE 0.0 END)
+                        AS gross_premium_usd,
                     SUM(COALESCE(realized_pnl_usd, 0.0))
                         AS realized_pnl_usd,
                     (  SUM(CASE WHEN action='SELL' THEN quantity_filled ELSE 0 END)
@@ -497,9 +508,9 @@ class MMMTradeAuditLog:
                 SELECT
                     event_type,
                     SUM(COALESCE(realized_pnl_usd, 0.0)) AS pnl_usd,
-                    SUM(CASE WHEN action='SELL' THEN gross_premium_usd ELSE 0.0 END)
+                    SUM(CASE WHEN action='SELL' THEN COALESCE(gross_premium_usd, 0.0) ELSE 0.0 END)
                         AS premium_collected_usd,
-                    SUM(CASE WHEN action='BUY'  THEN gross_premium_usd ELSE 0.0 END)
+                    SUM(CASE WHEN action='BUY'  THEN COALESCE(gross_premium_usd, 0.0) ELSE 0.0 END)
                         AS premium_paid_usd,
                     COUNT(*) AS trade_count
                 FROM position_audit_log
@@ -511,7 +522,35 @@ class MMMTradeAuditLog:
             total_pnl = sum(r.get('pnl_usd', 0) or 0 for r in by_event)
             total_collected = sum(r.get('premium_collected_usd', 0) or 0 for r in by_event)
             total_paid = sum(r.get('premium_paid_usd', 0) or 0 for r in by_event)
+
+            # Per-side breakdown (CE / PE)
+            side_cur = conn.execute("""
+                SELECT
+                    option_type,
+                    SUM(COALESCE(realized_pnl_usd, 0.0)) AS realized_pnl,
+                    SUM(CASE WHEN action='SELL' THEN COALESCE(gross_premium_usd, 0.0) ELSE 0.0 END)
+                        AS gross_premium,
+                    SUM(CASE WHEN action='SELL' THEN quantity_filled ELSE 0 END)
+                      - SUM(CASE WHEN action='BUY'  THEN quantity_filled ELSE 0 END)
+                        AS open_lots,
+                    COUNT(*) AS fills
+                FROM position_audit_log
+                WHERE session_id = ?
+                  AND option_type IN ('CE', 'PE')
+                GROUP BY option_type
+            """, [session_id])
+            side_rows = {r['option_type']: dict(r) for r in side_cur.fetchall()}
+
+            total_fills_cur = conn.execute(
+                'SELECT COUNT(*) FROM position_audit_log WHERE session_id = ?',
+                [session_id],
+            )
+            total_fills = total_fills_cur.fetchone()[0] or 0
+
             conn.close()
+
+            ce = side_rows.get('CE', {})
+            pe = side_rows.get('PE', {})
             return {
                 'session_id': session_id,
                 'by_event_type': by_event,
@@ -519,6 +558,17 @@ class MMMTradeAuditLog:
                 'total_premium_collected_usd': round(total_collected, 6),
                 'total_premium_paid_usd': round(total_paid, 6),
                 'net_premium_usd': round(total_collected - total_paid, 6),
+                # Per-side fields consumed by the P&L Attribution tab
+                'ce_realized_pnl_usd': round(ce.get('realized_pnl') or 0, 6),
+                'pe_realized_pnl_usd': round(pe.get('realized_pnl') or 0, 6),
+                'ce_gross_premium_usd': round(ce.get('gross_premium') or 0, 6),
+                'pe_gross_premium_usd': round(pe.get('gross_premium') or 0, 6),
+                'total_gross_premium_usd': round(total_collected, 6),
+                'ce_open_lots': int(ce.get('open_lots') or 0),
+                'pe_open_lots': int(pe.get('open_lots') or 0),
+                'total_fills': total_fills,
+                'ce_fills': int(ce.get('fills') or 0),
+                'pe_fills': int(pe.get('fills') or 0),
             }
         except Exception:
             log.exception('audit_log.get_pnl_attribution() failed')

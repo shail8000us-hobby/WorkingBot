@@ -78,7 +78,7 @@ export default function PnLDashboard() {
   // Aggregate active P&L
   const totalEntryPremium = activeCards.reduce((s, c) => s + (c.entry_premium || 0), 0);
   const activeCount = activeCards.filter(c => c.status === 'EXECUTING').length;
-  const completedCount = activeCards.filter(c => c.status === 'COMPLETED').length;
+  const completedCount = perfSummary.total_cards ?? 0;
 
   return (
     <div style={{ color: '#e2e8f0' }}>
@@ -94,7 +94,7 @@ export default function PnLDashboard() {
         <MetricTile
           label="Win Rate"
           value={perfSummary.total_cards ? `${perfSummary.win_rate ?? 0}%` : '—'}
-          color={perfSummary.win_rate >= 50 ? '#22c55e' : '#ef4444'}
+          color={!perfSummary.total_cards ? '#64748b' : perfSummary.win_rate >= 50 ? '#22c55e' : '#ef4444'}
           subtext={perfSummary.total_cards ? `${perfSummary.wins}W / ${perfSummary.losses}L` : null}
         />
         <MetricTile

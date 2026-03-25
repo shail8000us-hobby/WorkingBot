@@ -471,6 +471,23 @@ async def close_position(
         # Fix #19: Decimal arithmetic to prevent float rounding accumulation
         realized_pnl = float((_D(entry_prem) - _D(close_price)) * _D(actual_lots) * _LOT)
 
+        # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+        _od = result.get('order_details') or {}
+        _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+
+        # BUG-1 FIX: Stamp estimated P&L + commission on the position BEFORE
+        # marking it closed.  FillSyncer uses _estimated_pnl_booked to compute
+        # the *correction* (actual − estimated).  Without this, FillSyncer
+        # treats estimated as 0 and re-books the full P&L a second time.
+        _stamp_pos_id = pos_id
+        if _stamp_pos_id:
+            side_state = session.get(side, {})
+            for _sp in side_state.get('positions', []):
+                if _sp.get('id') == _stamp_pos_id:
+                    _sp['_estimated_pnl_booked'] = round(realized_pnl, 8)
+                    _sp['_estimated_commission_booked'] = round(abs(_commission), 8) if _commission else 0.0
+                    break
+
         # Update state: remove or reduce the closed position.
         # Partial fill: reduce remaining lots in-state instead of removing entirely.
         # Full fill:    mark position closed (original behaviour).
@@ -499,19 +516,30 @@ async def close_position(
             'grace_beats': 3,          # skip mismatch for up to 3 reconciliation cycles
         }
 
-        # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
-        _od = result.get('order_details') or {}
-        _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-        if _commission:
-            session['total_fees'] = session.get('total_fees', 0) + abs(_commission)
-
-        # Record realized P&L
-        session['realized_pnl'] = session.get('realized_pnl', 0) + realized_pnl
-        # T2-5: P&L attribution by source
-        _attr_key = pnl_attribution_key
-        if _attr_key is None:
-            _attr_key = 'pnl_initial' if pos_type == 'original' else 'pnl_adjustment'
-        session[_attr_key] = session.get(_attr_key, 0.0) + realized_pnl
+        # ── P&L via ledger (single source of truth) ──────────────────
+        from .mmm_pnl_core import record_close as _pnl_record_close
+        _pnl_source_map = {
+            'pnl_harvest': 'harvest',
+            'pnl_recycle': 'recycle',
+        }
+        _pnl_source = _pnl_source_map.get(
+            pnl_attribution_key,
+            'initial' if pos_type == 'original' else 'adjustment',
+        )
+        _pnl_record_close(
+            session=session,
+            order_id=_close_oid,
+            symbol=symbol,
+            option_side=side,
+            strike=strike,
+            lots=actual_lots,
+            entry_premium=float(entry_prem),
+            close_premium=float(close_price),
+            commission=abs(float(_commission)) if _commission else 0.0,
+            source=_pnl_source,
+            position_id=pos_id or '',
+        )
+        # ── END P&L via ledger ───────────────────────────────────────
         session['close_at_5_count'] = session.get('close_at_5_count', 0) + 1
         session['updated_at'] = datetime.now(timezone.utc).isoformat()
 

@@ -101,9 +101,11 @@ def is_cooldown_active(session: Dict) -> bool:
             # Cooldown expired
             session['cooldown_active'] = False
             session['cooldown_until'] = None
+            session.pop('_cooldown_block_logged', None)
             return False
     except (ValueError, TypeError):
         session['cooldown_active'] = False
+        session.pop('_cooldown_block_logged', None)
         return False
 
 

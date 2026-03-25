@@ -79,7 +79,7 @@ HOT_RELOAD_PARAMS = {
 PARAM_RULES = {
     # Entry
     'lots':                     {'type': int,   'min': 1,     'max': 1000,   'hot': False},
-    'expiry_dte':               {'type': int,   'min': 0,     'max': 30,     'hot': False},
+    'expiry_dte':               {'type': int,   'min': 1,     'max': 30,     'hot': False},
     'wing_width_strikes':       {'type': int,   'min': 1,     'max': 10,     'hot': False},
     'wing_width_usd':           {'type': float, 'min': 100,   'max': 10000,  'hot': False},
     'short_put_delta_target':   {'type': float, 'min': 0.05,  'max': 0.45,   'hot': False},

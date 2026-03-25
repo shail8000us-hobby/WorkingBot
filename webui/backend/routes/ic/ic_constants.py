@@ -69,6 +69,7 @@ EXIT_MANUAL = 'manual'
 EXIT_EMERGENCY = 'emergency_close'
 EXIT_EXPIRED = 'expired'
 EXIT_ROLLED = 'rolled'
+EXIT_MAX_ADJUSTMENTS = 'max_adjustments'
 
 # Adjustment types
 ADJ_ROLL_CALL_UP = 'roll_call_up'

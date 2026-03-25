@@ -449,7 +449,7 @@ export default function CardBuilder({ initialCard, onSaved, onCancel }) {
   const stepTitle = ['', 'Trigger', 'IV Gate', 'Legs', 'Chain', 'Review & Arm'];
 
   return (
-    <div style={{ padding: 24, maxWidth: 800, margin: '0 auto', color: '#e2e8f0' }}>
+    <div style={{ padding: 24, maxWidth: 800, margin: '0 auto', color: '#e2e8f0', overflowY: 'auto', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
       {/* Header */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
         <div>
@@ -494,11 +494,9 @@ export default function CardBuilder({ initialCard, onSaved, onCancel }) {
               ))}
             </div>
           </Field>
-          {triggerType === 'TOUCH' && (
-            <Field label={`Touch Tolerance (± pts, default 50)`}>
-              <input style={inputStyle} type="number" value={tolerance} onChange={e => setTolerance(e.target.value)} />
-            </Field>
-          )}
+          <Field label="Tolerance (± pts, default 50)">
+            <input style={inputStyle} type="number" value={tolerance} onChange={e => setTolerance(e.target.value)} />
+          </Field>
           {triggerType === 'SUSTAIN' && (
             <Field label="Sustain Duration (minutes)">
               <input style={inputStyle} type="number" value={sustainMins} onChange={e => setSustainMins(e.target.value)} placeholder="e.g. 60" />
@@ -608,7 +606,7 @@ export default function CardBuilder({ initialCard, onSaved, onCancel }) {
             <div style={{ marginTop: 10, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
               <div><span style={{ color: '#64748b' }}>Name:</span> {cardName}</div>
               <div><span style={{ color: '#64748b' }}>Trigger:</span> BTC {TRIGGER_LABELS[triggerType]} {parseFloat(triggerPrice)?.toLocaleString()}</div>
-              {triggerType === 'TOUCH' && <div><span style={{ color: '#64748b' }}>Tolerance:</span> ±{tolerance} pts</div>}
+              <div><span style={{ color: '#64748b' }}>Tolerance:</span> ±{tolerance} pts</div>
               {triggerType === 'SUSTAIN' && <div><span style={{ color: '#64748b' }}>Sustain:</span> {sustainMins} min</div>}
               {ivMin && <div><span style={{ color: '#64748b' }}>IV Min:</span> ≥{ivMin}%</div>}
               {ivMax && <div><span style={{ color: '#64748b' }}>IV Max:</span> ≤{ivMax}%</div>}
@@ -658,7 +656,7 @@ export default function CardBuilder({ initialCard, onSaved, onCancel }) {
       )}
 
       {/* ── Navigation ────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, position: 'sticky', bottom: 0, background: '#1e293b', padding: '12px 0 4px', zIndex: 10 }}>
         <button onClick={() => step > 1 ? setStep(s => s - 1) : onCancel()}
           style={{ padding: '8px 20px', borderRadius: 4, border: '1px solid #334155', background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>
           {step === 1 ? 'Cancel' : '← Back'}

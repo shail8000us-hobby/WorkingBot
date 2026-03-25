@@ -22,7 +22,7 @@ class TestStateModel:
 
     def test_create_session_has_required_fields(self):
         from webui.backend.routes.mmm.mmm_state import create_session
-        session = create_session()
+        session = create_session(params={'expiry': '28MAR26'})
 
         assert 'session_id' in session
         assert 'strategy_status' in session
@@ -35,14 +35,15 @@ class TestStateModel:
 
     def test_create_session_with_custom_params(self):
         from webui.backend.routes.mmm.mmm_state import create_session
-        session = create_session(params={'initial_lots': 20, 'max_loss_amount': 10000})
+        session = create_session(params={'expiry': '28MAR26', 'initial_lots': 20, 'max_loss_amount': 10000})
 
         assert session['params']['initial_lots'] == 20
         assert session['params']['max_loss_amount'] == 10000
 
     def test_create_side_state(self):
         from webui.backend.routes.mmm.mmm_state import create_side_state
-        side = create_side_state()
+        # Signature: create_side_state(side, ...) — side is required
+        side = create_side_state('ce')
 
         assert side['original_lots'] == 0
         assert side['active_lots'] == 0
@@ -53,9 +54,10 @@ class TestStateModel:
 
     def test_initialize_side_from_entry(self):
         from webui.backend.routes.mmm.mmm_state import create_session, initialize_side_from_entry
-        session = create_session()
+        session = create_session(params={'expiry': '28MAR26'})
 
-        initialize_side_from_entry(session, 'ce', strike=100000, premium=100.0, lots=10, symbol='C-BTC-100000')
+        # symbol= kwarg removed from current API
+        initialize_side_from_entry(session, 'ce', strike=100000, premium=100.0, lots=10)
 
         ce = session['ce']
         assert ce['original_strike'] == 100000
@@ -67,22 +69,29 @@ class TestStateModel:
 
     def test_recompute_side_lots(self):
         from webui.backend.routes.mmm.mmm_state import create_session, initialize_side_from_entry, recompute_side_lots
-        session = create_session()
-        initialize_side_from_entry(session, 'ce', strike=100000, premium=100.0, lots=10, symbol='C-BTC-100000')
+        session = create_session(params={'expiry': '28MAR26'})
+        initialize_side_from_entry(session, 'ce', strike=100000, premium=100.0, lots=10)
 
-        # Add an adjustment fill
-        session['ce']['adjustment_fills'].append({
-            'strike': 100000, 'premium': 120.0, 'lots': 5,
+        # Add an adjustment position to positions[] (the single source of truth)
+        session['ce'].setdefault('positions', []).append({
+            'id': 'test-adj-1',
+            'type': 'adjustment',
+            'side': 'ce',
+            'strike': 100000,
+            'entry_premium': 120.0,
+            'lots': 5,
+            'status': 'active',
         })
 
-        recompute_side_lots(session, 'ce')
+        # recompute_side_lots takes side_state dict, not (session, 'ce')
+        recompute_side_lots(session['ce'])
         ce = session['ce']
         assert ce['active_lots'] == 15
         assert ce['total_lots'] == 15
 
     def test_get_session_summary(self):
         from webui.backend.routes.mmm.mmm_state import create_session, get_session_summary
-        session = create_session()
+        session = create_session(params={'expiry': '28MAR26'})
         summary = get_session_summary(session)
 
         assert 'session_id' in summary
@@ -98,7 +107,8 @@ class TestConfigValidation:
 
     def test_valid_params_pass(self):
         from webui.backend.routes.mmm.mmm_config import validate_params
-        errors = validate_params({
+        # validate_params returns (cleaned_params, errors_list)
+        _, errors = validate_params({
             'initial_lots': 10,
             'max_loss_amount': 5000,
             'adjustment_interval': 300,
@@ -107,15 +117,15 @@ class TestConfigValidation:
 
     def test_negative_lots_rejected(self):
         from webui.backend.routes.mmm.mmm_config import validate_params
-        errors = validate_params({'initial_lots': -5})
+        _, errors = validate_params({'initial_lots': -5})
         assert len(errors) > 0
 
     def test_unknown_param_ignored_or_warned(self):
         from webui.backend.routes.mmm.mmm_config import validate_params
-        # Unknown params should not cause crashes
-        errors = validate_params({'totally_fake_param': 42})
-        # May produce warnings but shouldn't crash
-        assert isinstance(errors, list)
+        # Unknown params should not cause crashes; returns (cleaned, errors)
+        result = validate_params({'totally_fake_param': 42})
+        assert isinstance(result, tuple)
+        assert len(result) == 2
 
     def test_hot_reload_params(self):
         from webui.backend.routes.mmm.mmm_config import get_hot_reload_params
@@ -139,18 +149,16 @@ class TestTriggerEvaluation:
             'ce': {
                 'active_strike': 100000,
                 'active_lots': 10,
+                'trigger_snapshot': {'100000': 100.0},
             },
             'pe': {
                 'active_strike': 90000,
                 'active_lots': 10,
-            },
-            'trigger_snapshots': {
-                'ce': {'100000': 100.0},
-                'pe': {'90000': 100.0},
+                'trigger_snapshot': {'90000': 100.0},
             },
         }
 
-        result = evaluate_triggers(session, ce_premium=101.0, pe_premium=101.0)
+        result = evaluate_triggers(session, ce_now=101.0, pe_now=101.0)
         assert result['ce_triggered'] is False
         assert result['pe_triggered'] is False
 
@@ -162,18 +170,16 @@ class TestTriggerEvaluation:
             'ce': {
                 'active_strike': 100000,
                 'active_lots': 10,
+                'trigger_snapshot': {'100000': 100.0},
             },
             'pe': {
                 'active_strike': 90000,
                 'active_lots': 10,
-            },
-            'trigger_snapshots': {
-                'ce': {'100000': 100.0},
-                'pe': {'90000': 100.0},
+                'trigger_snapshot': {'90000': 100.0},
             },
         }
 
-        result = evaluate_triggers(session, ce_premium=110.0, pe_premium=101.0)
+        result = evaluate_triggers(session, ce_now=110.0, pe_now=101.0)
         assert result['ce_triggered'] is True
         assert result['pe_triggered'] is False
 
@@ -194,7 +200,7 @@ class TestStorage:
         storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
-        session = create_session()
+        session = create_session(params={'expiry': '28MAR26'})
         sid = session['session_id']
 
         storage.save_session(session)
@@ -208,8 +214,8 @@ class TestStorage:
         storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
-        s1 = create_session()
-        s2 = create_session()
+        s1 = create_session(params={'expiry': '28MAR26'})
+        s2 = create_session(params={'expiry': '28MAR26'})
 
         storage.save_session(s1)
         storage.save_session(s2)
@@ -222,7 +228,7 @@ class TestStorage:
         storage = MMMStorage(str(tmp_path / 'mmm_sessions.db'))
 
         from webui.backend.routes.mmm.mmm_state import create_session
-        session = create_session()
+        session = create_session(params={'expiry': '28MAR26'})
         sid = session['session_id']
 
         storage.save_session(session)

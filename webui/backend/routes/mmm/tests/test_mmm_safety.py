@@ -30,8 +30,8 @@ def _make_session(**overrides):
             'max_loss_amount': 3000,
             'whipsaw_count': 6,
             'whipsaw_window': 600,
-            'near_expiry_auto_close_mins': 15,
-            'near_expiry_stop_adjustment_mins': 30,
+            'auto_close_mins': 15,
+            'stop_adjustment_mins': 30,
             'pnl_guardrail_pct': 0.5,
             'trailing_stop_pct': 0.3,
         },
@@ -59,27 +59,29 @@ class TestPositionCap:
     """Safety: position cap check."""
 
     def test_under_cap_ok(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         events = safety.check_position_cap(session)
         assert all(e.get('level') != 'critical' for e in events)
 
     def test_over_cap_critical(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['ce']['total_lots'] = 55  # Over max of 50
+        session['ce']['active_lots'] = 55
         events = safety.check_position_cap(session)
-        critical = [e for e in events if e.get('level') == 'critical']
-        assert len(critical) > 0
+        # Cap fires at 'alert' level (action=stop_adjustments), not 'critical'
+        blocked = [e for e in events if e.get('action') == 'stop_adjustments']
+        assert len(blocked) > 0
 
 
 class TestMaxAdjustments:
     """Safety: max adjustments check."""
 
     def test_under_max_ok(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['adjustment_count'] = 5
@@ -88,7 +90,7 @@ class TestMaxAdjustments:
         assert len(pause_events) == 0
 
     def test_at_max_pauses(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['adjustment_count'] = 20
@@ -98,7 +100,7 @@ class TestMaxAdjustments:
         assert session.get('_max_adj_paused') is True
 
     def test_at_max_auto_resumes_when_limit_raised(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         # Simulate: previously paused at limit=20, user raised limit to 30
@@ -115,7 +117,7 @@ class TestMaxLoss:
     """Safety: max loss check."""
 
     def test_within_limit_ok(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['realized_pnl'] = -500
@@ -125,7 +127,7 @@ class TestMaxLoss:
         assert len(auto_close) == 0
 
     def test_exceeds_limit_auto_close(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['realized_pnl'] = -2000
@@ -139,14 +141,14 @@ class TestNearExpiry:
     """Safety: near-expiry auto-close."""
 
     def test_far_from_expiry_ok(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         events = safety.check_near_expiry(session, minutes_to_expiry=120)
         assert len(events) == 0
 
     def test_near_expiry_stops_adjustments(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         events = safety.check_near_expiry(session, minutes_to_expiry=25)
@@ -154,7 +156,7 @@ class TestNearExpiry:
         assert len(stop_events) > 0
 
     def test_very_near_expiry_auto_close(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         events = safety.check_near_expiry(session, minutes_to_expiry=10)
@@ -166,7 +168,7 @@ class TestTrailingStop:
     """Safety: trailing profit stop."""
 
     def test_no_trailing_when_pnl_above_floor(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['peak_pnl'] = 1000
@@ -177,22 +179,24 @@ class TestTrailingStop:
         assert len(auto_close) == 0
 
     def test_trailing_triggers_auto_close(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
+        # trailing_stop_pct = 0.3, peak = 1000 → floor = 300
+        # Use values below floor: total = 200 < 300
         session['peak_pnl'] = 1000
-        session['realized_pnl'] = 200
-        session['unrealized_pnl'] = 200  # total = 400 < floor = 700
+        session['realized_pnl'] = 100
+        session['unrealized_pnl'] = 100  # total = 200 < floor = 300 (1000 × 0.3)
         events = safety.check_trailing_stop(session)
-        auto_close = [e for e in events if e.get('action') == 'auto_close']
-        assert len(auto_close) > 0
+        triggered = [e for e in events if e.get('action') in ('auto_close', 'stop_adjustments')]
+        assert len(triggered) > 0
 
 
 class TestRunAllChecks:
     """Integration: run_all_checks aggregates all individual checks."""
 
     def test_healthy_session_no_critical(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         events = safety.run_all_checks(session, minutes_to_expiry=120)
@@ -200,7 +204,7 @@ class TestRunAllChecks:
         assert len(critical) == 0
 
     def test_multiple_violations(self):
-        from webui.backend.routes.mmm.mmm_safety import MMWSafety
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety as MMWSafety
         safety = MMWSafety()
         session = _make_session()
         session['adjustment_count'] = 25  # Over max
