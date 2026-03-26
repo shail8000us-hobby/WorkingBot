@@ -794,3 +794,69 @@ Design spec: `MMM_REVERSE_MODE_DESIGN.md`.
 - Mutual exclusion is hard if/else — zero chance of both paths running in same heartbeat
 - `session['ce']` and `session['pe']` never touched by reverse logic
 - All 10 modified Python files pass `ast.parse()` syntax check
+
+---
+
+## 2026-03-26 — 4 Bug Fixes: ATM Shield Race, P&L Formula, Loss Recapture Cap, Deferred Strike
+
+Root-cause investigation of live session `mmm26mar26-1` revealed 4 bugs. All fixed.
+
+### Bug 1 (P0): Watchdog race condition orphaned ATM Shield positions — `mmm_atm_shield.py`
+
+**Root cause**: ATM Shield fires 2–3 orders in sequence (close endangered + re-sell endangered + re-sell safe). Session state is only saved at the end of the full heartbeat. If the watchdog kills the session mid-sequence (beat timeout), the new monitor restores from the last pre-shield save — all orders placed after the save are orphaned on the exchange with no session record.
+
+**Evidence from mmm26mar26-1**: ATM Shield closed 123 PE@70200 ($14.27 loss), placed 206 PE@69400 + 123 CE@71800 as recovery. Watchdog killed session at 05:09:37 UTC mid-execution. New monitor had no record of either position. 206 PE@69400 accumulated ~$17 unrealized loss invisible to max_loss/P&L.
+
+**Fix**: Added `monitor._save_my_session()` immediately after each successful `execute_adjustment()` call inside ATM Shield — for the endangered re-sell, the safe-side re-sell, and the deferred re-sell path. Each position is now persisted to SQLite before the next order is placed.
+
+### Bug 2 (P1): `get_pnl()` API excluded perp_pnl — `mmm_pnl_core.py`
+
+**Root cause**: `get_pnl()` computed `net = realized + unrealized - fees`, omitting `perp_pnl` and `reverse_pnl`. `compute_current_total_pnl()` (used by all safety checks) includes them. The dashboard showed a different number than the safety system was acting on.
+
+**Fix**: `get_pnl()` now uses the same formula as `compute_current_total_pnl()`. Added `perp_pnl` and `reverse_pnl` fields to the return dict.
+
+### Bug 3 (P1): ATM Shield safe-side recovery cap killed 70% target — `mmm_atm_shield.py`
+
+**Root cause**: Safe-side recovery lots were capped at `min(lots_safe, total_closed_lots)`. When safe-side premium is much lower than the close premium, recovering 70% requires far more lots than were closed. Example: CE at $12, need 416 lots for 70% recovery, capped at 123 → only 9.6% actually recovered.
+
+**Fix**: Replaced the `total_closed_lots` cap with a position-capacity cap (`max_lots_per_side - current_safe_active_lots`), identical to the pattern used for the endangered-side re-sell. `calculate_lots_to_sell` provides the loss-coverage math; the cap now only prevents exceeding the position limit.
+
+### Bug 4 (P1): Deferred re-sell executed at stale strike — `mmm_atm_shield.py`
+
+**Root cause**: When `atm_shield_defer_resell_beats > 0`, the ATM Shield stores `{'strike': new_strike, 'lots': ...}` for execution on the next heartbeat. If a strike shift occurs between the fire beat and the execution beat, `pending['strike']` is stale — the sell fires at an old non-active strike, places an exchange order that is never recorded in the session.
+
+**Fix**: Before executing the deferred re-sell, validate `pending['strike'] == session[endangered_side]['active_strike']`. If they differ, log a warning and discard the stale re-sell. Also added `monitor._save_my_session()` after successful deferred execution.
+
+---
+
+## 2026-03-26 — Reverse Mode: Post-Implementation Audit Fixes + Frontend Wiring + User Guide
+
+**Code fixes:**
+
+- `mmm_safety.py` — `check_total_exposure()`: fixed double-count bug introduced by audit AI's fix.
+  Previous fix added combined reverse `total_lots` to BOTH ce and pe sides.
+  Correct fix: compute per-side lots from positions list (CE reverse → CE total, PE reverse → PE total).
+  `check_margin()` was already correct (adds total once to combined — unchanged).
+
+- `mmm_websocket.py` — `emit_heartbeat()`: added `reverse_data` parameter.
+  Without this, `_reverse` was never included in the WebSocket heartbeat payload.
+  The live panel was falling back to stale session data (only updated on page load).
+
+- `mmm_monitor.py` — `_emit_heartbeat_data()`: pass `session.get('_reverse')` as `reverse_data`
+  when reverse is active. Panel now receives live M2M updates every heartbeat.
+
+- `mmm_reverse.py` — `initialize_reverse_state()`: corrected misleading docstring that claimed
+  "idempotent" — function unconditionally overwrites. Call sites are correctly guarded.
+
+**Documents created/updated:**
+
+- `MMM_REVERSE_MODE_USERGUIDE.md` — complete operator guide: when/how to use, parameter reference,
+  live panel reading, safety architecture, FAQ, typical workflow example.
+- `CLAUDE.md` — Reverse Mode Invariants section added (§5, dated 2026-03-26).
+- `MMM_REVERSE_MODE_DESIGN.md` — finalized with DTE-agnostic design, audit fixes incorporated.
+
+**Frontend status (confirmed working):**
+- Settings dialog: all 13 params rendered, HOT badge correct, warning blurb visible ✅
+- Reverse Mode tab in dashboard: Tab 18, conditional render ✅
+- Live panel: slots, P&L, alternating state, enable/disable/close controls ✅
+- WebSocket live data: now wired — panel receives `_reverse` in every heartbeat when active ✅

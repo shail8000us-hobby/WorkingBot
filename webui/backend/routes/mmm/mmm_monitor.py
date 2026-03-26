@@ -2933,18 +2933,29 @@ class MMMMonitor:
                 log.debug(f"[{sid}] Perp hedge skipped: BTC mark price not available")
 
         # Step 8: Update P&L
+
+        # Reverse emergency baseline: snapshot core-only P&L BEFORE the update
+        # so check_reverse_emergency() has a valid prev baseline to compare against.
+        # Core-only = realized + unrealized - fees + perp (excludes reverse P&L).
+        if session.get('_reverse', {}).get('active', False):
+            session['_prev_core_net_pnl'] = (
+                float(session.get('realized_pnl', 0.0))
+                + float(session.get('unrealized_pnl', 0.0))
+                - float(session.get('total_fees', 0.0))
+                + float(session.get('perp_hedge', {}).get('realized_pnl', 0.0) or 0.0)
+                + float(session.get('perp_hedge', {}).get('unrealized_pnl', 0.0) or 0.0)
+            )
+
         pnl = self._engine.compute_total_pnl(
             session, self._make_fetch_fn()
         )
         session['unrealized_pnl'] = pnl['unrealized']
-        # Include reverse P&L in peak tracking so trailing stop accounts for it.
-        _reverse_net_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
-        total_for_peak = pnl['net_pnl'] + _reverse_net_pnl
-        update_peak_pnl(session, total_for_peak)
+
         # T2-5: Mirror perp hedge realized P&L to attribution field (sync, not incremental)
         session['pnl_perp'] = session.get('perp_hedge', {}).get('realized_pnl', 0.0)
 
-        # Reverse Mode M2M hook: update unrealized P&L for open reverse positions.
+        # Reverse Mode M2M hook: MUST run BEFORE update_peak_pnl so peak sees
+        # fresh reverse P&L (not stale values from the previous heartbeat).
         # Also checks close-at-threshold and emergency bleed on every heartbeat.
         if session.get('params', {}).get('reverse_enabled', False) and \
                 session.get('_reverse', {}).get('active', False):
@@ -2963,6 +2974,12 @@ class MMMMonitor:
                     disable_reverse_mode(session, rev_emergency)
             except Exception as _rev_emerg_err:
                 log.warning(f"[{sid}] reverse emergency check failed (non-fatal): {_rev_emerg_err}")
+
+        # Include reverse P&L in peak tracking so trailing stop accounts for it.
+        # Now uses FRESH reverse P&L updated by the M2M hook above.
+        _reverse_net_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
+        total_for_peak = pnl['net_pnl'] + _reverse_net_pnl
+        update_peak_pnl(session, total_for_peak)
 
         # Track P&L for walkthrough
         self._hb_wt['pnl'] = pnl
@@ -9192,6 +9209,7 @@ class MMMMonitor:
             data_confidence=session.get('_data_confidence'),
             awaiting_user_action=session.get('_awaiting_user_action', False),
             awaiting_user_action_details=session.get('_awaiting_user_action_details'),
+            reverse_data=session.get('_reverse') if session.get('_reverse', {}).get('active') else None,
         )
 
         # Also emit as standalone breakeven event for subscribers

@@ -107,7 +107,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
                    gamma_data: Dict = None,
                    data_confidence: float = None,
                    awaiting_user_action: bool = False,
-                   awaiting_user_action_details: Dict = None):
+                   awaiting_user_action_details: Dict = None,
+                   reverse_data: Dict = None):
     """Emit heartbeat data every interval. Section 4.
 
     Args:
@@ -124,6 +125,7 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
         next_heartbeat: ISO timestamp of next scheduled heartbeat
         breakeven_data: Optional breakeven band snapshot (zone, distances, multiplier, etc.)
         gamma_data: Optional gamma detector snapshot (zone, boundaries, severity, etc.)
+        reverse_data: Optional session['_reverse'] snapshot for live panel updates.
     """
     payload = {
         'session_id': session_id,
@@ -156,6 +158,8 @@ def emit_heartbeat(session_id: str, ce_premium: float, pe_premium: float,
     if awaiting_user_action:
         payload['awaiting_user_action'] = True
         payload['awaiting_user_action_details'] = awaiting_user_action_details or {}
+    if reverse_data:
+        payload['_reverse'] = reverse_data
     _emit('mmm_heartbeat', payload)
 
 
