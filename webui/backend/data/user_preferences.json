@@ -9,6 +9,7 @@
     "max_adjustments",
     "max_lots_per_side",
     "lot_velocity_limit",
-    "shift_recycle_enabled"
+    "shift_recycle_enabled",
+    "atm_shield_enabled"
   ]
 }

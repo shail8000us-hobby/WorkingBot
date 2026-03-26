@@ -667,3 +667,53 @@ For a stopped session with U=$0.00 and F=$0.67, the "Unrealized" KPI card showed
 - Effect: float-typed params whose current value is a whole number (e.g. `min_trigger_move=10`, `shift_threshold=50`, `max_loss_amount=50000`) now use step=1, so the spinner increments by 1 instead of 0.01.
 - Float params with fractional values (e.g. `premium_buffer_pct=0.05`, `trailing_stop_pct=0.50`) continue to use step=0.01 — no change.
 - No backend changes. No type coercion changes. `handleChange` still stores the raw parsed float.
+
+---
+
+## 2026-03-26 — Diagnostic: Slow Heartbeats + Status Flicker on mmm26mar26-1
+
+**No code changes.** Pure investigation.
+
+**Symptoms reported**: algo appeared to stop abruptly; UI alternated between "stopped" and "active".
+
+**Root cause — slow heartbeats (153s–518s)**:
+- Session had 11 PE frozen positions at far-OTM/illiquid 0DTE strikes (PE @ 69200, etc.)
+- `_prefetch_all_premiums()` fires 2 API calls per frozen strike NOT in cache (ticker + orderbook) = 22 parallel requests via `asyncio.gather`
+- Near-expiry illiquid options → exchange slow/rate-limiting → each call approaches 10s timeout × 3 retries = up to 33s
+- With `max_connections=10`, 22 calls need 2-3 batches → heartbeats of 150–520s
+- Pattern started ~01:40 the night before (6+ hours before investigation)
+
+**Root cause — status flicker**:
+- Each watchdog restart: old monitor `stop()` → emits STOPPED → 15s `thread.join` timeout + 30s hardcoded `sleep` in `_restart_monitor()` → new monitor emits RUNNING
+- ~45s window per restart where UI shows STOPPED
+- 3 restarts (01:48, 02:07, 07:33) = 3 STOPPED/RUNNING flips
+
+**Root cause — restart #3 at 07:33**:
+- Watchdog threshold = interval × 3 = 90s × 3 = 270s
+- Heartbeat was stuck for 275s → watchdog fired
+- First beat after each restart was worst (516–518s) — stale thread still mid-API-call, connection pool degraded
+
+**Reconciliation mismatch (non-critical)**:
+- PE @ 69200: session=82 lots, exchange=71 lots
+- Some frozen lots were closed externally; auto-reconciler correctly refuses to correct (count comparison unreliable for frozen positions)
+
+**Resolution**: As frozen PE positions at illiquid strikes are closed/expire, `_prefetch_all_premiums` has fewer strikes to fetch → heartbeats normalize. Beat p50 recovered from 176s → 4.2s once frozen positions cleared.
+
+**Potential future fix** (not implemented): Consider skipping `_prefetch_all_premiums` for frozen positions with `status=closed` or adding a TTL-based cache so already-fetched illiquid strikes are not re-fetched every beat.
+
+---
+
+## 2026-03-26 — Reverse Mode Design: Complete & Final
+
+**No code changes.** Design document only.
+
+- Created `MMM_REVERSE_MODE_DESIGN.md` — single authoritative document for Controlled Reverse Mode
+- Design went through two audit passes + architectural refinement in this session
+- Key decisions made:
+  - **Hard if/else intercept** (not fallthrough): when reverse is ON, `_process_adjustment()` is completely suspended; when OFF, reverse logic never runs
+  - **Operator-controlled ON/OFF**: no DTE gate in code — operator reads market conditions and activates manually; guardrails protect at any DTE
+  - **Round-trip short strangle thesis**: strict alternating means reverse only builds both legs on a confirmed CE→PE (or PE→CE) round trip
+  - **13 parameters** (removed `reverse_min_dte_hours` — DTE is operator judgment)
+  - **`reverse_unhedged_emergency_loss`**: emergency auto-OFF if core positions bleed hard during the reverse window
+- 21-item safety checklist, 14 files to modify/create, ~1050 lines estimated
+- Status: APPROVED FOR IMPLEMENTATION — all 🔴 items mandatory before coding begins
