@@ -61,6 +61,40 @@ On 2026-03-24 a live P0 incident occurred: a stale `MMMMonitor` instance (gen=7)
 
 ---
 
-## 5. Branch
+## 5. Reverse Mode Invariants (DO NOT BREAK) — Added 2026-03-26
+
+On 2026-03-26 the Controlled Reverse Mode overlay was implemented across 14 files. The following invariants must be preserved in all future MMM work:
+
+**The hard if/else in `mmm_monitor.py` (around line 2781):**
+```python
+if session.get('params', {}).get('reverse_enabled', False) and \
+        session.get('_reverse', {}).get('active', False):
+    await process_reverse_entry(...)
+else:
+    # Normal MMM adjustment path — NEVER modify this else branch for reverse purposes
+```
+- When `reverse_enabled=False` (default), the `if` is False, the `else` runs — **normal MMM is 100% unchanged**.
+- NEVER add a fallthrough from the reverse block to `_process_adjustment()`. They are mutually exclusive.
+- NEVER move `_process_adjustment()` logic inside the `if` block.
+
+**`_auto_close_all()` close order must stay: reverse → perp → core.**
+If you modify `_auto_close_all()`, the reverse close block at the top must remain. Reversing the order orphans open short positions on the exchange.
+
+**`_reverse` state is isolated — never cross-contaminate:**
+- Never put reverse positions in `session['ce']['positions']` or `session['pe']['positions']`
+- Never include `session['_reverse']['total_lots']` in `active_lots` or `adjustment_count`
+- All core modules (engine, close_at_5, strike_shift, harvester, recycler, scaler) are blind to `_reverse` — keep it that way
+
+**`compute_current_total_pnl()` in `mmm_pnl_core.py` includes `reverse_pnl`:**
+If you refactor this formula, keep `+ session.get('_reverse', {}).get('net_pnl', 0.0)` in the total. Same for the post-update max_loss check at line ~3017 in `mmm_monitor.py`.
+
+**Session restore compatibility:**
+Any code that loads or creates a session must call `initialize_reverse_state(session)` if `'_reverse' not in session`. Old sessions predate this key.
+
+**`mmm_reverse.py` is the single module for all reverse logic.** Do not scatter reverse logic across other modules. Additions to reverse behavior go in `mmm_reverse.py` only.
+
+---
+
+## 6. Branch
 
 Main working branch: `SSR`. Merge target: `BTEH`.
