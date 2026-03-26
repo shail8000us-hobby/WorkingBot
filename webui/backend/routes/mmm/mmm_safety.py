@@ -549,16 +549,24 @@ class MMMSafety:
         if max_total <= 0:
             max_total = max_lots * 2
 
-        reverse_lots = session.get('_reverse', {}).get('total_lots', 0)
+        # Per-side reverse lots from positions (not combined total_lots).
+        # CE reverse positions are CE exchange exposure; PE reverse are PE exposure.
+        # Using total_lots (combined CE+PE) on both sides would double-count.
+        _rev_positions = session.get('_reverse', {}).get('positions', [])
+        _reverse_lots_by_side = {
+            'ce': sum(p.get('lots', 0) for p in _rev_positions
+                      if p.get('status') == 'open' and p.get('option_type') == 'ce'),
+            'pe': sum(p.get('lots', 0) for p in _rev_positions
+                      if p.get('status') == 'open' and p.get('option_type') == 'pe'),
+        }
 
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
             total = side_state.get('total_lots', 0)
             frozen = side_state.get('frozen_total_lots', 0)
             active = side_state.get('active_lots', 0)
-            # Include reverse lots in total exposure check (audit fix)
-            if side_key == 'ce':
-                total = total + reverse_lots
+            # Add per-side reverse lots (CE reverse to CE, PE reverse to PE)
+            total = total + _reverse_lots_by_side.get(side_key, 0)
             ratio = total / max_total if max_total > 0 else 0
 
             if total >= max_total:

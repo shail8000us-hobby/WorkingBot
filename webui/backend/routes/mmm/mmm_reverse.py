@@ -31,9 +31,10 @@ log = logging.getLogger(__name__)
 
 def initialize_reverse_state(session: Dict) -> None:
     """
-    Set session['_reverse'] to the initial state dict.
-    Call this if '_reverse' key is missing (for session restore compatibility).
-    Idempotent if called on a session that already has the key.
+    Set session['_reverse'] to a fresh initial state dict. Always overwrites.
+    Called by enable_reverse_mode() intentionally (resets for a new window).
+    In mmm_monitor.py guarded with `if '_reverse' not in session` so it
+    never clobbers live state during session restore.
     """
     session['_reverse'] = {
         'active': False,
@@ -692,32 +693,56 @@ async def close_all_reverse_positions(
 # Emergency detection
 # =============================================================================
 
-def check_reverse_emergency(session: Dict) -> bool:
+def _compute_core_only_pnl(session: Dict) -> float:
     """
-    Returns True if core positions are bleeding hard this heartbeat and reverse
-    should auto-disable.
+    Compute core-only P&L (excluding reverse P&L).
+    Formula: realized + unrealized - fees + perp_pnl
+    This is used by the emergency check to detect core losses
+    without reverse P&L masking or amplifying the signal.
+    """
+    realized = float(session.get('realized_pnl', 0.0))
+    unrealized = float(session.get('unrealized_pnl', 0.0))
+    fees = float(session.get('total_fees', 0.0))
+    perp = session.get('perp_hedge', {})
+    perp_pnl = (
+        float(perp.get('realized_pnl', 0.0) or 0.0)
+        + float(perp.get('unrealized_pnl', 0.0) or 0.0)
+    )
+    return realized + unrealized - fees + perp_pnl
 
-    Compares _prev_core_net_pnl to current total P&L to detect sudden core loss.
+
+def check_reverse_emergency(session: Dict) -> str:
+    """
+    Returns a descriptive reason string if core positions are bleeding hard
+    this heartbeat and reverse should auto-disable. Returns empty string
+    if no emergency.
+
+    Compares _prev_core_net_pnl (set BEFORE P&L update in mmm_monitor.py)
+    to current core-only P&L (excluding reverse) to detect sudden core loss.
     Called from mmm_monitor.py M2M phase after update_reverse_mtm().
     """
     params = session.get('params', {})
     threshold = float(params.get('reverse_unhedged_emergency_loss', 200.0) or 0)
     if threshold <= 0:
-        return False
+        return ''
 
     prev = session.get('_prev_core_net_pnl', None)
     if prev is None:
-        return False
+        return ''
 
     try:
-        from .mmm_pnl_core import compute_current_total_pnl
-        current_pnl = compute_current_total_pnl(session)
+        current_core_pnl = _compute_core_only_pnl(session)
     except Exception:
-        return False
+        return ''
 
-    # core_loss_this_beat = how much P&L dropped from prev snapshot
-    core_loss_this_beat = float(prev) - float(current_pnl)
-    return core_loss_this_beat > threshold
+    # core_loss_this_beat = how much core P&L dropped from prev snapshot
+    core_loss_this_beat = float(prev) - float(current_core_pnl)
+    if core_loss_this_beat > threshold:
+        return (
+            f'unhedged_emergency: core lost ${core_loss_this_beat:.2f} '
+            f'this heartbeat (threshold: ${threshold:.2f})'
+        )
+    return ''
 
 
 # =============================================================================
