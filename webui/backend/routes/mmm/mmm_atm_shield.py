@@ -207,10 +207,24 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
     pending = session.get(pending_key)
     if pending and time.time() >= pending.get('execute_after', 0):
         session.pop(pending_key, None)
+        # Validate strike is still correct.  A strike shift can occur between
+        # the beat that stored the deferred re-sell and the beat that executes it.
+        # Executing at a stale strike places a sell at a non-active strike that
+        # is never recorded in the session ledger → orphaned exchange position.
+        _pending_strike = pending.get('strike', 0)
+        _current_active = session.get(endangered_side, {}).get('active_strike', 0)
+        if _pending_strike != _current_active:
+            log.warning(
+                f"[{sid}] ATM Shield deferred re-sell ABORTED: "
+                f"stored strike {_pending_strike} != current active_strike "
+                f"{_current_active} ({endangered_side.upper()} shifted between "
+                f"fire and execution) — discarding stale re-sell"
+            )
+            return False
         log.info(
             f"[{sid}] ATM Shield: executing deferred re-sell for "
             f"{endangered_side.upper()} — "
-            f"{pending.get('lots')} lots @ {pending.get('strike')}"
+            f"{pending.get('lots')} lots @ {_pending_strike}"
         )
         try:
             engine = get_engine()
@@ -231,6 +245,7 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                     f"[{sid}] ATM Shield: deferred re-sell complete — "
                     f"{pending.get('lots')} lots @ {pending.get('strike')}"
                 )
+                monitor._save_my_session()
         except Exception as _dr_e:
             log.error(f"[{sid}] ATM Shield deferred re-sell error: {_dr_e}", exc_info=True)
         # Return False — this beat is consumed by the deferred re-sell, not a new fire
@@ -453,6 +468,11 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                             f"on {endangered_side.upper()} @ {new_strike:.0f} "
                             f"(active_strike updated {endangered_strike:.0f} → {new_strike:.0f})"
                         )
+                        # Save immediately so a watchdog restart cannot orphan this
+                        # position.  ATM Shield places multiple orders; each fill must
+                        # be persisted before the next order so that if the session is
+                        # killed mid-execution the new position is not lost.
+                        monitor._save_my_session()
                 except Exception as e:
                     log.error(
                         f"[{sid}] ATM Shield re-sell error: {e}", exc_info=True,
@@ -475,8 +495,16 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                 lots_safe, _, _ = engine.calculate_lots_to_sell(
                     session, safe_side, loss_share_safe, safe_premium,
                 )
-                # Cap: never sell more recovery lots than we just closed
-                lots_safe = min(lots_safe, total_closed_lots)
+                # Cap at remaining position capacity on the safe side.
+                # The old cap (min(lots_safe, total_closed_lots)) was wrong: when the
+                # safe-side premium is much lower than the close premium, recovering 70%
+                # of the loss requires far more lots than were closed.  The hard cap
+                # made the 70% recovery target impossible to achieve.
+                # Use the same position-cap pattern as the endangered-side re-sell.
+                _max_lots_safe = params.get('max_lots_per_side', 100)
+                _current_safe = session.get(safe_side, {}).get('active_lots', 0)
+                _cap_safe = max(_max_lots_safe - _current_safe, 0)
+                lots_safe = min(lots_safe, _cap_safe)
                 if lots_safe > 0:
                     try:
                         result = await engine.execute_adjustment(
@@ -490,6 +518,8 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                                 f"{lots_safe} lots on {safe_side.upper()} "
                                 f"@ {safe_active_strike:.0f}"
                             )
+                            # Save immediately — same watchdog-race guard as endangered side
+                            monitor._save_my_session()
                     except Exception as e:
                         log.error(
                             f"[{sid}] ATM Shield safe-side error: {e}",

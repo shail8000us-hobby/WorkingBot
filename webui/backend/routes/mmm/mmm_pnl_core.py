@@ -728,7 +728,17 @@ def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
     if fetch_premium_fn:
         unrealized = compute_unrealized_pnl(session, fetch_premium_fn)
 
-    net = realized + unrealized - fees
+    # Include perp hedge and reverse P&L so net_pnl matches compute_current_total_pnl.
+    # Previously get_pnl() omitted these, causing the API/dashboard to show a different
+    # number than safety checks — perp losses were invisible to the operator.
+    perp = session.get('perp_hedge', {})
+    perp_pnl = (
+        float(perp.get('realized_pnl', 0.0) or 0.0)
+        + float(perp.get('unrealized_pnl', 0.0) or 0.0)
+    )
+    reverse_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
+
+    net = realized + unrealized - fees + perp_pnl + reverse_pnl
 
     # Track peak P&L
     peak = session.get('peak_pnl', 0.0)
@@ -741,6 +751,8 @@ def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
         'unrealized': round(unrealized, 6),
         'fees': round(fees, 6),
         'net_pnl': round(net, 6),
+        'perp_pnl': round(perp_pnl, 6),
+        'reverse_pnl': round(reverse_pnl, 6),
         'attribution': compute_attribution(session),
         'confirmed_pnl': round(confirmed, 6),
         # H-6: expose unconfirmed estimate exposure and staleness
