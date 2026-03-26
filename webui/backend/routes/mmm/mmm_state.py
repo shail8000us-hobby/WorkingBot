@@ -636,6 +636,21 @@ DEFAULT_PARAMS = {
     # Runs every N heartbeats; emits SAFETY_ALERT on mismatch (does not self-heal).
     # 0 = disabled.  Default 50 beats ≈ 25 min at 30s heartbeat interval.
     'auto_recon_interval_beats':        50,
+
+    # ── Reverse Mode ──
+    'reverse_enabled': False,
+    'reverse_capacity_pct': 10.0,
+    'reverse_num_slots': 5,
+    'reverse_slot_size_override': 0,
+    'reverse_max_adjustments': 3,
+    'reverse_time_start': '',
+    'reverse_time_end': '',
+    'reverse_duration_mins': 120,
+    'reverse_mode_type': 'strict_alternating',
+    'reverse_cooldown_mins': 5,
+    'reverse_max_loss': 100.0,
+    'reverse_close_at_threshold': 8.0,
+    'reverse_unhedged_emergency_loss': 200.0,
 }
 
 # Which parameters can be changed while algo is running
@@ -759,6 +774,12 @@ HOT_RELOAD_PARAMS = {
     'straddle_roll_min_credit_pct', 'straddle_roll_slippage_factor',
     'straddle_roll_loss_abort_mult', 'straddle_roll_lot_scale',
     'straddle_roll_iv_spike_mult',
+    # Reverse Mode
+    'reverse_enabled', 'reverse_capacity_pct', 'reverse_num_slots',
+    'reverse_slot_size_override', 'reverse_max_adjustments',
+    'reverse_time_start', 'reverse_time_end', 'reverse_duration_mins',
+    'reverse_mode_type', 'reverse_cooldown_mins', 'reverse_max_loss',
+    'reverse_close_at_threshold', 'reverse_unhedged_emergency_loss',
 }
 
 
@@ -1046,6 +1067,27 @@ def create_session(
             # Greeks tracking
             'max_abs_delta': 0,
             'max_abs_delta_timestamp': None,
+        },
+
+        # Reverse Mode — isolated state namespace
+        '_reverse': {
+            'active': False,
+            'enabled_at': None,
+            'disabled_at': None,
+            'disable_reason': None,
+            'slots_used': 0,
+            'slots_remaining': 5,
+            'last_reverse_side': None,
+            'last_reverse_at': None,
+            'adjustment_count': 0,
+            'total_lots': 0,
+            'positions': [],
+            'total_premium_collected': 0.0,
+            'realized_pnl': 0.0,
+            'unrealized_pnl': 0.0,
+            'net_pnl': 0.0,
+            'delta_exposure': 0.0,
+            'history': [],
         },
 
         # Perpetual Futures Delta Hedge (Fix #26)

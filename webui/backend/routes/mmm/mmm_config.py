@@ -237,6 +237,20 @@ PARAM_RULES = {
     'adaptive_dry_run':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
     'atm_shield_partial_pct':            {'type': float, 'min': 0.1,  'max': 1.0,   'hot': True},
     'atm_shield_defer_resell_beats':     {'type': int,   'min': 0,    'max': 5,     'hot': True},
+    # ── Reverse Mode ──
+    'reverse_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'reverse_capacity_pct':              {'type': float, 'min': 0,    'max': 100,   'hot': True},
+    'reverse_num_slots':                 {'type': int,   'min': 1,    'max': 20,    'hot': True},
+    'reverse_slot_size_override':        {'type': int,   'min': 0,    'max': 1000,  'hot': True},
+    'reverse_max_adjustments':           {'type': int,   'min': 1,    'max': 20,    'hot': True},
+    'reverse_time_start':                {'type': str,   'min': None, 'max': None,  'hot': True},
+    'reverse_time_end':                  {'type': str,   'min': None, 'max': None,  'hot': True},
+    'reverse_duration_mins':             {'type': int,   'min': 0,    'max': 1440,  'hot': True},
+    'reverse_mode_type':                 {'type': str,   'min': None, 'max': None,  'hot': True},
+    'reverse_cooldown_mins':             {'type': int,   'min': 0,    'max': 60,    'hot': True},
+    'reverse_max_loss':                  {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
+    'reverse_close_at_threshold':        {'type': float, 'min': 0,    'max': 1000,  'hot': True},
+    'reverse_unhedged_emergency_loss':   {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
 }
 
 

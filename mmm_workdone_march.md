@@ -717,3 +717,80 @@ For a stopped session with U=$0.00 and F=$0.67, the "Unrealized" KPI card showed
   - **`reverse_unhedged_emergency_loss`**: emergency auto-OFF if core positions bleed hard during the reverse window
 - 21-item safety checklist, 14 files to modify/create, ~1050 lines estimated
 - Status: APPROVED FOR IMPLEMENTATION — all 🔴 items mandatory before coding begins
+
+---
+
+## 2026-03-26 — Controlled Reverse Mode: Full Implementation (Steps 1-14)
+
+All 14 implementation steps completed across 12 modified files and 2 new files.
+Design spec: `MMM_REVERSE_MODE_DESIGN.md`.
+
+**mmm_state.py** (Step 1):
+- Added 13 `reverse_*` params to `DEFAULT_PARAMS` (after `auto_recon_interval_beats`)
+- Added all 13 to `HOT_RELOAD_PARAMS` set
+- Added `session['_reverse']` isolated state dict in `create_session()` (before `perp_hedge`)
+
+**mmm_config.py** (Step 2):
+- Added 13 `PARAM_RULES` entries for all reverse params with type/min/max/hot validation
+
+**mmm_pnl_core.py** (Step 3):
+- Added `'reverse_close': 'pnl_reverse'` to `_SOURCE_TO_ATTR` for audit attribution
+- `compute_current_total_pnl()` now adds `session['_reverse']['net_pnl']` to canonical formula
+
+**mmm_safety.py** (Step 4):
+- `check_total_exposure()`: adds `reverse_lots` to CE side total (unhedged lots count against limit)
+- `check_margin()`: adds `reverse_lots` to `total_lots` sum for margin utilization
+
+**mmm_activity.py** (Step 5):
+- Added 4 activity types: `reverse_entry`, `reverse_closed`, `reverse_disabled`, `reverse_status`
+- Added 4 module-level constants: `ACTIVITY_REVERSE_*`
+- Added to `ACTIVITY_CATEGORIES`: reverse entry/closed/status in `adjustments`; reverse_disabled in `safety`
+
+**mmm_reverse.py** (Step 6 — NEW FILE, ~400 lines):
+- Complete reverse mode core logic: state init, time window, ON/OFF gate, alternating check,
+  cooldown, entry execution, MTM update, close-at-threshold, emergency check, enable/disable
+- Uses lazy pnl_core imports inside functions to avoid circular imports
+- All WS emits wrapped in try/except (best-effort)
+
+**mmm_monitor.py** (Step 7):
+- Import: added `from .mmm_reverse import (...)` after mmm_telegram imports
+- `start()`: added `if '_reverse' not in session: initialize_reverse_state(session)` after DEFAULT_PARAMS backfill
+- Hard if/else intercept at the normal adjustment path: when `reverse_enabled` and `_reverse.active`, calls `process_reverse_entry()` instead of `_process_adjustment()` (original code untouched in else branch)
+- Wind-down detection: calls `disable_reverse_mode()` when wind-down activates (sync, flags only)
+- Step 8 P&L: `update_peak_pnl` uses `pnl['net_pnl'] + _reverse_net_pnl` so trailing stop accounts for reverse
+- Step 8 P&L: added M2M hook block — calls `update_reverse_mtm`, `check_reverse_close_at_threshold`, `check_reverse_emergency` per heartbeat
+- `current_total_pnl` (post-update max loss check): now includes `_reverse['net_pnl']`
+- `_auto_close_all()`: closes reverse positions FIRST (before perp/CE/PE) then disables
+
+**mmm_audit_reconciler.py** (Step 8):
+- `reconcile_session()`: builds `_reverse_lots_by_key` from `session['_reverse']['positions']`
+- Per-strike open qty count now includes reverse position lots (prevents false discrepancies)
+
+**mmm_websocket.py** (Step 10):
+- Added 4 emit functions matching mmm_reverse.py call signatures exactly:
+  `emit_reverse_entry(sid, rev_state, pos)`, `emit_reverse_closed(sid, rev_state, pos, reason)`,
+  `emit_reverse_status(sid, rev_state)`, `emit_reverse_disabled(sid, reason)`
+
+**mmm_api.py** (Step 11):
+- 4 new endpoints: `GET /session/<id>/reverse`, `POST /session/<id>/reverse/enable`,
+  `POST /session/<id>/reverse/disable`, `POST /session/<id>/reverse/close`
+
+**MMMSettingsDialog.js** (Step 12):
+- Added `reverseMode` group to `PARAM_GROUPS` (color `#e91e63`) with 5 sections covering
+  all 13 reverse params + prominent WARNING blurb about suspended normal logic
+
+**MMMReverseModePanel.js** (Step 13 — NEW FILE):
+- Live dashboard: status banner, enable/disable/close-all buttons, slots grid, P&L grid,
+  open positions table, config summary chips
+
+**MMMDashboard.js** (Step 14):
+- `import MMMReverseModePanel` added
+- Tab 18 "Reverse Mode" added to Tabs list
+- `{detailTab === 18 && <MMMReverseModePanel session={session} heartbeat={heartbeat} />}` block added
+
+**Key invariants preserved**:
+- Stale monitor 3-layer fix: untouched (no changes to `_run_loop`, `_heartbeat`, `_save_session`)
+- All safety infrastructure continues: max_loss, trailing stop, margin guardian, wind-down
+- Mutual exclusion is hard if/else — zero chance of both paths running in same heartbeat
+- `session['ce']` and `session['pe']` never touched by reverse logic
+- All 10 modified Python files pass `ast.parse()` syntax check

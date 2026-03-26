@@ -157,6 +157,12 @@ ACTIVITY_TYPES = {
     'session_exit_all_completed': 'Exit All Complete',
     'session_exit_all_partial': 'Exit All Partial',
 
+    # Reverse Mode
+    'reverse_entry': 'Reverse Entry',
+    'reverse_closed': 'Reverse Closed',
+    'reverse_disabled': 'Reverse Disabled',
+    'reverse_status': 'Reverse Status',
+
     # General
     'info': 'Info',
     'warning': 'Warning',
@@ -181,13 +187,15 @@ ACTIVITY_CATEGORIES = {
                     'scale_up_no_strikes',
                     'replenish_triggered', 'replenish_complete', 'replenish_failed',
                     'replenish_blocked',
-                    'straddle_roll', 'straddle_roll_blocked'},
+                    'straddle_roll', 'straddle_roll_blocked',
+                    'reverse_entry', 'reverse_closed', 'reverse_status'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',
                'whipsaw_guard',
                'breakeven_zone_change', 'breakeven_band_contracting', 'breakeven_narrow_band',
-               'gamma_zone_change', 'gamma_danger_detected'},
+               'gamma_zone_change', 'gamma_danger_detected',
+               'reverse_disabled'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
                'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
@@ -201,6 +209,12 @@ SEVERITY_SUCCESS = 'success'
 SEVERITY_WARNING = 'warning'
 SEVERITY_ERROR = 'error'
 SEVERITY_PROGRESS = 'progress'  # For ongoing actions (placing, waiting)
+
+# Reverse Mode activity type constants (importable by mmm_reverse.py)
+ACTIVITY_REVERSE_ENTRY = 'reverse_entry'
+ACTIVITY_REVERSE_CLOSED = 'reverse_closed'
+ACTIVITY_REVERSE_DISABLED = 'reverse_disabled'
+ACTIVITY_REVERSE_STATUS = 'reverse_status'
 
 
 class MMMActivityLog:

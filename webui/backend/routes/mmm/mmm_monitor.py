@@ -89,6 +89,12 @@ from .mmm_telegram import (
     alert_session_stopped, alert_rapid_check_activated,
     alert_max_loss_breach, alert_both_sides_up,
 )
+from .mmm_reverse import (
+    process_reverse_entry, update_reverse_mtm,
+    check_reverse_close_at_threshold, close_all_reverse_positions,
+    check_reverse_emergency, disable_reverse_mode,
+    is_reverse_mode_on, initialize_reverse_state,
+)
 
 # L-2 fix: module-level import removes per-call import-lock overhead on every heartbeat.
 # Wrapped in try/except to avoid blocking startup if the activity module fails.
@@ -294,6 +300,11 @@ class MMMMonitor:
                 session_params.setdefault(_k, _v)
         except Exception as _e:
             log.warning(f"[{self.session_id}] Could not backfill DEFAULT_PARAMS: {_e}")
+
+        # Reverse Mode: ensure _reverse state key exists for session restore compatibility.
+        # Uses initialize_reverse_state only when key is absent (never overwrites live state).
+        if '_reverse' not in self.session:
+            initialize_reverse_state(self.session)
 
         # NOTE: _being_closed flags are cleared in the AUDIT DEAD-6 block below
         # (after generation is set), then immediately saved to SQLite.
@@ -2723,6 +2734,11 @@ class MMMMonitor:
                 # Wind-down mode: reduce instead of adding positions
                 elif is_wind_down_active(session):
                     session['_wind_down_mode'] = True
+                    # Reverse Mode: disable immediately when wind-down activates.
+                    # Reverse positions are unhedged — wind-down and reverse are incompatible.
+                    # Sync context only: set flags, do not await.
+                    if session.get('_reverse', {}).get('active', False):
+                        disable_reverse_mode(session, 'wind_down_activated')
                     log_activity('wind_down',
                                 f'🌙 Wind-Down Active: {aggressor.upper()} triggered — '
                                 f'reducing positions instead of hedging',
@@ -2758,58 +2774,70 @@ class MMMMonitor:
                 else:
                     session.pop('_wind_down_mode', None)
 
-                    # Fix #11: If close-at-5 closed positions on the aggressor side
-                    # during this same heartbeat, re-evaluate the trigger now that
-                    # the position state has changed.  Close-at-5 may have removed
-                    # positions whose realized loss already reduces the net exposure —
-                    # re-evaluation prevents unnecessary over-hedging.
-                    if aggressor in _close_at_5_sides:
-                        log.info(
-                            f"[{sid}] Fix #11: close-at-5 closed {aggressor.upper()} positions "
-                            f"this heartbeat — re-evaluating trigger before adjustment"
+                    # ── Reverse Mode intercept (hard mutual exclusion) ──────────
+                    # When reverse mode is active, ONLY reverse entry runs.
+                    # _process_adjustment() is completely bypassed.
+                    # When reverse is OFF, this block has zero effect.
+                    if session.get('params', {}).get('reverse_enabled', False) and \
+                            session.get('_reverse', {}).get('active', False):
+                        await process_reverse_entry(
+                            session, aggressor, hedge, ce_now, pe_now, self._engine
                         )
-                        re_trigger = evaluate_triggers(session, ce_now, pe_now)
-                        if re_trigger['outcome'] not in (OUTCOME_CE, OUTCOME_PE, OUTCOME_BOTH):
-                            log_activity('trigger_cleared_by_close_at_5',
-                                        f'✅ Trigger re-evaluation: {aggressor.upper()} trigger '
-                                        f'no longer active after close-at-5 — skipping adjustment',
-                                        sid, 'info',
-                                        {'aggressor': aggressor, 'original_outcome': outcome,
-                                         're_outcome': re_trigger['outcome']})
-                            # Trigger cleared — skip the adjustment
+                    else:
+                        # Normal MMM adjustment path (unmodified)
+
+                        # Fix #11: If close-at-5 closed positions on the aggressor side
+                        # during this same heartbeat, re-evaluate the trigger now that
+                        # the position state has changed.  Close-at-5 may have removed
+                        # positions whose realized loss already reduces the net exposure —
+                        # re-evaluation prevents unnecessary over-hedging.
+                        if aggressor in _close_at_5_sides:
+                            log.info(
+                                f"[{sid}] Fix #11: close-at-5 closed {aggressor.upper()} positions "
+                                f"this heartbeat — re-evaluating trigger before adjustment"
+                            )
+                            re_trigger = evaluate_triggers(session, ce_now, pe_now)
+                            if re_trigger['outcome'] not in (OUTCOME_CE, OUTCOME_PE, OUTCOME_BOTH):
+                                log_activity('trigger_cleared_by_close_at_5',
+                                            f'✅ Trigger re-evaluation: {aggressor.upper()} trigger '
+                                            f'no longer active after close-at-5 — skipping adjustment',
+                                            sid, 'info',
+                                            {'aggressor': aggressor, 'original_outcome': outcome,
+                                             're_outcome': re_trigger['outcome']})
+                                # Trigger cleared — skip the adjustment
+                            else:
+                                log_activity('adjustment_triggered',
+                                            f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
+                                            f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})'
+                                            f' [trigger confirmed after close-at-5 re-check]',
+                                            sid, 'info',
+                                            {
+                                                'aggressor': aggressor.upper(),
+                                                'aggressor_premium': premium_now,
+                                                'hedge': hedge.upper(),
+                                                'hedge_premium': hedge_premium,
+                                                'close_at_5_ran_on_aggressor': True,
+                                            })
+                                await self._process_adjustment(
+                                    aggressor, hedge, premium_now, hedge_premium,
+                                    ce_now, pe_now,
+                                )
                         else:
                             log_activity('adjustment_triggered',
                                         f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                                        f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})'
-                                        f' [trigger confirmed after close-at-5 re-check]',
+                                        f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
                                         sid, 'info',
                                         {
                                             'aggressor': aggressor.upper(),
                                             'aggressor_premium': premium_now,
                                             'hedge': hedge.upper(),
-                                            'hedge_premium': hedge_premium,
-                                            'close_at_5_ran_on_aggressor': True,
+                                            'hedge_premium': hedge_premium
                                         })
+
                             await self._process_adjustment(
                                 aggressor, hedge, premium_now, hedge_premium,
                                 ce_now, pe_now,
                             )
-                    else:
-                        log_activity('adjustment_triggered',
-                                    f'🎯 Adjustment Triggered: {aggressor.upper()} side breached trigger '
-                                    f'(${premium_now:.2f}), hedging with {hedge.upper()} (${hedge_premium:.2f})',
-                                    sid, 'info',
-                                    {
-                                        'aggressor': aggressor.upper(),
-                                        'aggressor_premium': premium_now,
-                                        'hedge': hedge.upper(),
-                                        'hedge_premium': hedge_premium
-                                    })
-
-                        await self._process_adjustment(
-                            aggressor, hedge, premium_now, hedge_premium,
-                            ce_now, pe_now,
-                        )
 
         # Step 7.5: Perp Delta Hedge (Fix #26)
         # Runs after adjustments, before P&L — uses cached portfolio_delta from Step 3.5
@@ -2909,9 +2937,32 @@ class MMMMonitor:
             session, self._make_fetch_fn()
         )
         session['unrealized_pnl'] = pnl['unrealized']
-        update_peak_pnl(session, pnl['net_pnl'])
+        # Include reverse P&L in peak tracking so trailing stop accounts for it.
+        _reverse_net_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
+        total_for_peak = pnl['net_pnl'] + _reverse_net_pnl
+        update_peak_pnl(session, total_for_peak)
         # T2-5: Mirror perp hedge realized P&L to attribution field (sync, not incremental)
         session['pnl_perp'] = session.get('perp_hedge', {}).get('realized_pnl', 0.0)
+
+        # Reverse Mode M2M hook: update unrealized P&L for open reverse positions.
+        # Also checks close-at-threshold and emergency bleed on every heartbeat.
+        if session.get('params', {}).get('reverse_enabled', False) and \
+                session.get('_reverse', {}).get('active', False):
+            try:
+                update_reverse_mtm(session, ce_now, pe_now)
+            except Exception as _rev_mtm_err:
+                log.warning(f"[{sid}] reverse MTM update failed (non-fatal): {_rev_mtm_err}")
+            try:
+                await check_reverse_close_at_threshold(session, ce_now, pe_now, self._engine)
+            except Exception as _rev_close_err:
+                log.warning(f"[{sid}] reverse close-at-threshold check failed (non-fatal): {_rev_close_err}")
+            try:
+                rev_emergency = check_reverse_emergency(session)
+                if rev_emergency:
+                    log.warning(f"[{sid}] Reverse emergency detected: {rev_emergency} — disabling reverse mode")
+                    disable_reverse_mode(session, rev_emergency)
+            except Exception as _rev_emerg_err:
+                log.warning(f"[{sid}] reverse emergency check failed (non-fatal): {_rev_emerg_err}")
 
         # Track P&L for walkthrough
         self._hb_wt['pnl'] = pnl
@@ -2962,7 +3013,8 @@ class MMMMonitor:
         # Safety checks in Step 3 use previous heartbeat's P&L.
         # This check catches max_loss breach on the SAME heartbeat.
         max_loss_amount = session.get('params', {}).get('max_loss_amount', 5000.0)
-        current_total_pnl = pnl['net_pnl']
+        # Include reverse P&L so max_loss check sees the complete picture.
+        current_total_pnl = pnl['net_pnl'] + float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
         if max_loss_amount > 0 and current_total_pnl <= -max_loss_amount:
             log.critical(
                 f"[{sid}] MAX LOSS BREACHED (post-update): "
@@ -6423,6 +6475,15 @@ class MMMMonitor:
         failed_closes = []
 
         try:
+            # Reverse Mode: close all reverse positions FIRST.
+            # They are unhedged and must be covered before normal positions.
+            if session.get('_reverse', {}).get('positions'):
+                try:
+                    await close_all_reverse_positions(session, self._engine, reason)
+                    disable_reverse_mode(session, f'auto_close_all: {reason}')
+                except Exception as _rev_close_all_err:
+                    log.error(f"[{sid}] Failed to close reverse positions in auto_close_all: {_rev_close_all_err}")
+
             # §26.10: Close perp FIRST before options (reduces delta risk
             # during the window when options positions are still open)
             if is_perp_hedge_enabled(session):

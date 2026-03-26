@@ -68,6 +68,7 @@ _SOURCE_TO_ATTR = {
     'wind_down':         'pnl_adjustment',
     'auto_close_active': 'pnl_adjustment',
     'auto_close_frozen': 'pnl_adjustment',
+    'reverse_close':     'pnl_reverse',
 }
 
 
@@ -758,11 +759,12 @@ def compute_current_total_pnl(session: Dict) -> float:
     """
     Single canonical formula for current total P&L across all components.
 
-    Formula: realized_pnl + unrealized_pnl - total_fees + perp_pnl
+    Formula: realized_pnl + unrealized_pnl - total_fees + perp_pnl + reverse_pnl
 
     All inputs are session cache fields kept in sync by _sync_session_fields()
     and compute_unrealized_pnl(). Perp hedge P&L (realized + unrealized) is
-    included so max_loss and trailing_stop see the full picture.
+    included so max_loss and trailing_stop see the full picture. Reverse P&L
+    is included so all safety checks account for reverse position exposure.
 
     ALL safety checks (check_max_loss, check_trailing_stop, etc.) must call
     this instead of building their own formula.
@@ -775,7 +777,8 @@ def compute_current_total_pnl(session: Dict) -> float:
         float(perp.get('realized_pnl', 0.0) or 0.0)
         + float(perp.get('unrealized_pnl', 0.0) or 0.0)
     )
-    return float(realized) + float(unrealized) - float(fees) + perp_pnl
+    reverse_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
+    return float(realized) + float(unrealized) - float(fees) + perp_pnl + reverse_pnl
 
 
 # ─────────────────────────────────────────────────────────────────────────────

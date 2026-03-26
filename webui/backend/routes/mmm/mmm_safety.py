@@ -549,11 +549,16 @@ class MMMSafety:
         if max_total <= 0:
             max_total = max_lots * 2
 
+        reverse_lots = session.get('_reverse', {}).get('total_lots', 0)
+
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
             total = side_state.get('total_lots', 0)
             frozen = side_state.get('frozen_total_lots', 0)
             active = side_state.get('active_lots', 0)
+            # Include reverse lots in total exposure check (audit fix)
+            if side_key == 'ce':
+                total = total + reverse_lots
             ratio = total / max_total if max_total > 0 else 0
 
             if total >= max_total:
@@ -923,7 +928,9 @@ class MMMSafety:
 
         total_ce = session.get('ce', {}).get('total_lots', 0)
         total_pe = session.get('pe', {}).get('total_lots', 0)
-        total_lots = total_ce + total_pe
+        # Include reverse lots in margin check (audit fix)
+        reverse_lots = session.get('_reverse', {}).get('total_lots', 0)
+        total_lots = total_ce + total_pe + reverse_lots
 
         # Warn if combined lots exceed 150% of single-side cap
         combined_cap = max_lots * 1.5

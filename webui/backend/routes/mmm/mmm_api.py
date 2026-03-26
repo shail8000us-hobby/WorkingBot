@@ -7456,3 +7456,169 @@ def get_session_execution_events(session_id: str):
     limit = min(500, max(1, int(request.args.get('limit', 100))))
     rows = get_event_log().query_session(session_id, category='EXECUTION_INTENT', limit=limit)
     return jsonify({'events': rows, 'count': len(rows)})
+
+
+# =============================================================================
+# Reverse Mode Endpoints
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/reverse', methods=['GET'])
+def get_reverse_status(session_id: str):
+    """
+    GET /api/mmm/session/<session_id>/reverse
+
+    Returns full reverse mode state for the session.
+    Reads from live monitor session if running, otherwise from storage.
+    """
+    try:
+        monitor = get_monitor(session_id)
+        if monitor and hasattr(monitor, 'session'):
+            session = monitor.session
+        else:
+            storage = get_storage()
+            session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        params = session.get('params', {})
+        reverse_state = session.get('_reverse', {})
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'reverse_enabled': params.get('reverse_enabled', False),
+            'reverse_active': reverse_state.get('active', False),
+            'reverse_state': reverse_state,
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to get reverse status for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/reverse/enable', methods=['POST'])
+def enable_reverse_mode_api(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/reverse/enable
+
+    Enable reverse mode for a running session.
+    Sets reverse_enabled=True and activates _reverse state.
+    Session must be running.
+    """
+    try:
+        monitor = get_monitor(session_id)
+        if not monitor or not getattr(monitor, '_running', False):
+            return jsonify({'success': False, 'error': 'Session is not running'}), 400
+
+        from .mmm_reverse import enable_reverse_mode
+        session = monitor.session
+        with monitor._session_lock:
+            enable_reverse_mode(session)
+            session['params']['reverse_enabled'] = True
+
+        # Persist to storage
+        storage = get_storage()
+        storage.update_session(session_id, {
+            'params': session.get('params', {}),
+            '_reverse': session.get('_reverse', {}),
+        })
+
+        from .mmm_websocket import emit_params_changed
+        emit_params_changed(session_id, {'reverse_enabled': True})
+
+        log.info(f"[{session_id}] Reverse mode ENABLED via API")
+        return jsonify({
+            'success': True,
+            'message': 'Reverse mode enabled',
+            'reverse_state': session.get('_reverse', {}),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to enable reverse mode for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/reverse/disable', methods=['POST'])
+def disable_reverse_mode_api(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/reverse/disable
+
+    Disable reverse mode for a running session.
+    Sets reverse_enabled=False and deactivates _reverse state.
+    Does NOT close open reverse positions (use /reverse/close for that).
+    """
+    try:
+        monitor = get_monitor(session_id)
+        if not monitor or not getattr(monitor, '_running', False):
+            return jsonify({'success': False, 'error': 'Session is not running'}), 400
+
+        from .mmm_reverse import disable_reverse_mode
+        session = monitor.session
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'manual_api_disable')
+        with monitor._session_lock:
+            disable_reverse_mode(session, reason)
+            session['params']['reverse_enabled'] = False
+
+        # Persist to storage
+        storage = get_storage()
+        storage.update_session(session_id, {
+            'params': session.get('params', {}),
+            '_reverse': session.get('_reverse', {}),
+        })
+
+        from .mmm_websocket import emit_params_changed
+        emit_params_changed(session_id, {'reverse_enabled': False})
+
+        log.info(f"[{session_id}] Reverse mode DISABLED via API: {reason}")
+        return jsonify({
+            'success': True,
+            'message': f'Reverse mode disabled: {reason}',
+            'reverse_state': session.get('_reverse', {}),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to disable reverse mode for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/session/<session_id>/reverse/close', methods=['POST'])
+def close_reverse_positions_api(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/reverse/close
+
+    Manually close all open reverse mode positions.
+    Session must be running (needs live engine for order placement).
+    Disables reverse mode after close.
+    """
+    try:
+        monitor = get_monitor(session_id)
+        if not monitor or not getattr(monitor, '_running', False):
+            return jsonify({'success': False, 'error': 'Session is not running'}), 400
+
+        from .mmm_reverse import close_all_reverse_positions, disable_reverse_mode
+        session = monitor.session
+        data = request.get_json(silent=True) or {}
+        reason = data.get('reason', 'manual_api_close')
+
+        # Run async close in a fresh event loop (Flask is sync)
+        async def _do_close():
+            await close_all_reverse_positions(session, monitor._engine, reason)
+            disable_reverse_mode(session, reason)
+
+        _run_async(_do_close())
+
+        # Persist updated state
+        storage = get_storage()
+        storage.update_session(session_id, {'_reverse': session.get('_reverse', {})})
+
+        log.info(f"[{session_id}] Reverse positions closed via API: {reason}")
+        return jsonify({
+            'success': True,
+            'message': f'Reverse positions closed: {reason}',
+            'reverse_state': session.get('_reverse', {}),
+        })
+
+    except Exception as e:
+        log.exception(f"Failed to close reverse positions for {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500

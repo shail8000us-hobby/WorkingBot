@@ -92,6 +92,7 @@ import MMMPerformancePanel from './MMMPerformancePanel';
 import MMMTradeAuditPanel from './MMMTradeAuditPanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMExecutionLogPanel from './MMMExecutionLogPanel';
+import MMMReverseModePanel from './MMMReverseModePanel';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
 import MMMGreeksPanel from './MMMGreeksPanel';
@@ -2325,6 +2326,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <Tab label="Performance" />
         <Tab label="Audit" />
         <Tab label="Exec Log" />
+        <Tab label="Reverse Mode" />
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -3253,6 +3255,13 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
       {detailTab === 17 && (
         <Box>
           <MMMExecutionLogPanel sessionId={session?.session_id} />
+        </Box>
+      )}
+
+      {/* Tab 18: Reverse Mode — Controlled premium harvesting overlay */}
+      {detailTab === 18 && (
+        <Box>
+          <MMMReverseModePanel session={session} heartbeat={heartbeat} />
         </Box>
       )}
 

@@ -306,6 +306,33 @@ const PARAM_GROUPS = {
       },
     ],
   },
+  reverseMode: {
+    title: '🔄 Controlled Reverse Mode',
+    color: '#e91e63',
+    blurb: 'WARNING: Reverse mode suspends normal MMM hedge-sell logic. Instead, it sells the same aggressor side (directional premium harvesting). Strict CE→PE→CE alternating enforced. All safety infrastructure (max_loss, trailing stop, margin guardian, wind-down) continues running. Only activate when you understand the unhedged delta exposure.',
+    sections: [
+      {
+        header: 'Master Switch',
+        params: ['reverse_enabled'],
+      },
+      {
+        header: 'Capacity',
+        params: ['reverse_capacity_pct', 'reverse_num_slots', 'reverse_slot_size_override'],
+      },
+      {
+        header: 'Execution Control',
+        params: ['reverse_max_adjustments', 'reverse_mode_type', 'reverse_cooldown_mins'],
+      },
+      {
+        header: 'Time Window',
+        params: ['reverse_time_start', 'reverse_time_end', 'reverse_duration_mins'],
+      },
+      {
+        header: 'Safety Limits',
+        params: ['reverse_max_loss', 'reverse_close_at_threshold', 'reverse_unhedged_emergency_loss'],
+      },
+    ],
+  },
 };
 
 // Rich tooltip text for each parameter (maps param name → detailed help)

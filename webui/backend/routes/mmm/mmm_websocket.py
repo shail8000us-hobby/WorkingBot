@@ -493,3 +493,58 @@ def emit_gamma(session_id: str, gamma_data: Dict):
         'session_id': session_id,
         **gamma_data,
     })
+
+
+# ── Reverse Mode Events ───────────────────────────────────────────────────────
+# Note: these signatures match the call sites in mmm_reverse.py exactly.
+
+def emit_reverse_entry(session_id: str, reverse_state: Dict, position: Dict):
+    """Emit when a reverse mode position is opened.
+
+    Args:
+        session_id: session ID string
+        reverse_state: session['_reverse'] dict (slots, counts, etc.)
+        position: the new position dict (side, strike, lots, entry_premium, ...)
+    """
+    _emit('mmm_reverse_entry', {
+        'session_id':    session_id,
+        'reverse_state': reverse_state,
+        'position':      position,
+        'timestamp':     datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def emit_reverse_closed(session_id: str, reverse_state: Dict, position: Dict, reason: str):
+    """Emit when a reverse mode position is closed.
+
+    Args:
+        session_id: session ID string
+        reverse_state: session['_reverse'] dict
+        position: the closed position dict (includes realized_pnl)
+        reason: close reason string
+    """
+    _emit('mmm_reverse_closed', {
+        'session_id':    session_id,
+        'reverse_state': reverse_state,
+        'position':      position,
+        'reason':        reason,
+        'timestamp':     datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def emit_reverse_status(session_id: str, reverse_state: Dict):
+    """Emit current reverse mode state (on enable/disable or per heartbeat when active)."""
+    _emit('mmm_reverse_status', {
+        'session_id':    session_id,
+        'reverse_state': reverse_state,
+        'timestamp':     datetime.now(timezone.utc).isoformat(),
+    })
+
+
+def emit_reverse_disabled(session_id: str, reason: str):
+    """Emit when reverse mode is auto-disabled by safety logic."""
+    _emit('mmm_reverse_disabled', {
+        'session_id': session_id,
+        'reason':     reason,
+        'timestamp':  datetime.now(timezone.utc).isoformat(),
+    })

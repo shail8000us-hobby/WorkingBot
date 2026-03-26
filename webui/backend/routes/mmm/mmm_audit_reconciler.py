@@ -64,6 +64,18 @@ def reconcile_session(session_id: str, session: Dict) -> Dict:
         # ── Check 2: Open qty per strike ──────────────────────────────────
         discrepancies: List[Dict] = []
 
+        # Build a lookup of reverse position lots by (side, strike) so they can be
+        # included in the per-strike count below.  Reverse positions are unhedged and
+        # appear in the audit log under their option_type, so we must count them.
+        _reverse_lots_by_key: Dict = {}
+        for _rpos in session.get('_reverse', {}).get('positions', []):
+            if _rpos.get('status') != 'open':
+                continue
+            _rside = str(_rpos.get('side', '')).lower()
+            _rstrike = float(_rpos.get('strike', 0) or 0)
+            _key = (_rside, round(_rstrike))
+            _reverse_lots_by_key[_key] = _reverse_lots_by_key.get(_key, 0) + int(_rpos.get('lots', 0) or 0)
+
         for row in summary:
             if row.get('option_type') not in ('CE', 'PE'):
                 continue
@@ -83,6 +95,9 @@ def reconcile_session(session_id: str, session: Dict) -> Dict:
                     and abs(float(pos.get('strike', 0) or 0) - strike_val) < 1.0
                 ):
                     session_lots += int(pos.get('lots', 0) or 0)
+
+            # Include reverse positions at this strike (unhedged, tracked separately).
+            session_lots += _reverse_lots_by_key.get((side, round(strike_val)), 0)
 
             if audit_open != session_lots:
                 discrepancies.append({
