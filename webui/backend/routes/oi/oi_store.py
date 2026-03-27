@@ -527,7 +527,7 @@ class OISpikeDetector:
         self._cooldown = {}
         self._lock = threading.Lock()
 
-    def check(self, prev: dict, curr: dict) -> dict | None:
+    def check(self, prev: dict, curr: dict):
         """
         Compare two OIRow dicts. Returns SpikeEvent dict or None.
         """

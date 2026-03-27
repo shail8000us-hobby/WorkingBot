@@ -241,10 +241,15 @@ class BinanceOIFetcher(BaseOIFetcher):
     """
     Binance eapi — per-expiry OI calls.
     Uses native sumOpenInterestUSD (no manual oi × price).
+
+    NOTE: As of 2026-03-27, Binance eapi /openInterest returns -6010
+    'open interest error data' for all BTC expiries regardless of format.
+    The fetcher is disabled by default. Re-enable if Binance fixes their API.
     """
 
     exchange_name = 'binance'
     base_url = 'https://eapi.binance.com/eapi/v1'
+    enabled = False  # Disabled: eapi /openInterest returns -6010 for all expiries
 
     # Symbol: BTC-250627-65000-C
     _SYM_RE = re.compile(
@@ -453,7 +458,7 @@ class DeltaGlobalOIFetcher(BaseOIFetcher):
             return []
 
     @staticmethod
-    def _parse_expiry(expiry_val) -> str | None:
+    def _parse_expiry(expiry_val):
         """Parse various expiry formats to YYYY-MM-DD."""
         if not expiry_val:
             return None
@@ -478,16 +483,188 @@ class DeltaGlobalOIFetcher(BaseOIFetcher):
 
 
 # ============================================================================
+# OKX Fetcher
+# ============================================================================
+
+class OKXOIFetcher(BaseOIFetcher):
+    """
+    OKX public API — single call returns all BTC-USD option OI.
+    OKX BTC-USD options are coin-margined (1 contract = 0.01 BTC).
+
+    instId format: BTC-USD-260328-60000-P
+      asset  = BTC
+      expiry = 260328 (YYMMDD) → 2026-03-28
+      strike = 60000
+      type   = P / C
+
+    OI fields:
+      oi     = number of contracts
+      oiCcy  = OI in BTC (oi × 0.01)
+      oiUsd  = OI in USD (oiCcy × index_price)  — use this directly
+
+    Underlying price retrieved from the BTC-USD index ticker in the same call.
+    """
+
+    exchange_name = 'okx'
+    base_url = 'https://www.okx.com/api/v5'
+
+    # instId: BTC-USD-260328-60000-P
+    _INST_RE = re.compile(
+        r'^(?P<asset>[A-Z]+)-USD-(?P<date>\d{6})-(?P<strike>\d+)-(?P<type>[CP])$'
+    )
+
+    def _do_fetch(self, underlying: str) -> list:
+        # Fetch all BTC-USD option OI in a single call
+        data = self._http_get(f'{self.base_url}/public/open-interest', params={
+            'instType': 'OPTION',
+            'uly': f'{underlying.upper()}-USD',
+        })
+
+        items = data.get('data', [])
+        if not items:
+            log.warning('[okx] Empty OI response')
+            return []
+
+        rows = []
+        for item in items:
+            inst_id = item.get('instId', '')
+            m = self._INST_RE.match(inst_id)
+            if not m:
+                continue
+
+            oi_ccy = float(item.get('oiCcy', 0) or 0)  # OI in BTC
+            if oi_ccy == 0:
+                continue
+
+            oi_usd_raw = float(item.get('oiUsd', 0) or 0)  # OI in USD
+
+            strike = float(m.group('strike'))
+            opt_type = 'call' if m.group('type') == 'C' else 'put'
+
+            # Parse expiry: 260328 → 2026-03-28
+            date_str = m.group('date')  # YYMMDD
+            expiry = f"20{date_str[:2]}-{date_str[2:4]}-{date_str[4:6]}"
+
+            # OKX ts is in milliseconds
+            ts_ms = int(item.get('ts', 0) or 0)
+            if ts_ms:
+                ts_str = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc).isoformat()
+            else:
+                ts_str = datetime.now(timezone.utc).isoformat()
+
+            rows.append({
+                'exchange': 'okx',
+                'underlying': underlying.upper(),
+                'expiry': expiry,
+                'strike': strike,
+                'type': opt_type,
+                'oi': oi_ccy,        # BTC units (consistent with Deribit)
+                'oi_usd': oi_usd_raw,
+                'timestamp': ts_str,
+            })
+
+        return rows
+
+
+# ============================================================================
+# Bybit Fetcher
+# ============================================================================
+
+class BybitOIFetcher(BaseOIFetcher):
+    """
+    Bybit public API — options tickers endpoint, single call for all BTC options.
+    Bybit options are USDT-settled.
+
+    Symbol format: BTC-24APR26-94000-C-USDT
+      asset  = BTC
+      expiry = 24APR26 (DDMMMYY)
+      strike = 94000
+      type   = C / P
+      settle = USDT
+
+    OI fields:
+      openInterest      = OI in BTC
+      underlyingPrice   = current BTC spot price
+      oi_usd computed as openInterest × underlyingPrice
+    """
+
+    exchange_name = 'bybit'
+    base_url = 'https://api.bybit.com/v5'
+
+    # Symbol: BTC-24APR26-94000-C-USDT
+    _SYM_RE = re.compile(
+        r'^(?P<asset>[A-Z]+)-(?P<day>\d{1,2})(?P<mon>[A-Z]{3})(?P<year>\d{2})-(?P<strike>\d+)-(?P<type>[CP])-(?P<settle>[A-Z]+)$'
+    )
+
+    def _do_fetch(self, underlying: str) -> list:
+        # Bybit options tickers — single call, all BTC options
+        data = self._http_get(f'{self.base_url}/market/tickers', params={
+            'category': 'option',
+            'baseCoin': underlying.upper(),
+        })
+
+        items = data.get('result', {}).get('list', [])
+        if not items:
+            log.warning('[bybit] Empty tickers response')
+            return []
+
+        rows = []
+        now_ts = datetime.now(timezone.utc).isoformat()
+
+        for item in items:
+            symbol = item.get('symbol', '')
+            m = self._SYM_RE.match(symbol)
+            if not m:
+                continue
+
+            oi = float(item.get('openInterest', 0) or 0)  # in BTC
+            if oi == 0:
+                continue
+
+            underlying_price = float(item.get('underlyingPrice', 0) or 0)
+            oi_usd = oi * underlying_price if underlying_price > 0 else 0.0
+
+            strike = float(m.group('strike'))
+            opt_type = 'call' if m.group('type') == 'C' else 'put'
+
+            # Parse expiry: 24APR26 → 2026-04-24
+            day = m.group('day').zfill(2)
+            mon = _MONTH_MAP.get(m.group('mon').upper(), '01')
+            year = f"20{m.group('year')}"
+            expiry = f"{year}-{mon}-{day}"
+
+            rows.append({
+                'exchange': 'bybit',
+                'underlying': underlying.upper(),
+                'expiry': expiry,
+                'strike': strike,
+                'type': opt_type,
+                'oi': oi,
+                'oi_usd': oi_usd,
+                'timestamp': now_ts,
+            })
+
+        return rows
+
+
+# ============================================================================
 # Factory
 # ============================================================================
 
 def create_fetchers() -> list:
-    """Create all enabled exchange fetchers."""
+    """
+    Create all enabled exchange fetchers.
+    Active: Deribit, OKX, Bybit, Delta Global
+    Disabled: Binance (eapi /openInterest returns -6010 for all expiries as of 2026-03-27)
+    """
     fetchers = [
         DeribitOIFetcher(),
-        BinanceOIFetcher(),
+        OKXOIFetcher(),
+        BybitOIFetcher(),
         DeltaGlobalOIFetcher(),
+        BinanceOIFetcher(),   # disabled=True, kept for easy re-enable
     ]
-    log.info('Created %d OI fetchers: %s',
-             len(fetchers), [f.exchange_name for f in fetchers])
+    active = [f.exchange_name for f in fetchers if f.enabled]
+    log.info('Created %d OI fetchers (%d active): %s',
+             len(fetchers), len(active), active)
     return fetchers
