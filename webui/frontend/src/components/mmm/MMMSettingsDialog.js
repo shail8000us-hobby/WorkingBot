@@ -111,6 +111,7 @@ const PARAM_GROUPS = {
       'trend_tier3_pct', 'trend_tier4_pct', 'trend_tier1_lot_reduction',
       'trend_retrace_pct', 'trend_ema_period', 'trend_ema_slope_threshold',
       'trend_action', 'trend_reset_beats',
+      'trend_plateau_reset_beats', 'trend_t4_timeout_beats',
       'trend_acceleration_window_s', 'trend_acceleration_pct',
       'trend_boost_enabled', 'trend_boost_tier1_mult',
       'trend_boost_tier2_mult', 'trend_boost_tier3_mult',
@@ -415,6 +416,8 @@ const PARAM_TOOLTIPS = {
   trend_ema_slope_threshold: 'EMA slope threshold for Tier 1 confirmation. Higher = less sensitive. Only needed for Tier 1 entry — Tiers 2+ ignore EMA. A slope of 25 means ~0.25% per beat average drift — strong sustained move. Set higher to avoid false alerts. Recommended: 15–40.',
   trend_action: 'What to do at Tier 2 (Guard): "block_sells" = block dangerous-side sells only (smart directional blocking), "pause" = pause entire session, "wind_down" = activate wind-down on dangerous side. Note: Tier 3 always blocks all sells, Tier 4 always auto-triggers wind-down regardless of this setting.',
   trend_reset_beats: 'After retracement and EMA slope calm down, must stay calm for this many consecutive heartbeats before resetting ALL tiers back to Tier 0 (Normal). Prevents whipsaw on/off. Binary reset — all tiers clear at once. Recommended: 3–8.',
+  trend_plateau_reset_beats: 'At Tier 2–3: if the market plateaued at the new level (no retracement) but the raw tier has fallen below the locked tier AND EMA is flat, reset after this many calm beats. Prevents stale T2/T3 locks when price stabilises mid-range. Does NOT apply at Tier 4 — use trend_t4_timeout_beats for that. Default: 5.',
+  trend_t4_timeout_beats: 'At Tier 4 (Wind-Down): after this many consecutive beats of flat EMA slope, the anchor slides to the current price and the T4 lock is cleared. The standard plateau path cannot fire at T4 because the frozen anchor keeps the price distance above the T4 threshold forever. This is the dedicated unlock. Applies only when the market has genuinely stopped moving (EMA must be flat the entire time). Default: 20 (~20 min at 60s interval).',
   trend_acceleration_window_s: 'Acceleration detection window in seconds. Looks at BTC spot price history within this window to detect fast moves. If price moved more than acceleration_pct within this window, Tier 1 can fire WITHOUT EMA confirmation (fast-move bypass). Recommended: 300–900.',
   trend_acceleration_pct: 'Acceleration threshold (% move within window). If BTC moves this % within the acceleration window, it triggers a "fast move" bypass — Tier 1 activates without waiting for EMA confirmation. Catches sudden spikes that EMA is too slow to detect. At BTC $100K, 0.5% ≈ $500. Recommended: 0.3–0.7.',
   trend_boost_enabled: 'Trend Boost: When a directional trend is confirmed, BOOST lot size on the safe/hedge side instead of blocking it. In an uptrend, PE is far OTM and safe to sell aggressively — collect more premium while the trend confirms your safety. In a downtrend, CE is safe. At Tier 3 (BLOCK), instead of blocking ALL sells, only the dangerous side is blocked while the safe side gets boosted lots. Existing safety guards (position cap, margin guardian, asymmetry) still apply.',
@@ -980,6 +983,13 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const conflictMsg = conflictWarnings[paramName];
       const isOn = Boolean(value);
       const adaptiveBoolOverlay = getAdaptiveCardSx(paramName);
+      // Runtime state warning: replenish is enabled but T4 wind-down is currently active.
+      // Inform the user that it will be gated until the trend clears — don't block save.
+      const trendT4Warning = (
+        paramName === 'replenish_enabled' &&
+        isOn &&
+        (sessionData?._trend_tier >= 4 || sessionData?._trend_wind_down_triggered)
+      ) ? 'Session is currently in Tier 4 Wind-Down (spot is far from the trend anchor). Auto-replenish will remain paused until the trend recovers or the anchor auto-resets via the T4 timeout.' : null;
       return (
         <Grid item xs={12} key={paramName}>
           <Box
@@ -1021,6 +1031,11 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
             {conflictMsg && (
               <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.7rem', mt: 0.75 }} icon={<WarningIcon fontSize="small" />}>
                 <strong>Conflict:</strong> {conflictMsg}
+              </Alert>
+            )}
+            {trendT4Warning && (
+              <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.7rem', mt: 0.75 }} icon={<WarningIcon fontSize="small" />}>
+                ⚠️ <strong>Replenish Blocked:</strong> {trendT4Warning}
               </Alert>
             )}
           </Box>

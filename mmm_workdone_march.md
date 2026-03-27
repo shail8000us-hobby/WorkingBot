@@ -860,3 +860,34 @@ Root-cause investigation of live session `mmm26mar26-1` revealed 4 bugs. All fix
 - Reverse Mode tab in dashboard: Tab 18, conditional render ✅
 - Live panel: slots, P&L, alternating state, enable/disable/close controls ✅
 - WebSocket live data: now wired — panel receives `_reverse` in every heartbeat when active ✅
+
+---
+
+## 2026-03-27 — Fix T4 Wind-Down Permanent Lock (Plateau Bug)
+
+**Root cause**: `_update_trend_guard` in `mmm_regime.py` had no unlock path for the specific case where BTC drops to T4, then plateaus at the new level. Two existing reset paths both failed:
+1. **Retracement path**: needs 30% recovery, but plateau means `retrace_from_low ≈ 0%` forever.
+2. **Plateau path** (`raw_tier < current_tier and ema_calmed`): impossible at T4 — the anchor is frozen at session-start price, so `abs_move` stays ≥ `tier4_pct` and `raw_tier` stays 4 indefinitely. Counter never increments.
+
+Result: `_trend_wind_down_triggered` never cleared → `is_wind_down_active()` permanently True → Gate 3 in `check_replenish_eligibility` permanently blocked.
+
+**Fix — `mmm_regime.py`:**
+- Added `_trend_t4_beats` counter inside the `else` branch (no retracement, no anchor cross), after the existing plateau check.
+- Condition: `current_tier >= TREND_TIER_WIND_DOWN AND ema_calmed`. Increments each beat; resets to 0 when either condition fails.
+- After `trend_t4_timeout_beats` consecutive flat-EMA beats: slide anchor to current spot, reset tier to NONE, reset all counters.
+- The existing downstream code (`if new_tier == TREND_TIER_NONE`) then clears `_trend_wind_down_triggered` naturally — no extra logic needed.
+- Also cleared `_trend_t4_beats = 0` in the anchor-cross reset blocks and retracement reset block to prevent stale counter carryover.
+
+**Fix — `mmm_state.py` + `mmm_config.py`:**
+- Registered `trend_t4_timeout_beats` (default 20, min 5, max 100, hot) in defaults, hot-reload list, schema, and descriptions.
+- Also registered `trend_plateau_reset_beats` (default 5, min 2, max 50, hot) — was already used in code but not exposed to the UI.
+
+**Fix — `MMMSettingsDialog.js`:**
+- Added both new params to the Regime Controls param group so they appear in the Settings dialog.
+- Added tooltip text for both params.
+- Added runtime `trendT4Warning` inline alert below the `replenish_enabled` toggle: shown when the toggle is ON but session `_trend_tier >= 4` or `_trend_wind_down_triggered` is True. Does NOT block save — informational only.
+
+**Fix — `MMMStatusBanner.js`:**
+- Added persistent T4 wind-down warning strip below the PAUSED band.
+- Shows when `heartbeat.wind_down_active && heartbeat.regime.trend_tier >= 4`.
+- Displays `_trend_move_pct` (% from anchor) and the configured `trend_t4_timeout_beats` timeout.

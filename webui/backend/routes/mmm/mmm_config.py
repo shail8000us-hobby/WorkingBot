@@ -110,6 +110,8 @@ PARAM_RULES = {
     'trend_ema_slope_threshold': {'type': int,   'min': 5,    'max': 100,   'hot': True},
     'trend_action':              {'type': str,   'min': None, 'max': None,  'hot': True},
     'trend_reset_beats':         {'type': int,   'min': 2,    'max': 30,    'hot': True},
+    'trend_plateau_reset_beats': {'type': int,   'min': 2,    'max': 50,    'hot': True},
+    'trend_t4_timeout_beats':    {'type': int,   'min': 5,    'max': 100,   'hot': True},
     'trend_acceleration_window_s': {'type': int, 'min': 60,   'max': 3600,  'hot': True},
     'trend_acceleration_pct':    {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
     # Perpetual Futures Delta Hedge (Fix #26)
@@ -544,6 +546,8 @@ def get_param_info() -> Dict[str, Dict]:
         'trend_ema_slope_threshold': 'EMA slope threshold for Tier 1 confirmation only. Higher = less sensitive. Tiers 2-4 do not require EMA confirmation — large moves speak for themselves.',
         'trend_action': 'Action when trend triggers: block_sells (block dangerous-side sells), pause, wind_down (also activate wind-down). At Tier 4, wind-down is auto-triggered regardless of this setting.',
         'trend_reset_beats': 'Must stay calm (retrace + low EMA slope) for this many beats before resetting to Tier 0 (NORMAL). Simple binary reset — goes from any tier straight to 0.',
+        'trend_plateau_reset_beats': 'When the market has moved to a new level (Tier 2–3) but never retraces AND raw tier has fallen below the locked tier (price stabilised below the lock threshold), this many flat-EMA beats will slide the anchor and reset. Does NOT apply at Tier 4 — use trend_t4_timeout_beats for that. Default: 5.',
+        'trend_t4_timeout_beats': 'Emergency anchor unlock for Tier 4 plateau. After this many consecutive beats where EMA slope is flat (market stopped trending), the anchor slides to current price and the Tier 4 lock is cleared — re-enabling auto-replenish and new sells. The standard plateau reset cannot fire at T4 because the frozen anchor keeps abs_move above the T4 threshold indefinitely. Set higher for more patience before unlocking. Default: 20 (~20 min at 60s interval).',
         'trend_acceleration_window_s': 'Rate-of-change window in seconds. If BTC moves trend_acceleration_pct within this window, bypasses EMA confirmation for Tier 1. Catches sharp spikes that EMA would lag behind. Default: 600s (10 min).',
         'trend_acceleration_pct': 'Fast-move threshold: if BTC moves this % within the acceleration window, bypass EMA and enter Tier 1+. Catches sudden spikes vs slow drift. Default: 0.5% (~$500 at BTC $100K in 10 min).',
         # Perpetual Futures Delta Hedge

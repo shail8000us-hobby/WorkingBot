@@ -558,6 +558,31 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction,
           </Typography>
         </Box>
       )}
+
+      {/* T4 Trend Wind-Down — persistent warning strip */}
+      {heartbeat?.wind_down_active && (heartbeat?.regime?.trend_tier ?? 0) >= 4 && (
+        <Box
+          sx={{
+            mt: 0.5,
+            px: 2,
+            py: 0.75,
+            borderRadius: 1,
+            bgcolor: 'rgba(244,67,54,0.06)',
+            border: '1px dashed rgba(244,67,54,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 1,
+          }}
+        >
+          <WarningIcon sx={{ color: '#f44336', fontSize: 18, flexShrink: 0 }} />
+          <Typography variant="caption" sx={{ color: '#f44336', lineHeight: 1.5 }}>
+            <strong>Wind-Down Active (Trend T4):</strong> New sells and auto-replenish are
+            blocked. Spot is {Math.abs(session?._trend_move_pct || 0).toFixed(1)}% from
+            anchor. Will auto-reset after ~{session?.params?.trend_t4_timeout_beats ?? 20} flat
+            beats.
+          </Typography>
+        </Box>
+      )}
     </Box>
   );
 }

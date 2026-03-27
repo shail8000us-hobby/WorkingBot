@@ -449,6 +449,8 @@ DEFAULT_PARAMS = {
     'trend_ema_slope_threshold': 25,     # EMA slope threshold (Tier 1 confirmation only)
     'trend_action': 'block_sells',       # action: block_sells / pause / wind_down
     'trend_reset_beats': 5,              # beats calm required before reset
+    'trend_plateau_reset_beats': 5,      # beats of flat EMA + raw_tier < current_tier → plateau reset
+    'trend_t4_timeout_beats': 20,        # beats of flat EMA at Tier 4 → slide anchor, exit lock
     'trend_acceleration_window_s': 600,  # acceleration window in seconds (10 min)
     'trend_acceleration_pct': 0.5,       # fast-move % to bypass EMA (within accel window)
 
@@ -692,7 +694,8 @@ HOT_RELOAD_PARAMS = {
     'trend_tier3_pct', 'trend_tier4_pct', 'trend_tier1_lot_reduction',
     'trend_move_pct', 'trend_retrace_pct',
     'trend_ema_period', 'trend_ema_slope_threshold', 'trend_action',
-    'trend_reset_beats', 'trend_acceleration_window_s', 'trend_acceleration_pct',
+    'trend_reset_beats', 'trend_plateau_reset_beats', 'trend_t4_timeout_beats',
+    'trend_acceleration_window_s', 'trend_acceleration_pct',
     # Perpetual Futures Delta Hedge
     'perp_hedge_enabled', 'perp_hedge_mode', 'perp_hedge_atm_threshold_pct',
     'perp_hedge_delta_threshold', 'perp_hedge_ratio',

@@ -597,6 +597,7 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
             session['_trend_high'] = spot_price
             session['_trend_low'] = spot_price
             session['_trend_calm_beats'] = 0
+            session['_trend_t4_beats'] = 0
         elif current_regime == TREND_DOWN and move_pct >= 0:
             # Price rose above anchor — trend clearly over
             new_regime = TREND_NORMAL
@@ -605,6 +606,7 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
             session['_trend_high'] = spot_price
             session['_trend_low'] = spot_price
             session['_trend_calm_beats'] = 0
+            session['_trend_t4_beats'] = 0
         else:
             # Check gradual retracement + calm beats
             if current_regime == TREND_UP:
@@ -625,6 +627,7 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
                     session['_trend_low'] = spot_price
                     session['_trend_calm_beats'] = 0
                     session['_trend_plateau_beats'] = 0
+                    session['_trend_t4_beats'] = 0
             else:
                 session['_trend_calm_beats'] = 0
                 # Plateau reset: market moved up/down, plateaued near the new level,
@@ -646,8 +649,38 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
                         session['_trend_low'] = spot_price
                         session['_trend_calm_beats'] = 0
                         session['_trend_plateau_beats'] = 0
+                        session['_trend_t4_beats'] = 0
                 else:
                     session['_trend_plateau_beats'] = 0
+
+                # ── T4 Timeout: anchor slide when stuck at WIND_DOWN with flat EMA ──
+                # The plateau counter above checks raw_tier < current_tier, which is
+                # always False at T4 plateau: the anchor is frozen at session start, so
+                # abs_move stays ≥ tier4_pct and raw_tier stays 4 indefinitely.
+                # This dedicated counter fires purely on: current_tier is T4 AND EMA
+                # has been flat for trend_t4_timeout_beats consecutive beats.
+                # After timeout: slide anchor to current price, reset to NORMAL.
+                # The downstream code (line ~719) then clears _trend_wind_down_triggered.
+                if current_tier >= TREND_TIER_WIND_DOWN and ema_calmed:
+                    t4_beats = session.get('_trend_t4_beats', 0) + 1
+                    session['_trend_t4_beats'] = t4_beats
+                    timeout_beats = params.get('trend_t4_timeout_beats', 20)
+                    if t4_beats >= timeout_beats:
+                        log.info(
+                            f"T4 TIMEOUT: {t4_beats} calm beats at Tier 4 — "
+                            f"sliding anchor ${anchor:.0f} → ${spot_price:.0f}, "
+                            f"resetting to NORMAL (EMA slope={ema_slope:+.1f})"
+                        )
+                        new_regime = TREND_NORMAL
+                        new_tier = TREND_TIER_NONE
+                        session['_trend_anchor_spot'] = spot_price
+                        session['_trend_high'] = spot_price
+                        session['_trend_low'] = spot_price
+                        session['_trend_calm_beats'] = 0
+                        session['_trend_plateau_beats'] = 0
+                        session['_trend_t4_beats'] = 0
+                else:
+                    session['_trend_t4_beats'] = 0
 
             # Check for trend reversal (was up, now strongly down or vice versa)
             tier1_pct = params.get('trend_tier1_pct', 0.5)
