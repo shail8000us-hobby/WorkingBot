@@ -270,7 +270,8 @@ def test_n3_empty_chain_returns_none():
 
 
 def test_n4_otm_call_above_threshold_returned():
-    # spot=88000, CE strike=95000 (OTM), premium=120 >= floor=50
+    # spot=88000, CE strike=95000 (OTM), mark=125 >= floor=50
+    # mark_price is now the primary metric (consistent with _rank_strikes)
     row = _chain_row(95000, bid=120.0, mark=125.0, symbol='BTC-CE-95000')
     init = _make_initializer(chain_rows=[row])
     session = _session(shift_threshold=50.0, original_strike=80000)
@@ -278,7 +279,20 @@ def test_n4_otm_call_above_threshold_returned():
     result = find_new_strike(init, session, 'ce', 88000.0)
     assert result is not None
     assert result['strike'] == 95000
-    assert result['premium'] == 120.0  # bid preferred
+    assert result['premium'] == 125.0  # mark_price preferred (fix: was bid=120.0)
+
+
+def test_n4b_bid_below_threshold_mark_above_finds_strike():
+    # Bug scenario: bid=30 < threshold=50, but mark=80 >= 50.
+    # Old code (bid-first) would skip this strike; new code (mark-first) finds it.
+    row = _chain_row(95000, bid=30.0, mark=80.0, symbol='BTC-CE-95000')
+    init = _make_initializer(chain_rows=[row])
+    session = _session(shift_threshold=50.0, original_strike=80000)
+    session['ce']['active_strike'] = 80000
+    result = find_new_strike(init, session, 'ce', 88000.0)
+    assert result is not None, "Strike with mark >= threshold must be found even when bid < threshold"
+    assert result['strike'] == 95000
+    assert result['premium'] == 80.0  # mark_price used
 
 
 def test_n5_itm_call_strike_below_spot_skipped():

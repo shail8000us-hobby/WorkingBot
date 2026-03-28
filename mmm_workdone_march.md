@@ -891,3 +891,21 @@ Result: `_trend_wind_down_triggered` never cleared → `is_wind_down_active()` p
 - Added persistent T4 wind-down warning strip below the PAUSED band.
 - Shows when `heartbeat.wind_down_active && heartbeat.regime.trend_tier >= 4`.
 - Displays `_trend_move_pct` (% from anchor) and the configured `trend_t4_timeout_beats` timeout.
+
+---
+
+## 2026-03-28 — Strike Shift Bug: Premium Metric Inconsistency (bid vs mark)
+
+**Root cause**: `find_new_strike()` in `mmm_strike_shift.py` used `bid` as the primary premium metric for candidate filtering, while `_rank_strikes()` in `mmm_initializer.py` used `mark_price` (the exchange's theoretical fair value). On 0DTE options near expiry, bids are often stale or pulled (wide spreads, low participation), so viable strikes that `_rank_strikes` could find at session start were invisible to `find_new_strike` during shifts.
+
+**Symptom**: "Strike Shift Failed: No CE strike with premium >= $50 found. Selling at current strike 67000.0 ($41.00) instead." — repeated every ~2.5 minutes. The bot fell back to selling at the sub-optimal current strike instead of shifting toward ATM.
+
+**Fix** (`mmm_strike_shift.py: find_new_strike`):
+- Changed premium calculation to use `mark_price` first, then `(bid+ask)/2`, then `bid` — same logic as `_rank_strikes`. Candidate filtering is now consistent across both functions.
+- Added diagnostic logging when no candidates found: dumps the nearest 5 OTM strikes with their `bid` and `mark` values so future failures are immediately diagnosable.
+
+**Test** (`test_sealed_mmm_strike_shift.py`):
+- Updated `test_n4_otm_call_above_threshold_returned`: premium assertion changed from `120.0` (bid) to `125.0` (mark).
+- Added `test_n4b_bid_below_threshold_mark_above_finds_strike`: verifies that a strike with `bid=30 < threshold=50` but `mark=80 >= 50` is correctly found (the exact bug scenario).
+
+**Files changed**: `mmm_strike_shift.py`, `tests/test_sealed_mmm_strike_shift.py`

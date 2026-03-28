@@ -240,11 +240,22 @@ def find_new_strike(
                 continue
 
             bid = float(option_data.get('bid', 0) or 0)
+            ask = float(option_data.get('ask', 0) or 0)
             mark = float(option_data.get('mark_price', 0) or 0)
             symbol = option_data.get('symbol', '')
 
-            # Use bid for selling (§15.5)
-            premium = bid if bid > 0 else mark
+            # Use mark_price for candidate filtering (consistent with _rank_strikes).
+            # mark_price is the exchange's theoretical fair value — more stable than
+            # bid on 0DTE/illiquid options where bids can be stale or pulled.
+            # Actual execution will still use bid-based pricing via smart_execute.
+            if mark > 0:
+                premium = mark
+            elif bid > 0 and ask > 0:
+                premium = (bid + ask) / 2
+            elif bid > 0:
+                premium = bid
+            else:
+                continue  # No usable price data
 
             if premium < effective_threshold:
                 continue
@@ -280,9 +291,27 @@ def find_new_strike(
             })
 
         if not candidates:
+            # Diagnostic: log first 5 OTM strikes to show why each was rejected.
+            # If this recurs, the log will immediately show bid vs mark values.
+            diag = []
+            for row in chain_list[:20]:
+                s = row.get('strike', 0)
+                od = row.get(option_type, {})
+                if not od:
+                    continue
+                b = float(od.get('bid', 0) or 0)
+                m = float(od.get('mark_price', 0) or 0)
+                is_otm = (option_type == 'call' and s > spot_price) or \
+                         (option_type == 'put' and s < spot_price)
+                if is_otm:
+                    diag.append(f"{s}(bid={b:.1f},mark={m:.1f})")
+                if len(diag) >= 5:
+                    break
             log.warning(
-                f"No suitable strike found for {side.upper()} shift "
-                f"(effective_threshold={effective_threshold})"
+                f"No suitable strike for {side.upper()} shift "
+                f"(threshold=${effective_threshold:.0f}, spot={spot_price:.0f}, "
+                f"old_strike={old_strike}). "
+                f"Nearest OTM strikes: {', '.join(diag) if diag else 'NONE'}"
             )
             return None
 
