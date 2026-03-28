@@ -76,6 +76,7 @@ const MonitoringPage = React.lazy(() => import('./pages/MonitoringPage'));
 const ConfigPage = React.lazy(() => import('./pages/ConfigPage'));
 const DashboardPage = React.lazy(() => import('./pages/DashboardPage'));
 const PatiencePage = React.lazy(() => import('./pages/PatiencePage'));
+const OIPage = React.lazy(() => import('./pages/OIPage'));
 
 // Lazy components still used directly in App.js
 const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
@@ -380,6 +381,7 @@ function App() {
                   <Route path="/zero_dte" element={<ZeroDTEPage />} />
                   <Route path="/portfolio_margin" element={<PortfolioMarginPage />} />
                   <Route path="/patience" element={<PatiencePage />} />
+                  <Route path="/oi" element={<OIPage />} />
                   <Route path="/experimental" element={<ExperimentalPage />} />
                   <Route path="/advanced_features" element={<AdvancedFeaturesPage />} />
                   <Route path="/monitoring" element={<MonitoringPage isMobile={isMobile} botIsRunning={botIsRunning} botStatus={botStatus} config={config} />} />

@@ -608,6 +608,17 @@ except Exception as e:
     print(f"⚠️ Could not register ssdh blueprint: {e}")
     log.warning(f"SSDH routes not available: {e}")
 
+# Register OI Aggregator blueprint (MAR 2026: Multi-exchange OI dashboard — ISOLATED MODULE)
+try:
+    from webui.backend.routes.oi import oi_bp, init_oi_websocket
+    app.register_blueprint(oi_bp)
+    print(f"✅ Registered oi blueprint (Open Interest aggregator — read-only analytics)")
+    init_oi_websocket(socketio)
+    print(f"✅ OI WebSocket namespace /oi initialized")
+except Exception as e:
+    print(f"⚠️ Could not register oi blueprint: {e}")
+    log.warning(f"OI Aggregator routes not available: {e}")
+
 # Register Claude AI blueprint (FEB 2026: Claude API integration for trading analysis)
 try:
     try:

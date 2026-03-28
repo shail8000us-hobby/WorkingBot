@@ -118,15 +118,15 @@ export default function OIBarChart({ data = [], atmStrike = null }) {
         {atmStrike && (
           <ReferenceLine
             x={atmStrike}
-            stroke="#60a5fa"
+            stroke="#fbbf24"
             strokeWidth={2}
-            strokeDasharray="4 4"
+            strokeDasharray="5 3"
             label={{
-              value: `ATM ${formatStrike(atmStrike)}`,
-              position: 'top',
-              fill: '#60a5fa',
-              fontSize: 10,
-              fontWeight: 600,
+              value: `▼ ATM ${formatStrike(atmStrike)}`,
+              position: 'insideTopRight',
+              fill: '#fbbf24',
+              fontSize: 12,
+              fontWeight: 700,
             }}
           />
         )}

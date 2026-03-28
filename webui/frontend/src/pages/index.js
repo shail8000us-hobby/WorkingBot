@@ -26,3 +26,4 @@ export { default as MonitoringPage } from './MonitoringPage';
 export { default as ConfigPage } from './ConfigPage';
 export { default as DashboardPage } from './DashboardPage';
 export { default as PortfolioMarginPage } from './PortfolioMarginPage';
+export { default as OIPage } from './OIPage';

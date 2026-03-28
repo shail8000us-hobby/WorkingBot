@@ -1,29 +1,34 @@
 /**
  * OITable — Strike Table with PCR, OI Change
  *
- * 6 default columns: Strike | Put OI | Call OI | PCR | Put Chg | Call Chg
- * ATM row highlighted. Heatmap row backgrounds.
+ * 6 columns: Strike | Put OI ($) | Call OI ($) | PCR | Put Chg | Call Chg
+ * - OI displayed in USD (oi_usd) for trader-readable magnitude ($15M vs "229")
+ * - ATM row highlighted + auto-scrolled into view on mount/data change
+ * - Heatmap intensity based on USD OI
  *
  * Props:
  *   data: array of { strike, type, oi, oi_usd, oi_change, exchanges }
  *   atmStrike: number (optional)
  *
  * Created: March 27, 2026
+ * Revised: March 28, 2026 — USD display, ATM auto-scroll
  */
 
-import React, { useMemo } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 
-function formatOI(value) {
-  if (value == null || isNaN(value)) return '—';
-  if (Math.abs(value) >= 1e6) return `${(value / 1e6).toFixed(2)}M`;
-  if (Math.abs(value) >= 1e3) return `${(value / 1e3).toFixed(1)}K`;
-  return value.toFixed(0);
+function formatUSD(value) {
+  if (value == null || isNaN(value) || value === 0) return '—';
+  if (Math.abs(value) >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
+  if (Math.abs(value) >= 1e6) return `$${(value / 1e6).toFixed(1)}M`;
+  if (Math.abs(value) >= 1e3) return `$${(value / 1e3).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
 }
 
 function formatChange(value) {
   if (value == null || isNaN(value) || value === 0) return '—';
   const sign = value > 0 ? '+' : '';
-  return `${sign}${formatOI(value)}`;
+  if (Math.abs(value) >= 1e3) return `${sign}${(value / 1e3).toFixed(1)}K`;
+  return `${sign}${value.toFixed(0)}`;
 }
 
 const cellStyle = {
@@ -51,41 +56,63 @@ const headerStyle = {
 };
 
 export default function OITable({ data = [], atmStrike = null }) {
+  const containerRef = useRef(null);
+  const atmRowRef = useRef(null);
+
   // Aggregate by strike
   const tableData = useMemo(() => {
     const byStrike = {};
-    let maxOI = 0;
+    let maxOI_usd = 0;
 
     for (const row of data) {
       const s = row.strike;
       if (!byStrike[s]) {
-        byStrike[s] = { strike: s, putOI: 0, callOI: 0, putChange: 0, callChange: 0 };
+        byStrike[s] = {
+          strike: s,
+          putOI: 0, callOI: 0,
+          putOI_usd: 0, callOI_usd: 0,
+          putChange: 0, callChange: 0,
+        };
       }
       if (row.type === 'put') {
         byStrike[s].putOI += row.oi || 0;
+        byStrike[s].putOI_usd += row.oi_usd || 0;
         byStrike[s].putChange += row.oi_change || 0;
       }
       if (row.type === 'call') {
         byStrike[s].callOI += row.oi || 0;
+        byStrike[s].callOI_usd += row.oi_usd || 0;
         byStrike[s].callChange += row.oi_change || 0;
       }
     }
 
     const rows = Object.values(byStrike).sort((a, b) => a.strike - b.strike);
 
-    // Find max OI for heatmap
+    // Find max USD OI for heatmap
     for (const r of rows) {
-      maxOI = Math.max(maxOI, r.putOI, r.callOI);
+      maxOI_usd = Math.max(maxOI_usd, r.putOI_usd, r.callOI_usd);
     }
 
-    // Compute PCR for each row
+    // Compute PCR and attach maxOI_usd for heatmap
     for (const r of rows) {
       r.pcr = r.callOI > 0 ? (r.putOI / r.callOI) : 0;
-      r.maxOI = maxOI;
+      r.maxOI_usd = maxOI_usd;
     }
 
     return rows;
   }, [data]);
+
+  // Auto-scroll ATM row into the center of the visible table area
+  useEffect(() => {
+    if (!atmRowRef.current || !containerRef.current) return;
+    const container = containerRef.current;
+    const row = atmRowRef.current;
+    // Offset: position the ATM row in the center of the container
+    const rowOffsetTop = row.offsetTop;
+    const rowHeight = row.clientHeight;
+    const containerHeight = container.clientHeight;
+    container.scrollTop = rowOffsetTop - containerHeight / 2 + rowHeight / 2;
+  }, [atmStrike, tableData.length]);
 
   if (!tableData.length) {
     return (
@@ -98,18 +125,22 @@ export default function OITable({ data = [], atmStrike = null }) {
     );
   }
 
+  // Strike interval for ATM proximity check
+  const strikeInterval = tableData.length > 1
+    ? Math.abs(tableData[1].strike - tableData[0].strike)
+    : 500;
+
   return (
-    <div style={{
-      maxHeight: '500px',
-      overflow: 'auto',
-      borderRadius: '8px',
-      border: '1px solid rgba(51, 65, 85, 0.4)',
-    }}>
-      <table style={{
-        width: '100%',
-        borderCollapse: 'collapse',
-        fontSize: '12px',
-      }}>
+    <div
+      ref={containerRef}
+      style={{
+        maxHeight: '500px',
+        overflow: 'auto',
+        borderRadius: '8px',
+        border: '1px solid rgba(51, 65, 85, 0.4)',
+      }}
+    >
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
         <thead>
           <tr>
             <th style={{ ...headerStyle, textAlign: 'center' }}>Strike</th>
@@ -122,33 +153,43 @@ export default function OITable({ data = [], atmStrike = null }) {
         </thead>
         <tbody>
           {tableData.map((row) => {
-            const isATM = atmStrike && Math.abs(row.strike - atmStrike) <=
-              (tableData.length > 1 ? Math.abs(tableData[1].strike - tableData[0].strike) * 0.5 : 500);
+            const isATM = atmStrike != null &&
+              Math.abs(row.strike - atmStrike) <= strikeInterval * 0.5;
 
-            // Heatmap intensity based on total OI
-            const totalOI = row.putOI + row.callOI;
-            const intensity = row.maxOI > 0 ? Math.min(1, totalOI / row.maxOI) : 0;
+            // Heatmap: intensity based on USD OI
+            const totalOI_usd = row.putOI_usd + row.callOI_usd;
+            const intensity = row.maxOI_usd > 0
+              ? Math.min(1, totalOI_usd / row.maxOI_usd)
+              : 0;
             const heatBg = `rgba(59, 130, 246, ${intensity * 0.08})`;
 
             return (
-              <tr key={row.strike} style={{
-                backgroundColor: isATM ? 'rgba(96, 165, 250, 0.12)' : heatBg,
-                borderLeft: isATM ? '3px solid #60a5fa' : '3px solid transparent',
-              }}>
+              <tr
+                key={row.strike}
+                ref={isATM ? atmRowRef : null}
+                style={{
+                  backgroundColor: isATM ? 'rgba(96, 165, 250, 0.12)' : heatBg,
+                  borderLeft: isATM ? '3px solid #fbbf24' : '3px solid transparent',
+                }}
+              >
                 <td style={{
                   ...cellStyle,
                   textAlign: 'center',
                   fontWeight: isATM ? 700 : 500,
-                  color: isATM ? '#60a5fa' : '#e2e8f0',
+                  color: isATM ? '#fbbf24' : '#e2e8f0',
                 }}>
                   {Number(row.strike).toLocaleString()}
-                  {isATM && <span style={{ fontSize: '9px', marginLeft: '4px', color: '#60a5fa' }}>ATM</span>}
+                  {isATM && (
+                    <span style={{ fontSize: '9px', marginLeft: '4px', color: '#fbbf24' }}>
+                      ATM
+                    </span>
+                  )}
                 </td>
-                <td style={{ ...cellStyle, color: row.putOI > 0 ? '#4caf50' : '#475569' }}>
-                  {formatOI(row.putOI)}
+                <td style={{ ...cellStyle, color: row.putOI_usd > 0 ? '#4caf50' : '#475569' }}>
+                  {formatUSD(row.putOI_usd)}
                 </td>
-                <td style={{ ...cellStyle, color: row.callOI > 0 ? '#f44336' : '#475569' }}>
-                  {formatOI(row.callOI)}
+                <td style={{ ...cellStyle, color: row.callOI_usd > 0 ? '#f44336' : '#475569' }}>
+                  {formatUSD(row.callOI_usd)}
                 </td>
                 <td style={{
                   ...cellStyle,

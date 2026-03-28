@@ -162,6 +162,14 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       description: '0DTE options - autonomous strangle with premium balancing',
       group: 'Algorithms',
     },
+    // ── Analytics ────────────────────────────────────────────
+    {
+      id: 'oi',
+      label: '📊 OI Dashboard',
+      icon: BarChart3,
+      description: 'Open Interest aggregator — multi-exchange OI, spike alerts, PCR',
+      group: 'Analytics',
+    },
     // ── Signals & ML ─────────────────────────────────────────
     {
       id: 'tradingview',

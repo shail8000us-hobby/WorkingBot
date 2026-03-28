@@ -429,13 +429,17 @@ class OIStore:
 
         spikes = []
         with self._lock:
+            # Derive exchange names dynamically so new exchanges (okx, bybit, etc.)
+            # are included without requiring changes here.
+            all_exchanges = {k[0] for k in self._snapshots.keys()}
+
             for und, exp, strike, opt_type in strike_keys:
                 # Sum across all exchanges
                 total_curr = 0.0
                 total_prev = 0.0
                 total_curr_usd = 0.0
 
-                for ex_name in ('deribit', 'binance', 'delta_global'):
+                for ex_name in all_exchanges:
                     key = (ex_name, und, exp, strike, opt_type)
                     dq = self._snapshots.get(key)
                     if not dq or len(dq) < 1:

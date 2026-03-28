@@ -35,6 +35,7 @@ const pageImports = {
   config: () => import('../pages/ConfigPage'),
   dashboard: () => import('../pages/DashboardPage'),
   portfolio_margin: () => import('../pages/PortfolioMarginPage'),
+  oi: () => import('../pages/OIPage'),
 };
 
 // Track what's already been prefetched to avoid duplicate calls

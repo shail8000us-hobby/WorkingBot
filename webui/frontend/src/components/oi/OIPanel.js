@@ -24,8 +24,8 @@
  * Revised: March 27, 2026
  */
 
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Snackbar, Alert } from '@mui/material';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Snackbar, Alert, Box, Paper, Typography, Tabs, Tab } from '@mui/material';
 import CollapsibleCard from '../common/CollapsibleCard.tsx';
 import ExpiryFilter from './ExpiryFilter';
 import OIBarChart from './OIBarChart';
@@ -50,11 +50,12 @@ const TABS = [
 
 const STALE_THRESHOLD_MS = 120_000; // 2 minutes
 
-function formatNumber(val) {
-  if (val == null) return '—';
-  if (Math.abs(val) >= 1e6) return `${(val / 1e6).toFixed(2)}M`;
-  if (Math.abs(val) >= 1e3) return `${(val / 1e3).toFixed(1)}K`;
-  return val.toFixed(0);
+function formatUSD(val) {
+  if (!val) return '—';
+  if (Math.abs(val) >= 1e9) return `$${(val / 1e9).toFixed(2)}B`;
+  if (Math.abs(val) >= 1e6) return `$${(val / 1e6).toFixed(0)}M`;
+  if (Math.abs(val) >= 1e3) return `$${(val / 1e3).toFixed(0)}K`;
+  return `$${val.toFixed(0)}`;
 }
 
 /**
@@ -82,7 +83,7 @@ export default function OIPanel() {
   const [expiries, setExpiries] = useState([]);          // [{date, is_weekly, days_to_expiry}]
   const [selectedExpiries, setSelectedExpiries] = useState([]);  // string[] of ISO dates
   const [underlyingPrice, setUnderlyingPrice] = useState(0);
-  const [summary, setSummary] = useState({ total_call_oi: 0, total_put_oi: 0, pcr: 0, by_expiry: {} });
+  const [summary, setSummary] = useState({ total_call_oi: 0, total_put_oi: 0, total_call_oi_usd: 0, total_put_oi_usd: 0, pcr: 0, by_expiry: {} });
   const [spikes, setSpikes] = useState([]);
   const [health, setHealth] = useState({});
   const [activeTab, setActiveTab] = useState('change');
@@ -305,7 +306,7 @@ export default function OIPanel() {
       <CollapsibleCard
         title="Open Interest Aggregator"
         id="oi-dashboard"
-        defaultExpanded={true}
+        defaultOpen={true}
       >
         {/* ── Connection Status Bar ─────────────────────────── */}
         <div style={{
@@ -378,94 +379,77 @@ export default function OIPanel() {
         />
 
         {/* ── Summary Strip ─────────────────────────────────── */}
-        <div style={{
+        <Box sx={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))',
-          gap: '12px',
-          marginBottom: '16px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))',
+          gap: '10px',
+          mb: 2,
         }}>
           {[
-            { label: 'Call OI', value: summary.total_call_oi, color: '#f44336' },
-            { label: 'Put OI', value: summary.total_put_oi, color: '#4caf50' },
-            { label: 'PCR', value: summary.pcr, color: summary.pcr > 1 ? '#4caf50' : '#f44336', raw: true },
-            { label: 'Strikes', value: strikeCount, color: '#60a5fa', raw: true },
-            {
-              label: underlyingPrice ? 'BTC Spot' : 'Expiries',
-              value: underlyingPrice
-                ? `$${Math.round(underlyingPrice).toLocaleString()}`
-                : selectedExpiries.length > 0 ? selectedExpiries.length.toString() : '—',
-              color: '#94a3b8',
-              text: true,
-            },
+            { label: 'Call OI',    value: formatUSD(summary.total_call_oi_usd),                         color: '#f44336' },
+            { label: 'Put OI',     value: formatUSD(summary.total_put_oi_usd),                          color: '#4caf50' },
+            { label: 'PCR',        value: Number(summary.pcr || 0).toFixed(4),                         color: (summary.pcr || 0) > 1 ? '#4caf50' : '#f44336' },
+            { label: 'ATM Strike', value: atmStrike ? atmStrike.toLocaleString() : '—',                color: '#fbbf24' },
+            { label: 'BTC Spot',   value: underlyingPrice ? `$${Math.round(underlyingPrice).toLocaleString()}` : '—', color: '#94a3b8' },
+            { label: 'Strikes',    value: strikeCount.toString(),                                      color: '#64748b' },
           ].map(item => (
-            <div key={item.label} style={{
-              padding: '12px 14px',
-              borderRadius: '8px',
+            <Paper key={item.label} sx={{
+              p: '12px 14px',
               background: 'rgba(15, 23, 42, 0.4)',
               border: '1px solid rgba(51, 65, 85, 0.4)',
+              borderRadius: '8px',
             }}>
-              <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '4px', textTransform: 'uppercase' }}>
+              <Typography sx={{ fontSize: '11px', color: '#64748b', mb: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                 {item.label}
-              </div>
-              <div style={{
-                fontSize: '16px', fontWeight: 700, color: item.color,
-                fontFamily: item.text ? 'inherit' : 'monospace',
-              }}>
-                {item.text
-                  ? item.value
-                  : item.raw
-                    ? Number(item.value || 0).toFixed(item.label === 'PCR' ? 4 : 0)
-                    : formatNumber(item.value)
-                }
-              </div>
-            </div>
+              </Typography>
+              <Typography sx={{ fontSize: '16px', fontWeight: 700, color: item.color, fontFamily: 'monospace' }}>
+                {item.value}
+              </Typography>
+            </Paper>
           ))}
-        </div>
+        </Box>
 
         {/* ── Tab Bar ───────────────────────────────────────── */}
-        <div style={{
-          display: 'flex',
-          gap: '4px',
-          marginBottom: '16px',
-          borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
-          paddingBottom: '0',
-        }}>
+        <Tabs
+          value={activeTab}
+          onChange={(_, v) => setActiveTab(v)}
+          TabIndicatorProps={{ style: { backgroundColor: '#3b82f6' } }}
+          sx={{
+            borderBottom: '1px solid rgba(51, 65, 85, 0.4)',
+            mb: 2,
+            minHeight: '40px',
+            '& .MuiTab-root': {
+              color: '#64748b',
+              fontSize: '13px',
+              minHeight: '40px',
+              px: 2,
+              py: '6px',
+              textTransform: 'none',
+            },
+            '& .Mui-selected': { color: '#e2e8f0' },
+          }}
+        >
           {TABS.map(tab => (
-            <button
+            <Tab
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              style={{
-                padding: '8px 16px',
-                fontSize: '13px',
-                fontWeight: activeTab === tab.id ? 600 : 400,
-                color: activeTab === tab.id ? '#e2e8f0' : '#64748b',
-                backgroundColor: activeTab === tab.id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                border: 'none',
-                borderBottom: activeTab === tab.id ? '2px solid #3b82f6' : '2px solid transparent',
-                cursor: 'pointer',
-                transition: 'all 0.15s',
-                borderRadius: '6px 6px 0 0',
-              }}
-              onMouseOver={e => {
-                if (activeTab !== tab.id) e.target.style.color = '#94a3b8';
-              }}
-              onMouseOut={e => {
-                if (activeTab !== tab.id) e.target.style.color = '#64748b';
-              }}
-            >
-              {tab.label}
-              {tab.id === 'spikes' && spikes.length > 0 && (
-                <span style={{
-                  marginLeft: '6px', fontSize: '10px', padding: '1px 5px',
-                  borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.2)',
-                  color: '#fca5a5',
-                }}>
-                  {spikes.length}
-                </span>
-              )}
-            </button>
+              value={tab.id}
+              label={
+                tab.id === 'spikes' && spikes.length > 0 ? (
+                  <span>
+                    {tab.label}{' '}
+                    <span style={{
+                      fontSize: '10px', padding: '1px 5px',
+                      borderRadius: '8px', backgroundColor: 'rgba(239, 68, 68, 0.2)',
+                      color: '#fca5a5',
+                    }}>
+                      {spikes.length}
+                    </span>
+                  </span>
+                ) : tab.label
+              }
+            />
           ))}
-        </div>
+        </Tabs>
 
         {/* ── No-expiry selected state ───────────────────────── */}
         {selectedExpiries.length === 0 && expiries.length > 0 && (

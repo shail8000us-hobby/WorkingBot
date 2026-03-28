@@ -2956,9 +2956,14 @@ class MMMMonitor:
 
         # Reverse Mode M2M hook: MUST run BEFORE update_peak_pnl so peak sees
         # fresh reverse P&L (not stale values from the previous heartbeat).
-        # Also checks close-at-threshold and emergency bleed on every heartbeat.
-        if session.get('params', {}).get('reverse_enabled', False) and \
-                session.get('_reverse', {}).get('active', False):
+        # M2M and close-at-threshold run whenever there are open reverse positions
+        # (mode may be OFF already — positions close in normal operation).
+        # Emergency check only runs while mode is actively ON.
+        _rev_has_open = any(
+            p.get('status') == 'open'
+            for p in session.get('_reverse', {}).get('positions', [])
+        )
+        if _rev_has_open:
             try:
                 update_reverse_mtm(session, ce_now, pe_now)
             except Exception as _rev_mtm_err:
@@ -2967,6 +2972,7 @@ class MMMMonitor:
                 await check_reverse_close_at_threshold(session, ce_now, pe_now, self._engine)
             except Exception as _rev_close_err:
                 log.warning(f"[{sid}] reverse close-at-threshold check failed (non-fatal): {_rev_close_err}")
+        if session.get('_reverse', {}).get('active', False):
             try:
                 rev_emergency = check_reverse_emergency(session)
                 if rev_emergency:

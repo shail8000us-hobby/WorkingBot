@@ -233,17 +233,22 @@ def oi_snapshot():
     # Compute summary (total + per-expiry breakdown)
     total_call = sum(r['oi'] for r in rows if r['type'] == 'call')
     total_put = sum(r['oi'] for r in rows if r['type'] == 'put')
+    total_call_usd = sum(r['oi_usd'] for r in rows if r['type'] == 'call')
+    total_put_usd = sum(r['oi_usd'] for r in rows if r['type'] == 'put')
     pcr = total_put / total_call if total_call > 0 else 0
 
     by_expiry = {}
     for r in rows:
         exp = r['expiry']
         if exp not in by_expiry:
-            by_expiry[exp] = {'call_oi': 0.0, 'put_oi': 0.0}
+            by_expiry[exp] = {'call_oi': 0.0, 'put_oi': 0.0,
+                              'call_oi_usd': 0.0, 'put_oi_usd': 0.0}
         if r['type'] == 'call':
             by_expiry[exp]['call_oi'] += r['oi']
+            by_expiry[exp]['call_oi_usd'] += r['oi_usd']
         else:
             by_expiry[exp]['put_oi'] += r['oi']
+            by_expiry[exp]['put_oi_usd'] += r['oi_usd']
     for exp, v in by_expiry.items():
         v['pcr'] = round(v['put_oi'] / v['call_oi'], 4) if v['call_oi'] > 0 else 0
 
@@ -255,6 +260,8 @@ def oi_snapshot():
         'summary': {
             'total_call_oi': total_call,
             'total_put_oi': total_put,
+            'total_call_oi_usd': total_call_usd,
+            'total_put_oi_usd': total_put_usd,
             'pcr': round(pcr, 4),
             'by_expiry': by_expiry,
         },
