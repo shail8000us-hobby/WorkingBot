@@ -909,3 +909,55 @@ Result: `_trend_wind_down_triggered` never cleared → `is_wind_down_active()` p
 - Added `test_n4b_bid_below_threshold_mark_above_finds_strike`: verifies that a strike with `bid=30 < threshold=50` but `mark=80 >= 50` is correctly found (the exact bug scenario).
 
 **Files changed**: `mmm_strike_shift.py`, `tests/test_sealed_mmm_strike_shift.py`
+
+## 2026-03-30 — Draggable Trigger Pin (Loosen-Only, Soft Expiry)
+
+### Feature: Operator-controlled trigger baseline via drag
+
+Added a draggable trigger marker to `MMMTriggerGauge`. Operator can drag the white snapshot marker RIGHT to pin a higher trigger baseline, loosening adjustment sensitivity without touching settings.
+
+**Design constraints enforced:**
+- **Loosen-only**: pin_value must be > current premium. Backend rejects with 400, frontend clamps. Eliminates rapid-fire adjustment loop risk entirely.
+- **Soft expiry**: pin auto-clears after 3 adjustments fire under it (`_pin_adj_count` counter in `update_trigger_snapshots()`). Self-heals if operator walks away.
+- **Auto-clear on strike shift** and **replenish**: new strike = new dynamics.
+- **Zero impact on default path**: `get('_trigger_pinned', False)` default = False → write executes as before. No code path change.
+
+### Backend changes
+
+**`mmm_trigger.py` — `update_trigger_snapshots()`**
+- Added pin guard at lines 350–351: skip active-strike snapshot write if `_trigger_pinned = True`.
+- Soft expiry: increment `_pin_adj_count` each time guard fires; auto-clear pin at count >= 3.
+- Frozen-position snapshots unguarded — serve incremental loss tracking, not operator control.
+
+**`mmm_strike_shift.py` — `activate_new_strike()`**
+- Added `side_state.pop('_trigger_pinned/value/adj_count', None)` — auto-clear on shift.
+
+**`mmm_monitor.py` — `_process_replenish()`**
+- Added same three pop() calls immediately after `side_state['active_strike'] = strike`.
+
+**`mmm_api.py` — new `POST /session/<id>/pin-trigger`**
+- Set path: fetch live premium, enforce `value > current_premium`, set pin fields + snapshot.
+- Clear path: pop all three pin fields, resume ratchet.
+- Logs `pin_trigger` / `unpin_trigger` activity. Emits `mmm_trigger_pin_changed` WS event.
+- Follows same pattern as `set-active-strike` endpoint.
+
+### Frontend changes
+
+**`MMMTriggerGauge.js`**
+- `TriggerSideGauge`: added drag handlers (onMouseDown → mousemove/mouseup on document).
+- Loosen-only enforced client-side: `newValue = Math.max(rawValue, currentPremium)`.
+- Pinned marker: cyan `#00bcd4`, lock icon 🔒, ratchet-disabled tooltip with countdown.
+- Error snackbar on API failure — marker snaps back to server value.
+- `_trigger_pinned`, `_pin_adj_count` props from `MMMTriggerGauge` parent via session state.
+
+**`mmmService.js`**
+- Added `pinTrigger(sessionId, side, value, clear=false)`.
+
+### New session fields (per side)
+- `_trigger_pinned`: bool
+- `_pinned_trigger_value`: float
+- `_pin_adj_count`: int (0–3, then auto-clear)
+
+**Tests**: 52/52 sealed tests pass (trigger + strike_shift suites). No regressions.
+
+**Files changed**: `mmm_trigger.py`, `mmm_strike_shift.py`, `mmm_monitor.py`, `mmm_api.py`, `MMMTriggerGauge.js`, `mmmService.js`

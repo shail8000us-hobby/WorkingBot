@@ -10,13 +10,18 @@
  * Shows: current premium, trigger level, active strike, lots count,
  *        percentage excess above trigger, min_trigger_move % threshold
  *
+ * Draggable trigger marker: operator can drag the white marker RIGHT (loosen only)
+ * to raise the trigger baseline. Pinned state shown with lock icon + cyan color.
+ * Ratchet-disabled warning in tooltip. Auto-expires after 3 adjustments.
+ *
  * Maps to MONEY_POWER_CALCULATION_LOGIC.md §7 (Trigger System)
  *
  * Created: February 15, 2026
  * Updated: February 17, 2026 — Percentage-based min_trigger_move
+ * Updated: March 30, 2026 — Draggable trigger pin (loosen-only, soft expiry)
  */
 
-import React from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   Box,
   Typography,
@@ -25,9 +30,12 @@ import {
   Paper,
   Grid,
   Chip,
+  Snackbar,
+  Alert,
 } from '@mui/material';
 import { HelpTooltip, HELP } from './MMMEducation';
 import { LOT_SIZE_BTC } from './MMMPositionsTable';
+import mmmService from './mmmService';
 
 // Color zones use ENTRY PREMIUM as the green/yellow boundary (not trigger_snapshot).
 //
@@ -69,6 +77,9 @@ function formatStrike(strike) {
   return Number(strike || 0).toLocaleString();
 }
 
+const PIN_COLOR = '#00bcd4';    // cyan — pinned marker
+const MAX_PIN_ADJ = 3;          // must match backend _MAX_PIN_ADJ
+
 function TriggerSideGauge({
   label,
   sideColor,
@@ -83,6 +94,12 @@ function TriggerSideGauge({
   excess = 0,
   excessPct = 0,
   triggered = false,
+  // Pin props
+  isPinned = false,
+  pinAdjCount = 0,
+  sessionId = null,
+  side = 'ce',
+  onPinChange = null,   // callback(side, result) after successful API call
 }) {
   // Calculate ratio: how close to trigger + min_move%
   // triggerThreshold = trigger * (1 + min_move/100) — the absolute level that fires adjustment
@@ -92,6 +109,96 @@ function TriggerSideGauge({
   const progressValue = Math.min(clampedRatio * 100, 100);
   const color = getGaugeColor(currentPremium, triggerLevel, minTriggerMove, entryPremium);
   const statusLabel = getGaugeLabel(currentPremium, triggerLevel, minTriggerMove, entryPremium);
+
+  // ── Drag state ────────────────────────────────────────────────────────────
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragValue, setDragValue] = useState(null);
+  const [snackbar, setSnackbar] = useState(null); // {severity, message}
+  const barRef = useRef(null);
+  const dragValueRef = useRef(null); // stable ref for mouseup handler
+
+  // Keep ref in sync with state so the mouseup closure always has the latest value
+  useEffect(() => { dragValueRef.current = dragValue; }, [dragValue]);
+
+  const computeValueFromEvent = useCallback((e) => {
+    if (!barRef.current || triggerThreshold <= 0) return null;
+    const rect = barRef.current.getBoundingClientRect();
+    const raw = ((e.clientX - rect.left) / rect.width) * triggerThreshold;
+    // Loosen-only: clamp so the marker cannot go below current premium
+    return Math.max(raw, currentPremium > 0 ? currentPremium : 0);
+  }, [triggerThreshold, currentPremium]);
+
+  const handleMouseDown = useCallback((e) => {
+    if (!sessionId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    setDragValue(triggerLevel); // start at current position
+
+    const handleMouseMove = (me) => {
+      const val = computeValueFromEvent(me);
+      if (val !== null) setDragValue(val);
+    };
+
+    const handleMouseUp = async () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      setIsDragging(false);
+
+      const finalVal = dragValueRef.current;
+      setDragValue(null);
+
+      // Abort if didn't move above current premium (loosen-only enforced client-side)
+      if (finalVal === null || finalVal <= currentPremium) return;
+
+      try {
+        const result = await mmmService.pinTrigger(sessionId, side, finalVal);
+        if (result?.success && onPinChange) onPinChange(side, result);
+      } catch (err) {
+        const msg = err?.response?.data?.error || 'Failed to pin trigger. Try again.';
+        setSnackbar({ severity: 'error', message: msg });
+      }
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  }, [sessionId, triggerLevel, currentPremium, computeValueFromEvent, side, onPinChange]);
+
+  const handleUnpin = useCallback(async (e) => {
+    e.stopPropagation();
+    if (!sessionId || !isPinned) return;
+    try {
+      const result = await mmmService.pinTrigger(sessionId, side, null, true);
+      if (result?.success && onPinChange) onPinChange(side, result);
+    } catch (err) {
+      const msg = err?.response?.data?.error || 'Failed to unpin. Try again.';
+      setSnackbar({ severity: 'error', message: msg });
+    }
+  }, [sessionId, isPinned, side, onPinChange]);
+
+  // ── Marker positions ──────────────────────────────────────────────────────
+  // Effective display level: during drag show dragValue, otherwise triggerLevel
+  const displayLevel = isDragging && dragValue !== null ? dragValue : triggerLevel;
+  const markerPct = triggerThreshold > 0
+    ? Math.min((displayLevel / triggerThreshold) * 100, 100)
+    : 0;
+  const isDragAbovePremium = dragValue !== null && dragValue > currentPremium;
+
+  // Marker color: cyan when pinned or dragging-valid, gray otherwise
+  const markerColor = isPinned
+    ? PIN_COLOR
+    : (isDragging && isDragAbovePremium ? PIN_COLOR : 'text.primary');
+  const markerOpacity = isPinned ? 0.9 : (isDragging ? 0.8 : 0.4);
+
+  // ── Pin tooltip text (spells out ratchet-disabled behavior) ───────────────
+  const adjRemaining = Math.max(0, MAX_PIN_ADJ - pinAdjCount);
+  const pinnedTooltip = isPinned
+    ? `Pinned trigger: $${triggerLevel.toFixed(1)} — ⚠️ RATCHET DISABLED. Each adjustment fires at this same level until unpinned. Auto-expires after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}. Drag right to loosen further. Click to unpin.`
+    : isDragging
+      ? (isDragAbovePremium
+          ? `New trigger: $${(dragValue || 0).toFixed(1)} — loosens sensitivity. Release to pin.`
+          : `Cannot drag below current premium ($${currentPremium.toFixed(1)}) — loosen only.`)
+      : `Trigger snapshot: ${triggerLevel.toFixed(1)} — last reset point. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment. Drag right to pin a higher level.`;
 
   return (
     <Paper
@@ -131,13 +238,26 @@ function TriggerSideGauge({
             />
           </Tooltip>
         </Box>
-        <Typography variant="caption" color="text.secondary">
-          Strike: {formatStrike(activeStrike)}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          {isPinned && (
+            <Tooltip title="Ratchet disabled — click to unpin" arrow>
+              <Typography
+                component="span"
+                sx={{ fontSize: '0.75rem', cursor: 'pointer', userSelect: 'none' }}
+                onClick={handleUnpin}
+              >
+                🔒
+              </Typography>
+            </Tooltip>
+          )}
+          <Typography variant="caption" color="text.secondary">
+            Strike: {formatStrike(activeStrike)}
+          </Typography>
+        </Box>
       </Box>
 
       {/* Gauge bar */}
-      <Box sx={{ position: 'relative', mb: 1 }}>
+      <Box sx={{ position: 'relative', mb: 1 }} ref={barRef}>
         <LinearProgress
           variant="determinate"
           value={progressValue}
@@ -164,25 +284,52 @@ function TriggerSideGauge({
                 height: 16,
                 bgcolor: '#ff9800',
                 opacity: 0.7,
+                pointerEvents: 'none',
               }}
             />
           </Tooltip>
         )}
-        {/* Trigger snapshot marker */}
+        {/* Trigger snapshot marker — draggable */}
         {triggerThreshold > 0 && (
-          <Tooltip title={`Trigger snapshot: ${triggerLevel.toFixed(1)} — last reset point. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment.`} arrow>
+          <Tooltip title={pinnedTooltip} arrow>
             <Box
+              onMouseDown={handleMouseDown}
+              onClick={isPinned && !isDragging ? handleUnpin : undefined}
               sx={{
                 position: 'absolute',
-                left: `${Math.min((triggerLevel / triggerThreshold) * 100, 100)}%`,
+                left: `${markerPct}%`,
                 top: 0,
-                width: 2,
+                width: 3,
                 height: 12,
-                bgcolor: 'text.primary',
-                opacity: 0.4,
+                bgcolor: markerColor,
+                opacity: markerOpacity,
+                cursor: sessionId ? (isPinned ? 'pointer' : 'ew-resize') : 'default',
+                transition: isDragging ? 'none' : 'left 0.3s ease, background-color 0.3s',
+                borderRadius: 1,
+                '&:hover': sessionId ? {
+                  opacity: 1,
+                  width: 4,
+                  bgcolor: PIN_COLOR,
+                } : {},
               }}
             />
           </Tooltip>
+        )}
+        {/* Drag preview overlay — shows where marker would land */}
+        {isDragging && dragValue !== null && triggerThreshold > 0 && (
+          <Box
+            sx={{
+              position: 'absolute',
+              left: `${Math.min((dragValue / triggerThreshold) * 100, 100)}%`,
+              top: -3,
+              width: 2,
+              height: 18,
+              bgcolor: isDragAbovePremium ? PIN_COLOR : '#f44336',
+              opacity: 0.5,
+              pointerEvents: 'none',
+              borderRadius: 1,
+            }}
+          />
         )}
       </Box>
 
@@ -226,6 +373,28 @@ function TriggerSideGauge({
           </Typography>
         </Tooltip>
       )}
+
+      {/* Pin status line */}
+      {isPinned && (
+        <Typography
+          variant="caption"
+          sx={{ color: PIN_COLOR, display: 'block', mt: 0.5, fontStyle: 'italic' }}
+        >
+          🔒 Ratchet disabled — auto-expires in {adjRemaining} adj
+        </Typography>
+      )}
+
+      {/* Error snackbar */}
+      <Snackbar
+        open={!!snackbar}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar(null)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar?.severity || 'error'} onClose={() => setSnackbar(null)} sx={{ width: '100%' }}>
+          {snackbar?.message}
+        </Alert>
+      </Snackbar>
     </Paper>
   );
 }
@@ -235,6 +404,7 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
 
   const params = session.params || {};
   const minTriggerMove = params.min_trigger_move || 10;
+  const sessionId = session.session_id || null;
 
   const ceState = session.ce || {};
   const peState = session.pe || {};
@@ -297,6 +467,10 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
           excess={ceExcess}
           excessPct={ceExcessPct}
           triggered={triggerData?.ce_triggered || ceExcessPct > minTriggerMove}
+          isPinned={ceState._trigger_pinned || false}
+          pinAdjCount={ceState._pin_adj_count || 0}
+          sessionId={sessionId}
+          side="ce"
         />
       </Grid>
       <Grid item xs={12} md={6}>
@@ -314,6 +488,10 @@ export default function MMMTriggerGauge({ session, heartbeat, triggerData }) {
           excess={peExcess}
           excessPct={peExcessPct}
           triggered={triggerData?.pe_triggered || peExcessPct > minTriggerMove}
+          isPinned={peState._trigger_pinned || false}
+          pinAdjCount={peState._pin_adj_count || 0}
+          sessionId={sessionId}
+          side="pe"
         />
       </Grid>
     </Grid>
