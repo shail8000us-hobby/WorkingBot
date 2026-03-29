@@ -2729,6 +2729,9 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
               </Typography>
             </HelpTooltip>
             <SectionBlurb topic="trigger_system" />
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5, lineHeight: 1.5 }}>
+              🖱️ <strong>Drag the white marker right</strong> to lock a higher trigger threshold — the algo won't fire an adjustment until premium crosses your chosen level. The cyan marker and 🔒 label appear when locked. Click the cyan marker to unlock. Locks auto-release after 3 adjustments.
+            </Typography>
             <MMMTriggerGauge
               session={session}
               heartbeat={heartbeat}
