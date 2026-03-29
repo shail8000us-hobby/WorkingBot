@@ -294,7 +294,6 @@ function TriggerSideGauge({
           <Tooltip title={pinnedTooltip} arrow>
             <Box
               onMouseDown={handleMouseDown}
-              onClick={isPinned && !isDragging ? handleUnpin : undefined}
               sx={{
                 position: 'absolute',
                 left: `${markerPct}%`,
