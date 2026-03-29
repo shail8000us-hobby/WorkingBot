@@ -211,12 +211,12 @@ function TriggerSideGauge({
   // ── Pin tooltip text (spells out ratchet-disabled behavior) ───────────────
   const adjRemaining = Math.max(0, MAX_PIN_ADJ - pinAdjCount);
   const pinnedTooltip = isPinned
-    ? `Trigger locked at $${triggerLevel.toFixed(1)}. Adjustment fires when premium exceeds this + ${minTriggerMove}%. Click to unlock. Drag right to raise further. Auto-clears after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}.`
+    ? `Locked at $${triggerLevel.toFixed(1)} — click this marker to unlock, or drag it right to raise further. Auto-unlocks after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}.`
     : isDragging
       ? (isDragAbovePremium
-          ? `Release to lock trigger at $${(dragValue || 0).toFixed(1)}.`
-          : `Drag right of current premium ($${currentPremium.toFixed(1)}) to lock a higher level.`)
-      : `Trigger at $${triggerLevel.toFixed(1)}. Adjustment fires above $${triggerThreshold.toFixed(1)} (+${minTriggerMove}%). Drag right to lock a higher threshold.`;
+          ? `Release to lock at $${(dragValue || 0).toFixed(1)}.`
+          : `Drag right past current premium ($${currentPremium.toFixed(1)}) to lock.`)
+      : `Trigger at $${triggerLevel.toFixed(1)}. Fires above $${triggerThreshold.toFixed(1)}. Drag this marker right to lock a higher threshold.`;
 
   return (
     <Paper
@@ -256,22 +256,9 @@ function TriggerSideGauge({
             />
           </Tooltip>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          {isPinned && (
-            <Tooltip title="Trigger locked — click to unlock" arrow>
-              <Typography
-                component="span"
-                sx={{ fontSize: '0.75rem', cursor: 'pointer', userSelect: 'none' }}
-                onClick={handleUnpin}
-              >
-                🔒
-              </Typography>
-            </Tooltip>
-          )}
-          <Typography variant="caption" color="text.secondary">
-            Strike: {formatStrike(activeStrike)}
-          </Typography>
-        </Box>
+        <Typography variant="caption" color="text.secondary">
+          {isPinned ? '🔒 ' : ''} Strike: {formatStrike(activeStrike)}
+        </Typography>
       </Box>
 
       {/* Gauge bar */}
