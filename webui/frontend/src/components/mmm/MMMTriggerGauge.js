@@ -211,12 +211,12 @@ function TriggerSideGauge({
   // ── Pin tooltip text (spells out ratchet-disabled behavior) ───────────────
   const adjRemaining = Math.max(0, MAX_PIN_ADJ - pinAdjCount);
   const pinnedTooltip = isPinned
-    ? `Pinned trigger: $${triggerLevel.toFixed(1)} — ⚠️ RATCHET DISABLED. Each adjustment fires at this same level until unpinned. Auto-expires after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}. Click to unpin now. Drag right to loosen further.`
+    ? `Trigger locked at $${triggerLevel.toFixed(1)}. Adjustment fires when premium exceeds this + ${minTriggerMove}%. Click to unlock. Drag right to raise further. Auto-clears after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}.`
     : isDragging
       ? (isDragAbovePremium
-          ? `New trigger: $${(dragValue || 0).toFixed(1)} — loosens sensitivity. Release to pin.`
-          : `Cannot drag below current premium ($${currentPremium.toFixed(1)}) — loosen only.`)
-      : `Trigger snapshot: ${triggerLevel.toFixed(1)} — last reset point. Needs +${minTriggerMove}% above this (=${triggerThreshold.toFixed(1)}) to fire adjustment. Drag right to pin a higher level.`;
+          ? `Release to lock trigger at $${(dragValue || 0).toFixed(1)}.`
+          : `Drag right of current premium ($${currentPremium.toFixed(1)}) to lock a higher level.`)
+      : `Trigger at $${triggerLevel.toFixed(1)}. Adjustment fires above $${triggerThreshold.toFixed(1)} (+${minTriggerMove}%). Drag right to lock a higher threshold.`;
 
   return (
     <Paper
@@ -258,7 +258,7 @@ function TriggerSideGauge({
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           {isPinned && (
-            <Tooltip title="Ratchet disabled — click to unpin" arrow>
+            <Tooltip title="Trigger locked — click to unlock" arrow>
               <Typography
                 component="span"
                 sx={{ fontSize: '0.75rem', cursor: 'pointer', userSelect: 'none' }}
@@ -395,9 +395,9 @@ function TriggerSideGauge({
       {isPinned && (
         <Typography
           variant="caption"
-          sx={{ color: PIN_COLOR, display: 'block', mt: 0.5, fontStyle: 'italic' }}
+          sx={{ color: PIN_COLOR, display: 'block', mt: 0.5 }}
         >
-          🔒 Ratchet disabled — auto-expires in {adjRemaining} adj
+          🔒 Trigger locked at ${triggerLevel.toFixed(1)} · unlocks after {adjRemaining} adj
         </Typography>
       )}
 
