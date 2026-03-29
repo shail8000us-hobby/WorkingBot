@@ -796,6 +796,22 @@ const mmmService = {
     const { data } = await api.get(`${BASE_URL}/session/${sessionId}/option-chain`);
     return data;
   },
+
+  /**
+   * Pin (or unpin) the trigger snapshot for one side.
+   * Loosen-only: value must be above current premium.
+   * Soft expiry: auto-clears after 3 adjustments (managed backend-side).
+   *
+   * @param {string} sessionId
+   * @param {string} side - 'ce' or 'pe'
+   * @param {number|null} value - new trigger baseline; ignored when clear=true
+   * @param {boolean} clear - if true, unpin and resume normal ratchet
+   */
+  async pinTrigger(sessionId, side, value, clear = false) {
+    const body = clear ? { side, clear: true } : { side, value };
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/pin-trigger`, body);
+    return data; // caller must handle rejection (Promise rejects on non-2xx)
+  },
 };
 
 export default mmmService;

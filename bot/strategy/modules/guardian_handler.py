@@ -149,13 +149,13 @@ class GuardianHandler:
             if signal_age > 120:  # 120 seconds = 24 missed cycles (was 60s = 12 cycles)
                 if not self._get_running():
                     if not self._get_started_once():
-                        # STARTUP: Bot hasn't started yet. A stale signal from days ago
-                        # should NOT block startup. Guardian will publish fresh signals
-                        # once it's running. Treat stale signals as expired during startup.
-                        log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) during STARTUP - treating as expired")
+                        # STARTUP: Bot hasn't started yet and Guardian signal is stale.
+                        # SAFETY: Do NOT assume GO — stale signals mean Guardian may be down.
+                        # Block trading until a fresh signal arrives.
+                        log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) during STARTUP - blocking until fresh signal")
                         log.warning(f"   Original signal: {signal} - {reason}")
-                        log.warning(f"   Stale signals do not block startup. Guardian will publish fresh signals.")
-                        return 'GO', f'Guardian signal expired during startup ({signal_age:.0f}s old)'
+                        log.warning(f"   Will not start trading until Guardian publishes a fresh signal (within 120s).")
+                        return 'STOP', f'Guardian signal stale at startup ({signal_age:.0f}s old) — waiting for fresh signal'
                     else:
                         # SHUTDOWN: Bot was running but stopped. Don't trigger new shutdown.
                         log.warning(f"⚠️  Guardian signal stale ({signal_age:.0f}s) but bot already shutting down - ignoring")
@@ -180,12 +180,16 @@ class GuardianHandler:
 
     async def check_transition_and_retry(self) -> None:
         """
-        Check if Guardian signal transitioned from STOP to GO.
-        If yes, retry placing missed grid orders that were skipped.
+        Canonical STOP→GO transition handler (runs every 15s via health_monitor_loop).
 
-        CRITICAL FIX (Dec 11, 2025):
-        When Guardian blocks order placement during saga execution,
-        we need to retry those missed orders when Guardian gives GO signal.
+        Responsibilities:
+        - Retry missed grid orders queued during STOP
+        - A3 multi-step gap fill
+        - resume_grid() to place next entry if no missed orders
+
+        check_transitions() handles only GO→STOP (cancel pending entries).
+        Having ONE handler per direction eliminates the _last_guardian_signal race
+        and prevents duplicate order placement on the same transition.
         """
         try:
             # Read current Guardian signal
@@ -200,14 +204,22 @@ class GuardianHandler:
                 log.info(f"   Missed Grid Orders: {len(self._missed_grid_orders)}")
                 log.info("=" * 80)
 
-                # Retry missed grid orders
+                # Retry explicitly queued missed grid orders first
                 if self._missed_grid_orders:
                     await self.retry_missed_orders()
 
                 # A3: Check for multi-step price moves during the STOP period
                 await self.fill_multi_step_missed_grids()
 
-            # Track signal for next check
+                # If no missed orders were queued (or all were skipped), place the
+                # next regular entry order so the grid resumes immediately.
+                # This is the only place resume_grid() is called on STOP→GO.
+                state = await self.position_actor.ask("GET_STATE", {})
+                has_pending = state.get("pending_buy") or state.get("pending_sell")
+                if not has_pending:
+                    await self.resume_grid()
+
+            # Track signal for next check (single writer for STOP→GO direction)
             if self._last_guardian_signal != signal:
                 self._last_guardian_signal = signal
                 self._guardian_transition_time = time.time()
@@ -272,6 +284,18 @@ class GuardianHandler:
                     processed_orders.append(missed_order)  # Mark as processed
                     continue
 
+                # Skip if a position already exists near this level — prevents
+                # double-entry if the BUY filled during STOP but state was not updated.
+                already_held = any(
+                    abs(p.get('entry_price', 0) - price) < self.grid_step * 0.3
+                    for p in open_positions
+                )
+                if already_held:
+                    log.info(f"   ⏭️  Skipping BUY @ ${price:,.0f} - position already exists near this level")
+                    skipped += 1
+                    processed_orders.append(missed_order)
+                    continue
+
                 # Retry placing BUY order
                 try:
                     result = await self.order_actor.ask("PLACE_BUY", {
@@ -303,16 +327,76 @@ class GuardianHandler:
             elif side == "sell":
                 # Skip if we already have a pending sell
                 if pending_sell:
-                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - already have pending sell")
+                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - already have pending sell @ ${pending_sell.get('price'):,.0f}")
                     skipped += 1
-                    processed_orders.append(missed_order)  # Mark as processed
+                    processed_orders.append(missed_order)
                     continue
 
-                # Retry placing SELL order (this shouldn't happen often)
-                # SELL orders are usually for positions, not grid seeding
-                log.warning(f"   ⚠️  Skipping SELL @ ${price:,.0f} - SELL retry not implemented")
-                skipped += 1
-                processed_orders.append(missed_order)  # Mark as processed
+                # Skip if price is outside grid bounds
+                if not self.grid_calc.is_within_bounds(price):
+                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - price out of grid bounds")
+                    skipped += 1
+                    processed_orders.append(missed_order)
+                    continue
+
+                # Skip if the level is at or below current market price.
+                # A limit SELL at or below market fills immediately as a market order,
+                # bypassing grid structure. This is the most critical SHORT-mode guard.
+                current_price_check = self._get_current_price()
+                if current_price_check and price <= current_price_check:
+                    log.warning(f"   ⏭️  Skipping SELL @ ${price:,.0f} - level at/below market (${current_price_check:,.0f}), would fill as market order")
+                    skipped += 1
+                    processed_orders.append(missed_order)
+                    continue
+
+                # Skip if at max position capacity
+                if len(open_positions) >= self.max_positions:
+                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - at max positions ({self.max_positions})")
+                    skipped += 1
+                    processed_orders.append(missed_order)
+                    continue
+
+                # Skip if a position already exists near this level (idempotency guard).
+                # Prevents double-entry if the SELL filled during STOP but state was not updated.
+                already_held = any(
+                    abs(p.get('entry_price', 0) - price) < self.grid_step * 0.3
+                    for p in open_positions
+                )
+                if already_held:
+                    log.info(f"   ⏭️  Skipping SELL @ ${price:,.0f} - position already exists near this level")
+                    skipped += 1
+                    processed_orders.append(missed_order)
+                    continue
+
+                # Retry placing SELL order (SHORT mode entry)
+                try:
+                    result = await self.order_actor.ask("PLACE_SELL", {
+                        "price": price,
+                        "size": self.lot_size
+                    }, timeout=10.0)
+
+                    if result.get("status") == "ok":
+                        log.info(f"   ✅ Retried SELL @ ${price:,.0f} successfully (order_id: {result.get('order_id')})")
+                        retried += 1
+                        processed_orders.append(missed_order)
+
+                        # Update pending sell state locally too — prevents a second SELL
+                        # being placed later in this same retry batch
+                        pending_sell = {
+                            "order_id": result["order_id"],
+                            "price": price,
+                            "size": self.lot_size
+                        }
+                        await self.position_actor.tell("SET_PENDING_SELL", pending_sell)
+                    else:
+                        log.warning(f"   ❌ Failed to retry SELL @ ${price:,.0f}: {result.get('error')}")
+                        skipped += 1
+                        processed_orders.append(missed_order)
+
+                except Exception as e:
+                    log.error(f"   ❌ Error retrying SELL @ ${price:,.0f}: {e}")
+                    skipped += 1
+                    processed_orders.append(missed_order)
 
             # Small delay between retries
             await asyncio.sleep(0.3)
@@ -331,18 +415,21 @@ class GuardianHandler:
         A3: Detect and fill grid levels missed during a multi-step price move
         while Guardian was in STOP state.
 
-        When the market drops 2+ grid steps during STOP, the explicit
+        When the market moves 2+ grid steps during STOP, the explicit
         _missed_grid_orders list may only have 1 entry (or none if the move
         happened entirely in STOP). This method calculates the full set of
         missed levels from the current position state vs. current price.
+
+        LONG: detects downward gaps, back-fills missed BUY levels still below market.
+        SHORT: detects upward gaps, back-fills missed SELL levels still above market.
+              If price spiked and never retraced, SHORT A3 fills nothing — correct.
 
         Safety: capped at 5 fills per cycle, respects max_positions,
         re-checks Guardian before each fill.
         """
         MAX_MISSED_FILLS_PER_CYCLE = 5
 
-        # Only for LONG mode currently (SHORT would mirror with SELL levels)
-        if self.mode != "LONG":
+        if self.mode not in ("LONG", "SHORT"):
             return
 
         # Verify Guardian is still GO
@@ -350,150 +437,247 @@ class GuardianHandler:
         if signal == 'STOP':
             return
 
-        # Get current state
+        # Get current state (shared for both modes)
         state = await self.position_actor.ask("GET_STATE", {})
-        positions = list(state.get("positions", {}).values())
+        positions = state.get("open_tranches", [])
         num_positions = len(positions)
-        pending_buy = state.get("pending_buy")
 
-        # If we already have a pending buy, don't interfere
-        if pending_buy:
-            return
-
-        # If at max positions, nothing to do
-        if num_positions >= self.max_positions:
-            return
-
-        # Determine the lowest level we SHOULD have filled to
-        # based on current price vs. existing positions
         current_price = self._get_current_price()
         if not current_price or current_price <= 0:
             return
 
-        if positions:
-            lowest_entry = min(p.get('entry_price', float('inf')) for p in positions)
-        else:
-            # No positions: reference is our starting point
-            lowest_entry = self.ref_price
+        if self.mode == "LONG":
+            pending_buy = state.get("pending_buy")
 
-        # How many steps from the lowest position to current price?
-        price_gap = lowest_entry - current_price
-        if price_gap <= self.grid_step:
-            # Price hasn't moved more than 1 step below — no multi-step gap
-            return
+            # If we already have a pending buy, don't interfere
+            if pending_buy:
+                return
 
-        steps_missed = int(price_gap / self.grid_step)
-        if steps_missed < 2:
-            return
+            # If at max positions, nothing to do
+            if num_positions >= self.max_positions:
+                return
 
-        # Build list of missed grid levels (below lowest position, above current price)
-        missed_levels = []
-        for i in range(1, steps_missed + 1):
-            level = lowest_entry - (i * self.grid_step)
-            # Must be within grid bounds
-            if level < self.grid_calc.lower:
-                break
-            # Must be below current price (would have triggered as buy)
-            if level >= current_price:
-                continue
-            # Skip if a position already exists at this level (within half-step tolerance)
-            already_held = any(
-                abs(p.get('entry_price', 0) - level) < self.grid_step * 0.3
-                for p in positions
-            )
-            if already_held:
-                continue
-            missed_levels.append(level)
+            if positions:
+                lowest_entry = min(p.get('entry_price', float('inf')) for p in positions)
+            else:
+                # No positions: reference is our starting point
+                lowest_entry = self.ref_price
 
-        if not missed_levels:
-            return
+            # How many steps from the lowest position to current price?
+            price_gap = lowest_entry - current_price
+            if price_gap <= self.grid_step:
+                # Price hasn't moved more than 1 step below — no multi-step gap
+                return
 
-        # Sort highest first (closest to current price)
-        missed_levels.sort(reverse=True)
+            steps_missed = int(price_gap / self.grid_step)
+            if steps_missed < 2:
+                return
 
-        # Cap at safety limit
-        slots_available = self.max_positions - num_positions
-        fill_count = min(len(missed_levels), MAX_MISSED_FILLS_PER_CYCLE, slots_available)
-        missed_levels = missed_levels[:fill_count]
+            # Build list of missed grid levels (below lowest position, above current price)
+            missed_levels = []
+            for i in range(1, steps_missed + 1):
+                level = lowest_entry - (i * self.grid_step)
+                # Must be within grid bounds
+                if level < self.grid_calc.lower:
+                    break
+                # Must be below current price (would have triggered as buy)
+                if level >= current_price:
+                    continue
+                # Skip if a position already exists at this level (within tolerance)
+                already_held = any(
+                    abs(p.get('entry_price', 0) - level) < self.grid_step * 0.3
+                    for p in positions
+                )
+                if already_held:
+                    continue
+                missed_levels.append(level)
 
-        log.info(f"📊 A3: Multi-step gap detected — {steps_missed} steps missed, filling {len(missed_levels)} levels")
+            if not missed_levels:
+                return
 
-        filled = 0
-        for level in missed_levels:
-            # Re-check Guardian before each fill
-            signal, _ = await self.read_signal()
-            if signal == 'STOP':
-                log.warning(f"⚠️  Guardian went STOP during multi-step fill — stopping ({filled}/{len(missed_levels)} filled)")
-                break
+            # Sort highest first (closest to current price)
+            missed_levels.sort(reverse=True)
 
-            # Re-verify price is still below this level
-            current_price = self._get_current_price()
-            if current_price and current_price >= level:
-                log.info(f"   ⏭️  Skipping ${level:,.0f} — price bounced above it (${current_price:,.0f})")
-                continue
+            # Cap at safety limit
+            slots_available = self.max_positions - num_positions
+            fill_count = min(len(missed_levels), MAX_MISSED_FILLS_PER_CYCLE, slots_available)
+            missed_levels = missed_levels[:fill_count]
 
-            try:
-                result = await self.order_actor.ask("PLACE_BUY", {
-                    "price": level,
-                    "size": self.lot_size
-                }, timeout=10.0)
+            log.info(f"📊 A3: Multi-step gap detected — {steps_missed} steps missed, filling {len(missed_levels)} levels")
 
-                if result.get("status") == "ok":
-                    log.info(f"   ✅ A3 filled missed grid BUY @ ${level:,.0f} (order_id: {result.get('order_id')})")
-                    filled += 1
+            filled = 0
+            for level in missed_levels:
+                # Re-check Guardian before each fill
+                signal, _ = await self.read_signal()
+                if signal == 'STOP':
+                    log.warning(f"⚠️  Guardian went STOP during multi-step fill — stopping ({filled}/{len(missed_levels)} filled)")
+                    break
 
-                    # Update pending buy state
-                    await self.position_actor.tell("SET_PENDING_BUY", {
-                        "order_id": result["order_id"],
+                # Re-verify price is still below this level
+                current_price = self._get_current_price()
+                if current_price and current_price >= level:
+                    log.info(f"   ⏭️  Skipping ${level:,.0f} — price bounced above it (${current_price:,.0f})")
+                    continue
+
+                try:
+                    result = await self.order_actor.ask("PLACE_BUY", {
                         "price": level,
                         "size": self.lot_size
-                    })
+                    }, timeout=10.0)
 
-                    # Wait for fill confirmation before next level (cooldown)
-                    await asyncio.sleep(0.5)
+                    if result.get("status") == "ok":
+                        log.info(f"   ✅ A3 filled missed grid BUY @ ${level:,.0f} (order_id: {result.get('order_id')})")
+                        filled += 1
 
-                    # Refresh state for next iteration
-                    state = await self.position_actor.ask("GET_STATE", {})
-                    positions = list(state.get("positions", {}).values())
-                    num_positions = len(positions)
-                else:
-                    log.warning(f"   ❌ A3 failed BUY @ ${level:,.0f}: {result.get('error')}")
-            except Exception as e:
-                log.error(f"   ❌ A3 error placing BUY @ ${level:,.0f}: {e}")
+                        # Register pending buy — enforces Single Pending Order Rule
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": result["order_id"],
+                            "price": level,
+                            "size": self.lot_size
+                        })
 
-        if filled > 0:
-            log.info(f"📊 A3: Multi-step recovery complete — {filled} levels filled")
+                        # SINGLE PENDING ORDER RULE: only one entry order at a time.
+                        # Break immediately after the first successful placement.
+                        # The next A3 cycle (after this fill is processed) will handle
+                        # the subsequent level if price is still in multi-step gap.
+                        break
+                    else:
+                        log.warning(f"   ❌ A3 failed BUY @ ${level:,.0f}: {result.get('error')}")
+                except Exception as e:
+                    log.error(f"   ❌ A3 error placing BUY @ ${level:,.0f}: {e}")
+
+            if filled > 0:
+                log.info(f"📊 A3: Multi-step recovery complete — {filled} level queued (Single Pending Order Rule)")
+
+        elif self.mode == "SHORT":
+            pending_sell = state.get("pending_sell")
+
+            # If we already have a pending sell, don't interfere
+            if pending_sell:
+                return
+
+            # If at max positions, nothing to do
+            if num_positions >= self.max_positions:
+                return
+
+            if positions:
+                highest_entry = max(p.get('entry_price', float('-inf')) for p in positions)
+            else:
+                # No positions: reference is our starting point
+                highest_entry = self.ref_price
+
+            # How many steps has price moved above the highest position?
+            price_gap = current_price - highest_entry
+            if price_gap <= self.grid_step:
+                # Price hasn't moved more than 1 step above — no multi-step gap
+                return
+
+            steps_missed = int(price_gap / self.grid_step)
+            if steps_missed < 2:
+                return
+
+            # Build list of missed grid levels (above highest position).
+            # CRITICAL: only include levels still ABOVE current price.
+            # A level at or below current price means market already blew through it —
+            # placing a limit SELL there would fill immediately as a market order.
+            missed_levels = []
+            for i in range(1, steps_missed + 1):
+                level = highest_entry + (i * self.grid_step)
+                # Must be within grid bounds
+                if level > self.grid_calc.upper:
+                    break
+                # Must be above current price (valid limit SELL entry)
+                if level <= current_price:
+                    continue
+                # Safety buffer: don't place within 0.3 steps of market — too close.
+                # Use <= so the boundary level itself is also excluded (off-by-one fix).
+                if level <= current_price + (self.grid_step * 0.3):
+                    continue
+                # Skip if a position already exists at this level (within tolerance)
+                already_held = any(
+                    abs(p.get('entry_price', 0) - level) < self.grid_step * 0.3
+                    for p in positions
+                )
+                if already_held:
+                    continue
+                missed_levels.append(level)
+
+            if not missed_levels:
+                return
+
+            # Sort ascending — lowest first (closest to current price, most likely to trigger first)
+            missed_levels.sort()
+
+            # Cap at safety limit
+            slots_available = self.max_positions - num_positions
+            fill_count = min(len(missed_levels), MAX_MISSED_FILLS_PER_CYCLE, slots_available)
+            missed_levels = missed_levels[:fill_count]
+
+            log.info(f"📊 A3 SHORT: Multi-step gap detected — {steps_missed} steps missed, filling {len(missed_levels)} levels")
+
+            filled = 0
+            for level in missed_levels:
+                # Re-check Guardian before each fill
+                signal, _ = await self.read_signal()
+                if signal == 'STOP':
+                    log.warning(f"⚠️  Guardian went STOP during multi-step fill — stopping ({filled}/{len(missed_levels)} filled)")
+                    break
+
+                # Re-verify level is still above current price before placing.
+                # Price may have spiked further during this loop.
+                current_price = self._get_current_price()
+                if current_price and level <= current_price:
+                    log.info(f"   ⏭️  Skipping ${level:,.0f} — price spiked above it (${current_price:,.0f})")
+                    continue
+
+                try:
+                    result = await self.order_actor.ask("PLACE_SELL", {
+                        "price": level,
+                        "size": self.lot_size
+                    }, timeout=10.0)
+
+                    if result.get("status") == "ok":
+                        log.info(f"   ✅ A3 filled missed grid SELL @ ${level:,.0f} (order_id: {result.get('order_id')})")
+                        filled += 1
+
+                        # Register pending sell — enforces Single Pending Order Rule
+                        await self.position_actor.tell("SET_PENDING_SELL", {
+                            "order_id": result["order_id"],
+                            "price": level,
+                            "size": self.lot_size
+                        })
+
+                        # SINGLE PENDING ORDER RULE: only one entry order at a time.
+                        # Break immediately — next A3 cycle handles the subsequent level.
+                        break
+                    else:
+                        log.warning(f"   ❌ A3 failed SELL @ ${level:,.0f}: {result.get('error')}")
+                except Exception as e:
+                    log.error(f"   ❌ A3 error placing SELL @ ${level:,.0f}: {e}")
+
+            if filled > 0:
+                log.info(f"📊 A3 SHORT: Multi-step recovery complete — {filled} level queued (Single Pending Order Rule)")
 
     async def check_transitions(self) -> None:
         """
-        Check for Guardian signal transitions and respond accordingly.
+        Handle GO→STOP transition: cancel all pending entry orders immediately.
 
-        GO → STOP: Cancel all pending entry orders immediately
-        STOP → GO: Resume grid trading (place missing grid orders)
+        STOP→GO is handled exclusively by check_transition_and_retry() (runs every 15s
+        via health_monitor_loop). Having one handler per direction prevents duplicate
+        order placement and eliminates the _last_guardian_signal write race.
         """
         try:
             current_signal, reason = await self.read_signal()
 
-            # Detect transition
-            if self._last_guardian_signal != current_signal:
-                # GO → STOP transition
-                if self._last_guardian_signal == "GO" and current_signal == "STOP":
-                    log.warning("=" * 70)
-                    log.warning("🔴 GUARDIAN SIGNAL: GO → STOP")
-                    log.warning(f"   Reason: {reason}")
-                    log.warning("   Action: Cancelling all pending entry orders")
-                    log.warning("=" * 70)
-                    await self.cancel_pending_entries()
-
-                # STOP → GO transition
-                elif self._last_guardian_signal == "STOP" and current_signal == "GO":
-                    log.info("=" * 70)
-                    log.info("🟢 GUARDIAN SIGNAL: STOP → GO")
-                    log.info("   Trading resumed - checking grid coverage")
-                    log.info("=" * 70)
-                    await self.resume_grid()
-
-                # Update last signal
+            # Only act on GO → STOP transition
+            if self._last_guardian_signal == "GO" and current_signal == "STOP":
+                log.warning("=" * 70)
+                log.warning("🔴 GUARDIAN SIGNAL: GO → STOP")
+                log.warning(f"   Reason: {reason}")
+                log.warning("   Action: Cancelling all pending entry orders")
+                log.warning("=" * 70)
+                await self.cancel_pending_entries()
+                # Update signal so we don't cancel again next tick
                 self._last_guardian_signal = current_signal
 
         except Exception as e:
@@ -509,37 +693,36 @@ class GuardianHandler:
         try:
             cancelled_count = 0
 
-            # Get pending buy order
-            if self.mode == "LONG":
-                pending = self.position_actor.state.get("pending_buy")
-                if pending:
-                    order_id = pending.get("order_id")
-                    price = pending.get("price", 0)
-                    log.info(f"📋 Cancelling pending BUY order: {order_id} @ ${price:,.0f}")
+            # Cancel BOTH sides regardless of current mode.
+            # After a mode switch or a resume_grid() malfunction, a stale order from
+            # the opposite mode may still be in state — cancelling both is always safe.
+            state = await self.position_actor.ask("GET_STATE", {})
 
-                    try:
-                        await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
-                        await self.position_actor.tell("CLEAR_PENDING_BUY", {"order_id": order_id})
-                        cancelled_count += 1
-                        log.info(f"✅ Cancelled BUY order {order_id}")
-                    except Exception as cancel_error:
-                        log.error(f"Failed to cancel BUY order {order_id}: {cancel_error}")
+            pending_buy = state.get("pending_buy")
+            if pending_buy:
+                order_id = pending_buy.get("order_id")
+                price = pending_buy.get("price", 0)
+                log.info(f"📋 Cancelling pending BUY order: {order_id} @ ${price:,.0f}")
+                try:
+                    await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
+                    await self.position_actor.tell("CLEAR_PENDING_BUY", {"order_id": order_id})
+                    cancelled_count += 1
+                    log.info(f"✅ Cancelled BUY order {order_id}")
+                except Exception as cancel_error:
+                    log.error(f"Failed to cancel BUY order {order_id}: {cancel_error}")
 
-            # Get pending sell order
-            elif self.mode == "SHORT":
-                pending = self.position_actor.state.get("pending_sell")
-                if pending:
-                    order_id = pending.get("order_id")
-                    price = pending.get("price", 0)
-                    log.info(f"📋 Cancelling pending SELL order: {order_id} @ ${price:,.0f}")
-
-                    try:
-                        await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
-                        await self.position_actor.tell("CLEAR_PENDING_SELL", {"order_id": order_id})
-                        cancelled_count += 1
-                        log.info(f"✅ Cancelled SELL order {order_id}")
-                    except Exception as cancel_error:
-                        log.error(f"Failed to cancel SELL order {order_id}: {cancel_error}")
+            pending_sell = state.get("pending_sell")
+            if pending_sell:
+                order_id = pending_sell.get("order_id")
+                price = pending_sell.get("price", 0)
+                log.info(f"📋 Cancelling pending SELL order: {order_id} @ ${price:,.0f}")
+                try:
+                    await self.order_actor.tell("CANCEL_ORDER", {"order_id": order_id})
+                    await self.position_actor.tell("CLEAR_PENDING_SELL", {"order_id": order_id})
+                    cancelled_count += 1
+                    log.info(f"✅ Cancelled SELL order {order_id}")
+                except Exception as cancel_error:
+                    log.error(f"Failed to cancel SELL order {order_id}: {cancel_error}")
 
             if cancelled_count > 0:
                 log.info(f"🧹 Cancelled {cancelled_count} pending entry order(s) due to Guardian STOP")
@@ -570,20 +753,23 @@ class GuardianHandler:
                 log.warning("Cannot resume grid - no current price available")
                 return
 
+            # Get current state via actor model (never access .state directly)
+            state = await self.position_actor.ask("GET_STATE", {})
+
             # Check if we already have a pending order
             if self.mode == "LONG":
-                pending = self.position_actor.state.get("pending_buy")
+                pending = state.get("pending_buy")
                 if pending:
                     log.info(f"✓ Pending BUY order already exists @ ${pending.get('price', 0):,.0f}")
                     return
             elif self.mode == "SHORT":
-                pending = self.position_actor.state.get("pending_sell")
+                pending = state.get("pending_sell")
                 if pending:
                     log.info(f"✓ Pending SELL order already exists @ ${pending.get('price', 0):,.0f}")
                     return
 
-            # Get current positions from position actor
-            positions = list(self.position_actor.state.get("positions", {}).values())
+            # Get current positions — use open_tranches (the actor's canonical key)
+            positions = state.get("open_tranches", [])
 
             # Use GridCalculator to determine proper next entry level
             # This follows the exact logic documented in logic_strategy.md
@@ -591,9 +777,9 @@ class GuardianHandler:
                 # GridCalculator determines next BUY based on:
                 # - If positions exist: lowest_entry - step
                 # - If no positions: proper grid level below current price
-                next_buy_level = self.grid_calc.get_next_buy_level(
-                    current_price=current_price,
-                    open_positions=positions
+                next_buy_level = self.grid_calc.compute_next_buy_level(
+                    open_positions=positions,
+                    current_price=current_price
                 )
 
                 if next_buy_level and next_buy_level >= self.grid_calc.lower:
@@ -601,16 +787,20 @@ class GuardianHandler:
                     log.info(f"   Current price: ${current_price:,.0f}")
                     log.info(f"   Open positions: {len(positions)}")
 
-                    # Place order via order actor (follows existing pattern)
-                    order_resp = await self.order_actor.ask({
-                        'action': 'place_buy_order',
-                        'price': next_buy_level,
-                        'post_only': True
+                    order_resp = await self.order_actor.ask("PLACE_BUY", {
+                        "price": next_buy_level,
+                        "size": self.lot_size
                     }, timeout=10.0)
 
-                    if order_resp.get('status') == 'success':
+                    if order_resp.get('status') == 'ok':
                         order_id = order_resp.get('order_id')
                         log.info(f"✅ Grid resumed - BUY order {order_id} @ ${next_buy_level:,.0f}")
+                        # Register pending buy so single-pending-order rule is enforced
+                        await self.position_actor.tell("SET_PENDING_BUY", {
+                            "order_id": order_id,
+                            "price": next_buy_level,
+                            "size": self.lot_size
+                        })
                         if human_log:
                             human_log.info(f"Grid trading resumed - BUY order @ ${next_buy_level:,.0f}")
                     else:
@@ -622,9 +812,9 @@ class GuardianHandler:
                 # GridCalculator determines next SELL based on:
                 # - If positions exist: highest_entry + step
                 # - If no positions: proper grid level above current price
-                next_sell_level = self.grid_calc.get_next_sell_level(
-                    current_price=current_price,
-                    open_positions=positions
+                next_sell_level = self.grid_calc.compute_next_sell_level(
+                    open_positions=positions,
+                    current_price=current_price
                 )
 
                 if next_sell_level and next_sell_level <= self.grid_calc.upper:
@@ -632,16 +822,20 @@ class GuardianHandler:
                     log.info(f"   Current price: ${current_price:,.0f}")
                     log.info(f"   Open positions: {len(positions)}")
 
-                    # Place order via order actor (follows existing pattern)
-                    order_resp = await self.order_actor.ask({
-                        'action': 'place_sell_order',
-                        'price': next_sell_level,
-                        'post_only': True
+                    order_resp = await self.order_actor.ask("PLACE_SELL", {
+                        "price": next_sell_level,
+                        "size": self.lot_size
                     }, timeout=10.0)
 
-                    if order_resp.get('status') == 'success':
+                    if order_resp.get('status') == 'ok':
                         order_id = order_resp.get('order_id')
                         log.info(f"✅ Grid resumed - SELL order {order_id} @ ${next_sell_level:,.0f}")
+                        # Register pending sell so single-pending-order rule is enforced
+                        await self.position_actor.tell("SET_PENDING_SELL", {
+                            "order_id": order_id,
+                            "price": next_sell_level,
+                            "size": self.lot_size
+                        })
                         if human_log:
                             human_log.info(f"Grid trading resumed - SELL order @ ${next_sell_level:,.0f}")
                     else:

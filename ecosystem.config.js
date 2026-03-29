@@ -1,185 +1,220 @@
-// PM2 Ecosystem Configuration for Infinite Uptime
-// This file configures PM2 to manage your trading bots with auto-restart
+// PM2 Ecosystem Configuration
+// Each gridbot entry passes the INSTANCE NAME (e.g. BTCUSD_SHORT) not just the symbol.
+// This ensures the correct mode, lot size, and grid config are loaded from config.yaml instances section.
 
 module.exports = {
   apps: [
+    // ── BTC SHORT ──────────────────────────────────────────────────────────────
     {
-      name: "gridbot-demo",
+      name: "gridbot-btc-SHORT",
       script: "bot/strategy/async_gridbot.py",
-      interpreter: "python3",
-      cwd: "/Users/ssr/Projects/WorkingBot",
-      env: {
-        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
-        TRADING_MODE: "demo",
-        USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
-        HOT_RELOAD: "1"
-      },
-      // Restart settings - DISABLED (manual start/stop only)
-      autorestart: false,
-      max_restarts: 0,
-      min_uptime: "10s",
-      restart_delay: 5000,
-      // Memory limits - monitoring only (no auto-restart)
-      max_memory_restart: "500M",
-      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
-      // Log settings
-      log_file: "bot/logs/pm2-gridbot-demo.log",
-      error_file: "bot/logs/pm2-gridbot-demo-error.log",
-      out_file: "bot/logs/pm2-gridbot-demo-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-      // Watch for crashes
-      exp_backoff_restart_delay: 100,
-      // Kill timeout - NOV 14: Increased to 15s for graceful shutdown with order cancellation
-      kill_timeout: 15000,
-      // Graceful shutdown
-      wait_ready: false,
-      listen_timeout: 3000,
-    },
-    {
-      name: "gridbot-btc-live",
-      script: "bot/strategy/async_gridbot.py",
-      args: "BTCUSD",
+      args: "BTCUSD_SHORT",
       interpreter: "python3",
       cwd: "/Users/ssr/Projects/WorkingBot",
       env: {
         PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
         TRADING_MODE: "live",
-        USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
+        USE_ASYNC_BOT: "true",
         HOT_RELOAD: "1"
       },
-      // Restart settings - DISABLED (manual start/stop only)
-      autorestart: false,
-      max_restarts: 0,
-      min_uptime: "10s",
-      restart_delay: 5000,
-      // Memory limits - monitoring only (no auto-restart)
-      max_memory_restart: "500M",
-      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
-      // Log settings
-      log_file: "bot/logs/pm2-gridbot-btc-live.log",
-      error_file: "bot/logs/pm2-gridbot-btc-live-error.log",
-      out_file: "bot/logs/pm2-gridbot-btc-live-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-      // Watch for crashes
-      exp_backoff_restart_delay: 100,
-      // Kill timeout - NOV 14: Increased to 15s for graceful shutdown with order cancellation
-      kill_timeout: 15000,
-      // Graceful shutdown
-      wait_ready: false,
-      listen_timeout: 3000,
-    },
-    {
-      name: "gridbot-eth-live",
-      script: "bot/strategy/async_gridbot.py",
-      args: "ETHUSD",
-      interpreter: "python3",
-      cwd: "/Users/ssr/Projects/WorkingBot",
-      env: {
-        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
-        TRADING_MODE: "live",
-        USE_ASYNC_BOT: "true",  // Enable AsyncBot (production-ready v2.0)
-        HOT_RELOAD: "1"
-      },
-      // Restart settings - DISABLED (manual start/stop only)
-      autorestart: false,
-      max_restarts: 0,
-      min_uptime: "10s",
-      restart_delay: 5000,
-      // Memory limits - monitoring only (no auto-restart)
-      max_memory_restart: "500M",
-      // NOTE: Bot will NOT auto-restart on crashes - manual intervention required
-      // Log settings
-      log_file: "bot/logs/pm2-gridbot-eth-live.log",
-      error_file: "bot/logs/pm2-gridbot-eth-live-error.log",
-      out_file: "bot/logs/pm2-gridbot-eth-live-out.log",
-      log_date_format: "YYYY-MM-DD HH:mm:ss",
-      merge_logs: true,
-      // Watch for crashes
-      exp_backoff_restart_delay: 100,
-      // Kill timeout - NOV 14: Increased to 15s for graceful shutdown with order cancellation
-      kill_timeout: 15000,
-      // Graceful shutdown
-      wait_ready: false,
-      listen_timeout: 3000,
-    },
-    {
-      name: "guardian-demo",
-      script: "bot/guardian/core/guardian_bot.py",
-      interpreter: "python3",
-      cwd: "/Users/ssr/Projects/WorkingBot",
-      env: {
-        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
-        TRADING_MODE: "demo"
-      },
-      // Restart settings
       autorestart: true,
-      max_restarts: 10,
+      max_restarts: 3,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
-      max_memory_restart: "300M",
-      // Log settings
-      log_file: "bot/logs/pm2-guardian-demo.log",
-      error_file: "bot/logs/pm2-guardian-demo-error.log",
-      out_file: "bot/logs/pm2-guardian-demo-out.log",
+      max_memory_restart: "500M",
+      log_file: "bot/logs/pm2-gridbot-btc-SHORT.log",
+      error_file: "bot/logs/pm2-gridbot-btc-SHORT-error.log",
+      out_file: "bot/logs/pm2-gridbot-btc-SHORT-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
-      // Watch for crashes
       exp_backoff_restart_delay: 100,
-      // Kill timeout
-      kill_timeout: 3000,
+      kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 3000,
     },
+
+    // ── BTC LONG ───────────────────────────────────────────────────────────────
     {
-      name: "guardian-live",
+      name: "gridbot-btc-LONG",
+      script: "bot/strategy/async_gridbot.py",
+      args: "BTCUSD_LONG",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live",
+        USE_ASYNC_BOT: "true",
+        HOT_RELOAD: "1"
+      },
+      autorestart: true,
+      max_restarts: 3,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "500M",
+      log_file: "bot/logs/pm2-gridbot-btc-LONG.log",
+      error_file: "bot/logs/pm2-gridbot-btc-LONG-error.log",
+      out_file: "bot/logs/pm2-gridbot-btc-LONG-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 3000,
+    },
+
+    // ── ETH LONG ───────────────────────────────────────────────────────────────
+    {
+      name: "gridbot-eth-LONG",
+      script: "bot/strategy/async_gridbot.py",
+      args: "ETHUSD_LONG",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live",
+        USE_ASYNC_BOT: "true",
+        HOT_RELOAD: "1"
+      },
+      autorestart: true,
+      max_restarts: 3,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "500M",
+      log_file: "bot/logs/pm2-gridbot-eth-LONG.log",
+      error_file: "bot/logs/pm2-gridbot-eth-LONG-error.log",
+      out_file: "bot/logs/pm2-gridbot-eth-LONG-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 3000,
+    },
+
+    // ── ETH SHORT ──────────────────────────────────────────────────────────────
+    {
+      name: "gridbot-eth-SHORT",
+      script: "bot/strategy/async_gridbot.py",
+      args: "ETHUSD_SHORT",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live",
+        USE_ASYNC_BOT: "true",
+        HOT_RELOAD: "1"
+      },
+      autorestart: true,
+      max_restarts: 3,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "500M",
+      log_file: "bot/logs/pm2-gridbot-eth-SHORT.log",
+      error_file: "bot/logs/pm2-gridbot-eth-SHORT-error.log",
+      out_file: "bot/logs/pm2-gridbot-eth-SHORT-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 15000,
+      wait_ready: false,
+      listen_timeout: 3000,
+    },
+
+    // ── GUARDIAN — per-instance (one per gridbot, isolated databases) ──────────
+    {
+      name: "guardian-btc-SHORT",
       script: "bot/guardian/core/guardian_bot.py",
+      args: "--instance BTCUSD_SHORT",
       interpreter: "python3",
       cwd: "/Users/ssr/Projects/WorkingBot",
       env: {
         PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
         TRADING_MODE: "live"
       },
-      // Restart settings
       autorestart: true,
       max_restarts: 10,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
       max_memory_restart: "300M",
-      // Log settings
-      log_file: "bot/logs/pm2-guardian-live.log",
-      error_file: "bot/logs/pm2-guardian-live-error.log",
-      out_file: "bot/logs/pm2-guardian-live-out.log",
+      log_file: "bot/logs/pm2-guardian-btc-SHORT.log",
+      error_file: "bot/logs/pm2-guardian-btc-SHORT-error.log",
+      out_file: "bot/logs/pm2-guardian-btc-SHORT-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
-      // Watch for crashes
       exp_backoff_restart_delay: 100,
-      // Kill timeout
       kill_timeout: 3000,
     },
     {
-      name: "heartbeat-monitor",
-      script: "bot/heartbeat/monitor.py",
+      name: "guardian-btc-LONG",
+      script: "bot/guardian/core/guardian_bot.py",
+      args: "--instance BTCUSD_LONG",
       interpreter: "python3",
-      cwd: "/Users/shailendrasinghrajawat/Documents/WorkingBot",
+      cwd: "/Users/ssr/Projects/WorkingBot",
       env: {
-        PYTHONPATH: "/Users/shailendrasinghrajawat/Documents/WorkingBot"
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live"
       },
-      // Restart settings
       autorestart: true,
       max_restarts: 10,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
-      max_memory_restart: "200M",
-      // Log settings
-      log_file: "bot/logs/pm2-heartbeat.log",
-      error_file: "bot/logs/pm2-heartbeat-error.log",
-      out_file: "bot/logs/pm2-heartbeat-out.log",
+      max_memory_restart: "300M",
+      log_file: "bot/logs/pm2-guardian-btc-LONG.log",
+      error_file: "bot/logs/pm2-guardian-btc-LONG-error.log",
+      out_file: "bot/logs/pm2-guardian-btc-LONG-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 3000,
     },
+    {
+      name: "guardian-eth-LONG",
+      script: "bot/guardian/core/guardian_bot.py",
+      args: "--instance ETHUSD_LONG",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live"
+      },
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "300M",
+      log_file: "bot/logs/pm2-guardian-eth-LONG.log",
+      error_file: "bot/logs/pm2-guardian-eth-LONG-error.log",
+      out_file: "bot/logs/pm2-guardian-eth-LONG-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 3000,
+    },
+    {
+      name: "guardian-eth-SHORT",
+      script: "bot/guardian/core/guardian_bot.py",
+      args: "--instance ETHUSD_SHORT",
+      interpreter: "python3",
+      cwd: "/Users/ssr/Projects/WorkingBot",
+      env: {
+        PYTHONPATH: "/Users/ssr/Projects/WorkingBot",
+        TRADING_MODE: "live"
+      },
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "300M",
+      log_file: "bot/logs/pm2-guardian-eth-SHORT.log",
+      error_file: "bot/logs/pm2-guardian-eth-SHORT-error.log",
+      out_file: "bot/logs/pm2-guardian-eth-SHORT-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 3000,
+    },
+
+    // ── WEBUI BACKEND ─────────────────────────────────────────────────────────
     {
       name: "webui-backend",
       script: "webui/backend/app.py",
@@ -190,41 +225,37 @@ module.exports = {
         FLASK_ENV: "production",
         PORT: "5555"
       },
-      // Restart settings
       autorestart: true,
       max_restarts: 10,
       min_uptime: "10s",
       restart_delay: 5000,
-      // Memory limits
       max_memory_restart: "300M",
-      // Log settings
       log_file: "bot/logs/pm2-webui.log",
       error_file: "bot/logs/pm2-webui-error.log",
       out_file: "bot/logs/pm2-webui-out.log",
       log_date_format: "YYYY-MM-DD HH:mm:ss",
       merge_logs: true,
     },
+
+    // ── HEARTBEAT MONITOR ─────────────────────────────────────────────────────
     {
-      name: "combined-logs",
-      script: "view_combined_logs.py",
+      name: "heartbeat-monitor",
+      script: "bot/heartbeat/monitor.py",
       interpreter: "python3",
       cwd: "/Users/ssr/Projects/WorkingBot",
       env: {
         PYTHONPATH: "/Users/ssr/Projects/WorkingBot"
       },
-      // Restart settings - DISABLED (manual start only)
-      autorestart: false,
-      // Memory limits
-      max_memory_restart: "100M",
-      // Log settings - output to console only
-      log_file: "/dev/null",
-      error_file: "/dev/null", 
-      out_file: "/dev/null",
-      // No merge_logs - we want real-time output
-      merge_logs: false,
-      // Kill timeout
-      kill_timeout: 3000,
-    }
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: "10s",
+      restart_delay: 5000,
+      max_memory_restart: "200M",
+      log_file: "bot/logs/pm2-heartbeat.log",
+      error_file: "bot/logs/pm2-heartbeat-error.log",
+      out_file: "bot/logs/pm2-heartbeat-out.log",
+      log_date_format: "YYYY-MM-DD HH:mm:ss",
+      merge_logs: true,
+    },
   ]
 };
-

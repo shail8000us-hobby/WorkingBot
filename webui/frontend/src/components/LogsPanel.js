@@ -1,5 +1,4 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
-import { List as VirtualList } from 'react-window';
 import {
   Paper,
   Box,
@@ -55,11 +54,12 @@ function LogsPanel() {
     ...new Set(instances.map((i) => parseInstanceName(i.name)?.symbol).filter(Boolean)),
   ];
 
-  // Helper to scroll virtual list to bottom
+  // Helper to scroll log container to bottom
   const scrollToBottom = useCallback(() => {
-    // Defer to next tick so state has updated and VirtualList has re-rendered
     setTimeout(() => {
-      logsEndRef.current?.scrollToItem?.(Infinity, 'end');
+      if (logsContainerRef.current) {
+        logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+      }
     }, 0);
   }, []);
 
@@ -462,25 +462,15 @@ function LogsPanel() {
               : `No ${logSource === 'guardian' ? 'Guardian' : 'trading bot'} logs available. ${logSource === 'guardian' ? 'Guardian should be running via LaunchAgent.' : 'Start the bot to see live logs.'}`}
           </Typography>
         ) : (
-          <VirtualList
-            ref={logsEndRef}
-            height={600}
-            itemCount={displayLogs.length}
-            itemSize={28}
-            width="100%"
-            style={{ padding: '8px' }}
-            initialScrollOffset={Math.max(0, displayLogs.length * 28 - 600)}
-          >
-            {({ index, style }) => {
-              const log = displayLogs[index];
+          <div style={{ padding: '8px' }}>
+            {displayLogs.map((log, index) => {
               const logColor = getLogColor(log);
               const isError =
-                log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error');
-
+                log && (log.includes('[ERROR]') || log.includes('ERROR') || log.includes('error'));
               return (
                 <div
+                  key={index}
                   style={{
-                    ...style,
                     color: logColor,
                     padding: '2px 0 2px 8px',
                     borderLeft: `3px solid ${logColor}`,
@@ -490,14 +480,16 @@ function LogsPanel() {
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
                     boxSizing: 'border-box',
+                    height: '28px',
+                    lineHeight: '24px',
                   }}
                   title={log}
                 >
                   {log}
                 </div>
               );
-            }}
-          </VirtualList>
+            })}
+          </div>
         )}
       </Box>
     </Paper>

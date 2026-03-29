@@ -543,6 +543,10 @@ class ExchangeSync:
 
         Called after exchange maintenance to fill any gaps in grid coverage.
         """
+        if self.mode == 'SHORT':
+            # In SHORT mode, entries are SELLs (not BUYs).
+            # place_initial_order handles the pending SELL. BUYs are TP-only (placed after fill).
+            return
         try:
             # Get current state
             state = await self.position_actor.ask("GET_STATE", {})

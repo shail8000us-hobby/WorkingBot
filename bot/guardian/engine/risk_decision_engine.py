@@ -345,7 +345,10 @@ class GuardianRiskDecisionEngine:
         # Check 6: RSI threshold (mode-specific)
         if self._is_rsi_overbought():
             # Get mode-specific reason with actual threshold from config
-            bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
+            if self.rsi_collector and hasattr(self.rsi_collector, 'bot_mode'):
+                bot_mode = self.rsi_collector.bot_mode.upper()
+            else:
+                bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
             if bot_mode == "LONG":
                 threshold = self.config.safety.rsi.long_threshold
                 reason = f"RSI <= {threshold} (oversold) - market too weak for LONG positions"
@@ -946,7 +949,11 @@ class GuardianRiskDecisionEngine:
     def _get_rsi_details(self) -> Dict:
         """Get RSI metrics for Layer 6 (mode-specific)"""
         rsi_config = getattr(self.config.safety, 'rsi', None)
-        bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
+        # Prefer mode from RSICollector (set via --instance arg) over global config.bot.mode
+        if self.rsi_collector and hasattr(self.rsi_collector, 'bot_mode'):
+            bot_mode = self.rsi_collector.bot_mode.upper()
+        else:
+            bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
         
         if not rsi_config:
             return {
@@ -961,14 +968,18 @@ class GuardianRiskDecisionEngine:
             }
         
         try:
-            # No defaults - fail loudly if missing
-            if not hasattr(rsi_config, 'long_threshold'):
-                raise ValueError("safety.rsi.long_threshold missing in config.yaml")
-            if not hasattr(rsi_config, 'short_threshold'):
-                raise ValueError("safety.rsi.short_threshold missing in config.yaml")
-            
-            long_threshold = rsi_config.long_threshold
-            short_threshold = rsi_config.short_threshold
+            # Use RSICollector thresholds if available (reflect instance-specific config)
+            if self.rsi_collector and hasattr(self.rsi_collector, 'long_threshold'):
+                long_threshold = self.rsi_collector.long_threshold
+                short_threshold = self.rsi_collector.short_threshold
+            else:
+                # No defaults - fail loudly if missing
+                if not hasattr(rsi_config, 'long_threshold'):
+                    raise ValueError("safety.rsi.long_threshold missing in config.yaml")
+                if not hasattr(rsi_config, 'short_threshold'):
+                    raise ValueError("safety.rsi.short_threshold missing in config.yaml")
+                long_threshold = rsi_config.long_threshold
+                short_threshold = rsi_config.short_threshold
             period = getattr(rsi_config, 'period', 14)
             timeframe = getattr(rsi_config, 'timeframe', '1h')
             enabled = getattr(rsi_config, 'enabled', True)

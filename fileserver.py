@@ -79,7 +79,8 @@ class FileBrowserHandler(http.server.BaseHTTPRequestHandler):
             rel = query.get("path", [""])[0]
             self._handle_read(rel)
         else:
-            self._send_error(404, "Not Found", f"Unknown endpoint: {path}")
+            # Treat any other path as a direct file read (e.g. /MMM_REVERSE_MODE_DESIGN.md)
+            self._handle_read(path)
 
     # ── GET / ──────────────────────────────────────────────────────────────────
     def _handle_root(self):

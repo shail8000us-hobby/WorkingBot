@@ -823,7 +823,7 @@ class GridEngine:
                     # Place order via order actor (timeout=20s to allow for retries)
                     result = await self.order_actor.ask("PLACE_SELL", {
                         "price": target,
-                        "size": 1
+                        "size": self.lot_size
                     }, timeout=20.0)
 
                     if result.get("status") == "ok":

@@ -478,37 +478,38 @@ class OrderManagerActor(Actor):
         price = payload["price"]
         size = payload["size"]
         position_id = payload.get("position_id", "")
-        
-        # TP orders are always SELL orders for long positions
-        log.info(f"Placing TP order for position {position_id}: {size} @ {price}")
-        
+        # LONG mode TPs are SELL (close long); SHORT mode TPs are BUY (close short)
+        side = payload.get("side", "sell")
+
+        log.info(f"Placing TP {side.upper()} order for position {position_id}: {size} @ {price}")
+
         # Validate order
-        validation = self._validate_order(price, size, "sell")
+        validation = self._validate_order(price, size, side)
         if validation["status"] == "error":
             log.error(f"TP order validation failed: {validation['error']}")
             return validation
-        
+
         # Retry loop
         for attempt in range(self.max_retries):
             try:
                 result = await self.api_client.place_order(
                     product_id=self.product_id,
-                    side="sell",
+                    side=side,
                     price=price,
                     size=size,
                     post_only=False,  # TP orders should not be post-only
                     reduce_only=True   # TP orders should be reduce-only
                 )
-                
+
                 # Extract order ID from Delta Exchange response structure
                 order_id = result.get("result", {}).get("id") or result.get("id") or result.get("order_id")
                 if not order_id:
                     raise ValueError(f"No order ID in response: {result}")
-                
+
                 # Track order
                 order_data = {
                     "order_id": order_id,
-                    "side": "sell",
+                    "side": side,
                     "type": "tp",
                     "price": price,
                     "size": size,

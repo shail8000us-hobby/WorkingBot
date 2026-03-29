@@ -347,8 +347,38 @@ def update_trigger_snapshots(
     if 'trigger_snapshot' not in pe_side:
         pe_side['trigger_snapshot'] = {}
 
-    ce_side['trigger_snapshot'][ce_active] = ce_now
-    pe_side['trigger_snapshot'][pe_active] = pe_now
+    # OPERATOR PIN: skip ratchet if operator has manually locked this side's trigger.
+    # Soft expiry: auto-clear after MAX_PIN_ADJ adjustments so the algo self-heals
+    # if the operator walks away with the pin active.
+    _MAX_PIN_ADJ = 3
+
+    if not ce_side.get('_trigger_pinned', False):
+        ce_side['trigger_snapshot'][ce_active] = ce_now
+    else:
+        ce_side['_pin_adj_count'] = ce_side.get('_pin_adj_count', 0) + 1
+        if ce_side['_pin_adj_count'] >= _MAX_PIN_ADJ:
+            ce_side.pop('_trigger_pinned', None)
+            ce_side.pop('_pinned_trigger_value', None)
+            ce_side.pop('_pin_adj_count', None)
+            ce_side['trigger_snapshot'][ce_active] = ce_now
+            log.warning(
+                f"CE trigger pin auto-expired after {_MAX_PIN_ADJ} adjustments — "
+                f"ratchet resumed at {ce_now:.2f}"
+            )
+
+    if not pe_side.get('_trigger_pinned', False):
+        pe_side['trigger_snapshot'][pe_active] = pe_now
+    else:
+        pe_side['_pin_adj_count'] = pe_side.get('_pin_adj_count', 0) + 1
+        if pe_side['_pin_adj_count'] >= _MAX_PIN_ADJ:
+            pe_side.pop('_trigger_pinned', None)
+            pe_side.pop('_pinned_trigger_value', None)
+            pe_side.pop('_pin_adj_count', None)
+            pe_side['trigger_snapshot'][pe_active] = pe_now
+            log.warning(
+                f"PE trigger pin auto-expired after {_MAX_PIN_ADJ} adjustments — "
+                f"ratchet resumed at {pe_now:.2f}"
+            )
 
     # §6.2: Also snapshot ALL strikes with open frozen positions.
     # This makes frozen position loss INCREMENTAL (since last hedge)

@@ -400,7 +400,7 @@ const BotManagementDashboard = () => {
   }, [fetchInstances, fetchGuardianStatus]);
 
   // Group instances by symbol
-  const instancesBySymbol = Object.values(instanceStatus).reduce((acc, inst) => {
+  const instancesBySymbol = Object.values(instanceStatus || {}).reduce((acc, inst) => {
     if (!acc[inst.symbol]) acc[inst.symbol] = [];
     acc[inst.symbol].push(inst);
     return acc;

@@ -1,19 +1,159 @@
-version: '5.0'
+version: '6.0'
 trading_mode: live
 bot:
   symbol: BTCUSD
   mode: LONG
   heartbeat_seconds: '20'
+
+# V6.0 multi-instance: each instance is Symbol + Mode with its own grid and lot sizes
+instances:
+  BTCUSD_SHORT:
+    symbol: BTCUSD
+    mode: SHORT
+    enabled: true
+    product_id: 27
+    grid:
+      geometry:
+        reference: 67000
+        lower: 66000
+        upper: 72000
+        step: 500
+      limits:
+        max_open_positions: 20
+        lot_size: 1
+        max_open_orders: 20
+        max_qty_per_order: 1
+      behavior:
+        strict_grid: true
+        rung_snap_mode: below
+        tick_size: 0.5
+        dynamic_tick_size: true
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: limit
+        max_levels: 3
+    safety:
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
+      rsi:
+        enabled: true
+        stop_threshold: 70
+        resume_threshold: 60
+
+  BTCUSD_LONG:
+    symbol: BTCUSD
+    mode: LONG
+    enabled: false
+    product_id: 27
+    grid:
+      geometry:
+        reference: 67000
+        lower: 66000
+        upper: 72000
+        step: 500
+      limits:
+        max_open_positions: 20
+        lot_size: 5
+        max_open_orders: 20
+        max_qty_per_order: 5
+      behavior:
+        strict_grid: true
+        rung_snap_mode: below
+        tick_size: 0.5
+        dynamic_tick_size: true
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: limit
+        max_levels: 3
+    safety:
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
+      rsi:
+        enabled: true
+        stop_threshold: 30
+        resume_threshold: 40
+
+  ETHUSD_LONG:
+    symbol: ETHUSD
+    mode: LONG
+    enabled: false
+    product_id: 3136
+    grid:
+      geometry:
+        reference: 1000
+        lower: 500
+        upper: 3600
+        step: 100
+      limits:
+        max_open_positions: 10
+        lot_size: 1
+        max_open_orders: 20
+        max_qty_per_order: 1
+      behavior:
+        strict_grid: true
+        rung_snap_mode: below
+        tick_size: 0.05
+        dynamic_tick_size: true
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: limit
+        max_levels: 3
+    safety:
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
+      rsi:
+        enabled: true
+        stop_threshold: 30
+        resume_threshold: 40
+
+  ETHUSD_SHORT:
+    symbol: ETHUSD
+    mode: SHORT
+    enabled: false
+    product_id: 3136
+    grid:
+      geometry:
+        reference: 1000
+        lower: 500
+        upper: 3600
+        step: 100
+      limits:
+        max_open_positions: 10
+        lot_size: 30
+        max_open_orders: 20
+        max_qty_per_order: 30
+      behavior:
+        strict_grid: true
+        rung_snap_mode: below
+        tick_size: 0.05
+        dynamic_tick_size: true
+        seed_initial_count: 0
+      smart_gap_fill:
+        enabled: false
+        order_type: limit
+        max_levels: 3
+    safety:
+      max_account_loss_inr: 25000
+      min_liquidation_distance_pct: 50
+      rsi:
+        enabled: true
+        stop_threshold: 70
+        resume_threshold: 60
+
+# V5.0 legacy symbols (kept for backward compat — instances section above takes precedence)
 symbols:
   BTCUSD:
     enabled: true
-    mode: LONG
+    mode: SHORT
     product_id: '27'
     grid:
       geometry:
-        reference: 69500
-        lower: 67000
-        upper: 100000
+        reference: 67000
+        lower: 66000
+        upper: 72000
         step: 500
       limits:
         max_open_positions: 20
@@ -39,7 +179,7 @@ symbols:
         long_threshold: 19.5
         short_threshold: 25
   ETHUSD:
-    enabled: true
+    enabled: false
     mode: LONG
     product_id: '3136'
     grid:

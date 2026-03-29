@@ -84,17 +84,21 @@ class GuardianBot:
     
     VERSION = "2.1-SQL-MULTISYMBOL"
     
-    def __init__(self, symbol_name: str = None):
+    def __init__(self, symbol_name: str = None, instance_name: str = None):
         """
         Initialize Guardian Bot
-        
+
         Args:
             symbol_name: Optional symbol to monitor (e.g., "BTCUSD", "ETHUSD")
                         If provided, monitors only this symbol
                         If None, uses global config (v4.0 single-symbol mode)
+            instance_name: Optional instance to monitor (e.g., "BTCUSD_LONG", "BTCUSD_SHORT")
+                          Preferred over symbol_name — uniquely identifies symbol+mode pair.
+                          If provided, Guardian writes to bot_events_{instance_name}.db.
         """
         self.base_dir = Path.cwd()
         self.symbol_name = symbol_name  # v5.0 multi-symbol support
+        self.instance_name = instance_name  # v6.0 instance support — set BEFORE initialize_components()
         self.config = None
         self.exchange = None
         self.position_monitor = None
@@ -257,8 +261,12 @@ class GuardianBot:
         # RSI collector (Layer 6) - with multi-symbol support
         try:
             from bot.guardian.collectors.rsi_collector import RSICollector
-            self.rsi_collector = RSICollector(self.exchange, self.config, symbol_name=self.symbol_name)
-            symbol_info = f" for {self.symbol_name}" if self.symbol_name else ""
+            self.rsi_collector = RSICollector(
+                self.exchange, self.config,
+                symbol_name=self.symbol_name,
+                instance_name=self.instance_name  # v6.0: pass instance for correct mode + RSI thresholds
+            )
+            symbol_info = f" for {self.instance_name or self.symbol_name}" if (self.instance_name or self.symbol_name) else ""
             logger.info(f"✅ RSI Collector initialized (Layer 6){symbol_info}")
         except Exception as e:
             logger.error(f"❌ Failed to initialize RSI collector: {e}")
@@ -293,19 +301,21 @@ class GuardianBot:
         # Initialize EventStore (SQL database)
         # Use symbol-specific database if in multi-symbol mode (v5.0/v6.0)
         # Otherwise use global mode (v4.0)
-        if self.symbol_name:
-            # v6.0+ multi-instance mode - get symbol config from instances
+        if self.instance_name:
+            # v6.0 instance mode — instance_name uniquely identifies symbol+mode (e.g. BTCUSD_SHORT)
+            # Use the same db name as the gridbot: bot_events_{instance_name}.db
+            db_name = f"bot_events_{self.instance_name}.db"
+            logger.info(f"🔧 Instance mode: Monitoring {self.instance_name} → {db_name}")
+        elif self.symbol_name:
+            # v5.0 multi-symbol mode — find mode from config for this symbol
             symbol_config = None
             if hasattr(self.config, 'instances') and self.config.instances:
-                # Try to find instance for this symbol
                 for inst_name, inst_config in self.config.instances.items():
                     if inst_config.symbol == self.symbol_name:
                         symbol_config = inst_config
                         break
-            # Fallback to v5.0 symbols section if it exists
             elif hasattr(self.config, 'symbols') and self.config.symbols:
                 symbol_config = self.config.symbols.get(self.symbol_name)
-            
             mode = symbol_config.mode.value if symbol_config and hasattr(symbol_config.mode, 'value') else (symbol_config.mode if symbol_config else self.config.bot.mode)
             db_name = f"bot_events_{self.symbol_name}_{mode}.db"
             logger.info(f"🔧 Multi-symbol mode: Monitoring {self.symbol_name} ({mode})")
@@ -804,9 +814,7 @@ Legacy (v5.0):
             print(f"📌 No instance specified, using: {instance_name}")
     
     try:
-        guardian = GuardianBot(symbol_name=symbol_name)
-        # Store instance_name for future use
-        guardian.instance_name = instance_name
+        guardian = GuardianBot(symbol_name=symbol_name, instance_name=instance_name)
         asyncio.run(guardian.run())
     except KeyboardInterrupt:
         print("\nReceived keyboard interrupt - shutting down...")

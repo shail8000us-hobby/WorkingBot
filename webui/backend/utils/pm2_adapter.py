@@ -71,11 +71,15 @@ PM2_AVAILABLE = False
 USE_PM2 = False
 
 def _ensure_pm2_initialized():
-    """Initialize PM2 detection lazily on first use, not at import time."""
+    """Initialize PM2 detection lazily on first use, not at import time.
+
+    Only caches a positive (True) result. If PM2 is unavailable or config is
+    not ready at startup, the next call is allowed to retry. This prevents a
+    transient startup failure from permanently locking the adapter as disabled.
+    """
     global _pm2_initialized, PM2_AVAILABLE, USE_PM2
     if _pm2_initialized:
         return
-    _pm2_initialized = True
 
     PM2_AVAILABLE = is_pm2_available()
 
@@ -92,6 +96,12 @@ def _ensure_pm2_initialized():
         log.warning(f"Could not load PM2 config: {e}")
 
     log.info(f"🔧 PM2 Initialization: PM2_AVAILABLE={PM2_AVAILABLE}, USE_PM2={USE_PM2}")
+
+    # Only freeze the initialized flag when we have a positive result.
+    # If either check returned False, leave _pm2_initialized=False so the
+    # next call retries — handles startup races and transient config failures.
+    if PM2_AVAILABLE and USE_PM2:
+        _pm2_initialized = True
 
 class PM2Adapter:
     """
@@ -797,9 +807,14 @@ class PM2Adapter:
 _pm2_adapter = None
 
 def get_pm2_adapter() -> PM2Adapter:
-    """Get singleton PM2 adapter instance"""
+    """Get singleton PM2 adapter instance.
+
+    Re-creates the adapter if the cached instance was initialized as disabled
+    (PM2 unavailable or config not ready at startup). This allows the adapter
+    to recover without requiring a full backend restart.
+    """
     global _pm2_adapter
-    if _pm2_adapter is None:
+    if _pm2_adapter is None or not _pm2_adapter.enabled:
         _pm2_adapter = PM2Adapter()
     return _pm2_adapter
 

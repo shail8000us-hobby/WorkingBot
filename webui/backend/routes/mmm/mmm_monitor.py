@@ -5752,6 +5752,10 @@ class MMMMonitor:
         # Reset active strike to the new replenish strike
         side_state['active_strike'] = strike
         side_state['symbol'] = symbol
+        # Clear operator trigger pin — new strike has different premium dynamics
+        side_state.pop('_trigger_pinned', None)
+        side_state.pop('_pinned_trigger_value', None)
+        side_state.pop('_pin_adj_count', None)
 
         # Append position to unified ledger
         counter = side_state.get('_pos_counter', 0) + 1

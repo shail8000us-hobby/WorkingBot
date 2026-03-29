@@ -39,16 +39,18 @@ class RSICollector:
     - Comprehensive error handling with retries
     """
     
-    def __init__(self, exchange, config, symbol_name: str = None):
+    def __init__(self, exchange, config, symbol_name: str = None, instance_name: str = None):
         """
         Initialize RSI collector.
-        
+
         Args:
             exchange: CCXT exchange instance (for consistency, though we use REST API)
             config: Guardian configuration (RootConfig object)
             symbol_name: Optional symbol override (e.g., "BTCUSD", "ETHUSD")
                         If provided, uses this symbol instead of config.bot.symbol
-                        This enables multi-symbol RSI collection in v5.0
+            instance_name: Optional instance name (e.g., "BTCUSD_SHORT", "BTCUSD_LONG").
+                          Preferred over symbol_name for mode + RSI config lookup in v6.0.
+                          When set, mode and thresholds are read from config.instances[instance_name].
         """
         self.exchange = exchange
         self.config = config
@@ -72,8 +74,11 @@ class RSICollector:
         else:
             self.symbol = "BTCUSD"
         
-        # Get bot mode (LONG/SHORT) - check symbol config first, then global
-        if symbol_name and hasattr(config, 'symbols') and config.symbols and symbol_name in config.symbols:
+        # Get bot mode (LONG/SHORT) — priority: instance_name > symbol config > global
+        if instance_name and hasattr(config, 'instances') and config.instances and instance_name in config.instances:
+            inst = config.instances[instance_name]
+            self.bot_mode = inst.mode.value.upper() if hasattr(inst.mode, 'value') else str(inst.mode).upper()
+        elif symbol_name and hasattr(config, 'symbols') and config.symbols and symbol_name in config.symbols:
             self.bot_mode = config.symbols[symbol_name].mode.upper()
         elif hasattr(config, 'bot') and hasattr(config.bot, 'mode'):
             self.bot_mode = config.bot.mode.upper()  # LONG or SHORT
@@ -90,15 +95,16 @@ class RSICollector:
         self._last_logged_rsi: Optional[float] = None  # For rate-limited logging
         self._last_log_time: float = 0
         
-        # v6.0: Try instance-specific RSI config first, then fall back to global
+        # v6.0: Try instance-specific RSI config — prefer explicit instance_name param over config.bot.instance
         instance_rsi_config = None
-        if hasattr(config, 'instances') and hasattr(config, 'bot') and hasattr(config.bot, 'instance'):
-            instance_name = config.bot.instance
-            if instance_name in config.instances:
-                instance_cfg = config.instances[instance_name]
-                if hasattr(instance_cfg, 'safety') and hasattr(instance_cfg.safety, 'rsi'):
-                    instance_rsi_config = instance_cfg.safety.rsi
-                    log.info(f"Using instance-specific RSI config for {instance_name}")
+        _resolved_instance = instance_name  # from CLI arg (highest priority)
+        if not _resolved_instance and hasattr(config, 'instances') and hasattr(config, 'bot') and hasattr(config.bot, 'instance'):
+            _resolved_instance = config.bot.instance  # fallback: read from config
+        if _resolved_instance and hasattr(config, 'instances') and config.instances and _resolved_instance in config.instances:
+            instance_cfg = config.instances[_resolved_instance]
+            if hasattr(instance_cfg, 'safety') and hasattr(instance_cfg.safety, 'rsi'):
+                instance_rsi_config = instance_cfg.safety.rsi
+                log.info(f"Using instance-specific RSI config for {_resolved_instance}")
         
         # Get RSI config (NO HARDCODED DEFAULTS - must be in config.yaml)
         if instance_rsi_config:

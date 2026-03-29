@@ -35,7 +35,7 @@ from flask import Blueprint, jsonify, request
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from utils.process_helpers import is_bot_running, BOT_PID_FILE
-from utils.pm2_adapter import get_pm2_adapter, should_use_pm2
+from webui.backend.utils.pm2_adapter import get_pm2_adapter, should_use_pm2
 from config.loader import get_config
 
 def get_config_value(yaml_path: str, env_var: str = None, default: any = None):
@@ -58,24 +58,25 @@ except ImportError:
 log = logging.getLogger(__name__)
 
 # Get PM2 adapter instance
-pm2 = get_pm2_adapter()
-
 # Create blueprint
 bot_control_bp = Blueprint('bot_control', __name__)
 
 
 def _instance_to_pm2_process(instance_name: str) -> str:
-    """Convert instance name (e.g. BTCUSD_LONG) to the PM2 process name.
+    """Convert instance name (e.g. BTCUSD_SHORT) to the PM2 process name.
 
-    The ecosystem config names processes as gridbot-{ticker}-live where ticker
-    is the first 3 chars of the symbol (e.g. BTCUSD → btc).
-    Queries PM2 jlist first to find a running matching process; falls back to
-    the generated name if no match is found.
+    Ecosystem config names processes as gridbot-{ticker}-{MODE}
+    e.g. BTCUSD_SHORT → gridbot-btc-SHORT, ETHUSD_LONG → gridbot-eth-LONG.
+
+    Queries PM2 jlist first to find an exact or fuzzy match (handles legacy
+    names); falls back to the derived name from the instance_name.
     """
     import json as _json
-    symbol = instance_name.split('_')[0]   # BTCUSD_LONG → BTCUSD
-    ticker = symbol[:3].lower()            # BTCUSD → btc
-    generated = f'gridbot-{ticker}-live'
+    parts = instance_name.split('_')
+    symbol = parts[0]                              # BTCUSD
+    ticker = symbol[:3].lower()                    # btc
+    mode = parts[1] if len(parts) > 1 else 'LONG' # SHORT / LONG
+    generated = f'gridbot-{ticker}-{mode}'         # gridbot-btc-SHORT
 
     try:
         result = subprocess.run(['pm2', 'jlist'], capture_output=True, text=True, timeout=5)
@@ -87,7 +88,8 @@ def _instance_to_pm2_process(instance_name: str) -> str:
                                or symbol.lower() in p['name'].lower())]
             if generated in candidates:
                 return generated
-            # No running match; use generated name to start from ecosystem config
+            if candidates:
+                return candidates[0]   # fuzzy match (e.g. legacy gridbot-btc-live)
     except Exception:
         pass
     return generated
@@ -157,7 +159,7 @@ def _fetch_bot_status_fresh():
         requested_symbol = request.args.get('symbol') if request else None
         
         if should_use_pm2():
-            all_bots_status = pm2.get_all_bots_status()
+            all_bots_status = get_pm2_adapter().get_all_bots_status()
             running_gridbots = [b for b in all_bots_status if b['name'].startswith('gridbot-') and b['status'] == 'online']
             
             if running_gridbots:
@@ -297,9 +299,9 @@ def bot_start():
         if should_use_pm2():
             # v6.0: Start specific instance if provided
             if instance_name:
-                success, message = pm2.start_process(_instance_to_pm2_process(instance_name))
+                success, message = get_pm2_adapter().start_process(_instance_to_pm2_process(instance_name))
             else:
-                success, message = pm2.start_bot(mode)
+                success, message = get_pm2_adapter().start_bot(mode)
             
             return jsonify({
                 'success': success,
@@ -387,9 +389,9 @@ def bot_stop():
         if should_use_pm2():
             # v6.0: Stop specific instance if provided
             if instance_name:
-                success, message = pm2.stop_process(_instance_to_pm2_process(instance_name))
+                success, message = get_pm2_adapter().stop_process(_instance_to_pm2_process(instance_name))
             else:
-                success, message = pm2.stop_bot(mode)
+                success, message = get_pm2_adapter().stop_bot(mode)
             
             return jsonify({
                 'success': success,
@@ -495,9 +497,9 @@ def bot_restart():
         if should_use_pm2():
             # v6.0: Restart specific instance if provided
             if instance_name:
-                success, message = pm2.restart_process(_instance_to_pm2_process(instance_name))
+                success, message = get_pm2_adapter().restart_process(_instance_to_pm2_process(instance_name))
             else:
-                success, message = pm2.restart_bot(mode)
+                success, message = get_pm2_adapter().restart_bot(mode)
             
             return jsonify({
                 'success': success,
@@ -755,8 +757,8 @@ def pm2_enabled():
     try:
         return jsonify({
             'enabled': should_use_pm2(),
-            'available': pm2.available,
-            'config_file': str(pm2.config_file)
+            'available': get_pm2_adapter().available,
+            'config_file': str(get_pm2_adapter().config_file)
         }), 200
     except Exception as e:
         log.error(f"Error checking PM2 status: {e}")
@@ -781,7 +783,7 @@ def pm2_bots_status():
                 'message': 'PM2 is not enabled'
             }), 400
         
-        bots = pm2.get_all_bots_status()
+        bots = get_pm2_adapter().get_all_bots_status()
         
         return jsonify({
             'success': True,
@@ -820,7 +822,7 @@ def pm2_bot_logs(mode):
         
         lines = request.args.get('lines', 30, type=int)
         
-        success, logs = pm2.get_bot_logs(mode, lines)
+        success, logs = get_pm2_adapter().get_bot_logs(mode, lines)
         
         if not success:
             return jsonify({
@@ -861,7 +863,7 @@ def pm2_reload_bot(mode):
                 'message': 'PM2 is not enabled'
             }), 400
         
-        success, message = pm2.reload_bot(mode)
+        success, message = get_pm2_adapter().reload_bot(mode)
         
         return jsonify({
             'success': success,
@@ -892,7 +894,7 @@ def pm2_save():
                 'message': 'PM2 is not enabled'
             }), 400
         
-        success, message = pm2.save_process_list()
+        success, message = get_pm2_adapter().save_process_list()
         
         return jsonify({
             'success': success,
@@ -922,7 +924,7 @@ def pm2_flush():
                 'message': 'PM2 is not enabled'
             }), 400
         
-        success, message = pm2.flush_logs()
+        success, message = get_pm2_adapter().flush_logs()
         
         return jsonify({
             'success': success,

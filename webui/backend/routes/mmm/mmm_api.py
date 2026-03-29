@@ -4416,6 +4416,187 @@ def set_active_strike(session_id: str):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
+@mmm_bp.route('/session/<session_id>/pin-trigger', methods=['POST'])
+def pin_trigger(session_id: str):
+    """
+    Operator control: manually pin (or unpin) the trigger snapshot for one side.
+
+    Pinning freezes the ratchet so the snapshot stays at the operator's chosen
+    level instead of being reset by update_trigger_snapshots() after each
+    adjustment. Loosen-only: pin_value must be above the current live premium
+    to prevent rapid-fire adjustment loops.
+
+    Soft expiry: the pin auto-clears after 3 adjustments fire under it
+    (managed by update_trigger_snapshots() via _pin_adj_count).
+
+    Body (JSON):
+        side  : str   — 'ce' or 'pe'
+        value : float — new trigger baseline (must be > current premium)
+      OR
+        side  : str   — 'ce' or 'pe'
+        clear : true  — clear the pin, resume normal ratchet
+
+    Returns:
+        {success, side, pinned, value, current_premium}
+    """
+    from .mmm_activity import log_activity
+    from .mmm_constants import strike_key as _sk
+    from .mmm_executor import get_executor
+    from .mmm_initializer import get_initializer
+
+    try:
+        data = request.get_json(force=True) or {}
+        side_param = data.get('side', '').lower()
+        clear = data.get('clear', False)
+        value_raw = data.get('value')
+
+        if side_param not in ('ce', 'pe'):
+            return jsonify({'success': False, 'error': "side must be 'ce' or 'pe'"}), 400
+
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+        if status not in ('RUNNING', 'PAUSED'):
+            return jsonify({
+                'success': False,
+                'error': f'Session must be RUNNING or PAUSED. Current: {status}',
+            }), 400
+
+        side_state = session.get(side_param, {})
+
+        # ── CLEAR path ──────────────────────────────────────────────────────
+        if clear:
+            side_state.pop('_trigger_pinned', None)
+            side_state.pop('_pinned_trigger_value', None)
+            side_state.pop('_pin_adj_count', None)
+            session[side_param] = side_state
+            session['updated_at'] = datetime.now(timezone.utc).isoformat()
+            storage.save_session(session)
+            log_activity(
+                'unpin_trigger',
+                f'🔓 Trigger pin cleared: {side_param.upper()} — ratchet resumed',
+                session_id, 'info',
+                {'side': side_param.upper()},
+            )
+            log.info(f'[{session_id}] Trigger pin cleared: {side_param.upper()}')
+            try:
+                from .mmm_websocket import emit_to_session
+                emit_to_session(session_id, 'mmm_trigger_pin_changed', {
+                    'session_id': session_id, 'side': side_param.upper(),
+                    'pinned': False,
+                })
+            except Exception:
+                pass
+            return jsonify({'success': True, 'side': side_param.upper(), 'pinned': False})
+
+        # ── SET path ─────────────────────────────────────────────────────────
+        if value_raw is None:
+            return jsonify({'success': False, 'error': 'value is required when not clearing'}), 400
+
+        try:
+            pin_value = float(value_raw)
+        except (TypeError, ValueError):
+            return jsonify({'success': False, 'error': 'value must be a number'}), 400
+
+        if pin_value <= 0 or pin_value > 5000:
+            return jsonify({
+                'success': False,
+                'error': 'value must be in range (0, 5000]',
+            }), 400
+
+        # Fetch current live premium to enforce loosen-only constraint
+        active_strike = side_state.get('active_strike', 0)
+        current_premium = 0.0
+        if active_strike > 0:
+            try:
+                params = session.get('params', {})
+                expiry = params.get('expiry', '')
+                option_type = 'call' if side_param == 'ce' else 'put'
+                initializer = get_initializer()
+                symbol = initializer.build_symbol(option_type, 'BTC', active_strike, expiry)
+                executor = get_executor()
+
+                async def _fetch_prem():
+                    return await executor.get_mid_price(symbol)
+
+                current_premium = float(_run_async(_fetch_prem()) or 0)
+            except Exception as _prem_err:
+                log.warning(
+                    f'[{session_id}] pin-trigger: could not fetch live premium '
+                    f'for {side_param.upper()}@{active_strike}: {_prem_err}'
+                )
+                # Fallback: use _premium_map from session
+                prem_map = session.get('_premium_map', {})
+                map_key = f'{int(round(active_strike))}:{"call" if side_param == "ce" else "put"}'
+                current_premium = float(prem_map.get(map_key, 0) or 0)
+
+        # Loosen-only: pin must be above current premium
+        if current_premium > 0 and pin_value <= current_premium:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f'Pin value ({pin_value:.1f}) must be above current premium '
+                    f'({current_premium:.1f}). Loosen-only: dragging below current '
+                    f'premium would cause a rapid-fire adjustment loop.'
+                ),
+                'current_premium': current_premium,
+            }), 400
+
+        # Apply pin
+        strike_key_val = _sk(active_strike) if active_strike > 0 else '0'
+        side_state['_trigger_pinned'] = True
+        side_state['_pinned_trigger_value'] = pin_value
+        side_state['_pin_adj_count'] = 0  # reset counter on new pin
+        side_state.setdefault('trigger_snapshot', {})[strike_key_val] = pin_value
+        session[side_param] = side_state
+        session['updated_at'] = datetime.now(timezone.utc).isoformat()
+        storage.save_session(session)
+
+        log_activity(
+            'pin_trigger',
+            f'📌 Trigger pinned: {side_param.upper()}@{strike_key_val} = ${pin_value:.1f} '
+            f'(live=${current_premium:.1f})',
+            session_id, 'info',
+            {
+                'side': side_param.upper(),
+                'strike': strike_key_val,
+                'value': pin_value,
+                'current_premium': current_premium,
+            },
+        )
+        log.info(
+            f'[{session_id}] Trigger pin set: {side_param.upper()}@{strike_key_val} = '
+            f'{pin_value:.1f} (live={current_premium:.1f})'
+        )
+
+        try:
+            from .mmm_websocket import emit_to_session
+            emit_to_session(session_id, 'mmm_trigger_pin_changed', {
+                'session_id': session_id,
+                'side': side_param.upper(),
+                'pinned': True,
+                'value': pin_value,
+                'current_premium': current_premium,
+            })
+        except Exception:
+            pass
+
+        return jsonify({
+            'success': True,
+            'side': side_param.upper(),
+            'pinned': True,
+            'value': pin_value,
+            'current_premium': current_premium,
+        })
+
+    except Exception as e:
+        log.exception(f'Failed to pin/unpin trigger for {session_id}')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @mmm_bp.route('/session/<session_id>/close-strike', methods=['POST'])
 def close_strike_route(session_id: str):
     """

@@ -229,20 +229,21 @@ class AsyncGridBot:
             self.strict_grid = instance_config.grid.behavior.strict_grid
             self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
             self.seed_initial_count = instance_config.grid.behavior.seed_initial_count
-            
+            self.tick_size = instance_config.grid.behavior.tick_size
+
             # Instance-specific safety limits
             self.max_account_loss_inr_display = instance_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
-            
+
             # Instance RSI config (for logging)
             self.rsi_config = instance_config.get_rsi_config()
-            
+
             # Smart gap fill
             if instance_config.grid.smart_gap_fill:
                 self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled
             else:
                 self.smart_gap_fill = False
-            
+
             log.info(f"🎯 Initialized bot for {instance_name} (v6.0 multi-instance)")
             log.info(f"   Symbol: {self.symbol}, Mode: {self.mode}")
             log.info(f"   Product ID: {self.product_id}")
@@ -287,20 +288,21 @@ class AsyncGridBot:
             self.strict_grid = instance_config.grid.behavior.strict_grid
             self.rung_snap_mode = instance_config.grid.behavior.rung_snap_mode
             self.seed_initial_count = instance_config.grid.behavior.seed_initial_count
-            
+            self.tick_size = instance_config.grid.behavior.tick_size
+
             # Instance-specific safety limits
             self.max_account_loss_inr_display = instance_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = instance_config.safety.min_liquidation_distance_pct
-            
+
             # Instance RSI config (for logging)
             self.rsi_config = instance_config.get_rsi_config()
-            
+
             # Smart gap fill
             if instance_config.grid.smart_gap_fill:
                 self.smart_gap_fill = instance_config.grid.smart_gap_fill.enabled
             else:
                 self.smart_gap_fill = False
-            
+
             log.info(f"🎯 Initialized bot for {symbol_name} → {matching_instance_name} (v6.0 symbol→instance lookup)")
             log.info(f"   Symbol: {self.symbol}, Mode: {self.mode}")
             log.info(f"   Product ID: {self.product_id}")
@@ -341,7 +343,8 @@ class AsyncGridBot:
             self.strict_grid = symbol_config.grid.behavior.strict_grid
             self.rung_snap_mode = symbol_config.grid.behavior.rung_snap_mode
             self.seed_initial_count = symbol_config.grid.behavior.seed_initial_count
-            
+            self.tick_size = symbol_config.grid.behavior.tick_size
+
             # Symbol-specific safety limits (for display)
             self.max_account_loss_inr_display = symbol_config.safety.max_account_loss_inr
             self.min_liq_distance_pct_display = symbol_config.safety.min_liquidation_distance_pct
@@ -380,7 +383,8 @@ class AsyncGridBot:
             self.seed_initial_count = seed_initial_count or config.grid.behavior.seed_initial_count
             self.smart_gap_fill = smart_gap_fill if smart_gap_fill is not None else config.grid.smart_gap_fill.enabled
             self.rung_snap_mode = rung_snap_mode or config.grid.behavior.rung_snap_mode
-            
+            self.tick_size = getattr(config.grid.behavior, 'tick_size', 0.5)
+
             log.info(f"🎯 Initialized bot for {self.instance_name} (v4.0 single-symbol mode)")
         
         # API credentials - load from centralized config loader if not provided
@@ -510,7 +514,7 @@ class AsyncGridBot:
             upper=self.upper_price,
             step=self.grid_step,
             ref=self.ref_price,
-            tick_size=0.5  # BTC tick size
+            tick_size=self.tick_size  # Per-instance from config (BTC=0.5, ETH=0.05)
         )
         
         log.info(f"Grid Calculator initialized: {self.lower_price} to {self.upper_price}, step {self.grid_step}, ref {self.ref_price}")
@@ -1424,30 +1428,43 @@ class AsyncGridBot:
                 reduce_only = order.get("reduce_only", False)
                 oid = order.get("id")
                 price = order.get("limit_price")
-                
-                # Always preserve reduce_only
+                client_id = order.get("client_order_id", "") or ""
+                is_bot_order = client_id.startswith("GBOT_")
+
+                # Always preserve reduce_only (these are always TPs protecting positions)
                 if reduce_only:
                     tp_orders.append(order)
-                    log.info(f"   ✅ Keep TP: {side.upper()} @ ${price}")
+                    log.info(f"   ✅ Keep TP: {side.upper()} @ ${price} (reduce_only)")
                     continue
-                
-                # LONG: cancel BUY, keep SELL
+
+                # LONG mode: cancel own BUY entries; cancel bot-placed SELL leftovers;
+                # preserve manual orders (no GBOT_ prefix)
                 if self.mode == "LONG":
-                    if side == "buy":
+                    if side == "buy" and is_bot_order:
                         entry_orders.append(order)
-                        log.info(f"   ❌ Cancel: BUY @ ${price}")
+                        log.info(f"   ❌ Cancel: BUY @ ${price} (bot entry)")
+                    elif side == "sell" and is_bot_order:
+                        # Bot-placed SELL in LONG mode = leftover SHORT entry
+                        entry_orders.append(order)
+                        log.info(f"   ❌ Cancel: SELL @ ${price} (bot leftover SHORT entry)")
                     else:
                         tp_orders.append(order)
-                        log.info(f"   ✅ Keep: SELL @ ${price}")
-                
-                # SHORT: cancel SELL, keep BUY
+                        log.info(f"   ✅ Keep: {side.upper()} @ ${price} (manual/non-bot)")
+
+                # SHORT mode: cancel own SELL entries; cancel bot-placed BUY leftovers
+                # (real SHORT TPs are always reduce_only=True — handled above);
+                # preserve manual orders (no GBOT_ prefix)
                 elif self.mode == "SHORT":
-                    if side == "sell":
+                    if side == "sell" and is_bot_order:
                         entry_orders.append(order)
-                        log.info(f"   ❌ Cancel: SELL @ ${price}")
+                        log.info(f"   ❌ Cancel: SELL @ ${price} (bot entry)")
+                    elif side == "buy" and is_bot_order:
+                        # Bot-placed BUY in SHORT mode = leftover LONG entry (not a TP)
+                        entry_orders.append(order)
+                        log.info(f"   ❌ Cancel: BUY @ ${price} (bot leftover LONG entry)")
                     else:
                         tp_orders.append(order)
-                        log.info(f"   ✅ Keep: BUY @ ${price}")
+                        log.info(f"   ✅ Keep: {side.upper()} @ ${price} (manual/non-bot)")
             
             log.info("")
             log.info(f"📊 {len(entry_orders)} to cancel, {len(tp_orders)} to keep")
@@ -1483,12 +1500,17 @@ class AsyncGridBot:
     async def _write_shutdown_signal(self) -> None:
         """Write shutdown signal for reconciliation engine (event-driven cleanup)"""
         try:
-            # Get current pending orders from position actor
-            # Use direct state access instead of ask() to avoid actor communication issues during shutdown
+            # Get current pending orders from position actor via mailbox (not direct .state)
             state = {}
-            if hasattr(self, 'position_actor') and hasattr(self.position_actor, 'state'):
-                state = self.position_actor.state
-            
+            if hasattr(self, 'position_actor'):
+                try:
+                    state = await asyncio.wait_for(
+                        self.position_actor.ask("GET_STATE", {}),
+                        timeout=3.0
+                    )
+                except Exception as state_err:
+                    log.warning(f"Could not read position actor state during shutdown: {state_err}")
+
             shutdown_signal = {
                 "event": "bot_shutdown",
                 "timestamp": time.time(),
@@ -1522,13 +1544,9 @@ class AsyncGridBot:
                 # Get runtime stats
                 runtime = time.time() - self._start_time
                 
-                # Get final state
+                # GET_STATE returns the state dict directly (not wrapped in {"state": ...})
                 state_response = await self.position_actor.ask("GET_STATE", {})
-                if state_response and "state" in state_response:
-                    state = state_response["state"]
-                    positions = len(state.get("open_tranches", []))
-                else:
-                    positions = 0
+                positions = len(state_response.get("open_tranches", [])) if state_response else 0
                 
                 message = (
                     f"🛑 ASYNCGRIDBOT STOPPED\n\n"
@@ -1658,34 +1676,31 @@ class AsyncGridBot:
             except Exception as e:
                 log.debug(f"[Recovery] Could not get fill price: {e}")
             
-            # Place TP order (grid-aligned)
+            # Place TP order via OrderActor so TP_ORDER_PLACED event is recorded in EventStore.
+            # Routing through OrderActor is required for saga emergency-recovery to find this TP.
             log.info(f"[Recovery] Placing TP {tp_side.upper()} order @ ${tp_price:,.0f}")
-            
-            tp_tag = f"{tag}_TP"
+
+            from uuid import uuid4 as _uuid4
+            position_id = f"recovery-{tag}-{_uuid4().hex[:8]}"
             tp_order_id = None
-            
-            tp_result = await self.api_client.place_order(
-                product_id=self.product_id,
-                size=self.lot_size,
-                side=tp_side,
-                limit_price=tp_price,
-                order_type="limit_order",
-                reduce_only=True,
-                client_order_id=tp_tag
-            )
-            
-            if tp_result and tp_result.get("id"):
-                tp_order_id = tp_result['id']
+
+            tp_resp = await self.order_actor.ask("PLACE_TP", {
+                "price": tp_price,
+                "size": self.lot_size,
+                "side": tp_side,
+                "position_id": position_id
+            }, timeout=10.0)
+
+            if tp_resp.get("status") == "ok":
+                tp_order_id = tp_resp.get("order_id")
                 log.info(f"[Recovery] ✅ TP order placed: {tp_order_id} @ ${tp_price:,.0f}")
             else:
-                log.warning(f"[Recovery] ⚠️ TP order failed but entry succeeded - saga will handle")
+                log.warning(f"[Recovery] ⚠️ TP order failed but entry succeeded - saga will handle: {tp_resp.get('error')}")
             
             # FIX A1: Register position at GRID PRICE (not fill price) with PositionActor
             # This ensures grid alignment is maintained. The difference between fill price
             # and grid price is bonus profit that gets captured when TP fills.
-            from uuid import uuid4
-            position_id = f"recovery-{tag}-{uuid4().hex[:8]}"
-            
+            # position_id was already set above when placing the TP via OrderActor.
             position_data = {
                 "position_id": position_id,
                 "entry_order_id": str(order_id),
@@ -1772,31 +1787,49 @@ class AsyncGridBot:
             missed_grids = []
             ref = self.grid_calc.ref
             step = self.grid_calc.step
-            
-            log.info(f"[Recovery] Checking missed grids: ref=${ref:,.0f}, current=${current_price:,.0f}, step=${step}, mode={self.mode}")
-            
+
+            # Get existing open positions to avoid re-entering levels already held
+            existing_state = await self.position_actor.ask("GET_STATE", {})
+            existing_positions = existing_state.get("open_tranches", [])
+
+            log.info(f"[Recovery] Checking missed grids: ref=${ref:,.0f}, current=${current_price:,.0f}, step=${step}, mode={self.mode}, open_positions={len(existing_positions)}")
+
             if self.mode == "LONG":
                 if current_price < ref:
                     num_steps_below = int((ref - current_price) / step)
                     log.info(f"[Recovery] Price is {num_steps_below} steps below reference")
-                    
+
                     if num_steps_below > 0:
                         num_missed = min(num_steps_below, 3)
                         for i in range(1, num_missed + 1):
                             grid_price = ref - (i * step)
                             if grid_price > current_price:
+                                already_held = any(
+                                    abs(p.get('entry_price', 0) - grid_price) < step * 0.3
+                                    for p in existing_positions
+                                )
+                                if already_held:
+                                    log.info(f"[Recovery] Skipping ${grid_price:,.0f} — position already exists at this level")
+                                    continue
                                 missed_grids.append(grid_price)
                                 log.info(f"[Recovery] Found missed grid at ${grid_price:,.0f}")
             else:
                 if current_price > ref:
                     num_steps_above = int((current_price - ref) / step)
                     log.info(f"[Recovery] Price is {num_steps_above} steps above reference")
-                    
+
                     if num_steps_above > 0:
                         num_missed = min(num_steps_above, 3)
                         for i in range(1, num_missed + 1):
                             grid_price = ref + (i * step)
                             if grid_price < current_price:
+                                already_held = any(
+                                    abs(p.get('entry_price', 0) - grid_price) < step * 0.3
+                                    for p in existing_positions
+                                )
+                                if already_held:
+                                    log.info(f"[Recovery] Skipping ${grid_price:,.0f} — position already exists at this level")
+                                    continue
                                 missed_grids.append(grid_price)
                                 log.info(f"[Recovery] Found missed grid at ${grid_price:,.0f}")
             
@@ -1813,35 +1846,32 @@ class AsyncGridBot:
             if not missed_grids:
                 log.info("[Recovery] No missed grids to recover")
                 return
-            
+
             log.info(f"[Recovery] Executing recovery for {len(missed_grids)} missed grids: {[f'${g:,.0f}' for g in missed_grids]}")
-            
+
+            filled = 0
             for grid_price in missed_grids:
                 try:
-                    side = "buy" if self.mode == "LONG" else "sell"
-                    tp_price = grid_price + self.grid_calc.step if self.mode == "LONG" else grid_price - self.grid_calc.step
-                    
-                    log.info(f"[Recovery] Placing recovery {side.upper()} market order at ${grid_price:,.0f} with TP at ${tp_price:,.0f}")
-                    
-                    order_result = await self.api_client.place_order(
-                        product_id=self.product_id,
-                        size=self.lot_size,
-                        side=side,
-                        order_type="market_order"
-                    )
-                    
-                    if order_result and order_result.get("id"):
-                        log.info(f"[Recovery] ✅ Recovery order placed: {order_result['id']}")
+                    from uuid import uuid4
+                    tag = f"GBOT_RECOVERY_{uuid4().hex[:8]}"
+                    # Delegate to place_recovery_order() which handles:
+                    # - TP placement (grid-aligned, reduce_only)
+                    # - Position registration via position_actor
+                    # - Fill deduplication via fill_processor + fill_monitor
+                    order_id = await self.place_recovery_order(grid_price, tag)
+                    if order_id:
+                        log.info(f"[Recovery] ✅ Recovery order {order_id} placed @ ${grid_price:,.0f}")
+                        filled += 1
                         await asyncio.sleep(2)
                     else:
                         log.error(f"[Recovery] ❌ Failed to place recovery order at ${grid_price:,.0f}")
-                        
+
                 except Exception as e:
                     log.error(f"[Recovery] Error placing recovery order at ${grid_price:,.0f}: {e}")
                     continue
-            
-            log.info("[Recovery] ✅ Recovery execution complete")
-            
+
+            log.info(f"[Recovery] ✅ Recovery execution complete — {filled}/{len(missed_grids)} filled")
+
         except Exception as e:
             log.error(f"[Recovery] Error executing recovery: {e}", exc_info=True)
     
@@ -1870,63 +1900,63 @@ async def main():
     from config.loader import get_api_credentials
     
     # Parse CLI arguments
+    symbol_name = None
+    instance_name = None
+
+    # Get configuration from YAML first so we can check instance names
+    config = get_config()
+
     if len(sys.argv) > 1:
-        # V5.0+: Multi-symbol mode - python async_gridbot.py BTCUSD
-        symbol_name = sys.argv[1].upper()
-        log.info(f"🎯 Starting bot for {symbol_name} (multi-symbol mode)")
+        arg = sys.argv[1].upper()
+
+        # V6.0: Check if arg is a registered instance name (enabled or disabled)
+        has_instances = hasattr(config, 'instances') and config.instances
+        if has_instances and arg in config.instances:
+            instance_name = arg
+            log.info(f"🎯 Starting bot for instance {instance_name} (v6.0 instance mode)")
+        else:
+            # V5.0: Treat as symbol name (e.g. BTCUSD)
+            symbol_name = arg
+            log.info(f"🎯 Starting bot for {symbol_name} (v5.0 symbol mode)")
     else:
         # V4.0: Backward compatibility - No argument, use config.bot.symbol
-        symbol_name = None
         log.info(f"🎯 Starting bot in v4.0 single-symbol mode")
-    
-    # Get configuration from YAML
-    config = get_config()
-    
-    # V5.0/V6.0 validation - support both symbols (v5.0) and instances (v6.0)
-    has_symbols = hasattr(config, 'symbols') and config.symbols
-    has_instances = hasattr(config, 'instances') and config.instances
-    
-    if symbol_name and not (has_symbols or has_instances):
-        log.error(f"❌ Symbol argument provided but config.yaml is v4.0")
-        log.error(f"   Run: python scripts/migrate_config_to_multi_symbol.py")
-        sys.exit(1)
-    
-    # V6.0 instance mode - check if symbol exists in instances
-    if symbol_name and has_instances:
-        # Find instance for this symbol
-        found = False
-        for inst_name, inst_config in config.instances.items():
-            if inst_config.symbol == symbol_name:
-                found = True
-                break
-        
-        if not found:
-            available = sorted(set(inst.symbol for inst in config.instances.values()))
-            log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml instances")
-            log.error(f"   Available symbols: {available}")
+
+    # Validate symbol_name when not using instance_name
+    if symbol_name:
+        has_symbols = hasattr(config, 'symbols') and config.symbols
+        has_instances = hasattr(config, 'instances') and config.instances
+
+        if not (has_symbols or has_instances):
+            log.error(f"❌ Symbol argument provided but config.yaml is v4.0")
             sys.exit(1)
-    
-    # V5.0 symbol mode - check if symbol exists in symbols
-    elif symbol_name and has_symbols:
-        if symbol_name not in config.symbols:
-            available = list(config.symbols.keys())
+
+        if has_instances:
+            found = any(ic.symbol == symbol_name for ic in config.instances.values())
+            if not found:
+                available = sorted(set(ic.symbol for ic in config.instances.values()))
+                log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml instances")
+                log.error(f"   Available symbols: {available}")
+                sys.exit(1)
+        elif has_symbols and symbol_name not in config.symbols:
             log.error(f"❌ Symbol '{symbol_name}' not found in config.yaml symbols")
-            log.error(f"   Available symbols: {available}")
+            log.error(f"   Available: {list(config.symbols.keys())}")
             sys.exit(1)
-    
+
     # Get API credentials from secrets/api_keys.env (via centralized loader)
     credentials = get_api_credentials(config.trading_mode)
     api_key = credentials['api_key']
     api_secret = credentials['api_secret']
-    
+
     # Get testnet mode
     testnet = (config.trading_mode == 'demo')
-    
-    # Create bot with symbol_name (v5.0+) or without (v4.0)
+
+    # Create bot — pass instance_name (v6.0) or symbol_name (v5.0/v4.0)
     bot = AsyncGridBot(
         api_key=api_key,
         api_secret=api_secret,
-        symbol_name=symbol_name,  # NEW: Multi-symbol support
+        instance_name=instance_name,  # V6.0: explicit instance (BTCUSD_SHORT)
+        symbol_name=symbol_name,      # V5.0: symbol lookup fallback
         testnet=testnet
     )
     
