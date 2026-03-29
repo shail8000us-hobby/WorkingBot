@@ -135,7 +135,13 @@ function TriggerSideGauge({
     setIsDragging(true);
     setDragValue(triggerLevel); // start at current position
 
+    // Track whether the mouse moved enough to be a drag vs a click.
+    // Using a closure-local flag avoids React state timing issues in handleMouseUp.
+    let moved = false;
+    const startX = e.clientX;
+
     const handleMouseMove = (me) => {
+      if (Math.abs(me.clientX - startX) > 3) moved = true;
       const val = computeValueFromEvent(me);
       if (val !== null) setDragValue(val);
     };
@@ -148,7 +154,19 @@ function TriggerSideGauge({
       const finalVal = dragValueRef.current;
       setDragValue(null);
 
-      // Abort if didn't move above current premium (loosen-only enforced client-side)
+      // Click on pinned marker (no drag) → unpin early
+      if (isPinned && !moved) {
+        try {
+          const result = await mmmService.pinTrigger(sessionId, side, null, true);
+          if (result?.success && onPinChange) onPinChange(side, result);
+        } catch (err) {
+          const msg = err?.response?.data?.error || 'Failed to unpin. Try again.';
+          setSnackbar({ severity: 'error', message: msg });
+        }
+        return;
+      }
+
+      // Abort if didn't drag above current premium (loosen-only enforced client-side)
       if (finalVal === null || finalVal <= currentPremium) return;
 
       try {
@@ -162,7 +180,7 @@ function TriggerSideGauge({
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-  }, [sessionId, triggerLevel, currentPremium, computeValueFromEvent, side, onPinChange]);
+  }, [sessionId, triggerLevel, currentPremium, computeValueFromEvent, side, onPinChange, isPinned]);
 
   const handleUnpin = useCallback(async (e) => {
     e.stopPropagation();
@@ -193,7 +211,7 @@ function TriggerSideGauge({
   // ── Pin tooltip text (spells out ratchet-disabled behavior) ───────────────
   const adjRemaining = Math.max(0, MAX_PIN_ADJ - pinAdjCount);
   const pinnedTooltip = isPinned
-    ? `Pinned trigger: $${triggerLevel.toFixed(1)} — ⚠️ RATCHET DISABLED. Each adjustment fires at this same level until unpinned. Auto-expires after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}. Drag right to loosen further. Click to unpin.`
+    ? `Pinned trigger: $${triggerLevel.toFixed(1)} — ⚠️ RATCHET DISABLED. Each adjustment fires at this same level until unpinned. Auto-expires after ${adjRemaining} more adjustment${adjRemaining !== 1 ? 's' : ''}. Click to unpin now. Drag right to loosen further.`
     : isDragging
       ? (isDragAbovePremium
           ? `New trigger: $${(dragValue || 0).toFixed(1)} — loosens sensitivity. Release to pin.`
