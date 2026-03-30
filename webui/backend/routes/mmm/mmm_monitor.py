@@ -5644,6 +5644,32 @@ class MMMMonitor:
         # Step 2: Determine lots
         lots = determine_replenish_lots(session, closed_side, open_side)
 
+        # Cap lots to velocity headroom — Gate 11 confirmed window < limit,
+        # but the single sell may still exceed the remaining capacity.
+        # Pre-flight mirror of MMMSafety.check_lot_velocity — keep params/logic in sync.
+        if params.get('lot_velocity_enabled', True):
+            from datetime import timedelta
+            _vel_limit = params.get('lot_velocity_limit', 10)
+            _vel_window = params.get('lot_velocity_window_mins', 30)
+            _cutoff = datetime.now(timezone.utc) - timedelta(minutes=_vel_window)
+            _lots_in_window = 0
+            for _adj in session.get('adjustment_history', []):
+                if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
+                    continue
+                try:
+                    _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
+                    if _ts.tzinfo is None:
+                        _ts = _ts.replace(tzinfo=timezone.utc)
+                    if _ts >= _cutoff:
+                        _lots_in_window += _adj.get('lots_sold', 0)
+                except (ValueError, TypeError):
+                    continue
+            _headroom = _vel_limit - _lots_in_window
+            if lots > _headroom:
+                log.info(f"[{sid}] Replenish: capping lots {lots} → {_headroom} "
+                         f"(velocity headroom: {_lots_in_window}/{_vel_limit} in window)")
+                lots = max(1, _headroom)
+
         # Step 3: Find strike
         spot_price = await self._fetch_spot_price()
         if spot_price <= 0:
@@ -5851,6 +5877,18 @@ class MMMMonitor:
         session['total_premium_collected'] = session.get('total_premium_collected', 0) + premium_collected
         prem_key = f'{closed_side}_premium_collected'
         session[prem_key] = session.get(prem_key, 0) + premium_collected
+
+        # Record replenish in adjustment_history so lot_velocity checks count it
+        session.setdefault('adjustment_history', []).append({
+            'side': closed_side.upper(),
+            'aggressor': 'REPLENISH',
+            'lots_sold': filled_lots,
+            'premium': fill_price,
+            'strike': strike,
+            'timestamp': now,
+        })
+        if len(session['adjustment_history']) > 200:
+            session['adjustment_history'] = session['adjustment_history'][-200:]
 
         # Update replenish tracking
         session['_replenish_count'] = session.get('_replenish_count', 0) + 1

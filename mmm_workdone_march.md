@@ -1056,3 +1056,26 @@ Watchdog stopped monitor at 16:38:43 (`_running=False`, `save_disabled=True`, `s
 - If true: log warning, `break` — skip replenish and pause entirely. Let the next healthy monitor restart handle it cleanly from DB state.
 
 **Tests**: 52/52 sealed (strike_shift + trigger); 1143 total passed, 0 new failures (10 pre-existing margin guardian failures unrelated to this work).
+
+
+---
+
+## 2026-03-30 — Fix: Replenish Bypassed Lot Velocity Limit (60 lots sold vs limit 30)
+
+**Session**: `mmm31mar26-1` — PE side closed fully, replenish triggered, sold 60 PE lots in one shot despite `lot_velocity_limit=30`.
+
+**Root causes (3 bugs):**
+
+**Bug 1: No velocity gate in `check_replenish_eligibility`**
+`mmm_replenish.py` had 10 gates but none checked `lot_velocity_limit`. Replenish fired freely even when the rolling window was already at the limit.
+- **Fix**: Added Gate 11 — computes `lots_in_window` from `adjustment_history` (same logic as `check_lot_velocity`). Returns `False, 'lot_velocity_limit (...)'` if `lots_in_window >= limit`.
+
+**Bug 2: No per-sell velocity cap in `_process_replenish`**
+Even with an empty window (0 lots), `determine_replenish_lots(match_active)` returned 60 (matching CE's `active_lots`). A 60-lot single sell exceeded the 30-lot limit with no check.
+- **Fix**: In `mmm_monitor.py` after `determine_replenish_lots`, compute velocity headroom (`limit - lots_in_window`). If `lots > headroom`, cap to `max(1, headroom)` and log the cap.
+
+**Bug 3: Replenish lots not counted in future velocity checks**
+After a replenish fill, lots were recorded in `_replenish_history` only. The `check_lot_velocity` function reads `adjustment_history` — so replenish lots were invisible to the velocity window, allowing the next replenish or adjustment to ignore the already-sold lots.
+- **Fix**: After successful fill in `_process_replenish`, append an entry to `adjustment_history` with `aggressor='REPLENISH'` (matches existing exclusion list — OPERATOR/STRADDLE_ROLL are excluded, REPLENISH counts normally). Pruned to 200 entries same as regular adjustments.
+
+**Files changed**: `mmm_replenish.py`, `mmm_monitor.py`

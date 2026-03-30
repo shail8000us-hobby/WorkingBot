@@ -12,7 +12,7 @@ activates as fallback.
 
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 
 log = logging.getLogger(__name__)
@@ -105,6 +105,27 @@ def check_replenish_eligibility(
     open_total = session.get(open_side, {}).get('total_lots', 0)
     if open_total <= 0:
         return False, 'open_side_has_no_lots'
+
+    # Gate 11: lot velocity — block if the rolling window is already at/over limit.
+    # Pre-flight mirror of MMMSafety.check_lot_velocity — keep params/logic in sync.
+    if params.get('lot_velocity_enabled', True):
+        _vel_limit = params.get('lot_velocity_limit', 10)
+        _vel_window = params.get('lot_velocity_window_mins', 30)
+        _cutoff = datetime.now(timezone.utc) - timedelta(minutes=_vel_window)
+        _lots_in_window = 0
+        for _adj in session.get('adjustment_history', []):
+            if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
+                continue
+            try:
+                _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
+                if _ts.tzinfo is None:
+                    _ts = _ts.replace(tzinfo=timezone.utc)
+                if _ts >= _cutoff:
+                    _lots_in_window += _adj.get('lots_sold', 0)
+            except (ValueError, TypeError):
+                continue
+        if _lots_in_window >= _vel_limit:
+            return False, f'lot_velocity_limit ({_lots_in_window}/{_vel_limit} lots in window)'
 
     return True, 'eligible'
 
