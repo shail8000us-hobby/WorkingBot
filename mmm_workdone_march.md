@@ -1079,3 +1079,23 @@ After a replenish fill, lots were recorded in `_replenish_history` only. The `ch
 - **Fix**: After successful fill in `_process_replenish`, append an entry to `adjustment_history` with `aggressor='REPLENISH'` (matches existing exclusion list — OPERATOR/STRADDLE_ROLL are excluded, REPLENISH counts normally). Pruned to 200 entries same as regular adjustments.
 
 **Files changed**: `mmm_replenish.py`, `mmm_monitor.py`
+
+---
+
+## 2026-03-30 (Session 2) — Fix: Regular Adjustment Also Bypassed Lot Velocity Limit (40 lots vs limit 30)
+
+**Session**: `mmm31mar26-1` — CE adjustment fired 40 lots at 7:28 PM despite `lot_velocity_limit=30`.
+
+**Root cause**: Same design gap as the replenish fix (Session 1 today), but in the regular `_process_adjustment` path.
+
+`check_lot_velocity` in the safety stage only sets `_skip_to_pnl=True` when `lots_in_window >= limit`. It does NOT cap the per-sell amount. So:
+- Window empty (0 lots), limit=30, `calculate_lots_to_sell` returns 40 → velocity check passes (0 < 30) → 40 lots sold → window now 40 (over limit in one shot).
+
+**Fix**: Added velocity headroom cap in `_process_adjustment` after the IMP-5 consecutive-dir block and before `lots <= 0` check. Same pattern as replenish fix:
+- Compute `lots_in_window` from `adjustment_history` (same window/params as `check_lot_velocity`)
+- `_headroom = limit - lots_in_window`
+- If `lots > _headroom`: cap to `max(1, _headroom)`, log the cap, append note to `constraint_msg`
+
+This is the third location (after Gate 11 in `check_replenish_eligibility` and the headroom cap in `_process_replenish`) where the velocity headroom must be enforced. The safety-stage check is a gate-keeper but cannot substitute for per-sell capping since it can only see lots ALREADY in the window, not the lots about to be sold.
+
+**Files changed**: `mmm_monitor.py`

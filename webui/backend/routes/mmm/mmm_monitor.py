@@ -4128,6 +4128,38 @@ class MMMMonitor:
             return
         # ── END IMP-5 ─────────────────────────────────────────────────────
 
+        # ── Velocity headroom cap ──────────────────────────────────────────
+        # Safety stage only BLOCKS when lots_in_window >= limit. If the window
+        # is not yet full but this single sell would exceed it (e.g. window=0,
+        # limit=30, lots=40), cap to remaining headroom.
+        # Pre-flight mirror of MMMSafety.check_lot_velocity — keep params/logic in sync.
+        if lots > 0 and params.get('lot_velocity_enabled', True):
+            from datetime import timedelta as _td
+            _vel_limit = params.get('lot_velocity_limit', 10)
+            _vel_window = params.get('lot_velocity_window_mins', 30)
+            _cutoff = datetime.now(timezone.utc) - _td(minutes=_vel_window)
+            _lots_in_window = 0
+            for _adj in session.get('adjustment_history', []):
+                if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
+                    continue
+                try:
+                    _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
+                    if _ts.tzinfo is None:
+                        _ts = _ts.replace(tzinfo=timezone.utc)
+                    if _ts >= _cutoff:
+                        _lots_in_window += _adj.get('lots_sold', 0)
+                except (ValueError, TypeError):
+                    continue
+            _headroom = _vel_limit - _lots_in_window
+            if lots > _headroom:
+                log.info(
+                    f"[{sid}] Adjustment: capping lots {lots} → {_headroom} "
+                    f"(velocity headroom: {_lots_in_window}/{_vel_limit} in window)"
+                )
+                constraint_msg = (constraint_msg or '') + f' [velocity cap {lots}→{_headroom}]'
+                lots = max(1, _headroom)
+        # ── END velocity headroom cap ──────────────────────────────────────
+
         if lots <= 0:
             # BUG-2 FIX: Always log when trigger fires but lots=0
             skip_reason = constraint_msg or 'lot_calculation_zero'
