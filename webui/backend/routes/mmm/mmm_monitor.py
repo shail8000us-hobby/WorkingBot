@@ -1822,6 +1822,16 @@ class MMMMonitor:
             if check_side_fully_closed(session, _cs) and not check_side_fully_closed(session, _os):
                 _os_lots = session.get(_os, {}).get('total_lots', 0)
 
+                # Bug 4 fix: if the monitor is already stopping (watchdog killed it
+                # mid-heartbeat), _save_disabled=True and status=STOPPED — replenish
+                # Gate 2 would block, any pause/save would silently fail, and the
+                # unhedged state would not be persisted to DB. Skip entirely and let
+                # the new monitor handle it cleanly on its first healthy heartbeat.
+                if self._should_stop() or session.get('_save_disabled'):
+                    log.warning(f"[{sid}] ONE-SIDE CLOSE: skipping replenish/pause — "
+                                f"monitor is stopping (will retry on next start)")
+                    break
+
                 # ── TRY AUTO-REPLENISH (every heartbeat while side is empty) ──
                 _replenished = False
                 try:
@@ -5676,11 +5686,48 @@ class MMMMonitor:
                 log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {e}")
 
         if not strike_info:
-            # Strangle mode or straddle fallback: find OTM strike
-            from .mmm_strike_shift import find_new_strike
-            strike_info = find_new_strike(
-                self.initializer, session, closed_side, spot_price
+            # Strangle mode or straddle fallback: scan only the closed side's chain
+            # using _rank_strikes — the same scoring used at session start.
+            # Scores by |premium - desired| + liquidity penalty. No active_strike
+            # or frozen_strike exclusions (fixes bugs 1, 2, 3).
+            #
+            # NOT using preview_strikes() here: that function requires BOTH CE and
+            # PE to produce a result and returns success=False if either side has no
+            # candidate — which would block PE replenish whenever CE happens to have
+            # no suitable strike, and vice versa. We only need the closed side.
+            _desired = params.get(
+                f'desired_{closed_side}_premium',
+                params.get('replenish_min_premium', 30.0),
             )
+            _opt_type = 'call' if closed_side == 'ce' else 'put'
+            _above_spot = (closed_side == 'ce')
+            try:
+                _chain_result = self.initializer.get_full_chain(expiry)
+                if _chain_result and _chain_result.get('success'):
+                    # Use the chain's own spot_price — it was fetched atomically with
+                    # the chain data, so the OTM filter is consistent with the strikes.
+                    _chain_spot = _chain_result.get('spot_price', spot_price) or spot_price
+                    _best, _ = self.initializer._rank_strikes(
+                        chain=_chain_result.get('chain', []),
+                        option_type=_opt_type,
+                        desired_premium=_desired,
+                        spot_price=_chain_spot,
+                        above_spot=_above_spot,
+                        expiry=_chain_result.get('expiry', expiry),
+                        underlying='BTC',
+                    )
+                    if _best:
+                        strike_info = {
+                            'strike': _best['strike'],
+                            'premium': _best.get('premium', 0),
+                            'symbol': _best.get('symbol', ''),
+                        }
+                else:
+                    log.warning(f"[{sid}] Replenish: chain fetch failed for "
+                                f"{closed_side.upper()} — "
+                                f"{_chain_result.get('error', 'no data')}")
+            except Exception as _rs_err:
+                log.error(f"[{sid}] Replenish _rank_strikes exception: {_rs_err}")
 
         if not strike_info:
             log.warning(f"[{sid}] Replenish: no suitable strike found for {closed_side.upper()}")

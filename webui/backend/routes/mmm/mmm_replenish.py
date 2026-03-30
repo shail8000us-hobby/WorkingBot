@@ -41,6 +41,7 @@ def check_replenish_eligibility(
         return False, 'replenish_enabled=False'
 
     # Gate 2: session must be RUNNING
+    # None is whitelisted for legacy sessions that predate the explicit status field.
     status = session.get('strategy_status', session.get('status', 'RUNNING'))
     if status not in ('RUNNING', 'ACTIVE', None):
         return False, f"session status={status}"
@@ -70,7 +71,7 @@ def check_replenish_eligibility(
         return False, 'regime_block_all_sells'
 
     # Gate 7: replenishment count cap
-    max_count = params.get('replenish_max_per_session', 3)
+    max_count = params.get('replenish_max_per_session', 10)
     current_count = session.get('_replenish_count', 0)
     if current_count >= max_count:
         return False, f'max_count_reached ({current_count}/{max_count})'
@@ -96,8 +97,9 @@ def check_replenish_eligibility(
             minutes_remaining = (expiry_dt - datetime.now(timezone.utc)).total_seconds() / 60.0
             if minutes_remaining < stop_adj_mins:
                 return False, f'near_expiry ({minutes_remaining:.0f}m < {stop_adj_mins}m)'
-        except Exception:
-            pass  # If parsing fails, let other guards handle it
+        except Exception as _gate9_err:
+            log.warning(f"[replenish] Gate 9 expiry parse failed ({expiry_str!r}): "
+                        f"{_gate9_err} — near-expiry guard skipped")
 
     # Gate 10: open side must actually have lots
     open_total = session.get(open_side, {}).get('total_lots', 0)
@@ -113,7 +115,7 @@ def check_replenish_eligibility(
 
 def determine_replenish_lots(
     session: Dict,
-    closed_side: str,
+    closed_side: str,  # reserved — not used in current modes, kept for API stability
     open_side: str,
 ) -> int:
     """

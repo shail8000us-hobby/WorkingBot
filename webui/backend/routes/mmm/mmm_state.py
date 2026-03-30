@@ -615,9 +615,9 @@ DEFAULT_PARAMS = {
     'atm_shield_defer_resell_beats': 0,   # beats to wait before re-sell after shield close (0 = immediate)
 
     # Auto-Replenish Leg — re-enter empty side instead of pausing
-    'replenish_enabled': False,            # master switch — OFF by default
+    'replenish_enabled': True,             # master switch — ON by default
     'replenish_lot_mode': 'match_active',  # 'match_active' | 'initial'
-    'replenish_max_per_session': 3,        # cap to prevent infinite re-entry
+    'replenish_max_per_session': 10,       # cap to prevent infinite re-entry
     'replenish_cooldown_sec': 300,         # 5 min between replenishments
     'replenish_min_premium': 30.0,         # reject strikes with premium below this ($)
 

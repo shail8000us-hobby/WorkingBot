@@ -961,3 +961,98 @@ Added a draggable trigger marker to `MMMTriggerGauge`. Operator can drag the whi
 **Tests**: 52/52 sealed tests pass (trigger + strike_shift suites). No regressions.
 
 **Files changed**: `mmm_trigger.py`, `mmm_strike_shift.py`, `mmm_monitor.py`, `mmm_api.py`, `MMMTriggerGauge.js`, `mmmService.js`
+
+---
+
+## 2026-03-30 — Trigger pin inline Unlock button + margin utilization fix
+
+### Frontend
+
+**`MMMTriggerGauge.js` — pin status line**
+- Changed status line from plain text `🔒 Trigger locked at $X · unlocks after N adj`
+  to `🔒 Locked at $X · [Unlock] · auto in N adj` where `Unlock` is an inline clickable
+  span (underlined, PIN_COLOR, cursor pointer) calling the existing `handleUnpin` function.
+- `handleUnpin` was already implemented — status line just needed to wire it up.
+
+### Backend
+
+**`mmm_margin_guardian.py` — `fetch_margin_utilization()`**
+- Added `balance_minus_available` as a diagnostic field in the returned dict and in the
+  `mmm_api.py` `/exchange/margin` response.
+- Clarified comment: on Delta Exchange, `blocked_margin` can be NEGATIVE when option
+  premium received exceeds gross margin requirement (portfolio margin mode). This is a
+  healthy over-collateralized state — when blocked < 0, the actual liquidation risk is
+  near-zero, and the 0% utilization reading is correct from a risk standpoint.
+- `balance - available = blocked_margin` always (they are equal). Added primary check
+  for `balance_minus_available > 0` for clarity, with original fallback chain unchanged.
+- The exchange UI's "Initial Margin" (e.g., $375) is the GROSS requirement before
+  netting premium credit. The API's `blocked_margin` is NET. Both are valid views;
+  the dashboard shows the net risk metric which is correct for margin guardian purposes.
+- `fetch_margin_utilization()` is NOT sealed (only `evaluate_margin_tier()` is sealed).
+  This modification is valid.
+
+**Note**: When `blocked_margin` is negative, the dashboard correctly shows 0% utilization.
+The exchange UI's higher % is a gross/informational figure. No tier actions can/should fire
+
+---
+
+## 2026-03-30 — Expose proactive_shift_enabled toggle in Settings UI
+
+- `mmm_config.py`: Added `proactive_shift_enabled` to `VALID_PARAMS` as `{type: bool, hot: True}` and to the help text section.
+- `MMMSettingsDialog.js`: Added `proactive_shift_enabled` to the Trigger & Adjustment group params list (between `shift_target_premium` and `pre_sell_shift_enabled`) and added its help text to `FIELD_HELP`.
+- Frontend rebuilt successfully.
+- **Why**: Session mmm30mar26-1 post-mortem showed the proactive shift moved CE to 67200 at 22:42 (BTC ~65500-66000), and overnight BTC rally hit that strike triggering ATM Shield for -47.27 units. Operator needs a hot-reload toggle to disable proactive shifting without restarting the session.
+
+---
+
+## 2026-03-30 — Fix "Total Premium" display to show net (gross sells minus buybacks)
+
+### Problem
+`total_premium_collected` only accumulated on sells (entry + adjustments) and was never decremented when positions were bought back (close_at_5, ATM shield, wind-down). Dashboard showed inflated "Total Premium" that never decreased even after full position closures.
+
+### Fix
+- `mmm_pnl_core.py`: Added `compute_net_premium(session)` — iterates the fill ledger, sums `close_premium × lots × LOT_SIZE_BTC` for all non-migration entries by side, subtracts from gross totals. Returns `{total, ce, pe}`.
+- `mmm_pnl_core.py`: `get_pnl()` now returns `net_premium_collected`, `ce_net_premium`, `pe_net_premium` in its result dict.
+- `mmm_api.py`: Restructured `_overlay_live_pnl()` — removed early return on empty monitors, now processes ALL sessions. Running sessions get net premium from `compute_live_pnl()` (fresh in-memory ledger); stopped sessions get it computed from stored fill ledger.
+- `MMMDashboard.js`: `totalPremium`, `cePremiumCollected`, `pePremiumCollected` now read `net_premium_collected`/`ce_net_premium`/`pe_net_premium` with fallback to gross fields for old sessions without ledger data. Label changed "Total Premium" → "Net Premium".
+
+### Invariants preserved
+- `total_premium_collected` (gross) unchanged — still used by `mmm_breakeven_engine.py`'s `breakeven_dte_pnl_clamp_pct` ratio logic.
+- `compute_net_premium` skips `_is_migration` entries (which have `close_premium=0`) so migrated sessions display gross (unchanged behavior for historical data).
+when the account is in a net credit state — the current behavior is correct.
+
+---
+
+## 2026-03-30 — Fix 4 Replenish Bugs: Wrong Strike Search + Dead-Monitor Guard
+
+**Root cause investigation** of session `mmm30mar26-1` (PE fully closed, "Human Action Required" banner):
+
+Logs showed `SHIFT FAILED: No OTM PE strike with premium >= $30` repeating for 13 minutes before close. Replenish never appeared in logs at all. Four bugs found:
+
+### Bug 1: Wrong threshold (`shift_threshold` used instead of `replenish_min_premium`)
+`find_new_strike` in `mmm_strike_shift.py` uses `shift_threshold` to filter candidates. When called from replenish, the correct threshold is `replenish_min_premium` — a lower bar for hedge coverage vs the higher shift quality bar. A strike acceptable for re-entry ($14 > $10 threshold) could be invisible if `shift_threshold` is higher.
+
+### Bug 2: Old active_strike excluded from replenish candidates
+`find_new_strike` skips `old_active_strike` (`abs(strike - old_strike) < 1`). For a shift this is correct — you're moving away from the current position. For replenish where PE has **0 lots**, the old active strike is a valid re-entry target and often the nearest-to-ATM candidate with the most remaining premium. This exclusion directly blocked the best available PE strike.
+
+### Bug 3: Frozen strikes from 31 adjustments blocked near-ATM candidates
+`find_new_strike` skips strikes with active frozen positions. With 31 adjustments, multiple PE frozen positions at various strikes silently blocked near-ATM replenish candidates. For replenish, a fresh entry at a strike with existing frozen lots is fine — they're tracked separately.
+
+### Bug 4: Replenish never ran — fired inside watchdog-killed heartbeat
+Watchdog stopped monitor at 16:38:43 (`_running=False`, `save_disabled=True`, `status→STOPPED`). The 85s heartbeat was still executing. At 16:39:06 it reached ONE-SIDE CLOSE, called `_process_replenish`, which hit Gate 2 (`status=STOPPED`) and returned False silently (INFO level log). `self.pause()` was called but `_save_my_session` was blocked by `save_disabled`. The unhedged state was never persisted to DB. New monitor started fresh from DB as RUNNING with no `_ocs_flag` — same loop on next restart.
+
+### Fixes (`mmm_monitor.py` only — `mmm_strike_shift.py` net zero change)
+
+**`mmm_monitor.py` — `_process_replenish()` (bugs 1, 2, 3):**
+- Replaced `find_new_strike` with `self.initializer.get_full_chain(expiry)` + `self.initializer._rank_strikes(chain, opt_type, desired, chain_spot, above_spot, expiry, 'BTC')` — the same scoring used at session start.
+- `preview_strikes()` was considered but rejected: it requires BOTH CE and PE to succeed simultaneously, which blocks PE replenish whenever CE has no suitable strike. We only need the closed side's chain.
+- `above_spot=True` for CE (OTM calls above spot), `above_spot=False` for PE (OTM puts below spot). Each replenish only scans its own side of the chain.
+- `desired_premium` = `params.get('desired_{closed_side}_premium', params.get('replenish_min_premium', 30.0))`.
+- Chain's own `spot_price` used for OTM filter (fetched atomically with chain data).
+- `replenish_min_premium` floor check still runs after `_rank_strikes` returns (unchanged).
+
+**`mmm_monitor.py` — ONE-SIDE CLOSE GUARD (bug 4):**
+- Added `_should_stop() or session.get('_save_disabled')` check at the top of the ONE-SIDE CLOSE for loop.
+- If true: log warning, `break` — skip replenish and pause entirely. Let the next healthy monitor restart handle it cleanly from DB state.
+
+**Tests**: 52/52 sealed (strike_shift + trigger); 1143 total passed, 0 new failures (10 pre-existing margin guardian failures unrelated to this work).
