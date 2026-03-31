@@ -177,11 +177,15 @@ async def fetch_margin_utilization(rest_client) -> Dict[str, Any]:
             net_equity = balance
 
         # Compute total margin used.
-        # blocked_margin = what Delta Exchange UI shows as "Blocked as margin" — the
-        # actual collateral locked. Use this as primary source.
-        # portfolio_margin = theoretical portfolio-margin requirement (can be inflated
-        # vs actual blocked). Use as fallback only.
-        if blocked > 0:
+        # Primary: balance - available_balance is the most reliable "locked margin"
+        # metric on Delta Exchange. It works across all account/margin modes.
+        # blocked_margin can be NEGATIVE when premium credit offsets the margin
+        # requirement (common for options sellers), so it fails the > 0 guard.
+        # portfolio_margin and pos_margin can also show 0 in portfolio margin mode.
+        balance_minus_available = balance - available
+        if balance_minus_available > 0:
+            total_used = balance_minus_available
+        elif blocked > 0:
             total_used = blocked
         elif portfolio > 0:
             total_used = portfolio
@@ -208,6 +212,7 @@ async def fetch_margin_utilization(rest_client) -> Dict[str, Any]:
             'cross_position_margin': cross_pos,
             'cross_order_margin': cross_order,
             'total_margin_used': round(total_used, 6),
+            'balance_minus_available': round(balance_minus_available, 6),
             'asset_symbol': wallet.get('asset_symbol', 'USD'),
         })
 

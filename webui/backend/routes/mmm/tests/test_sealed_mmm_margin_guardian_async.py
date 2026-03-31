@@ -61,7 +61,12 @@ DEFAULT_PARAMS = {
 
 
 def _make_wallet(balance=10000, pos_margin=5000, order_margin=0,
-                 blocked=0, portfolio=0, available=5000, symbol='USD'):
+                 blocked=0, portfolio=0, available=None, symbol='USD'):
+    # Default available: balance - pos_margin (so balance-available = pos_margin when
+    # no blocked/portfolio override is intended). Tests that explicitly test the
+    # balance-minus-available path pass available directly.
+    if available is None:
+        available = balance - pos_margin
     return {
         'asset_symbol': symbol,
         'balance': balance,
@@ -186,11 +191,12 @@ class TestFetchMarginUtilization:
     @pytest.mark.sealed
     @pytest.mark.asyncio
     async def test_c_fmu_6_blocked_margin_priority(self):
-        """blocked_margin > 0 → use blocked_margin as total_used."""
+        """blocked_margin > 0 → use blocked_margin as total_used.
+        Set available=balance so balance-available=0 → priority falls to blocked."""
         from webui.backend.routes.mmm.mmm_margin_guardian import fetch_margin_utilization
-        # blocked=6000 takes priority over portfolio=8000 and pos_margin+order_margin=9000
+        # balance-available=0 → skip primary; blocked=6000 takes priority
         wallet = _make_wallet(balance=10000, pos_margin=4000, order_margin=5000,
-                              blocked=6000, portfolio=8000, symbol='USD')
+                              blocked=6000, portfolio=8000, available=10000, symbol='USD')
         client = AsyncMock()
         client.get_wallet_balances_full = AsyncMock(
             return_value={'result': [wallet], 'meta': {}}
@@ -202,10 +208,12 @@ class TestFetchMarginUtilization:
     @pytest.mark.sealed
     @pytest.mark.asyncio
     async def test_c_fmu_6b_portfolio_margin_fallback(self):
-        """blocked=0 → use portfolio_margin as total_used."""
+        """blocked=0 → use portfolio_margin as total_used.
+        Set available=balance so balance-available=0 → priority falls to portfolio."""
         from webui.backend.routes.mmm.mmm_margin_guardian import fetch_margin_utilization
+        # balance-available=0 → skip primary; blocked=0 → skip; portfolio=4000 used
         wallet = _make_wallet(balance=10000, pos_margin=2000, order_margin=1000,
-                              blocked=0, portfolio=4000, symbol='USD')
+                              blocked=0, portfolio=4000, available=10000, symbol='USD')
         client = AsyncMock()
         client.get_wallet_balances_full = AsyncMock(
             return_value={'result': [wallet], 'meta': {}}
@@ -217,10 +225,12 @@ class TestFetchMarginUtilization:
     @pytest.mark.sealed
     @pytest.mark.asyncio
     async def test_c_fmu_6c_sum_of_parts_fallback(self):
-        """blocked=0, portfolio=0 → sum of pos_margin + order_margin."""
+        """blocked=0, portfolio=0 → sum of pos_margin + order_margin.
+        Set available=balance so balance-available=0 → falls through to sum-of-parts."""
         from webui.backend.routes.mmm.mmm_margin_guardian import fetch_margin_utilization
+        # balance-available=0, blocked=0, portfolio=0 → sum = 2000+1000 = 3000
         wallet = _make_wallet(balance=10000, pos_margin=2000, order_margin=1000,
-                              blocked=0, portfolio=0, symbol='USD')
+                              blocked=0, portfolio=0, available=10000, symbol='USD')
         client = AsyncMock()
         client.get_wallet_balances_full = AsyncMock(
             return_value={'result': [wallet], 'meta': {}}

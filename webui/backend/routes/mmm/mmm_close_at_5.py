@@ -33,6 +33,7 @@ _BEING_CLOSED_TTL = 180  # seconds
 log = logging.getLogger('mmm_close_at_5')
 
 
+@sealed
 def _check_stale_being_closed(pos: dict, label: str) -> bool:
     """Return True if position is legitimately in-flight (caller should skip).
     Auto-clears the flag if it has been set for longer than _BEING_CLOSED_TTL seconds.
@@ -331,7 +332,10 @@ async def close_position(
             if pos.get('id') == pos_id:
                 if pos.get('_being_closed'):
                     set_at = pos.get('_being_closed_at', 0)
-                    if set_at and time.monotonic() - set_at > _BEING_CLOSED_TTL:
+                    # Consistent with _check_stale_being_closed: treat missing/zero timestamp
+                    # as infinitely stale (no timestamp = flag was set without a clock value
+                    # e.g. by mmm_api.py before the _being_closed_at fix).
+                    if not set_at or time.monotonic() - set_at > _BEING_CLOSED_TTL:
                         log.warning(
                             f"Close-at-5: Auto-cleared stale _being_closed on "
                             f"{side.upper()} pos_id={pos_id} (stuck >{_BEING_CLOSED_TTL}s)"

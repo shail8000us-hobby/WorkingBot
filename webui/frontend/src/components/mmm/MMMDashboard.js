@@ -2242,9 +2242,11 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const fees = session.total_fees ?? 0;
   const netPnl = session.net_pnl ?? ((session.realized_pnl ?? 0) + (session.unrealized_pnl ?? 0) - fees);
   const unrealized = session.unrealized_pnl ?? 0;
-  const totalPremium = session.total_premium_collected ?? 0;
-  const cePremiumCollected = session.ce_premium_collected ?? 0;
-  const pePremiumCollected = session.pe_premium_collected ?? 0;
+  // net_premium_collected = gross sells minus buyback costs (decreases on close)
+  // Falls back to gross total_premium_collected for old sessions without ledger data
+  const totalPremium = session.net_premium_collected ?? session.total_premium_collected ?? 0;
+  const cePremiumCollected = session.ce_net_premium ?? session.ce_premium_collected ?? 0;
+  const pePremiumCollected = session.pe_net_premium ?? session.pe_premium_collected ?? 0;
   const peakPnl = session.peak_pnl ?? 0;
   // L-11: Compute drawdown from peak for display
   const peakDrawdown = peakPnl - netPnl;
@@ -2405,7 +2407,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                 border: netPnl >= 0 ? 'rgba(76,175,80,0.3)' : 'rgba(244,67,54,0.3)',
               },
               {
-                label: 'Total Premium',
+                label: 'Net Premium',
                 help: 'total_premium',
                 value: `$${totalPremium.toFixed(2)}`,
                 sub: `CE $${cePremiumCollected.toFixed(2)} | PE $${pePremiumCollected.toFixed(2)}`,

@@ -80,6 +80,7 @@ def _run(coro):
 from webui.backend.routes.mmm.mmm_close_at_5 import (
     scan_closeable_positions,
     close_position,
+    _check_stale_being_closed,
     _BEING_CLOSED_TTL,
 )
 
@@ -605,3 +606,82 @@ def test_ca12_exception_clears_being_closed_and_calls_recompute():
     assert 'exchange down' in result['error']
     assert not pos_entry.get('_being_closed')
     mock_recompute.assert_called_once()
+
+# ─────────────────────────────────────────────────────────────────────────────
+# _check_stale_being_closed — sealed contracts (added 2026-03-31)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@pytest.mark.sealed
+def test_check_stale_not_being_closed_returns_false():
+    """No flag set → immediately returns False, no mutation."""
+    pos = {'id': 'p1', 'lots': 10}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is False
+    assert '_being_closed' not in pos
+
+
+@pytest.mark.sealed
+def test_check_stale_fresh_flag_returns_true():
+    """Flag set 1 second ago → still in-flight, returns True."""
+    pos = {'id': 'p1', 'lots': 10,
+           '_being_closed': True,
+           '_being_closed_at': time.monotonic()}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is True
+    assert pos.get('_being_closed') is True  # flag NOT cleared
+
+
+@pytest.mark.sealed
+def test_check_stale_expired_flag_returns_false_and_clears():
+    """Flag set >TTL seconds ago → stale, clears flag, returns False."""
+    pos = {'id': 'p1', 'lots': 10,
+           '_being_closed': True,
+           '_being_closed_at': time.monotonic() - (_BEING_CLOSED_TTL + 10)}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is False
+    assert '_being_closed' not in pos
+    assert '_being_closed_at' not in pos
+
+
+@pytest.mark.sealed
+def test_check_stale_missing_timestamp_treated_as_stale():
+    """
+    _being_closed=True with NO _being_closed_at → treat as infinitely stale.
+    This was the Bug 2 root cause: API set _being_closed without a timestamp.
+    Must return False (clear) not True (block forever).
+    """
+    pos = {'id': 'p1', 'lots': 10, '_being_closed': True}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is False
+    assert '_being_closed' not in pos
+
+
+@pytest.mark.sealed
+def test_check_stale_zero_timestamp_treated_as_stale():
+    """_being_closed_at=0 (falsy) must behave same as missing."""
+    pos = {'id': 'p1', 'lots': 10,
+           '_being_closed': True, '_being_closed_at': 0}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is False
+    assert '_being_closed' not in pos
+
+
+@pytest.mark.sealed
+def test_check_stale_boundary_exactly_at_ttl_is_still_live():
+    """Flag set exactly TTL-1 seconds ago → still in-flight."""
+    pos = {'id': 'p1', 'lots': 10,
+           '_being_closed': True,
+           '_being_closed_at': time.monotonic() - (_BEING_CLOSED_TTL - 1)}
+    result = _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert result is True
+
+
+@pytest.mark.sealed
+def test_check_stale_does_not_mutate_unrelated_fields():
+    """Clearing stale flags must not touch any other position fields."""
+    pos = {'id': 'p1', 'lots': 10, 'premium': 55.0,
+           '_being_closed': True, '_being_closed_at': 0}
+    _check_stale_being_closed(pos, 'ce adj @ 70000')
+    assert pos['lots'] == 10
+    assert pos['premium'] == 55.0
+    assert pos['id'] == 'p1'

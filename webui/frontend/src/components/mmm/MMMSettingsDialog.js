@@ -64,7 +64,7 @@ const PARAM_GROUPS = {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
     blurb: 'Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.',
-    params: ['min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'pre_sell_shift_enabled', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'proactive_shift_enabled', 'pre_sell_shift_enabled', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
@@ -347,6 +347,7 @@ const PARAM_TOOLTIPS = {
   shift_threshold: HELP.shift_threshold || 'Minimum premium at the hedge strike to avoid a strike shift.',
   shift_threshold_pct: HELP.shift_threshold_pct || 'Dynamic shift threshold as % of entry premium.',
   shift_target_premium: 'Target premium when looking for a new strike after a shift. The algo picks the strike closest to this premium value. Higher = deeper OTM (safer but less premium). Lower = closer to ATM (more premium but riskier).',
+  proactive_shift_enabled: 'Master switch for proactive strike shifting. When ON, the algo detects when the active-strike premium decays below shift_threshold and proactively shifts to a better strike before being forced to. Disable to lock the algo to its current strikes until an adjustment naturally triggers a shift. Default ON.',
   pre_sell_shift_enabled: 'Experimental: Before selling hedge lots at a cheap premium, shift to a better strike first. In an up-move, CE rises but PE drops — without this, the algo keeps selling PE at 60-80 when target is 100, causing lot imbalance. With this ON: if PE < shift_target_premium, find a closer-to-ATM PE strike at ~100 first, THEN sell fewer lots there. Falls back to current behavior if no better strike exists in the chain. Default OFF — enable to test.',
   shift_match_opposite_lots: 'Delta-neutral balance: when a strike shift opens a new position, sell AT LEAST as many lots as the opposite side has active. Example: PE has 11 lots, CE shifts → CE opens 11 lots too (not just 4). Prevents directional bias from lot asymmetry. Trend-tier lot reduction is applied proportionally so risk controls are respected. Recommended: ON.',
   max_adjustments: HELP.max_adjustments || 'Maximum number of adjustments before the algo stops and alerts you.',

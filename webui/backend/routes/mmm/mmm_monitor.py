@@ -3454,12 +3454,14 @@ class MMMMonitor:
             # Fix F1.2 (wind-down): Pre-mark _being_closed on positions to prevent
             # concurrent close by close-at-5 or recycler during async smart_execute.
             _wd_marked_ids = []
+            _wd_mark_ts = time.monotonic()
             for rec in group_records:
                 _pid = rec.get('_pos_id')
                 if _pid:
                     for p in side_state.get('positions', []):
                         if p.get('id') == _pid:
                             p['_being_closed'] = True
+                            p['_being_closed_at'] = _wd_mark_ts
                             _wd_marked_ids.append(_pid)
                             break
 
@@ -5249,6 +5251,7 @@ class MMMMonitor:
                 for p in session.get(pos_side, {}).get('positions', []):
                     if p.get('id') == pos_id:
                         p['_being_closed'] = True
+                        p['_being_closed_at'] = time.monotonic()
                         break
 
             result = await close_position(

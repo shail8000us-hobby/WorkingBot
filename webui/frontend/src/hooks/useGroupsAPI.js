@@ -166,16 +166,17 @@ export default function useGroupsAPI() {
 
   // ──────────────────────────────────────────────────────────────────────────
   // Main setter — mirrors the old setAllExpiryGroupData interface
-  // Provides optimistic local update + async server persist
+  // Optimistic local update only. Server persistence is handled exclusively
+  // by the targeted API calls (createGroupOnServer, deleteGroupOnServer, etc.).
+  // The old scheduleSave(/bulk) pattern was removed because save_all() does
+  // DELETE-ALL + reinsert — any stale or partial React state would wipe the DB.
   // ──────────────────────────────────────────────────────────────────────────
   const setAllExpiryGroupData = useCallback((updater) => {
     setAllExpiryGroupDataLocal((prev) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      // Schedule async save to server
-      scheduleSave(next);
       return next;
     });
-  }, [scheduleSave]);
+  }, []);
 
   // ──────────────────────────────────────────────────────────────────────────
   // Specific operations that use targeted API calls (more efficient)
@@ -200,16 +201,14 @@ export default function useGroupsAPI() {
     apiCall('/meta', 'PUT', { expiry_key: expiryKey, ...meta });
   }, [apiCall]);
 
-  // Cleanup
+  // Cleanup — only cancel pending debounce timer.
+  // The old flushToServer-on-unmount was removed: it called /bulk (DELETE ALL + reinsert)
+  // with whatever React state existed at unmount time, which could be stale/partial and wipe DB data.
   useEffect(() => {
     return () => {
       clearTimeout(saveTimerRef.current);
-      // Flush any pending data on unmount
-      if (dataRef.current && Object.keys(dataRef.current).length > 0) {
-        flushToServer(dataRef.current);
-      }
     };
-  }, [flushToServer]);
+  }, []);
 
   return {
     allExpiryGroupData,

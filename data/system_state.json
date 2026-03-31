@@ -1,8 +1,8 @@
 {
   "current_state": "normal_trading",
-  "last_transition": "2026-03-11T13:17:40.695244",
+  "last_transition": "2026-03-30T17:38:56.918911",
   "transition_reason": "startup_complete",
   "guardian_status": "UNKNOWN",
-  "mode": "LONG",
+  "mode": "SHORT",
   "recovery_in_progress": false
 }

@@ -559,6 +559,9 @@ class TakeProfitMonitor:
                                 result = await client.get_all_positions_with_options()
                                 return result.get('options', [])
                             positions_data = _run_async(_fetch_tp(), timeout=15)
+                            # NOTE: do NOT call update_positions_cache here — raw positions lack
+                            # cashflow and other enriched fields; writing them to the shared cache
+                            # would cause cashflow=$0 in the dashboard.
                         except Exception as fe:
                             logger.warning(f"⚠️ TP monitor: direct fetch failed: {fe}")
                             return

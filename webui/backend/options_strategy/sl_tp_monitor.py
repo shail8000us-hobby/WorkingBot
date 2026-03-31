@@ -159,7 +159,11 @@ class SLTPMonitor:
                 async def _fetch():
                     result = await client.get_all_positions_with_options()
                     return result.get('options', [])
-                return _run_async(_fetch(), timeout=15)
+                fetched = _run_async(_fetch(), timeout=15)
+                # NOTE: do NOT call update_positions_cache here — raw positions lack cashflow
+                # and other fields added by enrich_position_data. Writing them to the shared
+                # cache would overwrite the enriched data, causing cashflow=$0 in the dashboard.
+                return fetched if fetched is not None else []
             except Exception as fe:
                 logger.warning(f"⚠️ SL/TP monitor: direct fetch failed: {fe}")
                 return []

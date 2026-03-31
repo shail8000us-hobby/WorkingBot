@@ -384,7 +384,21 @@ function TriggerSideGauge({
           variant="caption"
           sx={{ color: PIN_COLOR, display: 'block', mt: 0.5 }}
         >
-          🔒 Trigger locked at ${triggerLevel.toFixed(1)} · unlocks after {adjRemaining} adj
+          🔒 Locked at ${triggerLevel.toFixed(1)} ·{' '}
+          <Typography
+            component="span"
+            variant="caption"
+            onClick={handleUnpin}
+            sx={{
+              color: PIN_COLOR,
+              textDecoration: 'underline',
+              cursor: 'pointer',
+              '&:hover': { opacity: 0.7 },
+            }}
+          >
+            Unlock
+          </Typography>
+          {' '}· auto in {adjRemaining} adj
         </Typography>
       )}
 

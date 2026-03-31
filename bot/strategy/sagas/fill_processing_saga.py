@@ -1033,7 +1033,18 @@ async def create_short_entry_saga(
             next_price = grid_calc.compute_next_level_up(fill_data["fill_price"])
             
             log.info(f"[SHORT-SAGA] Placing next SELL order @ {next_price}")
-            
+
+            # Fetch current pending_sell ID so OrderActor can cancel it by known ID.
+            # After step 1.5 (CLEAR_PENDING_SELL), this is normally None for an entry fill.
+            # For safety we check anyway — catches edge cases where state wasn't cleared yet.
+            state_for_cancel = await position_actor.ask("GET_STATE", {})
+            current_pending = state_for_cancel.get("pending_sell")
+            known_pending_sell_id = (
+                current_pending.get("order_id") if isinstance(current_pending, dict) else None
+            )
+            if known_pending_sell_id:
+                log.info(f"[SHORT-SAGA] Will cancel known pending SELL #{known_pending_sell_id} before placing @ ${next_price:,.0f}")
+
             # ============================================================================
             # SINGLE WRITER PATTERN (Dec 19, 2025): Delegate to OrderActor
             # ============================================================================
@@ -1044,10 +1055,11 @@ async def create_short_entry_saga(
                 Message("REPLACE_PENDING_SELL_ORDER", {
                     "price": next_price,
                     "size": fill_data["fill_size"],
-                    "check_guardian": True
+                    "check_guardian": True,
+                    "known_pending_id": known_pending_sell_id,
                 }, reply_queue, correlation_id)
             )
-            
+
             # Wait for atomic operation result
             result = await asyncio.wait_for(reply_queue.get(), timeout=15.0)
             
@@ -1239,7 +1251,17 @@ async def create_short_tp_saga(
             next_price = grid_calc.compute_next_level_up(tp_price)
             
             log.info(f"[SHORT-SAGA] TP filled @ {fill_data['fill_price']}, placing new SELL @ {next_price} (TP + 1 step)")
-            
+
+            # Fetch current pending_sell ID so OrderActor can cancel it by known ID
+            # (deterministic cancel — no exchange propagation lag)
+            state_for_cancel = await position_actor.ask("GET_STATE", {})
+            current_pending = state_for_cancel.get("pending_sell")
+            known_pending_sell_id = (
+                current_pending.get("order_id") if isinstance(current_pending, dict) else None
+            )
+            if known_pending_sell_id:
+                log.info(f"[SHORT-SAGA] Will cancel known pending SELL #{known_pending_sell_id} before placing @ ${next_price:,.0f}")
+
             # ============================================================================
             # SINGLE WRITER PATTERN (Dec 19, 2025): Delegate to OrderActor
             # ============================================================================
@@ -1250,10 +1272,11 @@ async def create_short_tp_saga(
                 Message("REPLACE_PENDING_SELL_ORDER", {
                     "price": next_price,
                     "size": fill_data["fill_size"],
-                    "check_guardian": True
+                    "check_guardian": True,
+                    "known_pending_id": known_pending_sell_id,
                 }, reply_queue, correlation_id)
             )
-            
+
             # Wait for atomic operation result
             result = await asyncio.wait_for(reply_queue.get(), timeout=15.0)
             

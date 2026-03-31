@@ -288,17 +288,24 @@ class GridEngine:
             if anomaly_detected:
                 log.warning(f"⚠️  Anomaly detected before {side.upper()} order @ ${target:,.2f} - proceeding with caution")
 
-            action = f"PLACE_{side.upper()}"
             # CRITICAL FIX (Nov 20, 2025): Use separate lot sizes for LONG/SHORT
             if side == "sell":
                 size = getattr(self.config.grid.limits, 'short_lot_size', self.lot_size)
             else:
                 size = self.lot_size
 
-            result = await self.order_actor.ask(action, {
-                "price": target,
-                "size": size
-            }, timeout=20.0)
+            # SHORT mode: use REPLACE_PENDING_SELL_ORDER to enforce single-entry-order
+            # invariant. Phase 1b (orphan sweep) catches stale exchange orders even when
+            # bot state shows no pending_sell (e.g. after a restart before state was synced).
+            # known_pending_id is omitted — pending_sell was confirmed None at line 220.
+            if side == "sell" and self.mode == "SHORT":
+                action = "REPLACE_PENDING_SELL_ORDER"
+                order_payload = {"price": target, "size": size, "check_guardian": True}
+            else:
+                action = f"PLACE_{side.upper()}"
+                order_payload = {"price": target, "size": size}
+
+            result = await self.order_actor.ask(action, order_payload, timeout=20.0)
 
             if result.get("status") == "ok":
                 order_id = result.get("order_id")
@@ -635,6 +642,35 @@ class GridEngine:
                             log.warning(f"   Order {order_id}: {side} {size} @ ${price_float:,.2f} [type={order_type}]")
                         except (ValueError, TypeError):
                             log.warning(f"   Order {order_id}: {side} {size} @ {price} [type={order_type}]")
+
+                    # SHORT mode: if 2+ bot-tagged SELL limit orders exist at startup,
+                    # cancel ALL before syncing — enforces single-entry-order invariant.
+                    # (Single order = sync as usual; 0 orders = fall through to placement.)
+                    if self.mode == "SHORT":
+                        tag = getattr(self.order_actor, 'tag_prefix', 'GBOT_')
+                        short_sell_candidates = [
+                            o for o in exchange_orders
+                            if (o.get('order_type', '').lower() == 'limit_order'
+                                and not o.get('bracket_order')
+                                and not o.get('stop_order_type')
+                                and o.get('side') == 'sell'
+                                and o.get('client_order_id', '').startswith(tag))
+                        ]
+                        if len(short_sell_candidates) > 1:
+                            log.warning(
+                                f"⚠️  Startup invariant violation: found {len(short_sell_candidates)} "
+                                f"bot-tagged SELL orders — cancelling ALL to enforce "
+                                f"single-entry-order invariant"
+                            )
+                            for orphan in short_sell_candidates:
+                                oid = str(orphan.get('id'))
+                                try:
+                                    await self.api_client.cancel_order(oid, self.product_id)
+                                    log.info(f"   Cancelled orphan SELL #{oid} @ ${float(orphan.get('limit_price', 0)):,.0f}")
+                                except Exception as e:
+                                    log.warning(f"   Failed to cancel orphan SELL #{oid}: {e}")
+                            log.info("   All startup orphan SELLs cancelled — will place fresh entry order")
+                            exchange_orders = []  # Clear so sync loop is skipped; falls through to placement
 
                     # Sync the first relevant order to bot state
                     # CRITICAL: Only sync LIMIT orders, NEVER stop/stop-limit/market orders

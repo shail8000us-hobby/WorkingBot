@@ -889,6 +889,9 @@ class MaxLossMonitor:
 
             positions = _run_async(_fetch(), timeout=15)
             logger.info(f"🔄 Max-loss monitor: fetched {len(positions)} positions directly (cache was stale)")
+            # NOTE: do NOT call update_positions_cache here — raw positions lack cashflow
+            # and other fields added by enrich_position_data. Writing them to the shared
+            # cache would overwrite enriched data and cause cashflow=$0 in the dashboard.
             return positions
         except Exception as e:
             logger.warning(f"⚠️ Max-loss monitor: direct position fetch failed: {e}")

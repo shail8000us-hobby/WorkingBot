@@ -4,8 +4,6 @@ bot:
   symbol: BTCUSD
   mode: LONG
   heartbeat_seconds: '20'
-
-# V6.0 multi-instance: each instance is Symbol + Mode with its own grid and lot sizes
 instances:
   BTCUSD_SHORT:
     symbol: BTCUSD
@@ -14,13 +12,13 @@ instances:
     product_id: 27
     grid:
       geometry:
-        reference: 67000
+        reference: 67500
         lower: 66000
         upper: 72000
         step: 500
       limits:
         max_open_positions: 20
-        lot_size: 1
+        lot_size: 5
         max_open_orders: 20
         max_qty_per_order: 1
       behavior:
@@ -40,7 +38,8 @@ instances:
         enabled: true
         stop_threshold: 70
         resume_threshold: 60
-
+        long_threshold: 30
+        short_threshold: 70
   BTCUSD_LONG:
     symbol: BTCUSD
     mode: LONG
@@ -74,7 +73,6 @@ instances:
         enabled: true
         stop_threshold: 30
         resume_threshold: 40
-
   ETHUSD_LONG:
     symbol: ETHUSD
     mode: LONG
@@ -108,7 +106,6 @@ instances:
         enabled: true
         stop_threshold: 30
         resume_threshold: 40
-
   ETHUSD_SHORT:
     symbol: ETHUSD
     mode: SHORT
@@ -142,8 +139,6 @@ instances:
         enabled: true
         stop_threshold: 70
         resume_threshold: 60
-
-# V5.0 legacy symbols (kept for backward compat — instances section above takes precedence)
 symbols:
   BTCUSD:
     enabled: true
@@ -284,7 +279,7 @@ safety:
     overbought_threshold: 70.0
     oversold_threshold: 30.0
     long_threshold: 24
-    short_threshold: 25
+    short_threshold: 84
     hysteresis_seconds: 60
     timeframe: 1h
     check_interval: 300

@@ -1099,3 +1099,44 @@ After a replenish fill, lots were recorded in `_replenish_history` only. The `ch
 This is the third location (after Gate 11 in `check_replenish_eligibility` and the headroom cap in `_process_replenish`) where the velocity headroom must be enforced. The safety-stage check is a gate-keeper but cannot substitute for per-sell capping since it can only see lots ALREADY in the window, not the lots about to be sold.
 
 **Files changed**: `mmm_monitor.py`
+
+
+---
+
+## 2026-03-31 — Fix: P&L Calculation Incomplete False-Positive Pause (3 bugs)
+
+**Context**: Session `mmm31mar26-1` paused with "P&L calculation incomplete — data unreliable". Never seen before, no Telegram warning was sent. Root cause was a cascade of 3 bugs.
+
+**Bug 1 — `being_closed_lots_at` over-subtraction in `mmm_pnl_core.py`**
+The 128-lot CE position had `_being_closed=True`, so `being_closed_lots_at[67800.0]=128`. The original code applied this FULL 128 deduction to EVERY fill at that strike via `max(0, lots - closing)`. With fills of 128/30/1/1 lots at 67800, all 4 were reduced to 0, making `_total_positions=0` for CE. With 0 CE positions, the 1 PE premium fetch became 1/1=100% failure rate, triggering the >50% incomplete threshold.
+- **Fix** (`mmm_pnl_core.py`): Replaced flat deduction with a **depleting counter** `_remaining_bc = dict(being_closed_lots_at)`. Each fill at a given strike deducts from `_remaining_bc[strike]` in FIFO order via `_deduct = min(lots, _remaining_bc.get(strike, 0))`. The 128-lot fill consumes all 128 being-closed lots; the subsequent 30/1/1-lot fills get `_deduct=0` and count fully. `_total_positions` correctly becomes 5 (not 1).
+
+**Bug 2 — Stale `_being_closed=True` with `_being_closed_at=None` in session DB**
+The 128-lot CE position had `_being_closed=True, _being_closed_at=None`. The TTL auto-clear fires when `_being_closed_at` is None OR stale (>180s), but log shows it was cleared at 06:52:14 then re-set in the same heartbeat cycle. This left the position flagged as being-closed indefinitely.
+- **Fix**: Direct sqlite3 update on `mmm_sessions.db` to clear `_being_closed` and `_being_closed_at` from the stuck CE position. Verified all CE positions show `_being_closed: false`.
+
+**Bug 3 — SL/TP/Max-loss monitors never writing back to shared positions cache**
+`_positions_cache` in `options_control.py` is populated ONLY by HTTP GET `/api/options/positions`. Three background monitors (`sl_tp_monitor`, `take_profit_manager`, `max_loss_manager`) each call `get_cached_positions(max_age=15)` every 5 seconds. When the browser tab is closed, the cache goes stale — every 5s check triggers a direct exchange REST call per monitor. Logs showed 5149+ "positions cache stale" warnings in one day.
+- **Fix** (`options_control.py`): Added `update_positions_cache(positions)` writer function that updates `_positions_cache['data']` and `['time']`.
+- **Fix** (`sl_tp_monitor.py`, `take_profit_manager.py`, `max_loss_manager.py`): After each successful direct fetch, call `update_positions_cache(fetched)`. Now: first stale check fetches + populates cache; next two 5s checks find cache age <15s → no fetch. Rate drops from 1 fetch/5s to ~1 fetch/15s per monitor.
+
+**Files changed**: `mmm_pnl_core.py`, `mmm_sessions.db` (data fix), `options_control.py`, `sl_tp_monitor.py`, `take_profit_manager.py`, `max_loss_manager.py`
+
+---
+
+## 2026-03-31 (Review) — Harden _being_closed flag: timestamp missing in 4 setters
+
+During post-fix review of the 2026-03-31 session, found that Bug 2 (stale `_being_closed` flag) could recur via a different path: 4 out of 6 call sites that set `_being_closed=True` never set `_being_closed_at`. This left positions with no timestamp, which `_check_stale_being_closed` treats as "infinitely stale" and auto-clears — but `close_position`'s inline stale check (`if set_at and ...`) treated `set_at=0` as falsy and would NOT auto-clear, creating an inconsistency.
+
+**Missing `_being_closed_at` sites fixed:**
+- `mmm_api.py` line ~4701 (manual close-strike endpoint)
+- `mmm_api.py` line ~5217 (manual adjust-lots endpoint)
+- `mmm_monitor.py` line ~3462 (wake-detection group close)
+- `mmm_monitor.py` line ~5251 (harvester pre-mark)
+
+All four now set `_being_closed_at = time.monotonic()` immediately after `_being_closed = True`. Added `import time` to `mmm_api.py` (was missing).
+
+**Inconsistent stale check fixed:**
+- `mmm_close_at_5.py` `close_position()` inline check at line ~334 changed from `if set_at and time.monotonic() - set_at > TTL` to `if not set_at or time.monotonic() - set_at > TTL` — now consistent with `_check_stale_being_closed`.
+
+**Files changed**: `mmm_api.py`, `mmm_monitor.py`, `mmm_close_at_5.py`

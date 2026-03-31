@@ -46,6 +46,7 @@ from typing import Dict, List, Optional, Callable
 from datetime import datetime, timezone
 
 from .mmm_constants import LOT_SIZE_BTC
+from webui.backend.sealed import sealed
 
 _D = Decimal
 _LOT = _D(str(LOT_SIZE_BTC))
@@ -179,6 +180,7 @@ def _migrate_existing_pnl(session: Dict) -> None:
 # WRITE PATHS
 # ─────────────────────────────────────────────────────────────────────────────
 
+@sealed
 def record_close(
     session: Dict,
     order_id: str,
@@ -265,6 +267,7 @@ def record_close(
     return entry_id
 
 
+@sealed
 def confirm_fill(
     session: Dict,
     order_id: str,
@@ -324,6 +327,7 @@ def confirm_fill(
     return None
 
 
+@sealed
 def rollback_close(session: Dict, order_id: str) -> Optional[Dict]:
     """
     Remove an UNCONFIRMED ledger entry by order_id.
@@ -348,6 +352,7 @@ def rollback_close(session: Dict, order_id: str) -> Optional[Dict]:
     return None
 
 
+@sealed
 def flag_discrepancy(
     session: Dict,
     symbol: str,
@@ -380,6 +385,7 @@ def flag_discrepancy(
     return report
 
 
+@sealed
 def manual_close(
     session: Dict,
     symbol: str,
@@ -410,6 +416,7 @@ def manual_close(
     )
 
 
+@sealed
 def record_fee(
     session: Dict,
     commission: float,
@@ -470,6 +477,7 @@ def record_fee(
     return entry_id
 
 
+@sealed
 def rollback_closes_since(session: Dict, snapshot_len: int) -> int:
     """
     Remove all UNCONFIRMED ledger entries added after snapshot_len.
@@ -525,6 +533,7 @@ def rollback_closes_since(session: Dict, snapshot_len: int) -> int:
     return removed
 
 
+@sealed
 def ledger_snapshot(session: Dict) -> int:
     """Return current ledger length as a snapshot point for rollback."""
     return len(_ensure_ledger(session))
@@ -534,24 +543,28 @@ def ledger_snapshot(session: Dict) -> int:
 # READ PATHS — pure, always derived from ledger
 # ─────────────────────────────────────────────────────────────────────────────
 
+@sealed
 def compute_realized_pnl(session: Dict) -> float:
     """Sum of all ledger entries' P&L (both estimated and confirmed)."""
     ledger = _ensure_ledger(session)
     return sum(e['pnl'] for e in ledger)
 
 
+@sealed
 def compute_confirmed_pnl(session: Dict) -> float:
     """Sum of only exchange-confirmed entries."""
     ledger = _ensure_ledger(session)
     return sum(e['pnl'] for e in ledger if e.get('confirmed'))
 
 
+@sealed
 def compute_fees(session: Dict) -> float:
     """Sum of all commissions from the ledger."""
     ledger = _ensure_ledger(session)
     return sum(abs(e.get('commission', 0)) for e in ledger)
 
 
+@sealed
 def compute_unrealized_pnl(session: Dict, fetch_premium_fn: Callable) -> float:
     """
     Compute unrealized P&L across all open positions.
@@ -570,7 +583,8 @@ def compute_unrealized_pnl(session: Dict, fetch_premium_fn: Callable) -> float:
         side_state = session.get(side_key, {})
         option_type = 'call' if side_key == 'ce' else 'put'
 
-        # Track lots being closed to prevent transient double-count
+        # Track lots being closed to prevent transient double-count.
+        # Sum being_closed lots per strike across all position records.
         being_closed_lots_at = {}
         for pos in side_state.get('positions', []):
             if pos.get('_being_closed') and pos.get('lots', 0) > 0:
@@ -579,16 +593,20 @@ def compute_unrealized_pnl(session: Dict, fetch_premium_fn: Callable) -> float:
                     being_closed_lots_at.get(s, 0) + int(pos.get('lots', 0))
                 )
 
+        # Depleting counter: each fill consumes only as many being_closed lots
+        # as it actually holds, so the deduction never spills over to other fills
+        # at the same strike (fix: was subtracting full total from every fill).
+        _remaining_bc = dict(being_closed_lots_at)
+
         # Original lots
         orig_lots = side_state.get('original_lots', 0)
         orig_prem = side_state.get('original_premium', 0)
         active_strike = side_state.get('active_strike', 0)
 
-        orig_lots_effective = orig_lots - being_closed_lots_at.get(
-            float(active_strike), 0
-        )
-        if orig_lots_effective < 0:
-            orig_lots_effective = 0
+        _orig_key = float(active_strike)
+        _orig_deduct = min(orig_lots, _remaining_bc.get(_orig_key, 0))
+        _remaining_bc[_orig_key] = _remaining_bc.get(_orig_key, 0) - _orig_deduct
+        orig_lots_effective = orig_lots - _orig_deduct
 
         if orig_lots_effective > 0 and active_strike > 0:
             _total_positions += 1
@@ -613,8 +631,10 @@ def compute_unrealized_pnl(session: Dict, fetch_premium_fn: Callable) -> float:
             lots = fill.get('lots', 0)
             prem = fill.get('premium', 0)
             strike = fill.get('strike', active_strike)
-            closing = being_closed_lots_at.get(float(strike), 0)
-            lots_effective = max(0, lots - closing)
+            _strike_f = float(strike)
+            _deduct = min(lots, _remaining_bc.get(_strike_f, 0))
+            _remaining_bc[_strike_f] = _remaining_bc.get(_strike_f, 0) - _deduct
+            lots_effective = lots - _deduct
             if lots_effective > 0:
                 _total_positions += 1
                 try:
@@ -671,6 +691,7 @@ def compute_unrealized_pnl(session: Dict, fetch_premium_fn: Callable) -> float:
     return float(total_unrealized)
 
 
+@sealed
 def compute_attribution(session: Dict) -> Dict[str, float]:
     """Derive P&L attribution from the ledger source field."""
     ledger = _ensure_ledger(session)
@@ -707,6 +728,46 @@ def _oldest_estimate_age_sec(ledger: list) -> Optional[float]:
     return oldest
 
 
+@sealed
+def compute_net_premium(session: Dict) -> Dict:
+    """Compute net premium (gross sells minus buyback costs from fill ledger).
+
+    total_premium_collected only accumulates on sells and is never decremented.
+    This function subtracts what was paid in buybacks so the displayed value
+    decreases when positions are closed (close_at_5, ATM shield, wind-down, etc.).
+
+    Skips migration entries (which have close_premium=0 and carry no buyback data).
+
+    Returns:
+        {'total': net_total, 'ce': net_ce, 'pe': net_pe}
+    """
+    ledger = session.get('_fill_ledger', [])
+    buyback_total = buyback_ce = buyback_pe = 0.0
+    for entry in ledger:
+        if entry.get('_is_migration'):
+            continue
+        close_prem = float(entry.get('close_premium', 0) or 0)
+        lots = int(entry.get('lots', 0) or 0)
+        cost = close_prem * lots * float(_LOT)
+        buyback_total += cost
+        side = str(entry.get('option_side', '') or '').lower()
+        if side == 'ce':
+            buyback_ce += cost
+        elif side == 'pe':
+            buyback_pe += cost
+
+    gross_total = float(session.get('total_premium_collected', 0) or 0)
+    gross_ce = float(session.get('ce_premium_collected', 0) or 0)
+    gross_pe = float(session.get('pe_premium_collected', 0) or 0)
+
+    return {
+        'total': round(gross_total - buyback_total, 6),
+        'ce': round(gross_ce - buyback_ce, 6),
+        'pe': round(gross_pe - buyback_pe, 6),
+    }
+
+
+@sealed
 def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
     """
     The single P&L endpoint. Everything derived from the ledger.
@@ -746,6 +807,7 @@ def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
         session['peak_pnl'] = round(net, 6)
 
     ledger = _ensure_ledger(session)
+    net_prem = compute_net_premium(session)
     return {
         'realized': round(realized, 6),
         'unrealized': round(unrealized, 6),
@@ -760,6 +822,10 @@ def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
         'oldest_estimate_age_sec': _oldest_estimate_age_sec(ledger),
         'fill_count': len(ledger),
         'confirmed_count': sum(1 for e in ledger if e.get('confirmed')),
+        # Net premium: gross sells minus buyback costs (decreases when positions closed)
+        'net_premium_collected': net_prem['total'],
+        'ce_net_premium': net_prem['ce'],
+        'pe_net_premium': net_prem['pe'],
     }
 
 
@@ -767,6 +833,7 @@ def get_pnl(session: Dict, fetch_premium_fn: Callable = None) -> Dict:
 # H-1: Single canonical total P&L formula — all safety checks must use this
 # ─────────────────────────────────────────────────────────────────────────────
 
+@sealed
 def compute_current_total_pnl(session: Dict) -> float:
     """
     Single canonical formula for current total P&L across all components.
@@ -797,6 +864,7 @@ def compute_current_total_pnl(session: Dict) -> float:
 # H-4: Stale estimate detection
 # ─────────────────────────────────────────────────────────────────────────────
 
+@sealed
 def check_stale_estimates(
     session: Dict,
     max_age_minutes: float = 10.0,

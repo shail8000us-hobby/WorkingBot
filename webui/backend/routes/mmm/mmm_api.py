@@ -17,6 +17,7 @@ import logging
 import asyncio
 import threading
 import json
+import time
 from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timezone
 
@@ -85,24 +86,37 @@ def _overlay_live_pnl(sessions_list):
     REST read, regardless of when the last heartbeat ran or what mid-heartbeat
     events (close, shift, reduce) updated realized_pnl without refreshing
     unrealized_pnl.
+
+    Also computes net_premium_collected (gross sells minus buyback costs) for
+    all sessions so the dashboard correctly shows decreasing premium as
+    positions are squared off.
     """
+    from .mmm_pnl_core import compute_net_premium as _compute_net_prem
     monitors = get_all_monitors()
-    if not monitors:
-        return
     for s in sessions_list:
         sid = s.get('session_id', '')
-        if sid not in monitors:
-            continue
-        live = compute_live_pnl(sid)
-        if live is None:
-            continue
-        s['realized_pnl'] = round(live['realized'], 6)
-        s['unrealized_pnl'] = round(live['unrealized'], 6)
-        s['total_fees'] = round(live['fees'], 6)
-        s['net_pnl'] = round(live['net_pnl'], 6)
-        # Keep peak_pnl consistent: if live net_pnl exceeds stored peak, update it
-        if live['net_pnl'] > s.get('peak_pnl', 0):
-            s['peak_pnl'] = round(live['net_pnl'], 6)
+        if monitors and sid in monitors:
+            # Running session: overlay live P&L from monitor's in-memory state
+            live = compute_live_pnl(sid)
+            if live is not None:
+                s['realized_pnl'] = round(live['realized'], 6)
+                s['unrealized_pnl'] = round(live['unrealized'], 6)
+                s['total_fees'] = round(live['fees'], 6)
+                s['net_pnl'] = round(live['net_pnl'], 6)
+                # Keep peak_pnl consistent: if live net_pnl exceeds stored peak, update it
+                if live['net_pnl'] > s.get('peak_pnl', 0):
+                    s['peak_pnl'] = round(live['net_pnl'], 6)
+                # Net premium from live session (includes latest in-memory fill ledger)
+                s['net_premium_collected'] = round(live.get('net_premium_collected', s.get('total_premium_collected', 0)), 6)
+                s['ce_net_premium'] = round(live.get('ce_net_premium', s.get('ce_premium_collected', 0)), 6)
+                s['pe_net_premium'] = round(live.get('pe_net_premium', s.get('pe_premium_collected', 0)), 6)
+                continue
+
+        # Stopped session (or no live data): compute net premium from stored fill ledger
+        net_prem = _compute_net_prem(s)
+        s['net_premium_collected'] = net_prem['total']
+        s['ce_net_premium'] = net_prem['ce']
+        s['pe_net_premium'] = net_prem['pe']
 
 
 def _invalidate_sessions_cache():
@@ -2094,6 +2108,7 @@ def get_exchange_margin():
                 'total_margin_used': margin_data.get('total_margin_used', 0),
                 'cross_position_margin': margin_data.get('cross_position_margin', 0),
                 'cross_order_margin': margin_data.get('cross_order_margin', 0),
+                'balance_minus_available': margin_data.get('balance_minus_available', 0),
                 'asset_symbol': margin_data.get('asset_symbol', 'USD'),
             },
             'positions': positions,
@@ -4683,8 +4698,10 @@ def close_strike_route(session_id: str):
             return jsonify({'success': False, 'error': 'Total lots at strike is 0'}), 400
 
         # In-flight guard: mark before placing order (prevents duplicate if state-removal crashes)
+        _mark_ts = time.monotonic()
         for p in target_positions:
             p['_being_closed'] = True
+            p['_being_closed_at'] = _mark_ts  # required for TTL auto-clear in _check_stale_being_closed
 
         params = session.get('params', {})
         expiry = params.get('expiry', '')
@@ -5199,8 +5216,10 @@ def adjust_active_lots(session_id: str):
             target_positions.sort(key=lambda p: p.get('created_at', ''), reverse=True)
 
             # In-flight guard before placing order
+            _mark_ts = time.monotonic()
             for p in target_positions:
                 p['_being_closed'] = True
+                p['_being_closed_at'] = _mark_ts  # required for TTL auto-clear in _check_stale_being_closed
 
             log_activity(
                 'manual_adjust_lots',

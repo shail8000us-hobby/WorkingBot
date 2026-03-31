@@ -737,48 +737,86 @@ class OrderManagerActor(Actor):
         
         cancelled_order_ids = []
         
-        # PHASE 1: Cancel old pending BUY orders
+        # PHASE 1: Cancel pending BUY order by known ID (deterministic) + orphan sweep
         if not skip_cancel:
+            known_pending_id = payload.get("known_pending_id")
+
+            # PHASE 1a: Cancel by known order ID — eliminates exchange propagation lag.
+            # This is the authoritative step. If the known order cannot be confirmed
+            # cancelled, placement is ABORTED to preserve the single-entry-order invariant.
+            if known_pending_id:
+                log.info(f"[OrderActor] Phase 1a: cancelling known pending BUY #{known_pending_id}")
+                cancel_result = await self._handle_cancel_order(
+                    {"order_id": known_pending_id},
+                    None,
+                    correlation_id
+                )
+                if cancel_result.get("status") == "ok":
+                    cancelled_order_ids.append(known_pending_id)
+                    log.info(f"[OrderActor] Known pending BUY #{known_pending_id} confirmed cancelled")
+                else:
+                    # Real failure (not already-gone) — abort to prevent two live entry orders
+                    log.error(
+                        f"[OrderActor] CANCEL FAILED for known BUY #{known_pending_id}: "
+                        f"{cancel_result.get('error')} — aborting placement to preserve "
+                        f"single-entry-order invariant"
+                    )
+                    return {
+                        "status": "error",
+                        "reason": "cancel_failed",
+                        "order_id": known_pending_id,
+                        "error": cancel_result.get("error"),
+                        "cancelled_orders": cancelled_order_ids,
+                    }
+
+            # PHASE 1b: Best-effort orphan sweep — catches stale orders from bot restarts.
+            # Non-blocking: a failure here does NOT abort placement. Phase 1a was authoritative.
             try:
-                # Get all open orders from exchange
                 orders = await self.api_client.get_open_orders(self.product_id)
-                
-                # Find bot's pending BUY orders (not TP orders)
+
                 for order in orders:
                     if order.get("side") == "buy" and order.get("state") == "open":
                         order_price = float(order.get("limit_price", 0))
-                        order_id = str(order.get("id"))
+                        oid = str(order.get("id"))
                         is_reduce_only = order.get("reduce_only", False)
                         client_order_id = order.get("client_order_id", "")
-                        
-                        # Skip TP orders
+
+                        # Skip TP orders (reduce_only closes a long position)
                         if is_reduce_only:
                             continue
-                        
-                        # Skip manual orders (no bot tag)
+
+                        # Skip manual/external orders
                         if not client_order_id.startswith(self.tag_prefix):
-                            log.debug(f"[OrderActor] Preserving manual order #{order_id} @ ${order_price}")
+                            log.debug(f"[OrderActor] Preserving manual order #{oid} @ ${order_price}")
                             continue
-                        
-                        # Cancel if not at target price
-                        if abs(order_price - target_price) > 0.01:
-                            log.info(f"[OrderActor] Cancelling old BUY #{order_id} @ ${order_price:,.0f}")
-                            cancel_result = await self._handle_cancel_order(
-                                {"order_id": order_id},
-                                None,
-                                correlation_id
+
+                        # Skip already cancelled in Phase 1a
+                        if oid in cancelled_order_ids:
+                            continue
+
+                        # Skip target price itself (dedup in _handle_place_buy will catch it)
+                        if abs(order_price - target_price) < 0.01:
+                            continue
+
+                        log.info(f"[OrderActor] Orphan sweep: cancelling BUY #{oid} @ ${order_price:,.0f}")
+                        sweep_result = await self._handle_cancel_order(
+                            {"order_id": oid}, None, correlation_id
+                        )
+                        if sweep_result.get("status") == "ok":
+                            cancelled_order_ids.append(oid)
+                        else:
+                            log.warning(
+                                f"[OrderActor] Orphan sweep cancel failed for #{oid}: "
+                                f"{sweep_result.get('error')} (non-fatal — Phase 1a was authoritative)"
                             )
-                            
-                            if cancel_result.get("status") == "ok":
-                                cancelled_order_ids.append(order_id)
-                            
-                            await asyncio.sleep(0.05)  # Small delay between cancellations
-                
-                log.info(f"[OrderActor] Cancelled {len(cancelled_order_ids)} old BUY orders")
-                
+
+                        await asyncio.sleep(0.05)
+
+                log.info(f"[OrderActor] Phase 1 complete: {len(cancelled_order_ids)} BUY order(s) cancelled")
+
             except Exception as e:
-                log.error(f"[OrderActor] Error cancelling old BUY orders: {e}")
-                # Continue anyway - we'll try to place the new order
+                log.warning(f"[OrderActor] Orphan sweep failed (non-fatal): {e}")
+                # Non-fatal: Phase 1a (known ID) was the authoritative cancel step
         
         # PHASE 2: Check Guardian signal (if requested)
         if check_guardian:
@@ -884,48 +922,86 @@ class OrderManagerActor(Actor):
         
         cancelled_order_ids = []
         
-        # PHASE 1: Cancel old pending SELL orders
+        # PHASE 1: Cancel pending SELL order by known ID (deterministic) + orphan sweep
         if not skip_cancel:
+            known_pending_id = payload.get("known_pending_id")
+
+            # PHASE 1a: Cancel by known order ID — eliminates exchange propagation lag.
+            # This is the authoritative step. If the known order cannot be confirmed
+            # cancelled, placement is ABORTED to preserve the single-entry-order invariant.
+            if known_pending_id:
+                log.info(f"[OrderActor] Phase 1a: cancelling known pending SELL #{known_pending_id}")
+                cancel_result = await self._handle_cancel_order(
+                    {"order_id": known_pending_id},
+                    None,
+                    correlation_id
+                )
+                if cancel_result.get("status") == "ok":
+                    cancelled_order_ids.append(known_pending_id)
+                    log.info(f"[OrderActor] Known pending SELL #{known_pending_id} confirmed cancelled")
+                else:
+                    # Real failure (not already-gone) — abort to prevent two live entry orders
+                    log.error(
+                        f"[OrderActor] CANCEL FAILED for known SELL #{known_pending_id}: "
+                        f"{cancel_result.get('error')} — aborting placement to preserve "
+                        f"single-entry-order invariant"
+                    )
+                    return {
+                        "status": "error",
+                        "reason": "cancel_failed",
+                        "order_id": known_pending_id,
+                        "error": cancel_result.get("error"),
+                        "cancelled_orders": cancelled_order_ids,
+                    }
+
+            # PHASE 1b: Best-effort orphan sweep — catches stale orders from bot restarts.
+            # Non-blocking: a failure here does NOT abort placement. Phase 1a was authoritative.
             try:
-                # Get all open orders from exchange
                 orders = await self.api_client.get_open_orders(self.product_id)
-                
-                # Find bot's pending SELL orders (not TP orders)
+
                 for order in orders:
                     if order.get("side") == "sell" and order.get("state") == "open":
                         order_price = float(order.get("limit_price", 0))
-                        order_id = str(order.get("id"))
+                        oid = str(order.get("id"))
                         is_reduce_only = order.get("reduce_only", False)
                         client_order_id = order.get("client_order_id", "")
-                        
-                        # Skip TP orders
+
+                        # Skip TP orders (reduce_only closes a short position)
                         if is_reduce_only:
                             continue
-                        
-                        # Skip manual orders (no bot tag)
+
+                        # Skip manual/external orders
                         if not client_order_id.startswith(self.tag_prefix):
-                            log.debug(f"[OrderActor] Preserving manual order #{order_id} @ ${order_price}")
+                            log.debug(f"[OrderActor] Preserving manual order #{oid} @ ${order_price}")
                             continue
-                        
-                        # Cancel if not at target price
-                        if abs(order_price - target_price) > 0.01:
-                            log.info(f"[OrderActor] Cancelling old SELL #{order_id} @ ${order_price:,.0f}")
-                            cancel_result = await self._handle_cancel_order(
-                                {"order_id": order_id},
-                                None,
-                                correlation_id
+
+                        # Skip already cancelled in Phase 1a
+                        if oid in cancelled_order_ids:
+                            continue
+
+                        # Skip target price itself (dedup in _handle_place_sell will catch it)
+                        if abs(order_price - target_price) < 0.01:
+                            continue
+
+                        log.info(f"[OrderActor] Orphan sweep: cancelling SELL #{oid} @ ${order_price:,.0f}")
+                        sweep_result = await self._handle_cancel_order(
+                            {"order_id": oid}, None, correlation_id
+                        )
+                        if sweep_result.get("status") == "ok":
+                            cancelled_order_ids.append(oid)
+                        else:
+                            log.warning(
+                                f"[OrderActor] Orphan sweep cancel failed for #{oid}: "
+                                f"{sweep_result.get('error')} (non-fatal — Phase 1a was authoritative)"
                             )
-                            
-                            if cancel_result.get("status") == "ok":
-                                cancelled_order_ids.append(order_id)
-                            
-                            await asyncio.sleep(0.05)  # Small delay between cancellations
-                
-                log.info(f"[OrderActor] Cancelled {len(cancelled_order_ids)} old SELL orders")
-                
+
+                        await asyncio.sleep(0.05)
+
+                log.info(f"[OrderActor] Phase 1 complete: {len(cancelled_order_ids)} SELL order(s) cancelled")
+
             except Exception as e:
-                log.error(f"[OrderActor] Error cancelling old SELL orders: {e}")
-                # Continue anyway - we'll try to place the new order
+                log.warning(f"[OrderActor] Orphan sweep failed (non-fatal): {e}")
+                # Non-fatal: Phase 1a (known ID) was the authoritative cancel step
         
         # PHASE 2: Check Guardian signal (if requested)
         if check_guardian:
@@ -967,12 +1043,14 @@ class OrderManagerActor(Actor):
                 }
         
         # PHASE 3: Place new SELL order
+        # order_purpose="entry" re-enables the per-price timestamp cooldown and
+        # the exchange-level dedup check in _handle_place_sell — second safety layer.
         placement_result = await self._handle_place_sell(
-            {"price": target_price, "size": size},
+            {"price": target_price, "size": size, "order_purpose": "entry"},
             None,
             correlation_id
         )
-        
+
         if placement_result["status"] != "ok":
             log.error(f"[OrderActor] Failed to place new SELL @ ${target_price:,.0f}: {placement_result.get('error')}")
             return {

@@ -285,6 +285,16 @@ def get_cached_positions(max_age=30.0):
     return None
 
 
+def update_positions_cache(positions):
+    """Allow background monitors to write back to the shared positions cache
+    after a direct fetch, so subsequent checks within max_age don't re-fetch."""
+    global _positions_cache
+    if isinstance(positions, list):
+        _positions_cache['data'] = positions
+        _positions_cache['time'] = time.time()
+        _positions_cache['error'] = None
+
+
 @options_bp.route('/positions', methods=['GET'])
 def get_options_positions():
     """

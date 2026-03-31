@@ -533,16 +533,56 @@ const OptionsPanel = () => {
     assignSymbolOnServer, updateGroupOnServer, updateMetaOnServer,
   } = useGroupsAPI();
 
-  // The current expiry key (derived from selectedExpiries)
+  // The current expiry key (derived from selectedExpiries, or 'ALL' when no filter).
   const expiryGroupKey = useMemo(() => {
     if (!selectedExpiries || selectedExpiries.length === 0) return 'ALL';
     return [...selectedExpiries].sort().join('|');
   }, [selectedExpiries]);
 
-  // Active slice for the current expiry
+  // Active slice for the current expiry.
+  // When expiryGroupKey is 'ALL' (no filter applied) and there is no data stored directly under
+  // 'ALL', build a merged view from individual per-expiry scopes whose groups contain symbols
+  // that are currently visible. This keeps groups visible even when the expiry filter is cleared.
   const activeExpiryData = useMemo(() => {
-    return allExpiryGroupData[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
-  }, [allExpiryGroupData, expiryGroupKey]);
+    const direct = allExpiryGroupData[expiryGroupKey];
+    if (direct) return direct;
+
+    if (expiryGroupKey === 'ALL') {
+      const visibleSymbols = new Set(positions.map((p) => p.product_symbol));
+      const merged = { groups: {}, collapsed: {}, order: [], groupOrder: [] };
+      let hadAny = false;
+      Object.entries(allExpiryGroupData).forEach(([key, slice]) => {
+        if (key.includes('|') || key === 'ALL') return; // skip composite/ALL keys
+        const groups = slice.groups || {};
+        const hasVisible = Object.values(groups).some((g) =>
+          (g.symbols || []).some((s) => visibleSymbols.has(s))
+        );
+        if (hasVisible) {
+          hadAny = true;
+          Object.assign(merged.groups, groups);
+          Object.assign(merged.collapsed, slice.collapsed || {});
+          (slice.groupOrder || []).forEach((id) => {
+            if (!merged.groupOrder.includes(id)) merged.groupOrder.push(id);
+          });
+        }
+      });
+      if (hadAny) return merged;
+    }
+
+    return { groups: {}, collapsed: {}, order: [], groupOrder: [] };
+  }, [allExpiryGroupData, expiryGroupKey, positions]);
+
+  // In 'ALL' merged mode, groups live under their original expiry keys, not under 'ALL'.
+  // This helper finds the actual storage key for a group so write operations target the right key.
+  const getGroupActualKey = useCallback((groupId) => {
+    if (expiryGroupKey !== 'ALL') return expiryGroupKey;
+    for (const [key, slice] of Object.entries(allExpiryGroupData)) {
+      if (key.includes('|') || key === 'ALL') continue;
+      if (slice.groups && slice.groups[groupId]) return key;
+    }
+    return 'ALL'; // new group created in ALL mode goes to ALL scope
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, allExpiryGroupData]);
 
   // Derived per-expiry state (read)
   const positionGroups = activeExpiryData.groups || {};
@@ -655,16 +695,16 @@ const OptionsPanel = () => {
 
   // Delete a group (positions become ungrouped) — also removes from groupOrder
   const handleDeleteGroup = useCallback((groupId) => {
-    // Persist to server
-    deleteGroupOnServer(expiryGroupKey, groupId);
+    const actualKey = getGroupActualKey(groupId);
+    deleteGroupOnServer(actualKey, groupId);
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
+      const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const nextGroups = { ...(slice.groups || {}) };
       delete nextGroups[groupId];
       const nextGroupOrder = (slice.groupOrder || []).filter((id) => id !== groupId);
-      return { ...prev, [expiryGroupKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
+      return { ...prev, [actualKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
     });
-  }, [expiryGroupKey, deleteGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [getGroupActualKey, deleteGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Assign a position symbol to a group (removes from any previous group first)
   const handleAssignToGroup = useCallback((symbol, groupId) => {
