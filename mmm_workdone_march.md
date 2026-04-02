@@ -1140,3 +1140,47 @@ All four now set `_being_closed_at = time.monotonic()` immediately after `_being
 - `mmm_close_at_5.py` `close_position()` inline check at line ~334 changed from `if set_at and time.monotonic() - set_at > TTL` to `if not set_at or time.monotonic() - set_at > TTL` — now consistent with `_check_stale_being_closed`.
 
 **Files changed**: `mmm_api.py`, `mmm_monitor.py`, `mmm_close_at_5.py`
+
+---
+
+## 2026-04-02 — Hedge break fix: replenish bypasses regime/wind-down, resets state on success
+
+**Incident:** `mmm02apr26-1` — CE fully closed by close_at_5, replenish blocked by `BLOCK_ALL_SELLS` regime (Gate 6), session auto-stopped with PE=124 lots unhedged at 06:53 IST.
+
+**Root cause:** `check_replenish_eligibility` had Gate 3 (wind-down active), Gate 4 (wind-down triggered flags), Gate 6 (regime BLOCK_ALL_SELLS) blocking replenish. Replenish is a defensive hedge-restoration action — these gates apply only to offensive adjustment sells.
+
+**Fix 1 — `mmm_replenish.py` `check_replenish_eligibility`:**
+- Removed Gate 3 (`wind_down_active` flag check — was: `params.get('wind_down_enabled') and session.get('_wind_down_active')`)
+- Removed Gate 4 (`_atm_wind_down_triggered`, `_vol_wind_down_triggered`, `_trend_wind_down_triggered` flag checks)
+- Removed Gate 6 (`_regime_action == BLOCK_ALL_SELLS` block)
+- Added HEDGE RESTORATION PRINCIPLE docstring explaining why these gates are intentionally absent
+- Remaining active gates: 1 (master switch), 2 (session status), 5 (margin), 7 (count cap), 8 (cooldown), 9 (near-expiry), 10 (open side has lots), 11 (lot velocity)
+
+**Fix 2 — `mmm_monitor.py` `_process_close_at_5`:**
+- Added `_orig_pos_closed_{side}` flag set when a position with `type='original'` closes.
+- This allows ONE-SIDE CLOSE GUARD to trigger replenish even before all lots reach 0, when the anchor position closes.
+
+**Fix 3 — `mmm_monitor.py` ONE-SIDE CLOSE GUARD:**
+- Trigger condition extended: fires on `check_side_fully_closed(session, _cs) OR session.get(f'_orig_pos_closed_{_cs}')`.
+- Flag cleared after successful replenish and in the else branch.
+
+**Fix 4 — `mmm_monitor.py` `_process_replenish()`:**
+- After every successful replenish, added full regime/trend state reset (clean slate = new session start):
+  - Trend: `_trend_anchor_spot` reset to current spot, `_trend_regime='NORMAL'`, `_trend_tier=0`, `_trend_direction='none'`, calm/plateau/T4 beat counters zeroed, EMA/high/low/since popped.
+  - Vol: `_vol_regime='NORMAL'`, `_vol_regime_beats_below=0`, `_vol_wind_down_triggered=False`.
+  - Wind-down: `_atm_wind_down_triggered=False`.
+  - Regime action: `_regime_action` key popped.
+  - Consecutive block: `_consecutive_dir_blocked=False`, counts/side reset.
+  - One-side-closed flags: `_one_side_closed_ce`, `_one_side_closed_pe`, `_orig_pos_closed_ce`, `_orig_pos_closed_pe` all popped.
+  - Awaiting user action flags cleared.
+
+**Fix 5 — `tests/test_sealed_mmm_replenish.py`:**
+- 4 sealed tests updated to reflect new design (Gates 3/4/6 removed):
+  - `test_blocked_when_atm_wind_down` → `test_eligible_despite_atm_wind_down` (now asserts ok=True)
+  - `test_blocked_when_vol_wind_down` → `test_eligible_despite_vol_wind_down` (now asserts ok=True)
+  - `test_blocked_when_trend_wind_down` → `test_eligible_despite_trend_wind_down` (now asserts ok=True)
+  - `test_blocked_when_regime_blocks_all_sells` → `test_eligible_despite_regime_block_all_sells` (now asserts ok=True)
+
+**Test result:** 1225 passed, 0 failed.
+
+**Files changed:** `mmm_replenish.py`, `mmm_monitor.py`, `tests/test_sealed_mmm_replenish.py`

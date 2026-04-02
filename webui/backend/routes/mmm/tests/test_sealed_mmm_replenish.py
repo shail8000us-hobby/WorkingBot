@@ -120,31 +120,30 @@ class TestCheckReplenishEligibility:
         assert 'status' in reason
 
     @pytest.mark.sealed
-    def test_blocked_when_atm_wind_down(self):
-        """Gate 4: ATM wind-down triggered → blocked."""
+    def test_eligible_despite_atm_wind_down(self):
+        """Gate 4 REMOVED (hedge restoration principle): ATM wind-down must NOT block replenish.
+        Replenish is a defensive hedge-restoration action; wind-down guards apply to
+        offensive adjustment sells only.  The caller resets wind-down state after success."""
         s = _base_session()
         s['_atm_wind_down_triggered'] = True
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'atm_wind_down' in reason
+        assert ok is True, f"ATM wind-down must not block replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
-    def test_blocked_when_vol_wind_down(self):
-        """Gate 3/4: vol wind-down triggered → blocked."""
+    def test_eligible_despite_vol_wind_down(self):
+        """Gate 3 REMOVED (hedge restoration principle): vol wind-down must NOT block replenish."""
         s = _base_session()
         s['_vol_wind_down_triggered'] = True
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'wind_down' in reason
+        assert ok is True, f"Vol wind-down must not block replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
-    def test_blocked_when_trend_wind_down(self):
-        """Gate 3/4: trend wind-down triggered → blocked."""
+    def test_eligible_despite_trend_wind_down(self):
+        """Gate 3 REMOVED (hedge restoration principle): trend wind-down must NOT block replenish."""
         s = _base_session()
         s['_trend_wind_down_triggered'] = True
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'wind_down' in reason
+        assert ok is True, f"Trend wind-down must not block replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
     def test_blocked_when_margin_block_sells(self):
@@ -165,13 +164,14 @@ class TestCheckReplenishEligibility:
         assert 'margin_wind_down' in reason
 
     @pytest.mark.sealed
-    def test_blocked_when_regime_blocks_all_sells(self):
-        """Gate 6: regime BLOCK_ALL_SELLS → blocked."""
+    def test_eligible_despite_regime_block_all_sells(self):
+        """Gate 6 REMOVED (hedge restoration principle): BLOCK_ALL_SELLS must NOT block replenish.
+        Regime blocks are for offensive adjustment sells.  Replenish restores the hedge and
+        must not be gated by regime state.  Caller resets regime state after success."""
         s = _base_session()
         s['_regime_action'] = 'BLOCK_ALL_SELLS'
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'regime' in reason
+        assert ok is True, f"BLOCK_ALL_SELLS must not block replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
     def test_blocked_when_max_count_reached(self):

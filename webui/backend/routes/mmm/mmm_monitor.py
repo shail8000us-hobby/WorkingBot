@@ -1819,6 +1819,7 @@ class MMMMonitor:
         for _cs in ['ce', 'pe']:
             _os = 'pe' if _cs == 'ce' else 'ce'
             _ocs_flag = f'_one_side_closed_{_cs}'
+            _orig_closed_flag = f'_orig_pos_closed_{_cs}'
             if check_side_fully_closed(session, _cs) and not check_side_fully_closed(session, _os):
                 _os_lots = session.get(_os, {}).get('total_lots', 0)
 
@@ -1841,8 +1842,9 @@ class MMMMonitor:
                     log.error(f"[{sid}] Replenish exception: {_repl_err}")
 
                 if _replenished:
-                    # Successfully re-entered — clear flag and continue heartbeat
+                    # Successfully re-entered — clear flags and continue heartbeat
                     session.pop(_ocs_flag, None)
+                    session.pop(_orig_closed_flag, None)
                     log.info(f"[{sid}] Auto-replenished {_cs.upper()} — session continues")
                     try:
                         self._emit_heartbeat_data(ce_now, pe_now)
@@ -1946,12 +1948,13 @@ class MMMMonitor:
                 # Flag already set (user resumed or subsequent heartbeat) — let run continue
                 break
             else:
-                # Clear flag when the closed side has regained lots.
+                # Clear flags when the closed side has regained lots.
                 # Only clear AWAITING_USER_ACTION if THIS side was the one flagged —
                 # prevents the healthy side's else-branch from wiping flags that
                 # belong to the still-closed OTHER side.
                 _was_flagged = session.get(_ocs_flag)
                 session.pop(_ocs_flag, None)
+                session.pop(_orig_closed_flag, None)
                 if _was_flagged:
                     session.pop('_awaiting_user_action', None)
                     session.pop('_awaiting_user_action_reason', None)
@@ -5976,6 +5979,64 @@ class MMMMonitor:
             pass
 
         session['updated_at'] = now
+
+        # ── REGIME + TREND RESET (hedge-restoration fresh start) ─────────────
+        # After successfully re-entering the empty side, reset all regime and
+        # trend state so the new leg starts with a clean slate — exactly as if
+        # the session had just started.  Rationale:
+        #   • The old trend anchor was relative to the previous entry price.
+        #     The replenish enters at a new strike/premium; the anchor must
+        #     move to current spot so T1/T2/T3/T4 tiers compute correctly.
+        #   • Vol/trend regime flags that blocked the replenish were computed
+        #     relative to the old entry context.  The new leg is a fresh trade.
+        #   • Wind-down trigger flags would block future adjustments on the
+        #     replenished side; they must be cleared now.
+        #   • Consecutive-direction block must be reset — the new leg has no
+        #     direction history yet.
+        # The regime module will recompute _vol_regime / _trend_regime / action
+        # from scratch on the very next heartbeat using live market data.
+        try:
+            _rst_spot = spot_price if spot_price > 0 else session.get('_regime_spot_price', 0)
+            # Trend state — reset anchor to current spot, tier to NONE
+            session['_trend_anchor_spot'] = _rst_spot
+            session['_trend_regime'] = 'NORMAL'
+            session['_trend_tier'] = 0
+            session['_trend_direction'] = 'none'
+            session.pop('_trend_since', None)
+            session.pop('_trend_high', None)
+            session.pop('_trend_low', None)
+            session.pop('_trend_ema', None)
+            session.pop('_trend_ema_prev', None)
+            session['_trend_calm_beats'] = 0
+            session['_trend_plateau_beats'] = 0
+            session['_trend_t4_beats'] = 0
+            session['_trend_wind_down_triggered'] = False
+            # Vol regime — reset to NORMAL; cooldown counter reset
+            session['_vol_regime'] = 'NORMAL'
+            session['_vol_regime_beats_below'] = 0
+            session['_vol_wind_down_triggered'] = False
+            # ATM wind-down
+            session['_atm_wind_down_triggered'] = False
+            # Regime action — cleared so next heartbeat recomputes from fresh state
+            session.pop('_regime_action', None)
+            # Consecutive-direction block — new leg has no direction history
+            session['_consecutive_dir_blocked'] = False
+            session['_consecutive_same_dir_count'] = 0
+            session['_consecutive_same_dir_side'] = ''
+            session.pop('_consecutive_dir_blocked_at', None)
+            # One-side-close guard flags — hedge is restored, clear both sides
+            session.pop('_one_side_closed_ce', None)
+            session.pop('_one_side_closed_pe', None)
+            session.pop('_awaiting_user_action', None)
+            session.pop('_awaiting_user_action_reason', None)
+            session.pop('_awaiting_user_action_details', None)
+            session.pop('_ocs_telegram_sent_at', None)
+            log.info(f"[{sid}] Replenish: regime/trend state reset to clean slate "
+                     f"(anchor={_rst_spot:.0f}, new leg starts fresh)")
+        except Exception as _rst_err:
+            log.warning(f"[{sid}] Replenish: regime reset failed (non-critical): {_rst_err}")
+        # ── END REGIME RESET ─────────────────────────────────────────────────
+
         log.info(f"[{sid}] Replenish complete: {closed_side.upper()} "
                 f"{filled_lots}L @ {strike} (${fill_price:.2f})")
 
@@ -6456,6 +6517,7 @@ class MMMMonitor:
                         f"[{sid}] {pos['side'].upper()} fully closed — "
                         f"one-side guard in heartbeat will evaluate."
                     )
+
             elif result.get('hedge_guard_blocked'):
                 # Hedge integrity guard blocked this close — stop trying
                 # more positions on this side (they'll all be blocked too)

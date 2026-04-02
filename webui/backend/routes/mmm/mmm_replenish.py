@@ -8,6 +8,14 @@ leg on the empty side.  All functions are pure (no I/O) and sealable.
 Integration: called from mmm_monitor.py ONE-SIDE CLOSE GUARD section.
 If replenishment is ineligible or fails, the existing PAUSE behavior
 activates as fallback.
+
+HEDGE RESTORATION PRINCIPLE (2026-04-02):
+  Replenish is a defensive hedge-restoration action, not an offensive
+  sell.  Gates that block speculative adjustment sells (regime action,
+  wind-down triggers) do NOT apply to replenish.  The system must ALWAYS
+  be able to restore the hedge when one side reaches 0 lots — no regime
+  or wind-down state may prevent this.  After a successful replenish the
+  caller resets regime/trend state to give the new leg a clean start.
 """
 
 import logging
@@ -33,6 +41,16 @@ def check_replenish_eligibility(
     Returns:
         (eligible, reason) — reason explains the gate that blocked,
         or 'eligible' if all gates pass.
+
+    INTENTIONALLY OMITTED GATES (hedge-restoration principle):
+      - Gate 3 (wind-down active): replenish overrides wind-down — if one
+        side is empty, we must restore the hedge regardless of wind-down
+        intent.  The caller resets wind-down state after success.
+      - Gate 4 (wind-down triggered flags): same reason as Gate 3.
+      - Gate 6 (regime BLOCK_ALL_SELLS): replenish is defensive, not
+        offensive.  The regime blocks speculative adjustment sells; it must
+        not block hedge restoration.  The caller resets regime state after
+        a successful replenish.
     """
     params = session.get('params', {})
 
@@ -46,29 +64,18 @@ def check_replenish_eligibility(
     if status not in ('RUNNING', 'ACTIVE', None):
         return False, f"session status={status}"
 
-    # Gate 3: wind-down must NOT be active (wind-down intentionally reduces)
-    from .mmm_wind_down import is_wind_down_active
-    if is_wind_down_active(session):
-        return False, 'wind_down_active'
+    # Gate 3 (wind-down active): REMOVED — see docstring.
+    # Gate 4 (wind-down triggered flags): REMOVED — see docstring.
 
-    # Gate 4: no ATM/vol/trend wind-down triggered
-    if session.get('_atm_wind_down_triggered'):
-        return False, 'atm_wind_down_triggered'
-    if session.get('_vol_wind_down_triggered'):
-        return False, 'vol_wind_down_triggered'
-    if session.get('_trend_wind_down_triggered'):
-        return False, 'trend_wind_down_triggered'
-
-    # Gate 5: margin must not block sells
+    # Gate 5: margin must not block sells — kept because margin is a hard
+    # financial constraint; adding positions when margin is critical can
+    # trigger liquidation which is worse than being temporarily unhedged.
     if session.get('_margin_block_sells'):
         return False, 'margin_block_sells'
     if session.get('_margin_wind_down'):
         return False, 'margin_wind_down'
 
-    # Gate 6: regime must not block all sells
-    from .mmm_regime import ACTION_BLOCK_ALL_SELLS
-    if session.get('_regime_action') == ACTION_BLOCK_ALL_SELLS:
-        return False, 'regime_block_all_sells'
+    # Gate 6 (regime BLOCK_ALL_SELLS): REMOVED — see docstring.
 
     # Gate 7: replenishment count cap
     max_count = params.get('replenish_max_per_session', 10)
