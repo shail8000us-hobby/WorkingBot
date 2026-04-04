@@ -278,6 +278,38 @@ async def alert_max_loss_breach(
     return await _send_async(msg, f"max_loss_{session_id}")
 
 
+async def alert_guardian_violation(
+    session_id: str,
+    violations: list,
+) -> bool:
+    """Alert when guardian detects invariant violations and pauses the session."""
+    bullet_list = '\n'.join(f'• `{v}`' for v in violations)
+    msg = (
+        f"⚠️ *GUARDIAN VIOLATION — SESSION PAUSED* — `{session_id}`\n\n"
+        f"The Guardian detected *{len(violations)} invariant(s) breached*:\n\n"
+        f"{bullet_list}\n\n"
+        f"Session has been *auto-paused*. No new orders will be placed.\n"
+        f"The system will *auto-heal* if positions are restored.\n\n"
+        f"⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"
+    )
+    return await _send_async(msg, key=f'guardian_violation_{session_id}')
+
+
+async def alert_guardian_healed(
+    session_id: str,
+    pause_reason: str,
+) -> bool:
+    """Alert when guardian violation is resolved and session auto-resumes."""
+    msg = (
+        f"✅ *GUARDIAN HEALED — AUTO-RESUMED* — `{session_id}`\n\n"
+        f"Guardian violation has resolved. Both sides have positions.\n"
+        f"Was paused: `{pause_reason}`\n\n"
+        f"Session has been *auto-resumed* and will continue trading.\n\n"
+        f"⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"
+    )
+    return await _send_async(msg, key=f'guardian_healed_{session_id}')
+
+
 async def alert_stale_monitor(
     session_id: str,
     my_gen: int,

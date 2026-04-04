@@ -11,6 +11,7 @@ import logging
 import math
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -566,9 +567,12 @@ class PerformanceStorage:
 
 # Singleton
 _perf_storage: Optional[PerformanceStorage] = None
+_perf_storage_lock = threading.Lock()
 
 def get_performance_storage() -> PerformanceStorage:
     global _perf_storage
     if _perf_storage is None:
-        _perf_storage = PerformanceStorage()
+        with _perf_storage_lock:
+            if _perf_storage is None:
+                _perf_storage = PerformanceStorage()
     return _perf_storage

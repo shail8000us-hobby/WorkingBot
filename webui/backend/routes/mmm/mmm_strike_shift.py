@@ -12,6 +12,7 @@ Created: February 15, 2026
 """
 
 import logging
+import time
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 
@@ -465,3 +466,115 @@ def activate_new_strike(
         pass
 
     return session
+
+
+def pre_scan_shift_candidates(
+    initializer,
+    session: Dict,
+    spot_price: float,
+    ce_premium: float = 0.0,
+    pe_premium: float = 0.0,
+) -> None:
+    """
+    Scan the option chain every heartbeat and cache the best shift candidate
+    for each side (CE and PE).
+
+    Called conditionally every heartbeat — only when either side's premium is
+    within proximity of shift_threshold. This avoids a blocking REST call every
+    beat when premiums are far above the shift floor (normal conditions).
+
+    Proximity rule: only scan a side if its current premium is below
+    shift_threshold * SHIFT_SCAN_PROXIMITY_FACTOR (default 4.0).
+    With threshold=$25, pre-scan only fires when premium < $100.
+    When premium is $200+, this function exits in microseconds.
+
+    Results are stored in session['_shift_candidates']:
+        {
+            'ce': {'strike': 67500, 'premium': 55.0, 'symbol': '...', 'scanned_at': <epoch>},
+            'pe': {'strike': 66800, 'premium': 54.0, 'symbol': '...', 'scanned_at': <epoch>},
+        }
+
+    Each entry also carries 'shift_threshold' and 'shift_target_premium' at
+    scan time so callers can verify the candidate was found under the same
+    config that is now in effect.
+    """
+    if spot_price <= 0:
+        return
+
+    params = session.get('params', {})
+    shift_threshold = params.get('shift_threshold', 50.0)
+    shift_target_premium = params.get('shift_target_premium', 100.0)
+    now = time.time()
+
+    # Proximity guard: the chain fetch is a blocking sync REST call (~100-400ms).
+    # Only scan sides that are approaching shift territory. A side with premium
+    # far above threshold has no shift risk — scanning it is pure overhead.
+    # Factor of 4.0: with threshold=$25, scan only when premium < $100.
+    SHIFT_SCAN_PROXIMITY_FACTOR = 4.0
+    side_premiums = {'ce': ce_premium, 'pe': pe_premium}
+    scan_needed = False
+    for side in ('ce', 'pe'):
+        p = side_premiums[side]
+        if p <= 0 or p < shift_threshold * SHIFT_SCAN_PROXIMITY_FACTOR:
+            scan_needed = True
+            break
+
+    if not scan_needed:
+        sid = session.get('session_id', '?')
+        log.debug(
+            f"[{sid}] Pre-scan skipped — CE=${ce_premium:.1f} PE=${pe_premium:.1f} "
+            f"both above proximity threshold (${shift_threshold * SHIFT_SCAN_PROXIMITY_FACTOR:.0f})"
+        )
+        return
+
+    candidates = session.setdefault('_shift_candidates', {})
+
+    for side in ('ce', 'pe'):
+        # Per-side proximity check: skip sides that are far from shift territory.
+        # The chain fetch caches at the chain level (shared CE/PE), so if one side
+        # needs scanning, the other gets a cache hit. But if only one side needs
+        # to be scanned, we can skip the other entirely to avoid redundant processing.
+        side_premium = side_premiums[side]
+        if side_premium > 0 and side_premium >= shift_threshold * SHIFT_SCAN_PROXIMITY_FACTOR:
+            log.debug(
+                f"[{session.get('session_id', '?')}] Pre-scan {side.upper()} skipped "
+                f"(premium=${side_premium:.1f} > proximity ${shift_threshold * SHIFT_SCAN_PROXIMITY_FACTOR:.0f})"
+            )
+            continue
+
+        try:
+            result = find_new_strike(initializer, session, side, spot_price)
+            if result:
+                candidates[side] = {
+                    'strike': result['strike'],
+                    'premium': result['premium'],
+                    'symbol': result.get('symbol', ''),
+                    'scanned_at': now,
+                    'shift_threshold': shift_threshold,
+                    'shift_target_premium': shift_target_premium,
+                }
+                log.debug(
+                    f"[{session.get('session_id', '?')}] Pre-scan {side.upper()}: "
+                    f"best candidate {result['strike']} @ ${result['premium']:.2f}"
+                )
+            else:
+                # Record that the scan ran but found nothing (helps distinguish
+                # "never scanned" from "scanned and found nothing")
+                candidates[side] = {
+                    'strike': None,
+                    'premium': None,
+                    'symbol': None,
+                    'scanned_at': now,
+                    'shift_threshold': shift_threshold,
+                    'shift_target_premium': shift_target_premium,
+                }
+                log.debug(
+                    f"[{session.get('session_id', '?')}] Pre-scan {side.upper()}: "
+                    f"no candidate found (threshold=${shift_threshold:.0f})"
+                )
+        except Exception as e:
+            log.warning(
+                f"[{session.get('session_id', '?')}] Pre-scan {side.upper()} failed: {e}"
+            )
+
+    session['_shift_candidates'] = candidates

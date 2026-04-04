@@ -34,11 +34,8 @@ VOL_NORMAL = 'NORMAL'
 VOL_ELEVATED = 'ELEVATED'
 VOL_HIGH = 'HIGH'
 
-# Gamma Regime states
-GAMMA_NORMAL = 'NORMAL'
-GAMMA_SOFT = 'SOFT'
-GAMMA_HARD = 'HARD'
-GAMMA_EMERGENCY = 'EMERGENCY'
+# Gamma Regime states — canonical definition is in mmm_gamma.py (imported here)
+from .mmm_gamma import GAMMA_NORMAL, GAMMA_SOFT, GAMMA_HARD, GAMMA_EMERGENCY
 
 # Trend Regime states
 TREND_NORMAL = 'NORMAL'
@@ -241,136 +238,14 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
 
     return new_regime
 
-
 # =============================================================================
-# Section B: Portfolio Gamma Cap
+# Section B: Portfolio Gamma Cap — now in mmm_gamma.py
 # =============================================================================
+# _update_gamma_cap and compute_projected_gamma have been extracted to
+# mmm_gamma.py for clear separation of concerns.  Imported here so that
+# MMMRegimeEngine (below) and any existing callers continue to work.
 
-def _update_gamma_cap(
-    session: Dict,
-    gamma_data: Dict,
-    spot_price: float,
-    minutes_to_expiry: Optional[float] = None,
-) -> str:
-    """
-    Update portfolio gamma cap regime.
-
-    Args:
-        session: MMM session dict (mutated in place)
-        gamma_data: {
-            'positions': [(gamma_per_contract, lots, option_type), ...],
-            'portfolio_gamma': float,  # raw portfolio gamma
-        }
-        spot_price: Current BTC spot price
-        minutes_to_expiry: Minutes to expiry (for near-expiry multiplier)
-
-    Returns:
-        Current gamma regime: NORMAL / SOFT / HARD / EMERGENCY
-    """
-    params = session.get('params', {})
-    if not params.get('gamma_cap_enabled', True):
-        session['_gamma_regime'] = GAMMA_NORMAL
-        return GAMMA_NORMAL
-
-    now = datetime.now(timezone.utc).isoformat()
-
-    # ── Get raw portfolio gamma ──
-    portfolio_gamma = gamma_data.get('portfolio_gamma', 0)
-
-    if portfolio_gamma == 0 and not gamma_data.get('positions'):
-        # No gamma data available (Section E.4)
-        session['_gamma_data_incomplete'] = True
-        # Don't change regime on missing data — use last known
-        return session.get('_gamma_regime', GAMMA_NORMAL)
-
-    session['_gamma_data_incomplete'] = False
-
-    # ── Compute dollar gamma (Section B.1.3) ──
-    # $Γ = |Γ_portfolio| × S² × 0.01
-    # This is the change in dollar-delta for a 1% spot move:
-    #   d(delta_BTC × S) / dS × (S × 0.01) ≈ Γ_portfolio × S² × 0.01
-    # NOT gamma P&L (which would be ½ × Γ × (0.01S)² = Γ × S² × 0.00005).
-    # Limits (soft/hard/emergency) are calibrated to this formula.
-    if spot_price > 0:
-        dollar_gamma = abs(portfolio_gamma) * (spot_price ** 2) * 0.01
-    else:
-        dollar_gamma = 0
-
-    session['_portfolio_gamma'] = round(portfolio_gamma, 8)
-    session['_portfolio_dollar_gamma'] = round(dollar_gamma, 2)
-
-    # ── Update gamma history ──
-    # L-5 fix: deque with maxlen replaces manual slicing
-    raw_gamma = session.get('_gamma_history')
-    gamma_history = raw_gamma if isinstance(raw_gamma, deque) \
-        else deque(raw_gamma or [], maxlen=MAX_GAMMA_HISTORY)
-    gamma_history.append((now, dollar_gamma))
-    session['_gamma_history'] = list(gamma_history)  # Back to list for JSON safety
-
-    # ── Get limits with near-expiry multiplier (Section B.3) ──
-    # Defaults scaled for BTC ($67K spot produces ~$1000+ dollar gamma with 100 lots)
-    soft_limit = params.get('gamma_soft_limit', 2500.0)
-    hard_limit = params.get('gamma_hard_limit', 5000.0)
-    emergency_limit = params.get('gamma_emergency_limit', 10000.0)
-
-    if minutes_to_expiry is not None and minutes_to_expiry <= 30:
-        multiplier = params.get('gamma_near_expiry_multiplier', 0.5)
-        soft_limit *= multiplier
-        hard_limit *= multiplier
-        emergency_limit *= multiplier
-
-    # ── Determine gamma regime ──
-    if dollar_gamma >= emergency_limit:
-        new_regime = GAMMA_EMERGENCY
-    elif dollar_gamma >= hard_limit:
-        new_regime = GAMMA_HARD
-    elif dollar_gamma >= soft_limit:
-        new_regime = GAMMA_SOFT
-    else:
-        new_regime = GAMMA_NORMAL
-
-    current_regime = session.get('_gamma_regime', GAMMA_NORMAL)
-    if new_regime != current_regime:
-        session['_gamma_regime_since'] = now
-        log.info(
-            f"Gamma regime transition: {current_regime} → {new_regime} "
-            f"($Γ={dollar_gamma:.2f}, soft={soft_limit:.0f}, "
-            f"hard={hard_limit:.0f}, emergency={emergency_limit:.0f})"
-        )
-
-    session['_gamma_regime'] = new_regime
-    session['_gamma_soft_limit_effective'] = round(soft_limit, 2)
-    session['_gamma_hard_limit_effective'] = round(hard_limit, 2)
-    session['_gamma_emergency_limit_effective'] = round(emergency_limit, 2)
-
-    return new_regime
-
-
-def compute_projected_gamma(
-    session: Dict,
-    new_strike_gamma: float,
-    new_lots: int,
-    spot_price: float,
-) -> float:
-    """
-    Compute projected portfolio dollar gamma if a new position were added.
-    Used for pre-trade gamma check (Section B.4.1).
-
-    Args:
-        session: MMM session dict
-        new_strike_gamma: Gamma per contract of the new strike
-        new_lots: Number of lots to add
-        spot_price: Current spot price
-
-    Returns:
-        Projected dollar gamma after adding the position
-    """
-    current_gamma = session.get('_portfolio_gamma', 0)
-    # New position gamma (short, so adds to absolute exposure)
-    added_gamma = new_strike_gamma * new_lots * LOT_SIZE_BTC
-    projected_gamma = abs(current_gamma) + abs(added_gamma)
-    projected_dollar_gamma = projected_gamma * (spot_price ** 2) * 0.01
-    return projected_dollar_gamma
+from .mmm_gamma import _update_gamma_cap, compute_projected_gamma
 
 
 # =============================================================================
@@ -768,7 +643,9 @@ def _compute_regime_action(session: Dict) -> str:
       1. Safety hard stops (handled before this — max_loss, margin_critical)
       2. Gamma emergency → FORCE_REDUCE
       3. Vol HIGH + Trend → BLOCK_ALL_SELLS
-      4. Gamma hard → BLOCK_ALL_SELLS
+      4. Gamma hard (vol=NORMAL) → directional block via per-side gamma (Tier B)
+         or DTE relax tiebreaker (Tier C); fallback BLOCK_ALL_SELLS.
+         Vol ELEVATED + Gamma HARD → BLOCK_ALL_SELLS (compound risk, no exemption).
       5. Vol ELEVATED or Trend alone → directional or block sells
       6. Gamma soft → WARN
 
@@ -804,8 +681,89 @@ def _compute_regime_action(session: Dict) -> str:
             return ACTION_PAUSE
         return ACTION_BLOCK_ALL_SELLS
 
-    # Priority 4: Gamma hard → block all sells
+    # Priority 4: Gamma hard — block the DANGER (aggressor) side only.
+    # Vol is NORMAL or NORMAL here — HIGH was returned early in P3/P3b.
+    # CRITICAL: Vol ELEVATED must still block ALL sells — it compounds with
+    # gamma risk and is not safe to relax.  Only when vol is NORMAL can we
+    # apply the per-side gamma and DTE-relax exemptions (Tier B/C).
+    #
+    # Three-step resolution when vol=NORMAL (most reliable first):
+    #
+    #   Step 1 — Tier B (per-side gamma): The side closer to ATM has higher
+    #     dollar gamma.  If one side contributes ≥ ratio × the other, it is
+    #     the danger side.  Block only it; allow the low-gamma side to hedge.
+    #
+    #   Step 1 — Anchor direction: the session price anchor tracks net
+    #     directional movement.  When spot > anchor → market moved UP → calls
+    #     (CE) are going ITM → CE is the aggressor → block CE sells.  When
+    #     spot < anchor → puts (PE) are going ITM → block PE sells.  A small
+    #     dead-band (gamma_directional_min_pct) prevents flip-flopping when
+    #     spot oscillates near the anchor.  This is the primary economic signal
+    #     — it is independent of lot-count asymmetry that can distort per-side
+    #     gamma totals.
+    #
+    #   Step 2 — Per-side gamma imbalance: when anchor direction is ambiguous
+    #     (spot inside dead-band), fall back to dollar gamma per side.  One
+    #     side having significantly more gamma exposure indicates it carries
+    #     more risk.  NOTE: confounded by lot-count asymmetry — use only as
+    #     tiebreaker.
+    #
+    #   Step 3 — Tier C (DTE relax): When per-side gamma is balanced and we
+    #     are inside the DTE relax window with dollar_gamma below the relaxed
+    #     hedge limit, use trend direction as a tiebreaker.  Near expiry the
+    #     algo must hedge even when gamma is structurally elevated.
+    #
+    #   Step 4 — Conservative fallback: block all sells.
     if gamma_regime == GAMMA_HARD:
+        # Vol ELEVATED + Gamma HARD = compound risk → no exemption allowed.
+        # Leave this to Priority 5's vol=ELEVATED handler by falling through,
+        # but since Priority 5 comes after and vol=ELEVATED always returns
+        # BLOCK_ALL_SELLS there, short-circuit now for clarity and safety.
+        if vol_regime == VOL_ELEVATED:
+            return ACTION_BLOCK_ALL_SELLS
+
+        ce_dgamma = session.get('_ce_dollar_gamma', 0.0)
+        pe_dgamma = session.get('_pe_dollar_gamma', 0.0)
+        ratio = params.get('gamma_side_imbalance_ratio', 1.5)
+
+        # Step 1: Anchor-relative direction — primary economic signal.
+        # spot > anchor by >= dead-band → market moved UP → CE (calls) is aggressor.
+        # spot < anchor by >= dead-band → market moved DOWN → PE (puts) is aggressor.
+        # Dead-band prevents flip-flopping when spot oscillates near anchor.
+        _anchor = session.get('_trend_anchor_spot', 0.0)
+        _spot = session.get('_regime_spot_price', 0.0)
+        _min_dir_pct = params.get('gamma_directional_min_pct', 0.10)
+        if _anchor > 0 and _spot > 0:
+            _move_pct = (_spot - _anchor) / _anchor * 100.0
+            if _move_pct >= _min_dir_pct:
+                return ACTION_BLOCK_CE_SELLS   # Market up → CE is aggressor
+            elif _move_pct <= -_min_dir_pct:
+                return ACTION_BLOCK_PE_SELLS   # Market down → PE is aggressor
+
+        # Step 2: Per-side gamma imbalance — tiebreaker when direction is ambiguous.
+        if ce_dgamma > 0 and pe_dgamma > 0:
+            if pe_dgamma >= ce_dgamma * ratio:
+                return ACTION_BLOCK_PE_SELLS   # PE exposure dominates
+            if ce_dgamma >= pe_dgamma * ratio:
+                return ACTION_BLOCK_CE_SELLS   # CE exposure dominates
+        elif pe_dgamma > 0 and ce_dgamma == 0:
+            return ACTION_BLOCK_PE_SELLS       # Only PE positions active
+        elif ce_dgamma > 0 and pe_dgamma == 0:
+            return ACTION_BLOCK_CE_SELLS       # Only CE positions active
+
+        # Step 3: DTE relax tiebreaker — balanced gamma near expiry
+        if session.get('_gamma_dte_relax_active', False):
+            dollar_gamma = session.get('_portfolio_dollar_gamma', 0.0)
+            hedge_limit = session.get('_gamma_hard_limit_hedge_effective',
+                                      session.get('_gamma_hard_limit_effective', 5000.0))
+            if dollar_gamma < hedge_limit:
+                trend_now = session.get('_trend_regime', TREND_NORMAL)
+                if trend_now == TREND_DOWN:
+                    return ACTION_BLOCK_PE_SELLS
+                if trend_now == TREND_UP:
+                    return ACTION_BLOCK_CE_SELLS
+
+        # Step 4: Conservative fallback
         return ACTION_BLOCK_ALL_SELLS
 
     # Priority 5: Trend detection — tiered response (IMP-2)
@@ -952,8 +910,13 @@ class MMMRegimeEngine:
                 'rv_annualized': session.get('_vol_rv_annualized', 0),
                 'vol_regime_score': session.get('_vol_regime_score', 0),
                 'dollar_gamma': session.get('_portfolio_dollar_gamma', 0),
+                'ce_dollar_gamma': session.get('_ce_dollar_gamma', 0),
+                'pe_dollar_gamma': session.get('_pe_dollar_gamma', 0),
                 'gamma_soft_limit': session.get('_gamma_soft_limit_effective', 0),
                 'gamma_hard_limit': session.get('_gamma_hard_limit_effective', 0),
+                'gamma_hard_limit_hedge': session.get('_gamma_hard_limit_hedge_effective', 0),
+                'gamma_dte_relax_active': session.get('_gamma_dte_relax_active', False),
+                'delta_rescue_count': session.get('_delta_rescue_count', 0),
                 'spot_move_pct': session.get('_trend_move_pct', 0),
                 'ema_slope': session.get('_trend_ema_slope', 0),
                 'trend_anchor': session.get('_trend_anchor_spot', 0),
@@ -1001,10 +964,26 @@ class MMMRegimeEngine:
             return True, ' + '.join(reasons) if reasons else 'Regime block'
 
         if action == ACTION_BLOCK_CE_SELLS and sell_side.lower() == 'ce':
+            gamma = session.get('_gamma_regime', GAMMA_NORMAL)
+            if gamma == GAMMA_HARD:
+                ce_dg = session.get('_ce_dollar_gamma', 0.0)
+                pe_dg = session.get('_pe_dollar_gamma', 0.0)
+                return True, (
+                    f'CE sells blocked — Gamma HARD, CE is aggressor side '
+                    f'(CE $Γ={ce_dg:.0f} vs PE $Γ={pe_dg:.0f})'
+                )
             tier = session.get('_trend_tier', 0)
             return True, f'CE sells blocked — Trend UP Tier {tier} (spot +{session.get("_trend_move_pct", 0):.1f}%)'
 
         if action == ACTION_BLOCK_PE_SELLS and sell_side.lower() == 'pe':
+            gamma = session.get('_gamma_regime', GAMMA_NORMAL)
+            if gamma == GAMMA_HARD:
+                ce_dg = session.get('_ce_dollar_gamma', 0.0)
+                pe_dg = session.get('_pe_dollar_gamma', 0.0)
+                return True, (
+                    f'PE sells blocked — Gamma HARD, PE is aggressor side '
+                    f'(PE $Γ={pe_dg:.0f} vs CE $Γ={ce_dg:.0f})'
+                )
             tier = session.get('_trend_tier', 0)
             return True, f'PE sells blocked — Trend DOWN Tier {tier} (spot {session.get("_trend_move_pct", 0):.1f}%)'
 
@@ -1022,6 +1001,12 @@ class MMMRegimeEngine:
 
         Returns:
             (blocked: bool, projected_dollar_gamma: float)
+
+        When gamma_incremental_limit > 0 and current dollar gamma already
+        exceeds hard_limit, the check switches from "total projected vs hard_limit"
+        to "incremental added by this trade vs gamma_incremental_limit". This
+        prevents the "once breached, always blocked" freeze where elevated baseline
+        gamma (e.g. near-ATM 0DTE positions) permanently disables all adjustments.
         """
         params = session.get('params', {})
         if not params.get('gamma_cap_enabled', True):
@@ -1033,13 +1018,34 @@ class MMMRegimeEngine:
         hard_limit = session.get('_gamma_hard_limit_effective',
                                   params.get('gamma_hard_limit', 5000.0))
 
-        if projected > hard_limit:
-            session['_gamma_blocked_count'] = session.get('_gamma_blocked_count', 0) + 1
-            log.warning(
-                f"Gamma projection blocked: projected $Γ={projected:.2f} > "
-                f"hard limit ${hard_limit:.0f} "
-                f"(new_lots={new_lots}, blocked_count={session['_gamma_blocked_count']})"
-            )
-            return True, projected
+        if projected <= hard_limit:
+            return False, projected
 
-        return False, projected
+        # projected > hard_limit — would breach or extend an existing breach.
+        # If gamma_incremental_limit is configured, allow the trade when the
+        # INCREMENTAL dollar gamma added by this specific trade is within budget,
+        # even though the total portfolio gamma already exceeds hard_limit.
+        incremental_limit = params.get('gamma_incremental_limit', 0.0)
+        if incremental_limit > 0:
+            current_dollar_gamma = session.get('_portfolio_dollar_gamma', 0.0)
+            if current_dollar_gamma >= hard_limit:
+                # Already in breach — baseline gamma exceeds limit due to
+                # existing positions (e.g. near-ATM 0DTE). Evaluate only the
+                # marginal cost of this trade, not the full portfolio total.
+                incremental = projected - current_dollar_gamma
+                if incremental <= incremental_limit:
+                    log.info(
+                        f"Gamma already breached (${current_dollar_gamma:.0f} > "
+                        f"${hard_limit:.0f}) but incremental $Γ={incremental:.0f} "
+                        f"≤ budget ${incremental_limit:.0f} — allowing trade "
+                        f"(new_lots={new_lots})"
+                    )
+                    return False, projected
+
+        session['_gamma_blocked_count'] = session.get('_gamma_blocked_count', 0) + 1
+        log.warning(
+            f"Gamma projection blocked: projected $Γ={projected:.2f} > "
+            f"hard limit ${hard_limit:.0f} "
+            f"(new_lots={new_lots}, blocked_count={session['_gamma_blocked_count']})"
+        )
+        return True, projected

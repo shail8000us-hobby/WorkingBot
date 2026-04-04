@@ -27,6 +27,7 @@ PARAM_RULES = {
     'min_frozen_trigger_dollar':   {'type': float, 'min': 0, 'max': 100000, 'hot': True},
     'shift_threshold':         {'type': float, 'min': 1,    'max': 5000,  'hot': True},
     'shift_target_premium':    {'type': float, 'min': 10,   'max': 5000,  'hot': True},
+    'shift_premium_tolerance': {'type': float, 'min': 0,    'max': 500,   'hot': True},
     'close_at_threshold':      {'type': float, 'min': 0,    'max': 100,   'hot': True},
     'close_at_watch_interval': {'type': int,   'min': 0,    'max': 300,   'hot': True},
     'close_at_max_per_beat':   {'type': int,   'min': 1,    'max': 50,    'hot': True},
@@ -98,6 +99,19 @@ PARAM_RULES = {
     'gamma_hard_limit':          {'type': float, 'min': 1,    'max': 50000, 'hot': True},
     'gamma_emergency_limit':     {'type': float, 'min': 1,    'max': 50000, 'hot': True},
     'gamma_near_expiry_multiplier': {'type': float, 'min': 0.1, 'max': 1.0, 'hot': True},
+    # Tier B: per-side gamma imbalance — directional block when one side dominates
+    'gamma_side_imbalance_ratio':   {'type': float, 'min': 1.1, 'max': 10.0, 'hot': True},
+    # Tier C: DTE-aware hedge limit relaxation
+    'gamma_dte_relax_hours':        {'type': float, 'min': 0,    'max': 6.0, 'hot': True},
+    'gamma_dte_hedge_multiplier':   {'type': float, 'min': 1.0,  'max': 5.0, 'hot': True},
+    # Tier D: delta rescue — override regime block for forced hedge sell near expiry
+    'gamma_rescue_window_minutes':  {'type': float, 'min': 0,    'max': 480, 'hot': True},
+    # Incremental gamma budget: when current gamma already exceeds hard_limit,
+    # allow a trade if it adds ≤ this many dollars of additional gamma.
+    # 0 = disabled (default, preserves old block-all behavior).
+    'gamma_incremental_limit':      {'type': float, 'min': 0,    'max': 5000, 'hot': True},
+    # Directional dead-band: minimum % move from anchor to trust direction for gamma block
+    'gamma_directional_min_pct':    {'type': float, 'min': 0.0,  'max': 2.0, 'hot': True},
     # Regime Controls — Trend Detection Guard (Tiered — IMP-2)
     'trend_enabled':             {'type': bool,  'min': None, 'max': None,  'hot': True},
     'trend_tier1_pct':           {'type': float, 'min': 0.1,  'max': 5.0,   'hot': True},
@@ -473,6 +487,7 @@ def get_param_info() -> Dict[str, Dict]:
         'min_frozen_trigger_dollar': 'Frozen position fallback trigger: fire if total frozen USD loss exceeds this amount when active trigger has not fired (0 = disabled). Covers blind-spot losses at old strikes.',
         'shift_threshold': 'Minimum premium at hedge strike to avoid shift',
         'shift_target_premium': 'Target premium for new strike when shifting (picks strike closest to this premium)',
+        'shift_premium_tolerance': '±$ tolerance around shift_target_premium for live candidate validation. Before placing a shift order, the bot fetches the candidate strike\'s current premium — if it has drifted outside target±tolerance, the chain is rescanned for a better strike. Critical for 0DTE where premiums move fast. E.g. target=50, tolerance=10 → rescan if current premium is outside $40–$60. Set 0 to disable.',
         'close_at_threshold': 'Close positions at this premium or below',
         'close_at_watch_interval': 'Watcher polling interval (seconds) when force-enabled. 0 = disable force-enabled mode.',
         'close_at_max_per_beat': 'Max positions to close per heartbeat. Prevents heartbeat stall when many positions hit threshold near expiry.',
@@ -534,6 +549,12 @@ def get_param_info() -> Dict[str, Dict]:
         'gamma_hard_limit': 'Dollar gamma hard limit — block all new sell orders when exceeded',
         'gamma_emergency_limit': 'Dollar gamma emergency — force wind-down buybacks to reduce gamma below hard limit',
         'gamma_near_expiry_multiplier': 'Tighten gamma limits by this factor in last 30 minutes (gamma explodes near expiry for ATM strikes)',
+        'gamma_side_imbalance_ratio': 'Tier B: one side must have ≥ this × the other side\'s dollar gamma to be blocked alone. Lower = more aggressive directional blocking; default 1.5 (50% imbalance needed)',
+        'gamma_dte_relax_hours': 'Tier C: hours before expiry where the hedge sell limit is relaxed. Inside this window the hard limit is multiplied by gamma_dte_hedge_multiplier for hedge sells only. Set to 0 to disable Tier C entirely.',
+        'gamma_dte_hedge_multiplier': 'Tier C: multiply hard gamma limit by this value for hedge sells inside the DTE relax window. Default 2.0 — hedge sells are allowed up to 2× the hard limit near expiry',
+        'gamma_rescue_window_minutes': 'Tier D: minutes to expiry within which a forced hedge sell can override a gamma regime block. Set to 0 to disable. Default 120 (last 2 hours)',
+        'gamma_incremental_limit': 'Incremental gamma budget: when portfolio gamma already exceeds hard_limit (e.g. near-ATM 0DTE positions), allow a trade if it adds ≤ this many dollars of additional gamma. Prevents permanent "once breached, always blocked" freeze. 0 = disabled (default, strict block-all). Recommended starting value: 500–1000.',
+        'gamma_directional_min_pct': 'Minimum % move from the session anchor for directional gamma blocking to activate. When spot is within this dead-band of anchor (flat market), direction is ambiguous and per-side gamma imbalance is used instead. Prevents flip-flopping when spot oscillates near anchor. Default 0.10 (0.10% = ~$67 at $67K BTC)',
         # Regime Controls — Trend Detection Guard (Tiered — IMP-2)
         'trend_enabled': 'Master switch for the tiered trend detection guard. Detects strong directional BTC moves and responds with graduated actions: lot reduction → directional block → full block → wind-down.',
         'trend_tier1_pct': 'Tier 1 (ALERT): % move from session anchor to start reducing hedge lots. At this level, the algo logs a warning and reduces new hedge lot sizes by trend_tier1_lot_reduction %. Recommended: 0.5% (~$500 at BTC $100K). This is the earliest "soft" response.',

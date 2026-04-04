@@ -12,6 +12,7 @@ import logging
 import json
 import os
 import sqlite3
+import threading
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from pathlib import Path
@@ -226,11 +227,14 @@ class MMMAnalyticsStorage:
 
 # Singleton instance
 _analytics_storage = None
+_analytics_storage_lock = threading.Lock()
 
 
 def get_analytics_storage() -> MMMAnalyticsStorage:
     """Get or create the analytics storage singleton."""
     global _analytics_storage
     if _analytics_storage is None:
-        _analytics_storage = MMMAnalyticsStorage()
+        with _analytics_storage_lock:
+            if _analytics_storage is None:
+                _analytics_storage = MMMAnalyticsStorage()
     return _analytics_storage

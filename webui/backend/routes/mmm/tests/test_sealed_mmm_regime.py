@@ -280,10 +280,170 @@ class TestComputeRegimeAction:
         assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
 
     @pytest.mark.sealed
-    def test_c_cra_6_gamma_hard(self):
+    def test_c_cra_5b_vol_elevated_gamma_hard_blocks_all(self):
+        # Vol ELEVATED + Gamma HARD = compound risk → BLOCK_ALL_SELLS.
+        # Tier B/C exemptions must NOT apply — vol elevated is not safe to relax.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+        sess = self._sess_with_regimes(vol='ELEVATED', gamma='HARD')
+        sess['_ce_dollar_gamma'] = 1000.0
+        sess['_pe_dollar_gamma'] = 3000.0  # PE dominant — would normally BLOCK_PE_SELLS
+        sess['_gamma_dte_relax_active'] = True  # DTE relax active too
+        assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6_gamma_hard_no_side_data_blocks_all(self):
+        # Gamma HARD, no per-side gamma data, no DTE relax → conservative BLOCK_ALL_SELLS.
         from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
         sess = self._sess_with_regimes(gamma='HARD')
+        # _ce_dollar_gamma / _pe_dollar_gamma not set → both 0 → Step 1 skipped
         assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+
+    # ── Tier B: per-side gamma ────────────────────────────────────────────────
+
+    @pytest.mark.sealed
+    def test_c_cra_6b_gamma_hard_pe_dominant_blocks_pe_only(self):
+        # PE has 2.5× the dollar gamma of CE → PE is near ATM (danger side).
+        # Only PE sells are blocked; CE hedge sell is allowed.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 1000.0
+        sess['_pe_dollar_gamma'] = 2500.0  # ratio 2.5 ≥ 1.5 threshold
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6c_gamma_hard_ce_dominant_blocks_ce_only(self):
+        # CE has 2.5× the dollar gamma of PE → CE is near ATM (danger side).
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_CE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 2500.0  # ratio 2.5 ≥ 1.5 threshold
+        sess['_pe_dollar_gamma'] = 1000.0
+        assert _compute_regime_action(sess) == ACTION_BLOCK_CE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6d_gamma_hard_balanced_gamma_blocks_all(self):
+        # Ratio 1.1 < 1.5 threshold → neither side dominant → conservative BLOCK_ALL_SELLS.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 2000.0
+        sess['_pe_dollar_gamma'] = 2200.0  # ratio 1.1 — balanced
+        assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6e_gamma_hard_only_pe_positions_blocks_pe(self):
+        # Only PE positions active (CE = 0) → block PE sells regardless of ratio.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 0.0
+        sess['_pe_dollar_gamma'] = 3000.0
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    # ── Tier C: DTE relax tiebreaker ─────────────────────────────────────────
+
+    @pytest.mark.sealed
+    def test_c_cra_6f_dte_relax_trend_down_breaks_tie_blocks_pe(self):
+        # Balanced gamma + DTE relax active + dollar_gamma below hedge limit
+        # + TREND_DOWN → PE is the tiebreaker danger side → BLOCK_PE_SELLS.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD', trend='TREND_DOWN')
+        sess['_ce_dollar_gamma'] = 2000.0
+        sess['_pe_dollar_gamma'] = 2200.0  # balanced — ratio 1.1
+        sess['_gamma_dte_relax_active'] = True
+        sess['_portfolio_dollar_gamma'] = 5500.0
+        sess['_gamma_hard_limit_hedge_effective'] = 10000.0  # 2× relaxed
+        sess['_gamma_hard_limit_effective'] = 5000.0
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6g_dte_relax_above_hedge_limit_blocks_all(self):
+        # In DTE window but dollar_gamma exceeds even the relaxed hedge limit
+        # → no tiebreaker, conservative BLOCK_ALL_SELLS.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+        sess = self._sess_with_regimes(gamma='HARD', trend='TREND_DOWN')
+        sess['_ce_dollar_gamma'] = 2000.0
+        sess['_pe_dollar_gamma'] = 2200.0
+        sess['_gamma_dte_relax_active'] = True
+        sess['_portfolio_dollar_gamma'] = 12000.0   # above hedge limit
+        sess['_gamma_hard_limit_hedge_effective'] = 10000.0
+        assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6h_dte_relax_no_trend_blocks_all(self):
+        # DTE relax active + below hedge limit but TREND_NORMAL
+        # → no tiebreaker direction → BLOCK_ALL_SELLS (conservative).
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')  # trend=NORMAL
+        sess['_ce_dollar_gamma'] = 2000.0
+        sess['_pe_dollar_gamma'] = 2200.0
+        sess['_gamma_dte_relax_active'] = True
+        sess['_portfolio_dollar_gamma'] = 5500.0
+        sess['_gamma_hard_limit_hedge_effective'] = 10000.0
+        # No anchor/spot set → Step 1 skips → balanced per-side gamma → DTE relax
+        # → TREND_NORMAL (no direction) → BLOCK_ALL_SELLS
+        assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6i_anchor_up_blocks_ce(self):
+        # Market moved UP above dead-band → CE (calls) are aggressor → BLOCK_CE_SELLS.
+        # PE has MORE total dollar gamma (lot-count asymmetry), but anchor direction
+        # wins over per-side total gamma: Step 1 fires before Step 2.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_CE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 3500.0
+        sess['_pe_dollar_gamma'] = 5000.0   # PE > CE (more lots on PE), but should NOT block PE
+        sess['_trend_anchor_spot'] = 67000.0
+        sess['_regime_spot_price'] = 67200.0   # +0.30% — above 0.10% dead-band
+        assert _compute_regime_action(sess) == ACTION_BLOCK_CE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6j_anchor_down_blocks_pe(self):
+        # Market moved DOWN below dead-band → PE (puts) are aggressor → BLOCK_PE_SELLS.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 5000.0   # CE > PE (more lots on CE), but should NOT block CE
+        sess['_pe_dollar_gamma'] = 3500.0
+        sess['_trend_anchor_spot'] = 67000.0
+        sess['_regime_spot_price'] = 66800.0   # -0.30% — below -0.10% dead-band
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_6k_anchor_flat_falls_to_gamma_imbalance(self):
+        # Spot is inside dead-band (< 0.10%) → direction ambiguous →
+        # falls to Step 2 (per-side gamma imbalance). PE dominant → BLOCK_PE_SELLS.
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(gamma='HARD')
+        sess['_ce_dollar_gamma'] = 1000.0
+        sess['_pe_dollar_gamma'] = 3000.0   # PE dominant (ratio 3.0 ≥ 1.5)
+        sess['_trend_anchor_spot'] = 67000.0
+        sess['_regime_spot_price'] = 67050.0   # +0.075% — inside dead-band
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_ugc_opt_string_call_put_produces_per_side_gamma(self):
+        # Regression: monitor stores opt as 'call'/'put' but regime filters for 'C'/'P'.
+        # If the monitor passes 'call'/'put' strings, _ce_dollar_gamma and _pe_dollar_gamma
+        # stay 0.0 → Step 1 never fires → BLOCK_ALL_SELLS instead of directional block.
+        # Fix: monitor must store opt_char 'C'/'P' (mmm_monitor.py line ~9465).
+        # This test calls _update_gamma_cap directly with 'C'/'P' strings (correct)
+        # and verifies per-side values are populated, sealing the contract.
+        from webui.backend.routes.mmm.mmm_gamma import _update_gamma_cap
+        sess = {'params': {}, '_gamma_history': []}
+        spot = 66000.0
+        # CE dominant: ce_gamma >> pe_gamma
+        gamma_data = {
+            'portfolio_gamma': 0.05,
+            'positions': [
+                (0.04, 10, 'C'),   # CE: 10 lots, gamma=0.04 — high CE gamma
+                (0.005, 8, 'P'),   # PE: 8 lots, gamma=0.005 — low PE gamma
+            ],
+        }
+        _update_gamma_cap(sess, gamma_data, spot, minutes_to_expiry=300)
+        ce_dg = sess['_ce_dollar_gamma']
+        pe_dg = sess['_pe_dollar_gamma']
+        assert ce_dg > 0, f"CE dollar gamma must be > 0, got {ce_dg}"
+        assert pe_dg > 0, f"PE dollar gamma must be > 0, got {pe_dg}"
+        assert ce_dg > pe_dg * 3, (
+            f"CE ($Γ={ce_dg}) should far exceed PE ($Γ={pe_dg}) given dominant CE positions"
+        )
 
     @pytest.mark.sealed
     def test_c_cra_7_trend_up_tier2_block_ce(self):

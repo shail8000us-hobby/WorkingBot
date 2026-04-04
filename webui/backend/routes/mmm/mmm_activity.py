@@ -482,13 +482,16 @@ class MMMActivityLog:
 # =============================================================================
 
 _activity_instance = None
+_activity_lock = threading.Lock()
 
 
 def get_activity_log() -> MMMActivityLog:
     """Get singleton activity log instance."""
     global _activity_instance
     if _activity_instance is None:
-        _activity_instance = MMMActivityLog()
+        with _activity_lock:
+            if _activity_instance is None:
+                _activity_instance = MMMActivityLog()
     return _activity_instance
 
 
