@@ -233,7 +233,8 @@ class GammaDetector:
 
         gamma_zone = self._classify_zone(nearest_distance_pct, params)
 
-        perp = session.get('_perp_state', {})
+        # BUG-C6 fix: read 'perp_hedge' (actual key), not '_perp_state' (phantom)
+        perp = session.get('perp_hedge', {})
         perp_included = bool(perp and perp.get('lots', 0) != 0)
 
         return {

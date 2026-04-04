@@ -101,14 +101,14 @@ When auditing a module, check ALL of the following:
 | M-15 | `mmm_wind_down.py` | P1 | Orderly wind-down — closes all positions gracefully | `test_sealed_mmm_wind_down.py` | DONE | CLEAN |
 | M-16 | `mmm_exit_all.py` | P1 | Emergency exit — closes everything immediately | ✗ | DONE | 1 CRIT, 2 P2 |
 | M-17 | `mmm_reverse.py` | P1 | Controlled Reverse Mode overlay (isolated from core) | ✗ | DONE | 3 P3 |
-| M-18 | `mmm_pnl_core.py` | P2 | Session P&L computation — realized, unrealized, total | `test_sealed_mmm_pnl_core.py` | TODO | |
-| M-19 | `mmm_regime.py` | P2 | Market regime detection — gates sells/buys by regime | `test_sealed_mmm_regime.py` | TODO | |
-| M-20 | `mmm_state.py` | P2 | Session state management — load, save, validate | `test_sealed_mmm_state.py` | TODO | |
-| M-21 | `mmm_storage.py` | P2 | Persistence layer — file I/O for session JSON | `test_sealed_mmm_storage.py` | TODO | |
-| M-22 | `mmm_gamma.py` | P2 | Gamma exposure tracking and position gamma | `test_sealed_mmm_gamma.py` | TODO | |
-| M-23 | `mmm_gamma_detector.py` | P2 | Detects gamma spikes, triggers protective actions | `test_sealed_mmm_gamma_detector.py` | TODO | |
-| M-24 | `mmm_breakeven_engine.py` | P2 | Computes breakeven levels per side | `test_sealed_mmm_breakeven_engine.py` | TODO | |
-| M-25 | `mmm_scaler.py` | P2 | Scales lot sizes based on account size / risk params | ✗ | TODO | |
+| M-18 | `mmm_pnl_core.py` | P2 | Session P&L computation — realized, unrealized, total | `test_sealed_mmm_pnl_core.py` | DONE | CLEAN — well-sealed canonical P&L, Decimal-based math, dedup by fill_id+order_id. |
+| M-19 | `mmm_regime.py` | P2 | Market regime detection — gates sells/buys by regime | `test_sealed_mmm_regime.py` | DONE | CLEAN — tier escalation correct, cooldown/plateau/T4 timeout well-guarded, H-11 error handlers return current regime. |
+| M-20 | `mmm_state.py` | P2 | Session state management — load, save, validate | `test_sealed_mmm_state.py` | DONE | BUG-C2 (P2): `_trend_plateau_beats`/`_trend_t4_beats` missing from create_session init. BUG-C3 (P2): `get_session_summary` inline net_pnl missing perp+reverse. 2 fixed 2026-04-04. |
+| M-21 | `mmm_storage.py` | P2 | Persistence layer — SQLite storage for sessions | ✗ | DONE | BUG-C4 (P2): `list_session_summaries` + `_row_to_summary_fallback` inline net_pnl missing perp+reverse. BUG-C7 (P3): `get_storage` singleton not thread-safe. 2 fixed 2026-04-04. |
+| M-22 | `mmm_gamma.py` | P2 | Gamma exposure tracking and position gamma | `test_sealed_mmm_gamma.py` | DONE | CLEAN — position map builder correct, per-side dollar gamma correct, DTE relax + near-expiry multiplier paths sound. |
+| M-23 | `mmm_gamma_detector.py` | P2 | Detects gamma curvature boundaries by scanning PnL kinks | `test_sealed_mmm_gamma_detector.py` | DONE | BUG-C6 (P1): phantom `_perp_state` key — perp never included in gamma scan. 1 fixed 2026-04-04. |
+| M-24 | `mmm_breakeven_engine.py` | P2 | Computes breakeven levels and aggression multiplier | `test_sealed_mmm_breakeven_engine.py` | DONE | BUG-C5 (P1): phantom `_perp_state` key — perp never included in breakeven calculation. Fixed signed-lots logic. 1 fixed 2026-04-04. |
+| M-25 | `mmm_scaler.py` | P2 | Favorable scale-up eligibility + strike scanning | ✗ | DONE | BUG-C1 (P1): inline P&L formula missing perp+reverse — could scale into losing session. 1 fixed 2026-04-04. |
 | M-26 | `mmm_adaptive.py` | P2 | Adaptive heartbeat interval — speeds up/slows down loop | `test_sealed_compute_adaptive_interval.py` | TODO | |
 | M-27 | `mmm_atm_shield.py` | P2 | ATM protection shield — blocks trades near ATM | `test_sealed_mmm_atm_shield.py` | TODO | |
 | M-28 | `mmm_reversal.py` | P2 | Detects and handles trend reversals | `test_sealed_mmm_reversal.py` | TODO | |

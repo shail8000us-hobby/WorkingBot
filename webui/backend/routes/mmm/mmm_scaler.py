@@ -59,9 +59,9 @@ def check_scale_eligibility(
             pass
 
     # 5. Session P&L must be positive
-    realized = session.get('realized_pnl', 0)
-    unrealized = session.get('unrealized_pnl', 0)
-    total_pnl = realized + unrealized
+    # BUG-C1 fix: use canonical formula (includes perp + reverse P&L)
+    from .mmm_pnl_core import compute_current_total_pnl
+    total_pnl = compute_current_total_pnl(session)
     if total_pnl <= 0:
         return False, f'session P&L negative (${total_pnl:.2f})'
 

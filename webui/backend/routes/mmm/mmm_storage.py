@@ -17,6 +17,7 @@ import os
 import sqlite3
 import logging
 import hashlib
+import threading
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
@@ -645,7 +646,10 @@ class MMMStorage:
                     json_extract(data_json, '$._gamma_result.nearest_distance_pct')    AS _gamma_nearest_pct,
                     json_extract(data_json, '$._gamma_result.enabled')                 AS _gamma_enabled,
                     json_extract(data_json, '$._gamma_result.gamma_zone')              AS _gamma_zone,
-                    json_extract(data_json, '$._data_confidence')                      AS _data_confidence
+                    json_extract(data_json, '$._data_confidence')                      AS _data_confidence,
+                    json_extract(data_json, '$.perp_hedge.realized_pnl')               AS perp_realized_pnl,
+                    json_extract(data_json, '$.perp_hedge.unrealized_pnl')             AS perp_unrealized_pnl,
+                    json_extract(data_json, '$._reverse.net_pnl')                      AS reverse_net_pnl
                 FROM mmm_sessions
                 {where}
                 ORDER BY created_at DESC
@@ -683,7 +687,10 @@ class MMMStorage:
                     'realized_pnl': realized,
                     'unrealized_pnl': unrealized,
                     'total_fees': fees,
-                    'net_pnl': realized + unrealized - fees,
+                    # BUG-C4 fix: include perp + reverse P&L in net_pnl
+                    'net_pnl': realized + unrealized - fees
+                            + (r['perp_realized_pnl'] or 0) + (r['perp_unrealized_pnl'] or 0)
+                            + (r['reverse_net_pnl'] or 0),
                     'peak_pnl': r['peak_pnl'] or 0,
                     'adjustment_interval': r['adjustment_interval'] or 300,
                     'last_heartbeat': r['last_heartbeat'],
@@ -761,6 +768,10 @@ class MMMStorage:
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
         fees = session.get('total_fees', 0)
+        # BUG-C4 fix: include perp + reverse P&L in net_pnl
+        perp = session.get('perp_hedge', {})
+        perp_pnl = (perp.get('realized_pnl', 0) or 0) + (perp.get('unrealized_pnl', 0) or 0)
+        reverse_pnl = float(session.get('_reverse', {}).get('net_pnl', 0) or 0)
         return {
             'session_id': session.get('session_id'),
             'status': session.get('strategy_status', 'IDLE'),
@@ -786,7 +797,7 @@ class MMMStorage:
             'realized_pnl': realized,
             'unrealized_pnl': unrealized,
             'total_fees': fees,
-            'net_pnl': realized + unrealized - fees,
+            'net_pnl': realized + unrealized - fees + perp_pnl + reverse_pnl,
             'peak_pnl': session.get('peak_pnl', 0),
             'adjustment_interval': session.get('params', {}).get('adjustment_interval', 300),
             'last_heartbeat': session.get('last_heartbeat'),
@@ -811,6 +822,9 @@ class MMMStorage:
             conn.close()
 
 
+_storage_lock = threading.Lock()
+
+
 def get_storage(storage_path: str = None) -> MMMStorage:
     """
     Get singleton storage instance.
@@ -823,5 +837,8 @@ def get_storage(storage_path: str = None) -> MMMStorage:
     """
     global _storage_instance
     if _storage_instance is None:
-        _storage_instance = MMMStorage(storage_path)
+        # BUG-C7 fix: thread-safe double-checked lock
+        with _storage_lock:
+            if _storage_instance is None:
+                _storage_instance = MMMStorage(storage_path)
     return _storage_instance

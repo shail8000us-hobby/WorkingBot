@@ -1832,4 +1832,19 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 3. **P2 (M-16):** Added `return_exceptions=True` to `asyncio.gather` for exit rounds so single-task failures do not abort the entire emergency close.
 4. **P3 (M-09, M-17):** Replaced 3 falsy-unsafe commission `or` chains with key-presence checks (matching M-02 fix pattern).
 5. **P3 (M-17):** Refactored inline P&L formula `_compute_core_only_pnl` to derive from `compute_current_total_pnl() - reverse_pnl`, preventing formula drift.
-6. **P3 (M-17):** Stored `enabled_at` as ISO string instead of datetime object for JSON serialization safety.
+
+
+---
+
+## 2026-04-04: Batch C Systematic Safety Audit (8 P2 Modules)
+**Modules Audited:** M-18 to M-25 (`mmm_pnl_core`, `mmm_regime`, `mmm_state`, `mmm_storage`, `mmm_gamma`, `mmm_gamma_detector`, `mmm_breakeven_engine`, `mmm_scaler`)
+**Result:** 7 bugs found and fixed across 5 modules (3 modules CLEAN). 1248/1248 tests passing.
+
+**Key Fixes:**
+1. **P1 (M-24, M-23):** `mmm_breakeven_engine` and `mmm_gamma_detector` read phantom `_perp_state` key that was never populated. Perp hedge was silently excluded from all breakeven and gamma curvature calculations. Fixed to read `perp_hedge` with correct signed-lots logic.
+2. **P1 (M-25):** `mmm_scaler.py` scale-up eligibility used inline `realized + unrealized`, ignoring perp+reverse P&L. Could allow scale-up into a net-losing session. Fixed to call canonical `compute_current_total_pnl()`.
+3. **P2 (M-20, M-21):** `mmm_state.py:get_session_summary`, `mmm_storage.py:list_session_summaries`, and `_row_to_summary_fallback` all computed dashboard `net_pnl` inline, missing perp+reverse. Fixed via `compute_current_total_pnl()` or SQL extract.
+4. **P2 (M-20):** `_trend_plateau_beats` and `_trend_t4_beats` missing from `create_session` init.
+5. **P3 (M-21):** Singleton `get_storage()` lacked thread safety. Added double-checked lock.
+
+**Files changed:** `mmm_scaler.py`, `mmm_breakeven_engine.py`, `mmm_gamma_detector.py`, `mmm_state.py`, `mmm_storage.py`

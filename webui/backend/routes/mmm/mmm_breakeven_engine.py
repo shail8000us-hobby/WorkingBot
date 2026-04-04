@@ -247,15 +247,15 @@ class BreakevenEngine:
         total_pnl += session.get('realized_pnl', 0.0)
 
         # Add perp hedge P&L (linear in spot)
-        perp_state = session.get('_perp_state', {})
+        # BUG-C5 fix: read 'perp_hedge' (actual key), not '_perp_state' (phantom).
+        # perp_hedge stores signed lots directly (positive=long, negative=short).
+        perp_state = session.get('perp_hedge', {})
         if perp_state:
             perp_lots = perp_state.get('lots', 0)
             perp_avg_entry = perp_state.get('avg_entry', 0.0)
-            perp_direction = perp_state.get('direction', 'long')
             if perp_lots != 0 and perp_avg_entry > 0:
-                # Signed lots: positive=long, negative=short
-                signed_lots = perp_lots if perp_direction == 'long' else -perp_lots
-                perp_pnl = (spot_h - perp_avg_entry) * signed_lots * LOT_SIZE_BTC
+                # lots is already signed: positive=long, negative=short
+                perp_pnl = (spot_h - perp_avg_entry) * perp_lots * LOT_SIZE_BTC
                 total_pnl += perp_pnl
 
         return total_pnl
@@ -567,7 +567,8 @@ class BreakevenEngine:
         )
 
         # Perp included?
-        perp_state = session.get('_perp_state', {})
+        # BUG-C5 fix: read 'perp_hedge' (actual key), not '_perp_state' (phantom)
+        perp_state = session.get('perp_hedge', {})
         perp_included = bool(perp_state and perp_state.get('lots', 0) != 0)
 
         # Count positions
@@ -715,10 +716,11 @@ class BreakevenEngine:
 
         key_parts.append(f"realized:{session.get('realized_pnl', 0)}")
 
-        perp = session.get('_perp_state', {})
+        # BUG-C5 fix: read 'perp_hedge' (actual key), not '_perp_state' (phantom)
+        perp = session.get('perp_hedge', {})
         if perp:
             key_parts.append(
-                f"perp:{perp.get('lots', 0)}:{perp.get('avg_entry', 0)}:{perp.get('direction', 'long')}"
+                f"perp:{perp.get('lots', 0)}:{perp.get('avg_entry', 0)}"
             )
 
         raw = '|'.join(key_parts)

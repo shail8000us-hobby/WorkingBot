@@ -360,6 +360,7 @@ DEFAULT_PARAMS = {
     'min_frozen_trigger_dollar': 0.2,   # fallback: trigger from frozen positions if their USD loss > this (0 = disabled)
     'shift_threshold': 50.0,            # min premium to sell at current strike
     'shift_target_premium': 100.0,      # target premium for new strike on shift
+    'shift_premium_tolerance': 10.0,   # ±$ tolerance around shift_target_premium for candidate validation
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'close_at_use_bid': True,           # use bid price (not mark) for close_at_5 checks — more accurate for illiquid options
     'close_at_watch_interval': 30,      # seconds between proactive close-at-5 watcher checks (0 = disabled)
@@ -435,6 +436,15 @@ DEFAULT_PARAMS = {
     'gamma_hard_limit': 5000.0,           # dollar gamma hard limit (block sells) — BTC-scaled
     'gamma_emergency_limit': 10000.0,     # dollar gamma emergency (force reduce) — BTC-scaled
     'gamma_near_expiry_multiplier': 0.5,  # tighten limits by this factor in last 30 min
+    # Tier B: per-side gamma imbalance threshold
+    'gamma_side_imbalance_ratio': 1.5,    # one side must have ≥ this × other's gamma to be "dominant"
+    # Tier C: DTE-aware hedge limit relaxation
+    'gamma_dte_relax_hours': 2.0,         # hours before expiry where hedge limit is relaxed
+    'gamma_dte_hedge_multiplier': 2.0,    # multiply hard_limit by this for hedge sells in DTE window
+    # Tier D: delta rescue — override gamma block for forced hedge sell near expiry
+    'gamma_rescue_window_minutes': 120,   # minutes to expiry within which delta rescue can fire
+    # Directional dead-band: minimum % move from anchor to trust anchor direction
+    'gamma_directional_min_pct': 0.10,    # below this, direction is ambiguous → fall to per-side gamma
 
     # Section C: Trend Detection Guard — Tiered Response (IMP-2)
     'trend_enabled': True,                 # master switch for trend guard
@@ -662,7 +672,7 @@ DEFAULT_PARAMS = {
 HOT_RELOAD_PARAMS = {
     'dte_category', 'total_dte_hours', 'session_window_hours',
     'adjustment_interval', 'min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold',
-    'shift_threshold_pct', 'shift_target_premium', 'shift_match_opposite_lots',
+    'shift_threshold_pct', 'shift_target_premium', 'shift_premium_tolerance', 'shift_match_opposite_lots',
     'pre_sell_shift_enabled', 'shift_cooldown_sec',
     'close_at_threshold', 'close_at_watch_interval', 'close_at_max_per_beat',
     'close_at_watcher_force_enabled', 'close_at_watch_hours_before_expiry', 'close_at_watch_near_expiry_interval',
@@ -693,6 +703,9 @@ HOT_RELOAD_PARAMS = {
     'vol_regime_cooldown_beats',
     'gamma_cap_enabled', 'gamma_soft_limit', 'gamma_hard_limit',
     'gamma_emergency_limit', 'gamma_near_expiry_multiplier',
+    'gamma_side_imbalance_ratio', 'gamma_dte_relax_hours',
+    'gamma_dte_hedge_multiplier', 'gamma_rescue_window_minutes',
+    'gamma_directional_min_pct',
     'trend_enabled', 'trend_tier1_pct', 'trend_tier2_pct',
     'trend_tier3_pct', 'trend_tier4_pct', 'trend_tier1_lot_reduction',
     'trend_move_pct', 'trend_retrace_pct',
@@ -1003,6 +1016,8 @@ def create_session(
 
         '_portfolio_gamma': 0.0,
         '_portfolio_dollar_gamma': 0.0,
+        '_ce_dollar_gamma': 0.0,
+        '_pe_dollar_gamma': 0.0,
         '_gamma_regime': 'NORMAL',
         '_gamma_history': [],        # ring buffer [(timestamp, dollar_gamma), ...]
         '_gamma_blocked_count': 0,
@@ -1016,6 +1031,8 @@ def create_session(
         '_trend_high': 0.0,
         '_trend_low': 0.0,
         '_trend_calm_beats': 0,
+        '_trend_plateau_beats': 0,   # BUG-C2 fix: regime reads these
+        '_trend_t4_beats': 0,        # BUG-C2 fix: regime reads these
         '_trend_ema': 0.0,
         '_trend_ema_prev': 0.0,
         '_trend_ema_slope': 0.0,
@@ -1216,6 +1233,10 @@ def get_session_summary(session: Dict) -> Dict:
     if not _ce_prem_stored and not _pe_prem_stored and session.get('total_premium_collected', 0) > 0:
         _ce_prem_stored, _pe_prem_stored = _backfill_side_premiums(session)
 
+    # BUG-C3 fix: use canonical P&L formula (includes perp + reverse)
+    from .mmm_pnl_core import compute_current_total_pnl
+    _net_pnl = round(compute_current_total_pnl(session), 6)
+
     return {
         'session_id': session.get('session_id'),
         'status': session.get('strategy_status', 'IDLE'),
@@ -1251,7 +1272,7 @@ def get_session_summary(session: Dict) -> Dict:
         'realized_pnl': session.get('realized_pnl', 0),
         'unrealized_pnl': session.get('unrealized_pnl', 0),
         'total_fees': session.get('total_fees', 0),
-        'net_pnl': session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - session.get('total_fees', 0),
+        'net_pnl': _net_pnl,
         'peak_pnl': session.get('peak_pnl', 0),
 
         # Params (hot-reload visible)
