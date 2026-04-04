@@ -92,15 +92,15 @@ When auditing a module, check ALL of the following:
 | M-06 | `mmm_margin_guardian.py` | P0 | Real-time margin check, emergency close trigger | `test_sealed_mmm_margin_guardian_async.py` | DONE | CLEAN — margin formula, tier evaluation, lots-to-close estimate all correct. `or 0` patterns are safe single-fallback None guards (not multi-chain). |
 | M-07 | `mmm_circuit_breaker.py` | P0 | Halts trading on repeated failures or anomalies | `test_sealed_mmm_circuit_breaker.py` | DONE | CLEAN — state machine transitions correct, exponential backoff correct, sliding window deque safe. |
 | M-08 | `mmm_fill_sync.py` | P0 | Syncs exchange fills back into session state | ✗ | DONE | BUG-1 (P3): `_get_session_symbols()` called `self._monitor.initializer.build_symbol()` without None guard — AttributeError silently swallowed, fills not matched. Fixed with getattr guard + fallback to stored symbol strings. 1 fixed 2026-04-04. |
-| M-09 | `mmm_perp_hedge.py` | P1 | Manages perpetual hedge positions | `test_sealed_mmm_perp_hedge.py` | TODO | |
-| M-10 | `mmm_replenish.py` | P1 | Auto-replenishes closed side using ranked strikes | `test_sealed_mmm_replenish.py` | TODO | |
+| M-09 | `mmm_perp_hedge.py` | P1 | Manages perpetual hedge positions | `test_sealed_mmm_perp_hedge.py` | DONE | 2 P3 |
+| M-10 | `mmm_replenish.py` | P1 | Auto-replenishes closed side using ranked strikes | `test_sealed_mmm_replenish.py` | DONE | CLEAN |
 | M-11 | `mmm_close_at_5.py` | P1 | Closes positions when premium ≤ threshold | `test_sealed_mmm_close_at_5.py` | DONE | BUG-1 (P3): `_commission` extraction falsy-unsafe (same `or` chain pattern as M-02 BUG-3 — `paid_commission=0.0` falls through to `commission`). 1 fixed 2026-04-04. |
 | M-12 | `mmm_strike_shift.py` | P1 | Shifts strikes when premium falls below threshold | `test_sealed_mmm_strike_shift.py` | DONE | CLEAN — all prior audit fixes applied; `_initial_hedge_premium` preservation correct; frozen-strike exclusion correct. |
 | M-13 | `mmm_harvester.py` | P1 | M1 profit harvesting of frozen positions; M3 asymmetry boost | `test_sealed_mmm_harvester.py` | DONE | CLEAN — `active_lots` (not `total_lots`) used for asymmetry calc; capacity pressure computed correctly; in-flight guard via `being_closed_ids` set. |
 | M-14 | `mmm_recycler.py` | P1 | M2 lot recycling — Phase A buyback + Phase B new sell | `test_sealed_mmm_recycler.py` | DONE | CLEAN — viability 3-check pass, Phase B uses actual Phase A lots (not planned), rollback correctly restores canonical positions via deep-copy. |
-| M-15 | `mmm_wind_down.py` | P1 | Orderly wind-down — closes all positions gracefully | `test_sealed_mmm_wind_down.py` | TODO | |
-| M-16 | `mmm_exit_all.py` | P1 | Emergency exit — closes everything immediately | ✗ | TODO | |
-| M-17 | `mmm_reverse.py` | P1 | Controlled Reverse Mode overlay (isolated from core) | ✗ | TODO | |
+| M-15 | `mmm_wind_down.py` | P1 | Orderly wind-down — closes all positions gracefully | `test_sealed_mmm_wind_down.py` | DONE | CLEAN |
+| M-16 | `mmm_exit_all.py` | P1 | Emergency exit — closes everything immediately | ✗ | DONE | 1 CRIT, 2 P2 |
+| M-17 | `mmm_reverse.py` | P1 | Controlled Reverse Mode overlay (isolated from core) | ✗ | DONE | 3 P3 |
 | M-18 | `mmm_pnl_core.py` | P2 | Session P&L computation — realized, unrealized, total | `test_sealed_mmm_pnl_core.py` | TODO | |
 | M-19 | `mmm_regime.py` | P2 | Market regime detection — gates sells/buys by regime | `test_sealed_mmm_regime.py` | TODO | |
 | M-20 | `mmm_state.py` | P2 | Session state management — load, save, validate | `test_sealed_mmm_state.py` | TODO | |

@@ -371,7 +371,7 @@ async def process_reverse_entry(
 
     # Record exchange commission if available
     _od = result.get('order_details') or {}
-    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    _commission = float(_od.get('paid_commission') if 'paid_commission' in _od else _od.get('commission', 0))
     if _commission:
         try:
             from .mmm_pnl_core import record_fee as _pnl_fee
@@ -696,19 +696,15 @@ async def close_all_reverse_positions(
 def _compute_core_only_pnl(session: Dict) -> float:
     """
     Compute core-only P&L (excluding reverse P&L).
-    Formula: realized + unrealized - fees + perp_pnl
+    Derives from canonical compute_current_total_pnl() minus reverse_pnl
+    so formula changes in pnl_core are automatically reflected here.
     This is used by the emergency check to detect core losses
     without reverse P&L masking or amplifying the signal.
     """
-    realized = float(session.get('realized_pnl', 0.0))
-    unrealized = float(session.get('unrealized_pnl', 0.0))
-    fees = float(session.get('total_fees', 0.0))
-    perp = session.get('perp_hedge', {})
-    perp_pnl = (
-        float(perp.get('realized_pnl', 0.0) or 0.0)
-        + float(perp.get('unrealized_pnl', 0.0) or 0.0)
-    )
-    return realized + unrealized - fees + perp_pnl
+    from .mmm_pnl_core import compute_current_total_pnl
+    total = compute_current_total_pnl(session)
+    reverse_pnl = float(session.get('_reverse', {}).get('net_pnl', 0.0) or 0.0)
+    return total - reverse_pnl
 
 
 def check_reverse_emergency(session: Dict) -> str:
@@ -784,7 +780,7 @@ def enable_reverse_mode(session: Dict) -> None:
     """
     initialize_reverse_state(session)  # reset to fresh state
     session['_reverse']['active'] = True
-    session['_reverse']['enabled_at'] = datetime.now(timezone.utc)
+    session['_reverse']['enabled_at'] = datetime.now(timezone.utc).isoformat()
 
     sid = session.get('session_id', '')
     log_activity(

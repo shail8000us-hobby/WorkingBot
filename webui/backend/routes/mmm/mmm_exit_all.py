@@ -102,6 +102,31 @@ async def run_exit_all(monitor) -> None:
     _force_clear_being_closed(session, sid)
 
     try:
+        # ── Close reverse positions FIRST (unhedged, highest risk) ──
+        if session.get('_reverse', {}).get('positions'):
+            try:
+                from .mmm_reverse import close_all_reverse_positions, disable_reverse_mode
+                await close_all_reverse_positions(session, monitor._engine, 'exit_all')
+                disable_reverse_mode(session, f'exit_all: {reason}')
+                log.info(f"[{sid}] EXIT ALL: Reverse positions closed")
+            except Exception as _rev_err:
+                log.error(f"[{sid}] EXIT ALL: Failed to close reverse positions: {_rev_err}")
+
+        # ── Close perp hedge SECOND (reduces delta risk while options close) ──
+        try:
+            from .mmm_perp_hedge import is_perp_hedge_enabled, close_all_perp
+            if is_perp_hedge_enabled(session):
+                perp_result = await close_all_perp(session, monitor.executor, 'exit_all')
+                if perp_result.get('success'):
+                    log.info(f"[{sid}] EXIT ALL: Perp hedge closed")
+                else:
+                    perp_lots = session.get('perp_hedge', {}).get('lots', 0)
+                    if perp_lots != 0:
+                        log.error(f"[{sid}] EXIT ALL: Perp close failed ({perp_lots} lots remain)")
+        except Exception as _perp_err:
+            log.error(f"[{sid}] EXIT ALL: Failed to close perp hedge: {_perp_err}")
+
+        # ── Close options positions (CE/PE) via round-based logic ──
         await _run_exit_rounds(monitor)
     except Exception as e:
         log.error(f"[{sid}] EXIT ALL: Unexpected exception during exit rounds: {e}", exc_info=True)
@@ -146,6 +171,13 @@ async def run_exit_all(monitor) -> None:
              'rounds': session.get('_exit_all_rounds_attempted', 0),
              'realized_pnl': round(session.get('realized_pnl', 0), 4)},
         )
+    except Exception:
+        pass
+
+    # Clean up straddle roll lock before stopping (same pattern as M-03 handle_stale_monitor)
+    try:
+        from .mmm_straddle_roll import _cleanup_roll_lock
+        _cleanup_roll_lock(sid)
     except Exception:
         pass
 
@@ -262,8 +294,8 @@ async def _run_exit_rounds(monitor) -> None:
             [_close_one('ce', p) for p in ce_positions] +
             [_close_one('pe', p) for p in pe_positions]
         )
-        results = await asyncio.gather(*all_tasks)
-        closed_count = sum(1 for r in results if r)
+        results = await asyncio.gather(*all_tasks, return_exceptions=True)
+        closed_count = sum(1 for r in results if r is True)
 
         # Recompute both sides after each round
         for sk in ('ce', 'pe'):

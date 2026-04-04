@@ -685,7 +685,7 @@ async def run_perp_hedge(
 
     # Record exchange commission via ledger (CRIT-1 fix)
     _od = result.get('order_details') or {}
-    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    _commission = float(_od.get('paid_commission') if 'paid_commission' in _od else _od.get('commission', 0))
     if _commission:
         from .mmm_pnl_core import record_fee as _pnl_fee
         _pnl_fee(session, _commission, 'perp_hedge',
@@ -806,7 +806,7 @@ async def close_all_perp(
 
     # Record exchange commission via ledger (CRIT-1 fix)
     _od = result.get('order_details') or {}
-    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+    _commission = float(_od.get('paid_commission') if 'paid_commission' in _od else _od.get('commission', 0))
     if _commission:
         from .mmm_pnl_core import record_fee as _pnl_fee
         _pnl_fee(session, _commission, 'perp_close',

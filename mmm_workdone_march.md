@@ -1819,3 +1819,17 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 - BUG-1 (P3): `_get_session_symbols()` called `self._monitor.initializer.build_symbol()` with no guard on `self._monitor.initializer`. If the monitor's initializer is None (not yet initialized or initialization failed), this raises `AttributeError` which is silently swallowed by the `sync()` wrapper — entire fill sync fails for that heartbeat with no warning. Fix: use `getattr(self._monitor, 'initializer', None)`, fall back to stored `pos.get('symbol')` strings when initializer is None, and emit a warning so the failure is visible.
 
 **Files changed:** `mmm_executor.py`, `mmm_fill_sync.py`
+
+---
+
+## 2026-04-04: Batch B Systematic Safety Audit (5 P1 Modules)
+**Modules Audited:** M-09 `mmm_perp_hedge.py`, M-10 `mmm_replenish.py`, M-15 `mmm_wind_down.py`, M-16 `mmm_exit_all.py`, M-17 `mmm_reverse.py`
+**Result:** 8 bugs found and fixed across 3 modules (2 modules CLEAN).
+
+**Key Fixes:**
+1. **CRITICAL (M-16):** Added missing reverse and perp position closing to `run_exit_all()` before options exit rounds, ensuring no positions are orphaned during an emergency exit.
+2. **P2 (M-16):** Added missing `_cleanup_roll_lock(sid)` before calling `monitor.stop()` to prevent straddle roll lock from blocking successor sessions.
+3. **P2 (M-16):** Added `return_exceptions=True` to `asyncio.gather` for exit rounds so single-task failures do not abort the entire emergency close.
+4. **P3 (M-09, M-17):** Replaced 3 falsy-unsafe commission `or` chains with key-presence checks (matching M-02 fix pattern).
+5. **P3 (M-17):** Refactored inline P&L formula `_compute_core_only_pnl` to derive from `compute_current_total_pnl() - reverse_pnl`, preventing formula drift.
+6. **P3 (M-17):** Stored `enabled_at` as ISO string instead of datetime object for JSON serialization safety.
