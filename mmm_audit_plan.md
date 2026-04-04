@@ -75,7 +75,7 @@ When auditing a module, check ALL of the following:
 | ID | File | Tier | Purpose (one line) | Sealed Test? | Status | Key Findings |
 |----|------|------|--------------------|--------------|--------|--------------|
 | M-01 | `mmm_monitor.py` | P0 | Central heartbeat orchestration loop — drives all phases | ✗ | DONE | BUG-1: `_save_session` returned `None` on exception (breaks stale guard Layer 2). BUG-2: 7 early-return paths used inline P&L formula (missing perp+reverse). BUG-3: `asyncio.gather(return_exceptions=False)` in emergency close. BUG-4: dead `_gamma_emergency_wind_down` flag. BUG-5: dead `_process_proactive_wind_down` method. BUG-6: stale log hardcoded `{3}`. BUG-7/8: deferred (velocity helper refactor, test coverage). All 6 fixed 2026-04-04. |
-| M-02 | `mmm_engine.py` | P0 | Core P&L formulas, adjustment sizing, lot math | ✗ | TODO | |
+| M-02 | `mmm_engine.py` | P0 | Core P&L formulas, adjustment sizing, lot math | ✗ | DONE | BUG-1: `reconcile_pnl` compared options-only `tracked` vs perp+reverse-inclusive `net_pnl` → phantom discrepancies every heartbeat. BUG-2: `calculate_reversal_loss` had no explicit None check (unlike `calculate_standard_loss`). BUG-3: commission `or` chain falsy-unsafe for `paid_commission=0.0`. BUG-4: no sealed tests for 4 core functions (deferred). All 3 fixed 2026-04-04. |
 | M-03 | `mmm_guardian.py` | P0 | Multi-layer safety guardian — generation guard, G5 heartbeat check | ✗ | TODO | |
 | M-04 | `mmm_safety.py` | P0 | Max loss check, lot velocity, gate enforcement | `test_sealed_mmm_safety.py` | TODO | |
 | M-05 | `mmm_executor.py` | P0 | Places real orders on exchange — BUY/SELL/CANCEL | ✗ | TODO | |
@@ -169,11 +169,11 @@ Known invariants to check against (from CLAUDE.md):
 
 | Phase | Modules | Done | Remaining |
 |-------|---------|------|-----------|
-| P0 — Safety Critical | M-01 to M-08 | 1 | 7 |
+| P0 — Safety Critical | M-01 to M-08 | 2 | 6 |
 | P1 — Order Execution | M-09 to M-17 | 0 | 9 |
 | P2 — Logic / P&L | M-18 to M-33 | 0 | 16 |
 | P3 — Supporting / Infra | M-34 to M-51 | 0 | 18 |
-| **Total** | **51** | **1** | **50** |
+| **Total** | **51** | **2** | **49** |
 
 ---
 
@@ -185,6 +185,7 @@ Known invariants to check against (from CLAUDE.md):
 |----|-------------|----------|-----------------|-------------|---------------|
 | DEF-01 | M-01 `mmm_monitor.py` | P2 | Lot velocity window computation duplicated between `mmm_safety.py` and `mmm_monitor.py`. Two independent rolling-window computations that must stay in sync manually. Fix: extract shared helper into `mmm_safety.py` and call it from both locations. Requires coordinated change across two files. | M-04 audit | Dedicate a session after M-04 audit |
 | DEF-02 | M-01 `mmm_monitor.py` | P2 | No sealed tests for `mmm_monitor.py` — the most critical P0 module has zero contract test coverage. `_save_session`, `_heartbeat_inner`, `_auto_close_all`, `_run_loop`, stale-monitor guard layers, and `start_session_monitor` all untested. Fix: write Type 1 + Type 2 sealed tests per AI_SEAL.md. Large effort — dedicated session required. | MMM live promotion | Dedicated seal session after P0 audits complete |
+| DEF-03 | M-02 `mmm_engine.py` | P2 | No sealed tests for `calculate_standard_loss`, `calculate_reversal_loss`, `execute_adjustment`, `reconcile_pnl`. Only `calculate_lots_to_sell` sealed (entry #72). 9 non-sealed unit tests exist in `test_mmm_engine.py`. | MMM live promotion | Dedicated seal session after P0 audits complete |
 
 ---
 
@@ -195,6 +196,7 @@ After each audit, add a row here if the module has a noteworthy cross-module dep
 | Module | Reads From | Writes To | Critical Ordering |
 |--------|-----------|-----------|-------------------|
 | M-01 `mmm_monitor.py` | `mmm_pnl_core.compute_current_total_pnl` (P&L formula), `mmm_safety.update_peak_pnl` (trailing stop), `mmm_heartbeat_health.MAX_STALE_CONSECUTIVE` (stale threshold), `mmm_storage._save_session` return value | All modules that read session state (saved via `_save_session`) | `_save_session` must return `True`/`False` never `None` — callers use `is False` identity check. `compute_current_total_pnl` must be the ONLY formula for peak P&L tracking — never inline. |
+| M-02 `mmm_engine.py` | `mmm_pnl_core.get_pnl()` (sub-totals: `realized`/`unrealized`/`fees`, NOT `net_pnl` for reconciliation), `mmm_pnl_core.compute_unrealized_pnl`, `mmm_pending_orders.register_pending/clear_pending`, `mmm_audit_log.enqueue_trade` | `session['ce'/'pe']` positions/lots, `adjustment_count`, `total_premium_collected`, `adjustment_history`, `_trend_boost_active/_trend_boost_mult` | `reconcile_pnl` must use `pnl['realized'/'unrealized'/'fees']` (options-only), never `pnl['net_pnl']` which includes perp+reverse. `calculate_lots_to_sell` is SEALED — never edit without UNSEAL. |
 
 ---
 
@@ -228,3 +230,4 @@ grep -n "process_close_at_5\|_process_adjustment\|_replenish" webui/backend/rout
 | Date | Module | Auditor | Bugs Found | Fixed? | Notes |
 |------|--------|---------|-----------|--------|-------|
 | 2026-04-04 | M-01 `mmm_monitor.py` | Claude | 8 | 6 fixed, 2 deferred | BUG-1 CRITICAL (stale guard broken). BUG-2 P1 (7× wrong P&L formula). BUG-3 P1 (gather swallows one close). BUG-4/5 P2 (dead code). BUG-6 P2 (hardcoded constant). BUG-7 (velocity refactor deferred). BUG-8 (tests deferred). |
+| 2026-04-04 | M-02 `mmm_engine.py` | Claude | 4 | 3 fixed, 1 deferred | BUG-1 P1 (`reconcile_pnl` phantom discrepancies — perp+reverse in actual but not tracked). BUG-2 P2 (no None check in `calculate_reversal_loss`). BUG-3 P3 (commission falsy-unsafe). BUG-4 (sealed tests for 4 core functions deferred). |

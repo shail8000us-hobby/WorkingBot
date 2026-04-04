@@ -282,13 +282,22 @@ class MMMEngine:
 
             try:
                 current = fetch_premium_fn(strike, option_type)
+            except Exception as e:
+                _fetch_errors += 1
+                log.warning(f"Failed to fetch premium for {strike}: {e} [Robust v2 Fix #2: tracked]")
+                continue
+            if current is None:
+                _fetch_errors += 1
+                log.warning(f"Reversal adjustment premium is None @ {strike} — tracked as incomplete")
+                continue
+            try:
                 # §5.2 Case B / §9: Use entry_premium as baseline — ALWAYS.
                 # Fix #19: Decimal arithmetic for P&L accumulation
                 fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
             except Exception as e:
                 _fetch_errors += 1
-                log.warning(f"Failed to fetch premium for {strike}: {e} [Robust v2 Fix #2: tracked]")
+                log.warning(f"Failed to compute reversal P&L for {strike}: {e}")
 
         # Check frozen ADJUSTMENT positions (exclude original entry positions).
         # §9: "The original CE and PE naturally offset each other. We only
@@ -304,6 +313,15 @@ class MMMEngine:
 
             try:
                 current = fetch_premium_fn(strike, option_type)
+            except Exception as e:
+                _fetch_errors += 1
+                log.warning(f"Failed to fetch premium for frozen {strike}: {e} [Robust v2 Fix #2: tracked]")
+                continue
+            if current is None:
+                _fetch_errors += 1
+                log.warning(f"Reversal frozen position premium is None @ {strike} — tracked as incomplete")
+                continue
+            try:
                 # Fix #19: Decimal arithmetic
                 fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
@@ -313,7 +331,7 @@ class MMMEngine:
                 )
             except Exception as e:
                 _fetch_errors += 1
-                log.warning(f"Failed to fetch premium for frozen {strike}: {e} [Robust v2 Fix #2: tracked]")
+                log.warning(f"Failed to compute reversal P&L for frozen {strike}: {e}")
 
         adj_pnl_float = float(adjustment_pnl)
         log.info(
@@ -773,7 +791,7 @@ class MMMEngine:
 
             # Record exchange commission via ledger (CRIT-1 fix: sell fees must go through pnl_core)
             _od = result.get('order_details') or {}
-            _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+            _commission = float(_od['paid_commission'] if 'paid_commission' in _od else _od.get('commission', 0))
             if _commission:
                 from .mmm_pnl_core import record_fee as _pnl_fee
                 _pnl_fee(session, _commission, 'sell_adjustment',
@@ -1036,10 +1054,14 @@ class MMMEngine:
             threshold = session.get('params', {}).get('pnl_reconciliation_threshold', 10.0)
 
         pnl = self.compute_total_pnl(session, fetch_premium_fn)
-        # AUDIT FIX: tracked must subtract fees to match actual (net_pnl includes fees)
-        fees = session.get('total_fees', 0)
-        tracked = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - fees
-        actual = pnl['net_pnl']
+        # M-02 audit fix: compare options-only components so perp_pnl and
+        # reverse_pnl (which live in separate sub-dicts, not in the session's
+        # realized_pnl/unrealized_pnl fields) do not create phantom discrepancies
+        # every heartbeat when a perp hedge or reverse position is active.
+        # pnl['net_pnl'] includes perp+reverse; pnl['realized'/'unrealized'/'fees']
+        # are options-only — which is exactly what session['realized_pnl'] tracks.
+        tracked = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - session.get('total_fees', 0)
+        actual = pnl['realized'] + pnl['unrealized'] - pnl['fees']
 
         discrepancy = abs(actual - tracked)
 

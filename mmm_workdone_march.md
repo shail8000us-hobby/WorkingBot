@@ -1718,3 +1718,29 @@ Completed full audit of M-01 (`mmm_monitor.py`, 10,110 lines). Found 8 issues; f
 - Large separate effort — write tests in a dedicated session.
 
 **Files changed:** `mmm_monitor.py`, `mmm_audit_plan.md` (created)
+
+---
+
+## 2026-04-04 — M-02 Audit: 3 bugs fixed in mmm_engine.py
+
+Completed audit of M-02 (`mmm_engine.py`, 1,072 lines). Found 4 issues; fixed 3; 1 deferred.
+
+**BUG-1 (P1) — `reconcile_pnl` compared options-only `tracked` against perp+reverse-inclusive `actual`** (`reconcile_pnl`, line ~1042)
+- `actual = pnl['net_pnl']` includes `perp_pnl + reverse_pnl`; `tracked` was options-only.
+- Discrepancy = `|perp_pnl + reverse_pnl|` — fired every heartbeat when perp/reverse active.
+- Effect: spurious WARNING log + `session['unrealized_pnl']` overwritten every beat even when correct.
+- Fix: `actual = pnl['realized'] + pnl['unrealized'] - pnl['fees']` — compare options sub-totals directly.
+
+**BUG-2 (P2) — `calculate_reversal_loss` had no explicit None check for `fetch_premium_fn` return** (`calculate_reversal_loss`, lines ~283-316)
+- `calculate_standard_loss` had an explicit `if p_current is None:` guard; `calculate_reversal_loss` did not.
+- If `current = None`: `_D(None)` → `Decimal('None')` → `InvalidOperation` → caught by except — safe end result but misleading log message.
+- Fix: split each `try` block into fetch + compute; added `if current is None: _fetch_errors += 1; continue` between them. Applied in both the `adjustment_fills` loop and the `frozen_positions` loop.
+
+**BUG-3 (P3) — Commission `or` chain was falsy-unsafe** (`execute_adjustment`, line ~776)
+- `float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)` — if `paid_commission=0.0` (valid zero), `0.0` is falsy so `commission` key was checked instead.
+- Fix: `float(_od['paid_commission'] if 'paid_commission' in _od else _od.get('commission', 0))` — key presence check, not truthiness.
+
+**BUG-4 (deferred) — No sealed tests for `calculate_standard_loss`, `calculate_reversal_loss`, `execute_adjustment`, `reconcile_pnl`.**
+- Only `calculate_lots_to_sell` (entry #72) is sealed. 9 non-sealed unit tests exist. Large effort — dedicated session.
+
+**Files changed:** `mmm_engine.py`
