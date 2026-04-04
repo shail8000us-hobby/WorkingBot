@@ -16,6 +16,7 @@ Created: February 15, 2026
 """
 
 import asyncio
+import functools
 import logging
 import threading
 import time
@@ -32,7 +33,8 @@ from .mmm_trigger import (
     OUTCOME_NONE, OUTCOME_CE,
     OUTCOME_PE, OUTCOME_BOTH,
 )
-from .mmm_heartbeat_health import HeartbeatHealth
+from .mmm_heartbeat_health import HeartbeatHealth, MAX_STALE_CONSECUTIVE
+from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
 from .mmm_circuit_breaker import CircuitBreaker
 from .mmm_engine import get_engine
 from .mmm_reversal import (
@@ -1030,7 +1032,7 @@ class MMMMonitor:
 
                     # H-16 fix: best-effort state preservation after heartbeat crash
                     try:
-                        current_pnl = self.session.get('unrealized_pnl', 0) + self.session.get('realized_pnl', 0) - self.session.get('total_fees', 0)
+                        current_pnl = _pnl_total(self.session)
                         update_peak_pnl(self.session, current_pnl)
                         self._save_my_session(self.session)
                     except Exception as save_err:
@@ -1290,7 +1292,7 @@ class MMMMonitor:
                 # C-1 fix: run cleanup before returning so peak P&L, session save,
                 # heartbeat emit, and health telemetry are not skipped.
                 try:
-                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    current_pnl = _pnl_total(session)
                     update_peak_pnl(session, current_pnl)
                     self._emit_heartbeat_data(0, 0)
                     self._save_my_session(session)
@@ -1499,7 +1501,7 @@ class MMMMonitor:
                 stale_sides.append('PE')
             stale_msg = (
                 f"Stale price detected for {'/'.join(stale_sides)}: "
-                f"mark_price unchanged for {3}+ consecutive beats. "
+                f"mark_price unchanged for {MAX_STALE_CONSECUTIVE}+ consecutive beats. "
                 f"Exchange may be serving cached data."
             )
             log_activity('stale_price_warning', f'⚠️ STALE PRICE: {stale_msg}',
@@ -1514,6 +1516,36 @@ class MMMMonitor:
 
         # Populate premium cache for sync engine calls (_make_fetch_fn)
         await self._prefetch_all_premiums(ce_now, pe_now)
+
+        # Pre-scan shift candidates when either side is approaching shift territory.
+        # pre_scan_shift_candidates has a proximity guard — if both sides are far above
+        # shift_threshold it returns immediately without any REST call (microseconds).
+        # When a shift fires later this heartbeat, _process_strike_shift uses the cached
+        # result directly — no extra chain API call at order time.
+        # The spot is stored in session['_last_prescan_spot'] so _process_strike_shift
+        # can reuse it without a redundant _fetch_spot_price() call.
+        try:
+            from .mmm_strike_shift import pre_scan_shift_candidates
+            _prescan_spot = await self._fetch_spot_price()
+            if _prescan_spot > 0:
+                # Store spot before running executor — used by _process_strike_shift
+                # to skip a redundant _fetch_spot_price() call in the same heartbeat.
+                # Timestamp is set AFTER executor completes so that _prescan_age
+                # in _process_strike_shift correctly reflects actual scan completion,
+                # not initiation. If proximity guard skips the actual chain fetch,
+                # _last_prescan_ts is still set — _should_flush relies on both
+                # _prescan_age AND _beat_age (candidate's own scanned_at) so stale
+                # chain data is correctly identified even when ts is fresh.
+                session['_last_prescan_spot'] = _prescan_spot
+                _scan_fn = functools.partial(
+                    pre_scan_shift_candidates,
+                    self.initializer, session, _prescan_spot,
+                    ce_premium=ce_now, pe_premium=pe_now,
+                )
+                await asyncio.get_running_loop().run_in_executor(None, _scan_fn)
+                session['_last_prescan_ts'] = time.time()  # set AFTER executor finishes
+        except Exception as _prescan_err:
+            log.warning(f"[{sid}] Shift pre-scan failed (non-fatal): {_prescan_err}")
 
         # ATM Auto-Close Check: if enabled, close all when spot ≈ ORIGINAL strike
         # CRITICAL: Must use original_strike (entry strike), NOT active_strike.
@@ -1690,7 +1722,7 @@ class MMMMonitor:
                         )
                         # C-2 fix: run cleanup before returning
                         try:
-                            current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                            current_pnl = _pnl_total(session)
                             update_peak_pnl(session, current_pnl)
                             self._emit_heartbeat_data(ce_now, pe_now)
                             self._save_my_session(session)
@@ -1802,7 +1834,7 @@ class MMMMonitor:
             # ── END SESSION EVENT ─────────────────────────────────────────
             # H-2 fix: emit final heartbeat data and save before returning
             try:
-                current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                current_pnl = _pnl_total(session)
                 update_peak_pnl(session, current_pnl)
                 self._emit_heartbeat_data(ce_now, pe_now)
                 self._save_my_session(session)
@@ -1820,8 +1852,20 @@ class MMMMonitor:
             _os = 'pe' if _cs == 'ce' else 'ce'
             _ocs_flag = f'_one_side_closed_{_cs}'
             _orig_closed_flag = f'_orig_pos_closed_{_cs}'
-            if check_side_fully_closed(session, _cs) and not check_side_fully_closed(session, _os):
-                _os_lots = session.get(_os, {}).get('total_lots', 0)
+            _lots_remaining_key = f'_replenish_lots_remaining_{_cs}'
+
+            # Trigger condition:
+            #   (a) side fully closed (total_lots=0) AND open side still has lots — primary trigger
+            #   (b) partial fill pending (_replenish_ocs_active + lots_remaining > 0) — top-up trigger
+            _os_lots = session.get(_os, {}).get('total_lots', 0)
+            _fully_closed = check_side_fully_closed(session, _cs) and _os_lots > 0
+            _partial_pending = (
+                session.get('_replenish_ocs_active', False)
+                and session.get(_lots_remaining_key, 0) > 0
+                and _os_lots > 0
+            )
+
+            if _fully_closed or _partial_pending:
 
                 # Bug 4 fix: if the monitor is already stopping (watchdog killed it
                 # mid-heartbeat), _save_disabled=True and status=STOPPED — replenish
@@ -1833,7 +1877,12 @@ class MMMMonitor:
                                 f"monitor is stopping (will retry on next start)")
                     break
 
-                # ── TRY AUTO-REPLENISH (every heartbeat while side is empty) ──
+                # Mark OCS recovery active — Gate 2 in check_replenish_eligibility
+                # allows PAUSED sessions when this flag is True, so the watchdog can
+                # still fire replenish even after an off-hours PAUSE.
+                session['_replenish_ocs_active'] = True
+
+                # ── TRY AUTO-REPLENISH (every heartbeat while side is empty/partial) ──
                 _replenished = False
                 try:
                     _replenished = await self._process_replenish(
@@ -1842,10 +1891,28 @@ class MMMMonitor:
                     log.error(f"[{sid}] Replenish exception: {_repl_err}")
 
                 if _replenished:
-                    # Successfully re-entered — clear flags and continue heartbeat
-                    session.pop(_ocs_flag, None)
-                    session.pop(_orig_closed_flag, None)
-                    log.info(f"[{sid}] Auto-replenished {_cs.upper()} — session continues")
+                    # Full fill: clear all OCS/partial flags and continue heartbeat
+                    _partial_still = session.get(_lots_remaining_key, 0) > 0
+                    if not _partial_still:
+                        session.pop(_ocs_flag, None)
+                        session.pop(_orig_closed_flag, None)
+                        session.pop('_replenish_ocs_active', None)
+                        session.pop(_lots_remaining_key, None)
+                        log.info(f"[{sid}] Auto-replenished {_cs.upper()} — hedge fully restored")
+                        # Auto-resume if paused by this OCS event
+                        _pr = session.get('_paused_reason', '')
+                        if self._paused and f'{_cs.upper()} fully closed' in _pr:
+                            log_activity(
+                                'ocs_auto_resume',
+                                f'✅ OCS hedge restored — auto-resuming (was: {_pr})',
+                                sid, 'success',
+                                {'replenished_side': _cs},
+                            )
+                            self.resume(f'OCS hedge restored — {_cs.upper()} replenished')
+                    else:
+                        # Partial fill — registered, top-up will fire next heartbeat
+                        log.info(f"[{sid}] Auto-replenished {_cs.upper()} partial "
+                                f"({session[_lots_remaining_key]} lots remaining for top-up)")
                     try:
                         self._emit_heartbeat_data(ce_now, pe_now)
                         self._save_my_session(session)
@@ -1857,7 +1924,12 @@ class MMMMonitor:
                 if not session.get(_ocs_flag):
                     session[_ocs_flag] = True
                     _ocs_awake = _is_user_awake_hours()
-                    _ocs_action = 'PAUSED' if _ocs_awake else 'STOPPED (off-hours auto-stop)'
+                    # Stop lock: off-hours with open lots → PAUSE not STOP
+                    _ocs_will_stop = not _ocs_awake and _os_lots == 0
+                    _ocs_action = ('PAUSED' if _ocs_awake
+                                   else ('STOPPED (off-hours, no open lots)'
+                                         if _ocs_will_stop
+                                         else 'PAUSED (stop lock: open lots protected)'))
                     _ocs_msg = (
                         f'{_cs.upper()} fully closed (all positions at or below threshold) '
                         f'but {_os.upper()} has {_os_lots} lot(s) still open — '
@@ -1917,8 +1989,10 @@ class MMMMonitor:
 
                         self.pause(f'{_cs.upper()} fully closed — {_os.upper()} unhedged')
                     else:
-                        # Off-hours (11PM–8AM IST): stop the session — user is asleep
-                        # and unhedged exposure with no one monitoring is unsafe.
+                        # Off-hours (11PM–8AM IST): STOP LOCK — never stop with open lots.
+                        # If the open side has any lots, convert STOP → PAUSE so the OCS
+                        # watchdog can keep retrying replenish on subsequent heartbeats.
+                        # Only stop when there are truly no open lots (nothing left to protect).
                         _ocs_pnl_v = (session.get('unrealized_pnl', 0)
                                       + session.get('realized_pnl', 0)
                                       - session.get('total_fees', 0))
@@ -1929,10 +2003,23 @@ class MMMMonitor:
                             )
                         except Exception:
                             pass
-                        self.stop(
-                            f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
-                            f'(off-hours auto-stop)'
-                        )
+                        if _os_lots > 0:
+                            # Stop lock: open exposure detected — PAUSE so watchdog can
+                            # continue replenishing.  Stopping would kill the monitor and
+                            # leave the open side completely unmonitored.
+                            log.warning(
+                                f"[{sid}] STOP LOCK: {_os.upper()} has {_os_lots} open lots — "
+                                f"converting off-hours STOP to PAUSE so OCS watchdog can recover"
+                            )
+                            self.pause(
+                                f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
+                                f'(stop lock: {_os_lots} lots protected, off-hours → PAUSE)'
+                            )
+                        else:
+                            self.stop(
+                                f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
+                                f'(off-hours auto-stop)'
+                            )
                     try:
                         _ocs_pnl = (session.get('unrealized_pnl', 0)
                                     + session.get('realized_pnl', 0)
@@ -1948,18 +2035,30 @@ class MMMMonitor:
                 # Flag already set (user resumed or subsequent heartbeat) — let run continue
                 break
             else:
-                # Clear flags when the closed side has regained lots.
-                # Only clear AWAITING_USER_ACTION if THIS side was the one flagged —
-                # prevents the healthy side's else-branch from wiping flags that
-                # belong to the still-closed OTHER side.
+                # Clear flags when the closed side has regained lots (manually or via replenish).
+                # Only clear AWAITING_USER_ACTION and OCS-recovery flags if THIS side was the one
+                # flagged — prevents the healthy side's else-branch from wiping flags that belong
+                # to the still-closed OTHER side.
                 _was_flagged = session.get(_ocs_flag)
                 session.pop(_ocs_flag, None)
                 session.pop(_orig_closed_flag, None)
+                session.pop(_lots_remaining_key, None)
                 if _was_flagged:
+                    session.pop('_replenish_ocs_active', None)
                     session.pop('_awaiting_user_action', None)
                     session.pop('_awaiting_user_action_reason', None)
                     session.pop('_awaiting_user_action_details', None)
                     session.pop('_ocs_telegram_sent_at', None)
+                    # Auto-resume if paused by this OCS event (side regained lots externally)
+                    _pr = session.get('_paused_reason', '')
+                    if self._paused and f'{_cs.upper()} fully closed' in _pr:
+                        log_activity(
+                            'ocs_auto_resume',
+                            f'✅ OCS hedge restored — auto-resuming (was: {_pr})',
+                            sid, 'success',
+                            {'restored_side': _cs},
+                        )
+                        self.resume(f'OCS hedge restored — {_cs.upper()} lots regained')
         # ── END ONE-SIDE CLOSE GUARD + AUTO-REPLENISH ────────────────────────
 
         # NOTE: Proactive wind-down (buying back on every heartbeat) was removed.
@@ -1996,7 +2095,6 @@ class MMMMonitor:
                         {'fetch_errors': session.get('_pnl_fetch_errors', 0)})
             self.pause('P&L calculation incomplete — data unreliable')
             # H-1: use single canonical formula for peak tracking
-            from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
             current_pnl = _pnl_total(session)
             update_peak_pnl(session, current_pnl)
             self._emit_heartbeat_data(ce_now, pe_now)
@@ -2056,7 +2154,7 @@ class MMMMonitor:
                 await self._auto_close_all(reason, emergency=True)
                 # H-5 fix: run cleanup before returning
                 try:
-                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    current_pnl = _pnl_total(session)
                     update_peak_pnl(session, current_pnl)
                     self._emit_heartbeat_data(ce_now, pe_now)
                     self._save_my_session(session)
@@ -2069,7 +2167,7 @@ class MMMMonitor:
                 self.stop(reason)
                 # H-5 fix: emit and save before returning
                 try:
-                    current_pnl = session.get('unrealized_pnl', 0) + session.get('realized_pnl', 0) - session.get('total_fees', 0)
+                    current_pnl = _pnl_total(session)
                     update_peak_pnl(session, current_pnl)
                     self._emit_heartbeat_data(ce_now, pe_now)
                     self._save_my_session(session)
@@ -2336,6 +2434,40 @@ class MMMMonitor:
                         },
                     )
                     self.resume('Regime normalized')
+
+        # Auto-heal if paused by a guardian G3 violation and condition is resolved.
+        # G3 fires when one side goes to 0 lots in a single beat (side wipeout).
+        # This can happen during fill processing where state momentarily shows 0
+        # before fills are applied. If both sides have lots on the next heartbeat,
+        # the hedge is intact — auto-resume and alert via Telegram.
+        if self._paused and not _skip_to_pnl:
+            _pause_reason = session.get('_paused_reason', '')
+            if (
+                _pause_reason.startswith('Guardian violations:')
+                and hasattr(self, '_guardian') and self._guardian
+                and self._guardian.check_g3_healed(session)
+            ):
+                _ce_lots = session.get('ce', {}).get('active_lots', 0)
+                _pe_lots = session.get('pe', {}).get('active_lots', 0)
+                log_activity(
+                    'guardian_auto_heal',
+                    f'✅ Guardian G3 violation healed — CE={_ce_lots} active lots, '
+                    f'PE={_pe_lots} active lots — auto-resuming session',
+                    sid, 'success',
+                    {'ce_active_lots': _ce_lots, 'pe_active_lots': _pe_lots,
+                     'was_paused': _pause_reason},
+                )
+                try:
+                    import asyncio as _asyncio
+                    from .mmm_telegram import alert_guardian_healed as _tg_gh
+                    _asyncio.ensure_future(_tg_gh(sid, _pause_reason))
+                except Exception as _e:
+                    log.warning(f"[{sid}] Guardian heal Telegram failed: {_e}")
+                self.resume('Guardian healed — both sides have positions')
+                # Skip trading this heartbeat — let the operator see the Telegram
+                # alert before the algo fires any new orders. The resume takes
+                # effect next heartbeat under normal flow.
+                _skip_to_pnl = True
 
         # Step 4: If paused, check for both-sides-up auto-decision (30s timeout)
         if self._paused:
@@ -2730,6 +2862,44 @@ class MMMMonitor:
                 # Check BEFORE wind-down/margin — regime controls gate sells
                 regime_action = session.get('_regime_action', ACTION_NORMAL)
                 blocked, block_reason = self._regime_engine.should_block_sell(session, hedge)
+
+                # ── Tier D: Delta Rescue ──────────────────────────────────────
+                # Near expiry, the algo MUST hedge when a trigger fires.  A
+                # forced hedge sell cannot be blocked by gamma regime — the
+                # unhedged directional exposure is more dangerous than the
+                # gamma risk of adding one more hedge lot.
+                # Only hard overrides survive: FORCE_REDUCE (gamma emergency)
+                # and PAUSE (session-level halt).  Wind-down and margin blocks
+                # are checked below in the elif chain and still apply.
+                if blocked and regime_action not in (ACTION_FORCE_REDUCE, ACTION_PAUSE):
+                    _rescue_window = params.get('gamma_rescue_window_minutes', 120)
+                    if minutes_to_expiry is not None and minutes_to_expiry <= _rescue_window:
+                        log_activity(
+                            'delta_rescue',
+                            f'Delta Rescue: regime block overridden for {hedge.upper()} '
+                            f'hedge sell — {minutes_to_expiry:.0f}m to expiry '
+                            f'(window: {_rescue_window}m) | was blocked by: {block_reason}',
+                            sid, 'warning',
+                            {'hedge': hedge, 'aggressor': aggressor,
+                             'original_block': block_reason,
+                             'minutes_to_expiry': minutes_to_expiry},
+                        )
+                        emit_safety(
+                            sid, 'delta_rescue', 'warning',
+                            f'Delta Rescue: {hedge.upper()} hedge allowed '
+                            f'({block_reason} overridden, {minutes_to_expiry:.0f}m to expiry)',
+                            {'minutes_to_expiry': minutes_to_expiry,
+                             'block_reason': block_reason},
+                        )
+                        blocked = False
+                        session['_delta_rescue_count'] = (
+                            session.get('_delta_rescue_count', 0) + 1
+                        )
+                        session['_delta_rescue_last_at'] = (
+                            datetime.now(timezone.utc).isoformat()
+                        )
+                # ── End Tier D ────────────────────────────────────────────────
+
                 if blocked and regime_action != ACTION_FORCE_REDUCE:
                     # Regime blocks this sell, but risk-reducing trades continue
                     log_activity('regime_block',
@@ -2742,7 +2912,7 @@ class MMMMonitor:
                         {'hedge': hedge, 'aggressor': aggressor},
                     )
                     # Still allow wind-down buybacks if wind-down is active
-                    if is_wind_down_active(session) or session.get('_gamma_emergency_wind_down'):
+                    if is_wind_down_active(session):
                         await self._process_wind_down_buyback(aggressor, ce_now, pe_now)
                 # Wind-down mode: reduce instead of adding positions
                 elif is_wind_down_active(session):
@@ -3242,58 +3412,6 @@ class MMMMonitor:
     # =========================================================================
     # Wind-Down: Buy back aggressor instead of selling hedge
     # =========================================================================
-
-    async def _process_proactive_wind_down(
-        self,
-        ce_now: float,
-        pe_now: float,
-    ):
-        """
-        Proactive wind-down: every heartbeat while wind-down is active,
-        attempt to reduce BOTH sides (not just triggered side).
-
-        This is separate from the trigger-based path so positions are
-        reduced even when no trigger fires (e.g. premiums falling quietly).
-        Uses LIFO order + wind_down_buyback_pct per call.
-        """
-        session = self.session
-        sid = self.session_id
-
-        reduced_any = False
-        for side in ['ce', 'pe']:
-            # Check stop before processing each side — each side may take minutes
-            if self._should_stop():
-                log.info(f"[{sid}] Proactive wind-down: stop requested, aborting")
-                break
-
-            side_state = session.get(side, {})
-            active_lots = side_state.get('active_lots', 0)
-            params = session.get('params', {})
-            min_keep = params.get('wind_down_min_lots_to_keep', 0)
-
-            if active_lots <= min_keep:
-                log.debug(f"[{sid}] Proactive wind-down: {side.upper()} at floor "
-                          f"({active_lots} lots, min_keep={min_keep}) — skipping")
-                continue
-
-            wd_action = compute_wind_down_action(session, side, ce_now, pe_now)
-            if wd_action['action'] != 'buyback' or wd_action['lots_to_close'] <= 0:
-                log.debug(f"[{sid}] Proactive wind-down: {side.upper()} skipped — "
-                          f"action={wd_action['action']}")
-                continue
-
-            log_activity('wind_down',
-                         f'🌙 Proactive Wind-Down: reducing {side.upper()} by '
-                         f'{wd_action["lots_to_close"]} lots',
-                         sid, 'info',
-                         {'side': side.upper(), 'lots': wd_action['lots_to_close'],
-                          'active_lots': active_lots})
-            await self._process_wind_down_buyback(side, ce_now, pe_now)
-            reduced_any = True
-
-        if not reduced_any:
-            params = session.get('params', {})
-            log.debug(f"[{sid}] Proactive wind-down: no sides eligible for reduction this heartbeat")
 
     async def _process_wind_down_buyback(
         self,
@@ -3848,7 +3966,7 @@ class MMMMonitor:
             record_reversal(session, session.get('last_aggressor', 'NONE'), aggressor)
 
             # Robust v2 Fix #7: Reset peak P&L on reversal — new profit phase begins
-            current_total = session.get('realized_pnl', 0) + session.get('unrealized_pnl', 0) - session.get('total_fees', 0)
+            current_total = _pnl_total(session)
             reset_peak_pnl_on_reversal(session, current_total)
             
             # Analytics: Track reversal event (no trading logic impact)
@@ -4016,7 +4134,9 @@ class MMMMonitor:
             target_premium = params.get('shift_target_premium', 100.0)
             if hedge_premium < target_premium:
                 spot_price = await self._fetch_spot_price()
-                better = find_new_strike(self.initializer, session, hedge, spot_price)
+                better = await asyncio.get_running_loop().run_in_executor(
+                    None, find_new_strike, self.initializer, session, hedge, spot_price
+                )
                 if better:
                     log.info(
                         f"[{sid}] PROACTIVE SHIFT: {hedge.upper()} premium "
@@ -4226,6 +4346,41 @@ class MMMMonitor:
 
         # §5.5: Execute the adjustment
         hedge_strike = session.get(hedge, {}).get('active_strike', 0)
+
+        # §5.5.1: Projected Gamma Check (Section B.4.1)
+        try:
+            from bot.api.async_delta_client import AsyncDeltaClient
+            from config.loader import get_api_credentials
+            from .mmm_gamma import _safe_greek
+            creds = get_api_credentials()
+            client = AsyncDeltaClient(
+                api_key=creds.get('api_key', ''),
+                api_secret=creds.get('api_secret', ''),
+                testnet=creds.get('testnet', False) or False,
+            )
+            opt_char = 'call' if hedge == 'ce' else 'put'
+            expiry = session.get('params', {}).get('expiry', '')
+            symbol = self.initializer.build_symbol(opt_char, 'BTC', hedge_strike, expiry)
+            ticker = await client._request_with_retry("GET", f"/v2/tickers/{symbol}")
+            greeks = ticker.get('result', {}).get('greeks', {})
+            new_strike_gamma = _safe_greek(greeks.get('gamma'))
+
+            spot_price = await self._fetch_spot_price()
+            blocked, projected_dollar_gamma = self._regime_engine.check_projected_gamma(
+                session, new_strike_gamma, lots, spot_price
+            )
+            if blocked:
+                log_activity('gamma_projection_blocked',
+                            f'🚫 Gamma Cap Blocked: {hedge.upper()} adjustment would push projected '
+                            f'portfolio gamma (${projected_dollar_gamma:.0f}) past hard limit',
+                            sid, 'warning',
+                            {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma})
+                emit_safety(sid, 'gamma_cap_block', 'alert',
+                           f'Gamma Cap Limit Reached (Projected ${projected_dollar_gamma:.0f})')
+                return
+        except Exception as e:
+            log.warning(f"[{sid}] Failed to fetch greek gamma for projection check: {e}")
+
         result = await self._engine.execute_adjustment(
             session, hedge, hedge_strike, lots,
             ce_now, pe_now, adj_type,
@@ -4514,13 +4669,21 @@ class MMMMonitor:
                 )
                 return
 
+        params = session.get('params', {})   # defined early — used by validation, lot-scaling, and cooldown
         old_strike = session.get(side, {}).get('active_strike', 0)
         hedge_premium = ce_now if side == 'ce' else pe_now
 
         # Find new strike FIRST — do NOT freeze positions until we confirm
         # a viable new strike exists. If we freeze first and find_new_strike
         # fails, positions get stuck at active_lots=0 with no active strike.
-        spot_price = await self._fetch_spot_price()
+        # Reuse spot from the pre-scan that ran earlier this heartbeat (if < 10s old)
+        # to avoid a redundant _fetch_spot_price() REST call.
+        _cached_spot = session.get('_last_prescan_spot', 0)
+        _cached_spot_age = time.time() - session.get('_last_prescan_ts', 0)
+        if _cached_spot > 0 and _cached_spot_age < 10:
+            spot_price = _cached_spot
+        else:
+            spot_price = await self._fetch_spot_price()
 
         # Feature 6: Shift distance widening — when gamma is in DANGER zone,
         # enforce a minimum OTM distance so the new strike is further from spot.
@@ -4537,53 +4700,204 @@ class MMMMonitor:
                 f"(spot={spot_price:.0f} × {_base_pct:.3f} × {_shift_mult:.2f})"
             )
 
-        new_strike_info = find_new_strike(
-            self.initializer, session, side, spot_price,
-            min_otm_distance=_gamma_shift_min_otm,
+        # Step 1: Use the pre-scanned candidate from this heartbeat's pre-scan.
+        # pre_scan_shift_candidates() ran unconditionally earlier this beat
+        # with a fresh chain fetch — the result is always warm and never stale.
+        new_strike_info = None
+        _expiry_param = session.get('params', {}).get('expiry', '')
+        _candidate = session.get('_shift_candidates', {}).get(side, {})
+        _scanned_at = _candidate.get('scanned_at', 0)
+        _beat_age = time.time() - _scanned_at  # seconds since this heartbeat's pre-scan
+        _params_match = (
+            _candidate.get('shift_threshold') == session.get('params', {}).get('shift_threshold')
+            and _candidate.get('shift_target_premium') == session.get('params', {}).get('shift_target_premium')
         )
+
+        if _candidate.get('strike') and _beat_age < 60 and _params_match:
+            # Verify candidate respects the current gamma OTM distance constraint.
+            # Pre-scan runs with min_otm_distance=0 (gamma zone unknown at scan time),
+            # so a candidate found during normal conditions could violate the OTM
+            # floor that applies when gamma is in DANGER zone at shift time.
+            _cstrike = _candidate['strike']
+            _otm_ok = True
+            if _gamma_shift_min_otm > 0 and spot_price > 0:
+                if side == 'ce' and _cstrike < spot_price + _gamma_shift_min_otm:
+                    _otm_ok = False
+                    log.info(
+                        f"[{sid}] Pre-scan CE candidate {_cstrike} too close to spot "
+                        f"({_cstrike - spot_price:.0f} < gamma min_otm {_gamma_shift_min_otm:.0f}) "
+                        f"— falling back to fresh scan with gamma constraint"
+                    )
+                elif side == 'pe' and _cstrike > spot_price - _gamma_shift_min_otm:
+                    _otm_ok = False
+                    log.info(
+                        f"[{sid}] Pre-scan PE candidate {_cstrike} too close to spot "
+                        f"({spot_price - _cstrike:.0f} < gamma min_otm {_gamma_shift_min_otm:.0f}) "
+                        f"— falling back to fresh scan with gamma constraint"
+                    )
+
+            if _otm_ok:
+                # Use the pre-warmed candidate — no extra chain call needed
+                new_strike_info = {
+                    'strike': _candidate['strike'],
+                    'premium': _candidate['premium'],
+                    'symbol': _candidate.get('symbol', ''),
+                    'distance_from_spot': abs(_candidate['strike'] - spot_price),
+                }
+                log.info(
+                    f"[{sid}] Using pre-scanned {side.upper()} candidate: "
+                    f"strike={_candidate['strike']} @ ${_candidate['premium']:.2f} "
+                    f"(scanned {_beat_age:.1f}s ago)"
+                )
+        if not new_strike_info:
+            # Covers: no candidate, stale, config changed, or gamma OTM violation.
+            # Only flush the chain cache if the pre-scan ran in a PREVIOUS heartbeat
+            # (age >= 30s). If pre-scan ran this heartbeat (<30s ago), the chain data
+            # is already fresh — flushing and re-fetching wastes one blocking REST call
+            # for identical data. The gamma OTM path especially hits this: pre-scan
+            # fetches chain, candidate rejected by OTM check, then falls here — the
+            # chain data is seconds old and correct.
+            _prescan_age = time.time() - session.get('_last_prescan_ts', 0)
+            _should_flush = _prescan_age >= 30 or _beat_age >= 30
+            _age_str = 'never scanned' if _scanned_at == 0 else f'{_beat_age:.0f}s ago'
+            log.info(
+                f"[{sid}] No accepted pre-scan for {side.upper()} "
+                f"(candidate age={_age_str}, strike={_candidate.get('strike')}) — "
+                f"fresh scan {'with cache flush' if _should_flush else '(cache still fresh from this beat)'}"
+            )
+            try:
+                if _should_flush and _expiry_param and hasattr(self.initializer, 'chain_service'):
+                    from .mmm_initializer import normalize_expiry as _ne
+                    self.initializer.chain_service.invalidate_cache('BTC', _ne(_expiry_param))
+            except Exception as _cache_err:
+                log.debug(f"[{sid}] Chain cache clear failed (non-fatal): {_cache_err}")
+
+            new_strike_info = await asyncio.get_running_loop().run_in_executor(
+                None, find_new_strike,
+                self.initializer, session, side, spot_price, _gamma_shift_min_otm,
+            )
+
+            # If still nothing, retry once with a fresh spot price.
+            # Always flush cache here — data could have changed since first attempt.
+            if not new_strike_info:
+                log.info(f"[{sid}] Shift scan returned no candidates — retrying with fresh spot + cache flush")
+                spot_price = await self._fetch_spot_price()
+                try:
+                    if _expiry_param and hasattr(self.initializer, 'chain_service'):
+                        from .mmm_initializer import normalize_expiry as _ne
+                        self.initializer.chain_service.invalidate_cache('BTC', _ne(_expiry_param))
+                except Exception:
+                    pass
+                new_strike_info = await asyncio.get_running_loop().run_in_executor(
+                    None, find_new_strike,
+                    self.initializer, session, side, spot_price, _gamma_shift_min_otm,
+                )
 
         if not new_strike_info:
             shift_threshold = session.get('params', {}).get('shift_threshold', 50.0)
             log.warning(
                 f"[{sid}] SHIFT FAILED: No OTM {side.upper()} strike with "
                 f"premium >= ${shift_threshold:.0f} found. "
-                f"Falling back to current strike {old_strike} "
-                f"(premium ${hedge_premium:.2f})."
+                f"Skipping adjustment — will retry next heartbeat."
             )
-            log_activity('shift_fallback',
+            log_activity('shift_no_strike',
                         f'⚠️ Strike Shift Failed: No {side.upper()} strike with premium '
-                        f'>= ${shift_threshold:.0f} found. Selling at current strike '
-                        f'{old_strike} (${hedge_premium:.2f}) instead.',
+                        f'>= ${shift_threshold:.0f} found. Adjustment skipped — '
+                        f'will not sell at decayed strike {old_strike} (${hedge_premium:.2f}). '
+                        f'Retrying next heartbeat.',
                         sid, 'warning',
                         {
                             'side': side.upper(),
                             'current_strike': old_strike,
                             'current_premium': hedge_premium,
                             'shift_threshold': shift_threshold,
-                            'reason': 'no_suitable_strike',
+                            'reason': 'no_suitable_strike_skip',
                         })
             emit_safety(
                 sid, 'no_strike', 'alert',
                 f"No suitable strike found for {side.upper()} shift "
                 f"(need premium >= ${shift_threshold:.0f}). "
-                f"Falling back to selling at current strike {old_strike} "
-                f"(${hedge_premium:.2f}).",
+                f"Adjustment skipped — will not sell decayed strike {old_strike} "
+                f"(${hedge_premium:.2f}). Retrying next heartbeat.",
             )
-            # Fall back: sell at current strike instead of doing nothing.
-            # The shift_threshold is a best-effort preference — failing to
-            # hedge at all is worse than hedging at a lower premium.
-            await self._process_shift_fallback(
-                side, loss, hedge_premium, ce_now, pe_now,
-            )
+            # Do NOT fall back to selling at the cheap decayed strike.
+            # Shift-opens must respect the premium floor (shift_threshold).
+            # Regular adjustments (adds to existing positions) bypass this path entirely.
             return
+
+        # Validate: fetch the candidate's current live premium before committing.
+        # 0DTE premiums move fast — the pre-scanned value can be stale by seconds.
+        # If the current premium has drifted outside shift_target_premium ± tolerance,
+        # rescan the chain for a better strike before placing any order.
+        _target_prem = params.get('shift_target_premium', 100.0)
+        _tolerance = params.get('shift_premium_tolerance', 10.0)
+        if _tolerance > 0 and new_strike_info.get('symbol'):
+            try:
+                _tkr = await asyncio.get_running_loop().run_in_executor(
+                    None, self.initializer.chain_service.get_option_ticker,
+                    new_strike_info['symbol'],
+                )
+                if _tkr:
+                    _mark = float(_tkr.get('mark_price', 0) or 0)
+                    _bid = float(_tkr.get('bid', 0) or 0)
+                    _ask = float(_tkr.get('ask', 0) or 0)
+                    _live = (
+                        _mark if _mark > 0
+                        else (_bid + _ask) / 2 if _bid > 0 and _ask > 0
+                        else _bid
+                    )
+                    if _live > 0 and abs(_live - _target_prem) > _tolerance:
+                        log.info(
+                            f"[{sid}] Candidate {new_strike_info['strike']} live premium "
+                            f"${_live:.2f} is outside target ${_target_prem:.0f}±${_tolerance:.0f} "
+                            f"— rescanning chain for better strike"
+                        )
+                        log_activity(
+                            'shift_candidate_stale',
+                            f'🔄 Shift candidate {side.upper()} {new_strike_info["strike"]} '
+                            f'live premium ${_live:.2f} outside target '
+                            f'${_target_prem:.0f}±${_tolerance:.0f} — rescanning',
+                            sid, 'info',
+                            {'strike': new_strike_info['strike'], 'live_premium': _live,
+                             'target': _target_prem, 'tolerance': _tolerance},
+                        )
+                        # Rescan with fresh spot + cache flush (spot_price from method
+                        # entry may be stale by now; refresh before OTM filter).
+                        _rescan_spot = await self._fetch_spot_price()
+                        if _rescan_spot <= 0:
+                            _rescan_spot = spot_price  # fallback to original if fetch fails
+                        try:
+                            if _expiry_param and hasattr(self.initializer, 'chain_service'):
+                                from .mmm_initializer import normalize_expiry as _ne
+                                self.initializer.chain_service.invalidate_cache(
+                                    'BTC', _ne(_expiry_param)
+                                )
+                        except Exception:
+                            pass
+                        _rescanned = await asyncio.get_running_loop().run_in_executor(
+                            None, find_new_strike,
+                            self.initializer, session, side, _rescan_spot, _gamma_shift_min_otm,
+                        )
+                        if _rescanned:
+                            log.info(
+                                f"[{sid}] Rescan found better {side.upper()} candidate: "
+                                f"{_rescanned['strike']} @ ${_rescanned['premium']:.2f}"
+                            )
+                            new_strike_info = _rescanned
+                        else:
+                            log.info(
+                                f"[{sid}] Rescan found nothing better — "
+                                f"proceeding with original candidate {new_strike_info['strike']}"
+                            )
+            except Exception as _val_err:
+                log.debug(f"[{sid}] Candidate validation failed (non-fatal): {_val_err}")
 
         # New strike found — NOW freeze current positions
         freeze_result = freeze_current_positions(session, side)
 
         # ── Split Ledger Phase 2: Shift-Time Recycle ─────────────────────────
         shift_recycle_buyback = 0.0
-        _sr_params = session.get('params', {})
-        if _sr_params.get('shift_recycle_enabled', False):
+        if params.get('shift_recycle_enabled', False):
             shift_recycle_buyback = await self._shift_time_recycle(
                 side, new_strike_info,
             )
@@ -4598,7 +4912,7 @@ class MMMMonitor:
 
         # IMP-4: Set OTM multiplier on session before calling calculate_lots_to_sell.
         # The engine reads session['_strike_shift_otm_multiplier'] to scale lots.
-        params = session.get('params', {})
+        # params already defined at method top.
         if params.get('strike_shift_use_lot_scaling', False) and spot_price > 0:
             otm_pct = abs(new_strike - spot_price) / spot_price * 100.0
             tier1 = params.get('strike_shift_otm_tier1', 1.0)
@@ -5708,22 +6022,29 @@ class MMMMonitor:
                          f"(velocity headroom: {_lots_in_window}/{_vel_limit} in window)")
                 lots = max(1, _headroom)
 
-        # Step 3: Find strike
-        spot_price = await self._fetch_spot_price()
-        if spot_price <= 0:
-            log.warning(f"[{sid}] Replenish: could not fetch spot price")
-            log_activity('replenish_failed',
-                        f'\u274C Replenish {closed_side.upper()} failed: no spot price',
-                        sid, 'error',
-                        {'closed_side': closed_side, 'error': 'no_spot_price'})
-            return False
+        # Step 3–5: Find strike + execute — with retry on transient failures.
+        #
+        # Retry policy:
+        #   • no_spot_price / no_strike_found / fast execution failure (attempts=0):
+        #     retry up to replenish_retry_max times with replenish_retry_delay_sec delay.
+        #     Fresh spot + chain data are fetched on each attempt so the strike stays current.
+        #   • premium < min_premium: hard stop — market condition, not a transient error.
+        #     Next heartbeat (OCS watchdog) retries when market moves.
+        #   • smart_execute failed with attempts>0: an order was live on exchange. Do NOT
+        #     retry within this heartbeat — risk of placing a second order on the same side.
+        #     OCS watchdog retries on the next heartbeat automatically.
+        _retry_max = params.get('replenish_retry_max', 3)
+        _retry_delay = params.get('replenish_retry_delay_sec', 2)
+        _reprice_max = params.get('replenish_max_reprice_attempts', 2)
 
-        strike_info = None
+        # Determine lots to sell: resume a partial fill top-up if one is pending.
+        _lots_remaining = session.get(f'_replenish_lots_remaining_{closed_side}', 0)
+        lots_to_sell = _lots_remaining if _lots_remaining > 0 else lots
+
         expiry = params.get('expiry', '')
         dte_cat = params.get('dte_category', '')
         preset = params.get('adaptive_preset', 'strangle')
-
-        # Straddle mode: use ATM strike
+        # Straddle mode: use ATM strike (computed once — doesn't change between retries)
         is_straddle = (
             dte_cat == 'SHORT_STRADDLE'
             or preset == 'straddle'
@@ -5731,128 +6052,190 @@ class MMMMonitor:
                 and session.get('ce', {}).get('original_strike', 0)
                 == session.get('pe', {}).get('original_strike', 0))
         )
-
-        if is_straddle:
-            try:
-                atm = self.initializer.preview_atm_straddle(expiry)
-                if atm and atm.get('success'):
-                    side_key = 'ce' if closed_side == 'ce' else 'pe'
-                    premium = atm.get(f'{side_key}_premium', 0)
-                    strike = atm.get('strike', 0)
-                    symbol = atm.get(f'{side_key}_symbol', '')
-                    if premium > 0 and strike > 0:
-                        strike_info = {
-                            'strike': strike,
-                            'premium': premium,
-                            'symbol': symbol,
-                        }
-            except Exception as e:
-                log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {e}")
-
-        if not strike_info:
-            # Strangle mode or straddle fallback: scan only the closed side's chain
-            # using _rank_strikes — the same scoring used at session start.
-            # Scores by |premium - desired| + liquidity penalty. No active_strike
-            # or frozen_strike exclusions (fixes bugs 1, 2, 3).
-            #
-            # NOT using preview_strikes() here: that function requires BOTH CE and
-            # PE to produce a result and returns success=False if either side has no
-            # candidate — which would block PE replenish whenever CE happens to have
-            # no suitable strike, and vice versa. We only need the closed side.
-            _desired = params.get(
-                f'desired_{closed_side}_premium',
-                params.get('replenish_min_premium', 30.0),
-            )
-            _opt_type = 'call' if closed_side == 'ce' else 'put'
-            _above_spot = (closed_side == 'ce')
-            try:
-                _chain_result = self.initializer.get_full_chain(expiry)
-                if _chain_result and _chain_result.get('success'):
-                    # Use the chain's own spot_price — it was fetched atomically with
-                    # the chain data, so the OTM filter is consistent with the strikes.
-                    _chain_spot = _chain_result.get('spot_price', spot_price) or spot_price
-                    _best, _ = self.initializer._rank_strikes(
-                        chain=_chain_result.get('chain', []),
-                        option_type=_opt_type,
-                        desired_premium=_desired,
-                        spot_price=_chain_spot,
-                        above_spot=_above_spot,
-                        expiry=_chain_result.get('expiry', expiry),
-                        underlying='BTC',
-                    )
-                    if _best:
-                        strike_info = {
-                            'strike': _best['strike'],
-                            'premium': _best.get('premium', 0),
-                            'symbol': _best.get('symbol', ''),
-                        }
-                else:
-                    log.warning(f"[{sid}] Replenish: chain fetch failed for "
-                                f"{closed_side.upper()} — "
-                                f"{_chain_result.get('error', 'no data')}")
-            except Exception as _rs_err:
-                log.error(f"[{sid}] Replenish _rank_strikes exception: {_rs_err}")
-
-        if not strike_info:
-            log.warning(f"[{sid}] Replenish: no suitable strike found for {closed_side.upper()}")
-            log_activity('replenish_failed',
-                        f'\u274C Replenish {closed_side.upper()} failed: no suitable strikes',
-                        sid, 'error',
-                        {'closed_side': closed_side, 'error': 'no_strikes'})
-            return False
-
-        strike = strike_info['strike']
-        premium = strike_info.get('premium', 0)
         min_premium = params.get('replenish_min_premium', 30.0)
 
-        if premium < min_premium:
-            log.info(f"[{sid}] Replenish: premium ${premium:.2f} < min ${min_premium:.2f}")
-            log_activity('replenish_blocked',
-                        f'\u26D4 Replenish {closed_side.upper()} blocked: '
-                        f'premium ${premium:.2f} < min ${min_premium:.2f}',
-                        sid, 'info',
-                        {'closed_side': closed_side, 'premium': premium,
-                         'min_premium': min_premium, 'strike': strike})
-            return False
+        _exec_result = None
+        _last_fail_reason = 'unknown'
+        spot_price = 0  # declared here so regime-reset block can reference it
 
-        # Step 4: Build symbol
-        option_type = 'call' if closed_side == 'ce' else 'put'
-        symbol = strike_info.get('symbol') or self.initializer.build_symbol(
-            option_type, 'BTC', strike, expiry
-        )
+        for _attempt in range(1, _retry_max + 1):
+            _is_last = (_attempt == _retry_max)
 
-        # Step 5: Register pending + execute sell
-        try:
-            register_pending(sid, closed_side, 'pending', symbol, lots,
-                           strike, 'replenish')
-        except Exception:
-            pass
+            # Step 3: Fetch spot price (fresh on every attempt)
+            spot_price = await self._fetch_spot_price()
+            if spot_price <= 0:
+                _last_fail_reason = 'no_spot_price'
+                log.warning(f"[{sid}] Replenish attempt {_attempt}/{_retry_max}: "
+                            f"could not fetch spot price")
+                if not _is_last:
+                    await asyncio.sleep(_retry_delay)
+                    continue
+                log_activity('replenish_failed',
+                            f'\u274C Replenish {closed_side.upper()} failed: no spot price',
+                            sid, 'error',
+                            {'closed_side': closed_side, 'error': 'no_spot_price',
+                             'attempts': _attempt})
+                return False
 
-        _reprice_max = params.get('max_reprice_attempts', None)
-        result = await self.executor.smart_execute(
-            symbol=symbol, side='sell', size=lots,
-            max_reprice_attempts=_reprice_max,
-            session_id=sid,
-        )
+            # Step 3b: Find strike (fresh chain data on every attempt)
+            strike_info = None
+            if is_straddle:
+                try:
+                    atm = self.initializer.preview_atm_straddle(expiry)
+                    if atm and atm.get('success'):
+                        side_key = 'ce' if closed_side == 'ce' else 'pe'
+                        _atm_premium = atm.get(f'{side_key}_premium', 0)
+                        _atm_strike = atm.get('strike', 0)
+                        _atm_symbol = atm.get(f'{side_key}_symbol', '')
+                        if _atm_premium > 0 and _atm_strike > 0:
+                            strike_info = {
+                                'strike': _atm_strike,
+                                'premium': _atm_premium,
+                                'symbol': _atm_symbol,
+                            }
+                except Exception as _atm_err:
+                    log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {_atm_err}")
 
-        if not result.get('success'):
-            log.error(f"[{sid}] Replenish sell FAILED for {closed_side.upper()} @ {strike}: "
-                     f"{result.get('error', 'unknown')}")
-            log_activity('replenish_failed',
-                        f'\u274C Replenish {closed_side.upper()} sell FAILED @ {strike}: '
-                        f'{result.get("error", "unknown")}',
-                        sid, 'error',
-                        {'closed_side': closed_side, 'strike': strike,
-                         'error': result.get('error')})
+            if not strike_info:
+                # Strangle mode or straddle fallback: scan only the closed side's chain
+                # using _rank_strikes — the same scoring used at session start.
+                # Scores by |premium - desired| + liquidity penalty. No active_strike
+                # or frozen_strike exclusions (fixes bugs 1, 2, 3).
+                #
+                # NOT using preview_strikes() here: that function requires BOTH CE and
+                # PE to produce a result and returns success=False if either side has no
+                # candidate — which would block PE replenish whenever CE happens to have
+                # no suitable strike, and vice versa. We only need the closed side.
+                _desired = params.get(
+                    f'desired_{closed_side}_premium',
+                    params.get('replenish_min_premium', 30.0),
+                )
+                _opt_type = 'call' if closed_side == 'ce' else 'put'
+                _above_spot = (closed_side == 'ce')
+                try:
+                    _chain_result = await asyncio.get_running_loop().run_in_executor(
+                        None, self.initializer.get_full_chain, expiry
+                    )
+                    if _chain_result and _chain_result.get('success'):
+                        _chain_spot = _chain_result.get('spot_price', spot_price) or spot_price
+                        _best, _ = self.initializer._rank_strikes(
+                            chain=_chain_result.get('chain', []),
+                            option_type=_opt_type,
+                            desired_premium=_desired,
+                            spot_price=_chain_spot,
+                            above_spot=_above_spot,
+                            expiry=_chain_result.get('expiry', expiry),
+                            underlying='BTC',
+                        )
+                        if _best:
+                            strike_info = {
+                                'strike': _best['strike'],
+                                'premium': _best.get('premium', 0),
+                                'symbol': _best.get('symbol', ''),
+                            }
+                    else:
+                        log.warning(f"[{sid}] Replenish: chain fetch failed for "
+                                    f"{closed_side.upper()} — "
+                                    f"{_chain_result.get('error', 'no data') if _chain_result else 'no data'}")
+                except Exception as _rs_err:
+                    log.error(f"[{sid}] Replenish _rank_strikes exception: {_rs_err}")
+
+            if not strike_info:
+                _last_fail_reason = 'no_strikes'
+                log.warning(f"[{sid}] Replenish attempt {_attempt}/{_retry_max}: "
+                            f"no suitable strike for {closed_side.upper()}")
+                if not _is_last:
+                    await asyncio.sleep(_retry_delay)
+                    continue
+                log_activity('replenish_failed',
+                            f'\u274C Replenish {closed_side.upper()} failed: no suitable strikes',
+                            sid, 'error',
+                            {'closed_side': closed_side, 'error': 'no_strikes',
+                             'attempts': _attempt})
+                return False
+
+            # Step 3c: Premium check — hard stop, NOT retriable (market condition)
+            strike = strike_info['strike']
+            premium = strike_info.get('premium', 0)
+            if premium < min_premium:
+                log.info(f"[{sid}] Replenish: premium ${premium:.2f} < min ${min_premium:.2f}")
+                log_activity('replenish_blocked',
+                            f'\u26D4 Replenish {closed_side.upper()} blocked: '
+                            f'premium ${premium:.2f} < min ${min_premium:.2f}',
+                            sid, 'info',
+                            {'closed_side': closed_side, 'premium': premium,
+                             'min_premium': min_premium, 'strike': strike})
+                return False  # Market condition — do not retry
+
+            # Step 4: Build symbol
+            option_type = 'call' if closed_side == 'ce' else 'put'
+            symbol = strike_info.get('symbol') or self.initializer.build_symbol(
+                option_type, 'BTC', strike, expiry
+            )
+
+            # Step 5: Register pending + execute sell
+            try:
+                register_pending(sid, closed_side, 'pending', symbol, lots_to_sell,
+                               strike, 'replenish')
+            except Exception:
+                pass
+
+            _result = await self.executor.smart_execute(
+                symbol=symbol, side='sell', size=lots_to_sell,
+                max_reprice_attempts=_reprice_max,
+                session_id=sid,
+            )
+
+            if _result.get('success'):
+                _exec_result = _result
+                break
+
+            # ── Execution failed — decide whether to retry ──
+            _exec_attempts = _result.get('attempts', 0)
+            _exec_error = _result.get('error', 'unknown')
             try:
                 clear_pending(sid, closed_side)
             except Exception:
                 pass
+
+            if _exec_attempts > 0:
+                # An order was live on the exchange during the failure.
+                # Do NOT retry here — risk of placing a duplicate order.
+                # The OCS watchdog will retry on the next heartbeat.
+                log.error(f"[{sid}] Replenish sell FAILED — order was live "
+                         f"({_exec_attempts} reprice attempt(s)): {_exec_error}")
+                log_activity('replenish_failed',
+                            f'\u274C Replenish {closed_side.upper()} sell FAILED @ {strike}: '
+                            f'{_exec_error}',
+                            sid, 'error',
+                            {'closed_side': closed_side, 'strike': strike,
+                             'error': _exec_error, 'exec_attempts': _exec_attempts})
+                return False
+
+            # Fast failure (no order placed) — safe to retry
+            _last_fail_reason = f'exec_fast_fail:{_exec_error}'
+            log.warning(f"[{sid}] Replenish attempt {_attempt}/{_retry_max} fast-failed "
+                       f"(no order placed): {_exec_error}")
+            if not _is_last:
+                await asyncio.sleep(_retry_delay)
+                continue
+
+            # Exhausted all retries
+            log.error(f"[{sid}] Replenish FAILED after {_retry_max} attempt(s): {_last_fail_reason}")
+            log_activity('replenish_failed',
+                        f'\u274C Replenish {closed_side.upper()} failed after {_retry_max} '
+                        f'attempt(s): {_last_fail_reason}',
+                        sid, 'error',
+                        {'closed_side': closed_side, 'error': _last_fail_reason,
+                         'attempts': _retry_max})
+            return False
+
+        if not _exec_result:
             return False
 
         # Step 6: Success — register position in unified ledger
-        fill_price = result.get('fill_price', 0)
-        filled_lots = result.get('size', lots)
+        fill_price = _exec_result.get('fill_price', 0)
+        filled_lots = _exec_result.get('filled_size', lots_to_sell)  # use actual fill, not requested
 
         from .mmm_state import recompute_side_lots
         from .mmm_trigger import update_trigger_snapshots
@@ -5881,8 +6264,8 @@ class MMMMonitor:
             'status': 'active',
             'created_at': now,
             'fill_confirmed_at': now,
-            'order_id': str(result.get('order_id', '')),
-            'client_order_id': str(result.get('client_order_id', '')),
+            'order_id': str(_exec_result.get('order_id', '')),
+            'client_order_id': str(_exec_result.get('client_order_id', '')),
             'shifted_at': None,
             'closed_at': None,
             'realized_pnl': None,
@@ -5902,13 +6285,26 @@ class MMMMonitor:
         side_state.setdefault('trigger_snapshot', {})[_strike_key(strike)] = fill_price
         session[closed_side] = side_state
 
+        # Partial fill tracking — if fewer lots filled than requested, mark the
+        # remainder so the OCS watchdog tops up on the next heartbeat.
+        _partial_fill = filled_lots < lots_to_sell
+        if _partial_fill:
+            _remaining = lots_to_sell - filled_lots
+            session[f'_replenish_lots_remaining_{closed_side}'] = _remaining
+            session['_replenish_ocs_active'] = True
+            log.warning(f"[{sid}] Replenish partial fill: {filled_lots}/{lots_to_sell} lots — "
+                       f"{_remaining} remaining, OCS watchdog will top up next heartbeat")
+        else:
+            session.pop(f'_replenish_lots_remaining_{closed_side}', None)
+            # _replenish_ocs_active is cleared by the OCS guard caller on full success
+
         # Record commission via ledger (CRIT-1 fix)
-        _od = result.get('order_details') or {}
+        _od = _exec_result.get('order_details') or {}
         _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
         if _commission:
             from .mmm_pnl_core import record_fee as _pnl_fee
             _pnl_fee(session, _commission, 'sell_replenish',
-                     order_id=str(result.get('order_id', '')), side=closed_side)
+                     order_id=str(_exec_result.get('order_id', '')), side=closed_side)
 
         # Update premium collected
         premium_collected = fill_price * filled_lots * LOT_SIZE_BTC
@@ -5968,7 +6364,7 @@ class MMMMonitor:
                 action='SELL',
                 option_type=closed_side.upper(),
                 strike=int(strike),
-                quantity_requested=lots,
+                quantity_requested=lots_to_sell,
                 quantity_filled=filled_lots,
                 premium=fill_price,
                 event_type='REPLENISH',
@@ -6027,6 +6423,8 @@ class MMMMonitor:
             # One-side-close guard flags — hedge is restored, clear both sides
             session.pop('_one_side_closed_ce', None)
             session.pop('_one_side_closed_pe', None)
+            session.pop('_replenish_ocs_active', None)
+            session.pop(f'_replenish_lots_remaining_{closed_side}', None)
             session.pop('_awaiting_user_action', None)
             session.pop('_awaiting_user_action_reason', None)
             session.pop('_awaiting_user_action_details', None)
@@ -6712,8 +7110,16 @@ class MMMMonitor:
                     'ce', MAX_CLOSE_RETRIES, RETRY_DELAY, emergency=True)
                 pe_task = self._close_one_side(
                     'pe', MAX_CLOSE_RETRIES, RETRY_DELAY, emergency=True)
-                ce_fails, pe_fails = await asyncio.gather(
-                    ce_task, pe_task, return_exceptions=False)
+                _ce_result, _pe_result = await asyncio.gather(
+                    ce_task, pe_task, return_exceptions=True)
+                ce_fails = (
+                    [f"CE close raised: {_ce_result}"]
+                    if isinstance(_ce_result, Exception) else _ce_result
+                )
+                pe_fails = (
+                    [f"PE close raised: {_pe_result}"]
+                    if isinstance(_pe_result, Exception) else _pe_result
+                )
                 failed_closes.extend(ce_fails)
                 failed_closes.extend(pe_fails)
             else:
@@ -9147,10 +9553,12 @@ class MMMMonitor:
 
     async def _calculate_portfolio_delta(self) -> float:
         """Calculate current portfolio delta from all positions.
-        
+
         Portfolio delta = sum of (position_lots × greek_delta × LOT_SIZE_BTC × multiplier)
         multiplier: short CE = -1, short PE = +1
-        
+
+        Also populates self._last_gamma_data via compute_gamma_data() from mmm_gamma.
+
         Returns:
             float: Portfolio delta (positive = net long, negative = net short)
         """
@@ -9158,51 +9566,21 @@ class MMMMonitor:
         expiry = session.get('params', {}).get('expiry', '')
         if not expiry:
             return 0.0
-        
+
         try:
             from .mmm_initializer import get_initializer
             from config.loader import get_api_credentials
             from bot.api.async_delta_client import AsyncDeltaClient
+            from .mmm_gamma import build_position_map, compute_gamma_data, GammaData, _safe_greek
             import asyncio
-            
+
             initializer = get_initializer()
-            
-            # Collect all positions
-            position_map = {}  # key=(strike, opt_type) -> lots
-            for side_key in ['ce', 'pe']:
-                side = session.get(side_key, {})
-                if not side:
-                    continue
-                opt = 'call' if side_key == 'ce' else 'put'
-                
-                # Active strike positions
-                active_strike = side.get('active_strike', 0)
-                orig_lots = side.get('original_lots', 0)
-                if active_strike and orig_lots > 0:
-                    key = (float(active_strike), opt)
-                    position_map[key] = position_map.get(key, 0) + orig_lots
-                
-                # Adjustment fills
-                for fill in side.get('adjustment_fills', []):
-                    fill_strike = float(fill.get('strike', active_strike) or active_strike)
-                    fill_lots = fill.get('lots', 0)
-                    if fill_strike and fill_lots > 0:
-                        key = (fill_strike, opt)
-                        position_map[key] = position_map.get(key, 0) + fill_lots
-                
-                # Frozen positions
-                for frozen in side.get('frozen_positions', []):
-                    f_strike = float(frozen.get('strike', 0))
-                    f_lots = frozen.get('lots', 0)
-                    if f_strike and f_lots > 0:
-                        key = (f_strike, opt)
-                        position_map[key] = position_map.get(key, 0) + f_lots
-            
+
+            # Build position map from session state (extracted to mmm_gamma)
+            position_map = build_position_map(session)
+
             if not position_map:
-                self._last_gamma_data = {
-                    'portfolio_gamma': 0.0,
-                    'positions': [],
-                }
+                self._last_gamma_data = GammaData(portfolio_gamma=0.0, positions=[])
                 return 0.0
 
             # Fetch Greeks for all positions from exchange tickers
@@ -9229,26 +9607,16 @@ class MMMMonitor:
                     )
                 results = await asyncio.gather(*tasks, return_exceptions=True)
                 return list(zip(keys, results))
-            
-            ticker_results = await fetch_all()
-            
-            # Calculate portfolio delta AND extract gamma for regime controls
-            portfolio_delta = 0.0
-            portfolio_gamma = 0.0
-            gamma_positions = []
 
-            def _safe_greek(val):
-                """Safely convert a greek value to float (exchange may return str/None/list)."""
-                if val is None:
-                    return 0.0
-                if isinstance(val, (int, float)):
-                    return float(val)
-                if isinstance(val, str):
-                    try:
-                        return float(val)
-                    except (ValueError, TypeError):
-                        return 0.0
-                return 0.0
+            ticker_results = await fetch_all()
+
+            # Compute raw gamma data via mmm_gamma (single canonical location for opt_char mapping).
+            # Dollar gamma values are computed later by _update_gamma_cap which has spot_price.
+            gamma_data = compute_gamma_data(ticker_results, position_map)
+            self._last_gamma_data = gamma_data
+
+            # Calculate portfolio delta from ticker results
+            portfolio_delta = 0.0
 
             _greek_zero_positions = 0
             for (strike, opt), resp in ticker_results:
@@ -9264,7 +9632,6 @@ class MMMMonitor:
                     result = result[0] if result else {}
                 greeks = result.get('greeks', {}) or {}
                 greek_delta = _safe_greek(greeks.get('delta', 0))
-                greek_gamma = _safe_greek(greeks.get('gamma', 0))
 
                 lots = int(position_map.get((strike, opt), 0))
 
@@ -9291,18 +9658,6 @@ class MMMMonitor:
                     f"lots={lots} δ={greek_delta:+.4f} → pos_δ={position_delta:+.6f} BTC"
                 )
 
-                # Gamma: accumulate absolute gamma exposure (short options = negative gamma)
-                position_gamma = greek_gamma * lots * LOT_SIZE_BTC
-                portfolio_gamma += position_gamma
-                if greek_gamma:
-                    gamma_positions.append((greek_gamma, lots, opt))
-
-            # Store gamma data for regime engine (zero extra API calls)
-            self._last_gamma_data = {
-                'portfolio_gamma': portfolio_gamma,
-                'positions': gamma_positions,
-            }
-
             total_pos = len(position_map)
             if _greek_zero_positions > 0:
                 log.warning(
@@ -9314,13 +9669,14 @@ class MMMMonitor:
                 log.info(
                     f"[{self.session_id}] GREEKS OK: {total_pos} positions, "
                     f"portfolio_delta={portfolio_delta:+.6f} BTC, "
-                    f"portfolio_gamma={portfolio_gamma:+.6f}"
+                    f"portfolio_gamma={gamma_data['portfolio_gamma']:+.6f}"
                 )
 
             return portfolio_delta
-            
+
         except Exception as e:
-            log.warning(f"[{self.session_id}] Failed to calculate portfolio delta: {e}")
+            log.exception(f"Unexpected error in _calculate_portfolio_delta: {e}")
+            self.session['_gamma_data_incomplete'] = True
             return 0.0
 
     def _emit_heartbeat_data(self, ce_now: float, pe_now: float):
@@ -9708,3 +10064,4 @@ def _save_session(session: Dict, my_generation: int = 0):
         return True
     except Exception as e:
         log.error(f"Failed to save session: {e}")
+        return False

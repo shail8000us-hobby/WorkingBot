@@ -620,6 +620,9 @@ DEFAULT_PARAMS = {
     'replenish_max_per_session': 10,       # cap to prevent infinite re-entry
     'replenish_cooldown_sec': 300,         # 5 min between replenishments
     'replenish_min_premium': 30.0,         # reject strikes with premium below this ($)
+    'replenish_retry_max': 3,              # fast-path retries within one _process_replenish call
+    'replenish_retry_delay_sec': 2,        # seconds between retry attempts
+    'replenish_max_reprice_attempts': 2,   # reprice cycles per smart_execute call (cap per retry)
 
     # ── Straddle Roll ──
     'straddle_roll_enabled':            False,  # off by default; preset enables it
@@ -770,6 +773,7 @@ HOT_RELOAD_PARAMS = {
     # Auto-Replenish Leg
     'replenish_enabled', 'replenish_lot_mode', 'replenish_max_per_session',
     'replenish_cooldown_sec', 'replenish_min_premium',
+    'replenish_retry_max', 'replenish_retry_delay_sec', 'replenish_max_reprice_attempts',
     # Straddle Roll
     'straddle_roll_enabled', 'straddle_roll_trigger_pct',
     'straddle_roll_max_per_session', 'straddle_roll_cooldown_mins',

@@ -8,7 +8,7 @@ Functions sealed:
 These are pure decision functions with no I/O.  The monitor's
 _process_replenish() method (async, I/O) is not sealed here.
 
-23 contracts total.
+25 contracts total.
 """
 
 import time
@@ -105,8 +105,28 @@ class TestCheckReplenishEligibility:
 
     @pytest.mark.sealed
     def test_blocked_when_paused(self):
-        """Gate 2: session status PAUSED → blocked."""
+        """Gate 2: session status PAUSED (no OCS recovery flag) → blocked."""
         s = _base_session(strategy_status='PAUSED')
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is False
+        assert 'status' in reason
+
+    @pytest.mark.sealed
+    def test_eligible_when_paused_and_ocs_recovery_active(self):
+        """Gate 2 OCS exception: PAUSED + _replenish_ocs_active=True → eligible.
+        The OCS watchdog sets this flag so it can retry replenish even after a
+        PAUSE was issued.  Stopping an unhedged session is worse than pausing it."""
+        s = _base_session(strategy_status='PAUSED')
+        s['_replenish_ocs_active'] = True
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"PAUSED+OCS recovery must be eligible; got reason={reason!r}"
+
+    @pytest.mark.sealed
+    def test_blocked_when_stopped_even_with_ocs_recovery(self):
+        """Gate 2: STOPPED is always blocked — OCS recovery does not override STOPPED.
+        STOPPED means the monitor has halted; there is no heartbeat to run replenish."""
+        s = _base_session(strategy_status='STOPPED')
+        s['_replenish_ocs_active'] = True
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
         assert ok is False
         assert 'status' in reason

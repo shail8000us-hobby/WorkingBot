@@ -58,11 +58,17 @@ def check_replenish_eligibility(
     if not params.get('replenish_enabled', False):
         return False, 'replenish_enabled=False'
 
-    # Gate 2: session must be RUNNING
+    # Gate 2: session must be RUNNING (or PAUSED during active OCS hedge recovery).
     # None is whitelisted for legacy sessions that predate the explicit status field.
+    # PAUSED is allowed when _replenish_ocs_active=True: the OCS guard set this flag
+    # because one side is unhedged and we must restore the hedge regardless of pause
+    # state — holding an unhedged position while paused is more dangerous than the
+    # pause intent.  The flag is cleared once replenish succeeds or the side regains lots.
     status = session.get('strategy_status', session.get('status', 'RUNNING'))
     if status not in ('RUNNING', 'ACTIVE', None):
-        return False, f"session status={status}"
+        _ocs_recovery = session.get('_replenish_ocs_active', False)
+        if not (status == 'PAUSED' and _ocs_recovery):
+            return False, f"session status={status}"
 
     # Gate 3 (wind-down active): REMOVED — see docstring.
     # Gate 4 (wind-down triggered flags): REMOVED — see docstring.
