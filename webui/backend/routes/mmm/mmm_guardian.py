@@ -146,6 +146,10 @@ class MMMGuardian:
 
     def record_close(self, side: str, lots: int) -> None:
         """Called after each successful close within the current heartbeat."""
+        side = side.lower()
+        if side not in ('ce', 'pe'):
+            log.warning(f"record_close: unexpected side '{side}', ignoring")
+            return
         self._beat_closed_lots[side] = self._beat_closed_lots.get(side, 0) + lots
 
     def check_beat_velocity(self, session: Dict) -> Optional[str]:
@@ -296,6 +300,13 @@ class MMMGuardian:
         except Exception as e:
             log.error(f"[{sid}] G5 stop failed: {e}")
 
+        # Release roll lock so the successor monitor is not blocked on straddle rolls
+        try:
+            from .mmm_straddle_roll import _cleanup_roll_lock
+            _cleanup_roll_lock(sid)
+        except Exception as e:
+            log.warning(f"[{sid}] G5 roll lock cleanup failed: {e}")
+
     def post_beat_check(
         self, session: Dict, snapshot: Dict,
     ) -> List[str]:
@@ -331,6 +342,25 @@ class MMMGuardian:
 
         return violations
 
+    def check_g3_healed(self, session: Dict) -> bool:
+        """
+        Return True if the G3 (side wipeout) condition is no longer present.
+
+        G3 fires when one side goes from >floor lots to 0 while the other has lots.
+        Healed when both sides have active_lots > 0 — meaning tradable (non-frozen)
+        positions exist on both sides.
+
+        Uses active_lots (not total_lots) because total_lots includes frozen positions
+        from old strikes. Frozen lots cannot hedge — they are being wound down.
+        A side with only frozen lots and zero active lots is still effectively unhedged.
+        """
+        params = session.get('params', {})
+        if not params.get('guardian_enabled', True):
+            return True
+        ce_active = session.get('ce', {}).get('active_lots', 0)
+        pe_active = session.get('pe', {}).get('active_lots', 0)
+        return ce_active > 0 and pe_active > 0
+
     def handle_violations(
         self, monitor, violations: List[str],
     ) -> None:
@@ -350,6 +380,14 @@ class MMMGuardian:
                 emit_safety(sid, 'guardian', 'critical', v)
         except Exception as e:
             log.warning(f"[{sid}] Guardian alert emit failed: {e}")
+
+        # Telegram alert — fire-and-forget (called from async heartbeat)
+        try:
+            import asyncio
+            from .mmm_telegram import alert_guardian_violation
+            asyncio.ensure_future(alert_guardian_violation(sid, violations))
+        except Exception as e:
+            log.warning(f"[{sid}] Guardian violation Telegram failed: {e}")
 
         try:
             monitor.pause(

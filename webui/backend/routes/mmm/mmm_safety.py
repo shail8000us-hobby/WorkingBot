@@ -875,12 +875,9 @@ class MMMSafety:
         params = session.get('params', {})
         max_loss = params.get('max_loss_amount', 5000.0)
 
-        realized = session.get('realized_pnl', 0)
-        unrealized = session.get('unrealized_pnl', 0)
-        # Fix #26: Include perp hedge P&L for accurate guardrail tracking
-        perp = session.get('perp_hedge', {})
-        perp_pnl = perp.get('realized_pnl', 0.0) + perp.get('unrealized_pnl', 0.0)
-        total_pnl = realized + unrealized + perp_pnl
+        # H-1: use single canonical formula (includes fees + perp + reverse)
+        from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
+        total_pnl = _pnl_total(session)
 
         ratio = abs(total_pnl) / max_loss if max_loss > 0 and total_pnl < 0 else 0
 

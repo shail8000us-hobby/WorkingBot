@@ -477,7 +477,7 @@ async def close_position(
 
         # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
         _od = result.get('order_details') or {}
-        _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+        _commission = float(_od['paid_commission'] if 'paid_commission' in _od else _od.get('commission', 0))
 
         # BUG-1 FIX: Stamp estimated P&L + commission on the position BEFORE
         # marking it closed.  FillSyncer uses _estimated_pnl_booked to compute

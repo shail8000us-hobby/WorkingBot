@@ -1744,3 +1744,60 @@ Completed audit of M-02 (`mmm_engine.py`, 1,072 lines). Found 4 issues; fixed 3;
 - Only `calculate_lots_to_sell` (entry #72) is sealed. 9 non-sealed unit tests exist. Large effort — dedicated session.
 
 **Files changed:** `mmm_engine.py`
+
+---
+
+## 2026-04-04 — M-03 Audit: 2 bugs fixed in mmm_guardian.py
+
+Completed audit of M-03 (`mmm_guardian.py`, 386 lines). Found 3 issues; fixed 2; 1 deferred.
+
+**BUG-1 (P2) — `handle_stale_monitor` skipped `_cleanup_roll_lock`** (lines ~291-305)
+- `monitor.stop()` calls `_cleanup_roll_lock(sid)` to release straddle roll locks when the monitor exits.
+- The G5 path in `handle_stale_monitor` deliberately bypasses `monitor.stop()` (to avoid emitting `status_change` with the stale session's data). But this also skipped `_cleanup_roll_lock`.
+- Effect: if the successor monitor attempted a straddle roll, `_cleanup_roll_lock` would block waiting for the lock that the stale monitor never released. Roll would time out.
+- Fix: added explicit `_cleanup_roll_lock(sid)` call after `monitor._running = False`.
+
+**BUG-2 (P3) — `record_close` silently accepted any `side` string** (line ~147)
+- `self._beat_closed_lots[side] = ...` with no validation — a misspelled side like `'CE'` would silently create a separate key in the dict, making the velocity check blind to those closes.
+- Fix: normalize `side = side.lower()` + validate `if side not in ('ce', 'pe'): log.warning + return`.
+
+**BUG-3 (deferred) — No sealed tests for any guardian function (G1–G5).**
+- `check_close_allowed`, `handle_stale_monitor`, `check_generation_integrity`, `check_beat_velocity` all untested. → DEF-04.
+
+**Files changed:** `mmm_guardian.py`
+
+---
+
+## 2026-04-04 — M-04 Audit: 1 bug fixed in mmm_safety.py
+
+Completed audit of M-04 (`mmm_safety.py`, 1,194 lines). Found 2 issues; fixed 1; 1 deferred.
+
+**BUG-1 (P2) — `check_pnl_guardrail` used inline P&L formula missing fees and reverse_pnl** (lines ~878-883)
+- Formula: `realized + unrealized + perp_pnl` — missing `- total_fees` and `+ reverse_pnl`.
+- `check_max_loss` (line 215) and `check_trailing_stop` (line 1057) already used `compute_current_total_pnl`.
+- Effect: guardrail fires against an inflated P&L (fees not subtracted), and completely ignores reverse mode P&L.
+- Fix: replaced inline formula with `from .mmm_pnl_core import compute_current_total_pnl as _pnl_total; total_pnl = _pnl_total(session)` — consistent with the other two safety checks.
+
+**BUG-2 (deferred) — No sealed tests for `check_lot_velocity`, `check_whipsaw`, `update_peak_pnl`.**
+- Complex adaptive logic (score decay, rolling window, spot-move validation) untested. → DEF-05.
+
+**Files changed:** `mmm_safety.py`
+
+---
+
+## 2026-04-04 — M-11/12/13/14 Audit: close_at_5 + strike_shift + harvester + recycler
+
+Audited 4 modules in a single session (user confirmed it was safe to run all at once). 1 bug fixed across the 4 modules.
+
+**mmm_close_at_5.py — BUG-1 (P3): falsy-unsafe commission extraction** (line ~480)
+- `float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)` — identical `or` chain bug as M-02 BUG-3.
+- If `paid_commission=0.0` (valid zero commission for maker orders), Python treats `0.0` as falsy and falls through to `commission`.
+- Fix: `float(_od['paid_commission'] if 'paid_commission' in _od else _od.get('commission', 0))` — key presence check.
+
+**mmm_strike_shift.py** — CLEAN. All prior audit fixes verified: `_initial_hedge_premium` preservation, frozen-strike exclusion in `find_new_strike`, trigger_snapshot cleanup, symbol update via singleton.
+
+**mmm_harvester.py** — CLEAN. `active_lots` (not `total_lots`) used for asymmetry calculation; in-flight guard via `being_closed_ids` pre-built set; `None/≤0` premium check on fetch.
+
+**mmm_recycler.py** — CLEAN. Phase B recomputes lots from actual Phase A results (not pre-planned). Rollback uses deep-copied canonical position objects (not sparse view dicts). Viability 3-check (ratio, net lot gain, affordability) correct.
+
+**Files changed:** `mmm_close_at_5.py`

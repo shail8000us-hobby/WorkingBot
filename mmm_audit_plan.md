@@ -76,18 +76,18 @@ When auditing a module, check ALL of the following:
 |----|------|------|--------------------|--------------|--------|--------------|
 | M-01 | `mmm_monitor.py` | P0 | Central heartbeat orchestration loop — drives all phases | ✗ | DONE | BUG-1: `_save_session` returned `None` on exception (breaks stale guard Layer 2). BUG-2: 7 early-return paths used inline P&L formula (missing perp+reverse). BUG-3: `asyncio.gather(return_exceptions=False)` in emergency close. BUG-4: dead `_gamma_emergency_wind_down` flag. BUG-5: dead `_process_proactive_wind_down` method. BUG-6: stale log hardcoded `{3}`. BUG-7/8: deferred (velocity helper refactor, test coverage). All 6 fixed 2026-04-04. |
 | M-02 | `mmm_engine.py` | P0 | Core P&L formulas, adjustment sizing, lot math | ✗ | DONE | BUG-1: `reconcile_pnl` compared options-only `tracked` vs perp+reverse-inclusive `net_pnl` → phantom discrepancies every heartbeat. BUG-2: `calculate_reversal_loss` had no explicit None check (unlike `calculate_standard_loss`). BUG-3: commission `or` chain falsy-unsafe for `paid_commission=0.0`. BUG-4: no sealed tests for 4 core functions (deferred). All 3 fixed 2026-04-04. |
-| M-03 | `mmm_guardian.py` | P0 | Multi-layer safety guardian — generation guard, G5 heartbeat check | ✗ | TODO | |
-| M-04 | `mmm_safety.py` | P0 | Max loss check, lot velocity, gate enforcement | `test_sealed_mmm_safety.py` | TODO | |
+| M-03 | `mmm_guardian.py` | P0 | Multi-layer safety guardian — generation guard, G5 heartbeat check | ✗ | DONE | BUG-1 (P2): `handle_stale_monitor` skipped `_cleanup_roll_lock` — successor monitor blocked on straddle rolls. BUG-2 (P3): `record_close` accepted any `side` string silently — could corrupt `_beat_closed_lots`. BUG-3 (deferred): no sealed tests. 2 fixed 2026-04-04. |
+| M-04 | `mmm_safety.py` | P0 | Max loss check, lot velocity, gate enforcement | `test_sealed_mmm_safety.py` | DONE | BUG-1 (P2): `check_pnl_guardrail` used inline P&L formula missing fees and reverse_pnl (while `check_max_loss` and `check_trailing_stop` both used `compute_current_total_pnl`). BUG-2 (deferred): no sealed tests for `check_lot_velocity` / `check_whipsaw`. 1 fixed 2026-04-04. |
 | M-05 | `mmm_executor.py` | P0 | Places real orders on exchange — BUY/SELL/CANCEL | ✗ | TODO | |
 | M-06 | `mmm_margin_guardian.py` | P0 | Real-time margin check, emergency close trigger | `test_sealed_mmm_margin_guardian_async.py` | TODO | |
 | M-07 | `mmm_circuit_breaker.py` | P0 | Halts trading on repeated failures or anomalies | `test_sealed_mmm_circuit_breaker.py` | TODO | |
 | M-08 | `mmm_fill_sync.py` | P0 | Syncs exchange fills back into session state | ✗ | TODO | |
 | M-09 | `mmm_perp_hedge.py` | P1 | Manages perpetual hedge positions | `test_sealed_mmm_perp_hedge.py` | TODO | |
 | M-10 | `mmm_replenish.py` | P1 | Auto-replenishes closed side using ranked strikes | `test_sealed_mmm_replenish.py` | TODO | |
-| M-11 | `mmm_close_at_5.py` | P1 | Closes positions at 5pm / expiry boundary | `test_sealed_mmm_close_at_5.py` | TODO | |
-| M-12 | `mmm_strike_shift.py` | P1 | Shifts strikes when price moves out of range | `test_sealed_mmm_strike_shift.py` | TODO | |
-| M-13 | `mmm_harvester.py` | P1 | Harvests profitable legs — sells winners | `test_sealed_mmm_harvester.py` | TODO | |
-| M-14 | `mmm_recycler.py` | P1 | Recycles closed lots by rolling to new strikes | `test_sealed_mmm_recycler.py` | TODO | |
+| M-11 | `mmm_close_at_5.py` | P1 | Closes positions when premium ≤ threshold | `test_sealed_mmm_close_at_5.py` | DONE | BUG-1 (P3): `_commission` extraction falsy-unsafe (same `or` chain pattern as M-02 BUG-3 — `paid_commission=0.0` falls through to `commission`). 1 fixed 2026-04-04. |
+| M-12 | `mmm_strike_shift.py` | P1 | Shifts strikes when premium falls below threshold | `test_sealed_mmm_strike_shift.py` | DONE | CLEAN — all prior audit fixes applied; `_initial_hedge_premium` preservation correct; frozen-strike exclusion correct. |
+| M-13 | `mmm_harvester.py` | P1 | M1 profit harvesting of frozen positions; M3 asymmetry boost | `test_sealed_mmm_harvester.py` | DONE | CLEAN — `active_lots` (not `total_lots`) used for asymmetry calc; capacity pressure computed correctly; in-flight guard via `being_closed_ids` set. |
+| M-14 | `mmm_recycler.py` | P1 | M2 lot recycling — Phase A buyback + Phase B new sell | `test_sealed_mmm_recycler.py` | DONE | CLEAN — viability 3-check pass, Phase B uses actual Phase A lots (not planned), rollback correctly restores canonical positions via deep-copy. |
 | M-15 | `mmm_wind_down.py` | P1 | Orderly wind-down — closes all positions gracefully | `test_sealed_mmm_wind_down.py` | TODO | |
 | M-16 | `mmm_exit_all.py` | P1 | Emergency exit — closes everything immediately | ✗ | TODO | |
 | M-17 | `mmm_reverse.py` | P1 | Controlled Reverse Mode overlay (isolated from core) | ✗ | TODO | |
@@ -169,11 +169,11 @@ Known invariants to check against (from CLAUDE.md):
 
 | Phase | Modules | Done | Remaining |
 |-------|---------|------|-----------|
-| P0 — Safety Critical | M-01 to M-08 | 2 | 6 |
-| P1 — Order Execution | M-09 to M-17 | 0 | 9 |
+| P0 — Safety Critical | M-01 to M-08 | 4 | 4 |
+| P1 — Order Execution | M-09 to M-17 | 4 | 5 |
 | P2 — Logic / P&L | M-18 to M-33 | 0 | 16 |
 | P3 — Supporting / Infra | M-34 to M-51 | 0 | 18 |
-| **Total** | **51** | **2** | **49** |
+| **Total** | **51** | **8** | **43** |
 
 ---
 
@@ -186,6 +186,8 @@ Known invariants to check against (from CLAUDE.md):
 | DEF-01 | M-01 `mmm_monitor.py` | P2 | Lot velocity window computation duplicated between `mmm_safety.py` and `mmm_monitor.py`. Two independent rolling-window computations that must stay in sync manually. Fix: extract shared helper into `mmm_safety.py` and call it from both locations. Requires coordinated change across two files. | M-04 audit | Dedicate a session after M-04 audit |
 | DEF-02 | M-01 `mmm_monitor.py` | P2 | No sealed tests for `mmm_monitor.py` — the most critical P0 module has zero contract test coverage. `_save_session`, `_heartbeat_inner`, `_auto_close_all`, `_run_loop`, stale-monitor guard layers, and `start_session_monitor` all untested. Fix: write Type 1 + Type 2 sealed tests per AI_SEAL.md. Large effort — dedicated session required. | MMM live promotion | Dedicated seal session after P0 audits complete |
 | DEF-03 | M-02 `mmm_engine.py` | P2 | No sealed tests for `calculate_standard_loss`, `calculate_reversal_loss`, `execute_adjustment`, `reconcile_pnl`. Only `calculate_lots_to_sell` sealed (entry #72). 9 non-sealed unit tests exist in `test_mmm_engine.py`. | MMM live promotion | Dedicated seal session after P0 audits complete |
+| DEF-04 | M-03 `mmm_guardian.py` | P2 | No sealed tests for any guardian function (G1–G5). `check_close_allowed`, `handle_stale_monitor`, `check_generation_integrity`, `check_beat_velocity` are all untested. | MMM live promotion | Dedicated seal session |
+| DEF-05 | M-04 `mmm_safety.py` | P2 | `check_lot_velocity`, `check_whipsaw` (complex adaptive logic), and `update_peak_pnl` (decay formula) lack sealed tests. | MMM live promotion | Dedicated seal session |
 
 ---
 
@@ -231,3 +233,9 @@ grep -n "process_close_at_5\|_process_adjustment\|_replenish" webui/backend/rout
 |------|--------|---------|-----------|--------|-------|
 | 2026-04-04 | M-01 `mmm_monitor.py` | Claude | 8 | 6 fixed, 2 deferred | BUG-1 CRITICAL (stale guard broken). BUG-2 P1 (7× wrong P&L formula). BUG-3 P1 (gather swallows one close). BUG-4/5 P2 (dead code). BUG-6 P2 (hardcoded constant). BUG-7 (velocity refactor deferred). BUG-8 (tests deferred). |
 | 2026-04-04 | M-02 `mmm_engine.py` | Claude | 4 | 3 fixed, 1 deferred | BUG-1 P1 (`reconcile_pnl` phantom discrepancies — perp+reverse in actual but not tracked). BUG-2 P2 (no None check in `calculate_reversal_loss`). BUG-3 P3 (commission falsy-unsafe). BUG-4 (sealed tests for 4 core functions deferred). |
+| 2026-04-04 | M-03 `mmm_guardian.py` | Claude | 3 | 2 fixed, 1 deferred | BUG-1 P2 (`handle_stale_monitor` skipped `_cleanup_roll_lock` — blocks straddle rolls in successor). BUG-2 P3 (`record_close` silent invalid side). BUG-3 (no sealed tests deferred → DEF-04). |
+| 2026-04-04 | M-04 `mmm_safety.py` | Claude | 2 | 1 fixed, 1 deferred | BUG-1 P2 (`check_pnl_guardrail` inline formula missing fees+reverse_pnl). BUG-2 (no sealed tests for velocity/whipsaw → DEF-05). |
+| 2026-04-04 | M-11 `mmm_close_at_5.py` | Claude | 1 | 1 fixed | BUG-1 P3 (falsy-unsafe commission `or` chain — same pattern as M-02 BUG-3). |
+| 2026-04-04 | M-12 `mmm_strike_shift.py` | Claude | 0 | — | CLEAN |
+| 2026-04-04 | M-13 `mmm_harvester.py` | Claude | 0 | — | CLEAN |
+| 2026-04-04 | M-14 `mmm_recycler.py` | Claude | 0 | — | CLEAN |
