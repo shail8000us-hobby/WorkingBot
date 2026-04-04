@@ -109,14 +109,14 @@ When auditing a module, check ALL of the following:
 | M-23 | `mmm_gamma_detector.py` | P2 | Detects gamma curvature boundaries by scanning PnL kinks | `test_sealed_mmm_gamma_detector.py` | DONE | BUG-C6 (P1): phantom `_perp_state` key — perp never included in gamma scan. 1 fixed 2026-04-04. |
 | M-24 | `mmm_breakeven_engine.py` | P2 | Computes breakeven levels and aggression multiplier | `test_sealed_mmm_breakeven_engine.py` | DONE | BUG-C5 (P1): phantom `_perp_state` key — perp never included in breakeven calculation. Fixed signed-lots logic. 1 fixed 2026-04-04. |
 | M-25 | `mmm_scaler.py` | P2 | Favorable scale-up eligibility + strike scanning | ✗ | DONE | BUG-C1 (P1): inline P&L formula missing perp+reverse — could scale into losing session. 1 fixed 2026-04-04. |
-| M-26 | `mmm_adaptive.py` | P2 | Adaptive heartbeat interval — speeds up/slows down loop | `test_sealed_compute_adaptive_interval.py` | TODO | |
-| M-27 | `mmm_atm_shield.py` | P2 | ATM protection shield — blocks trades near ATM | `test_sealed_mmm_atm_shield.py` | TODO | |
-| M-28 | `mmm_reversal.py` | P2 | Detects and handles trend reversals | `test_sealed_mmm_reversal.py` | TODO | |
-| M-29 | `mmm_pending_orders.py` | P2 | Tracks and times out pending (unfilled) orders | `test_sealed_mmm_pending_orders.py` | TODO | |
-| M-30 | `mmm_adopter.py` | P2 | Adopts orphaned/existing positions into session | `test_sealed_mmm_adopter.py` | TODO | |
-| M-31 | `mmm_trigger.py` | P2 | External triggers — manual actions from UI/API | `test_sealed_mmm_trigger.py` | TODO | |
-| M-32 | `mmm_initializer.py` | P2 | Session initialization — creates fresh session state | ✗ | TODO | |
-| M-33 | `mmm_straddle_roll.py` | P2 | Rolls straddle positions to new strikes/expiries | ✗ | TODO | |
+| M-26 | `mmm_adaptive.py` | P2 | Adaptive heartbeat interval — speeds up/slows down loop | `test_sealed_compute_adaptive_interval.py` | DONE | CLEAN — stateless scoring engine, all inputs via params, no session mutation. |
+| M-27 | `mmm_atm_shield.py` | P2 | ATM protection shield — blocks trades near ATM | `test_sealed_mmm_atm_shield.py` | DONE | CLEAN — deferred re-sell logic correct, sympathetic rebalance lot deltas correct, `_being_closed` set appropriately. |
+| M-28 | `mmm_reversal.py` | P2 | Detects and handles trend reversals | `test_sealed_mmm_reversal.py` | DONE | CLEAN — Decimal precision, cooldown correct, trigger snapshot delegation correct. |
+| M-29 | `mmm_pending_orders.py` | P2 | Tracks and times out pending (unfilled) orders | `test_sealed_mmm_pending_orders.py` | DONE | CLEAN — thread-safe registry, dual stale thresholds (90s sentinel / 900s real), conservative error fallback. |
+| M-30 | `mmm_adopter.py` | P2 | Adopts orphaned/existing positions into session | `test_sealed_mmm_adopter.py` | DONE | BUG-3 (P3): silent `except Exception: pass` in Greeks fetch — loses mark_price with no log. Fixed → `log.debug()`. |
+| M-31 | `mmm_trigger.py` | P2 | External triggers — manual actions from UI/API | `test_sealed_mmm_trigger.py` | DONE | CLEAN — %-based trigger math correct, zero snapshot guard applied, operator pin auto-expiry sound, dollar floor OR condition correct. |
+| M-32 | `mmm_initializer.py` | P2 | Session initialization — creates fresh session state | ✗ | DONE | BUG-2 (P3): 4 falsy-unsafe `or` chains in `_extract_ticker_data` — `0.0` falls through. Fixed → key-presence checks. |
+| M-33 | `mmm_straddle_roll.py` | P2 | Rolls straddle positions to new strikes/expiries | ✗ | DONE | BUG-1 (P1): Gate 10 inline P&L missing `total_fees` and `reverse_pnl` — loss abort fires late. Fixed → `compute_current_total_pnl()`. |
 | M-34 | `mmm_observer.py` | P3 | Observes and logs algo state — read-only monitoring | ✗ | TODO | |
 | M-35 | `mmm_activity.py` | P3 | Activity log — records what the algo did and why | ✗ | TODO | |
 | M-36 | `mmm_audit_log.py` | P3 | Audit trail — immutable record of all order events | ✗ | TODO | |
@@ -180,10 +180,10 @@ Known invariants to check against (from CLAUDE.md):
 | Phase | Modules | Done | Remaining |
 |-------|---------|------|-----------|
 | P0 — Safety Critical | M-01 to M-08 | 8 | 0 |
-| P1 — Order Execution | M-09 to M-17 | 4 | 5 |
-| P2 — Logic / P&L | M-18 to M-33 | 0 | 16 |
+| P1 — Order Execution | M-09 to M-17 | 9 | 0 |
+| P2 — Logic / P&L | M-18 to M-33 | 16 | 0 |
 | P3 — Supporting / Infra | M-34 to M-51 | 0 | 18 |
-| **Total** | **51** | **12** | **39** |
+| **Total** | **51** | **33** | **18** |
 
 ---
 

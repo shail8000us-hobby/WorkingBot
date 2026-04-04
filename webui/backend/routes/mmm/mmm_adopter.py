@@ -140,8 +140,10 @@ def fetch_exchange_btc_options(expiry_filter: str = None) -> Dict[str, Any]:
                     if live_mark > 0:
                         mark_price = live_mark
                         unrealized_pnl = (entry_price - mark_price) * lots * LOT_SIZE_BTC
-            except Exception:
-                pass
+            except Exception as e:
+                # BATCH-D FIX BUG-3: Log instead of silently swallowing — ticker failure
+                # also loses live mark_price, making unrealized_pnl stale.
+                log.debug(f"[Adopter] Ticker fetch failed for {product_symbol}: {e}")
 
             side = 'CE' if option_type == 'C' else 'PE'
 

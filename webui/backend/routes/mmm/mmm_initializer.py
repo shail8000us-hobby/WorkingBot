@@ -724,10 +724,12 @@ class MMMInitializer:
         if not quotes and 'raw' in ticker:
             quotes = ticker.get('raw', {}).get('quotes', {})
 
-        bid = float(quotes.get('best_bid') or ticker.get('best_bid') or 0)
-        ask = float(quotes.get('best_ask') or ticker.get('best_ask') or 0)
-        bid_size = float(quotes.get('best_bid_size') or ticker.get('bid_size') or 0)
-        ask_size = float(quotes.get('best_ask_size') or ticker.get('ask_size') or 0)
+        # BATCH-D FIX BUG-2: key-presence check instead of falsy-unsafe `or` chain.
+        # 0.0 is a valid value (e.g. zero bid = no bids) but is falsy in Python.
+        bid = float(quotes['best_bid'] if 'best_bid' in quotes else ticker.get('best_bid', 0))
+        ask = float(quotes['best_ask'] if 'best_ask' in quotes else ticker.get('best_ask', 0))
+        bid_size = float(quotes['best_bid_size'] if 'best_bid_size' in quotes else ticker.get('bid_size', 0))
+        ask_size = float(quotes['best_ask_size'] if 'best_ask_size' in quotes else ticker.get('ask_size', 0))
         mark = float(ticker.get('mark_price') or 0)
         mid = (bid + ask) / 2 if (bid > 0 and ask > 0) else mark
 

@@ -22,6 +22,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import Dict, Tuple, Any
 
 from .mmm_constants import LOT_SIZE_BTC
+from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
 from .mmm_dte_presets import SHORT_STRADDLE_CATEGORY
 from .mmm_close_at_5 import close_position
 from .mmm_engine import get_engine
@@ -229,12 +230,9 @@ def check_straddle_roll_gates(
         return False, 'distance_below_trigger', {}
 
     # ── Gate 10 — Loss abort using total P&L (HIGH-RISK FIX H-1: Decimal precision) ──
-    realized_dec   = _D(session.get('realized_pnl', 0))
-    unrealized_dec = _D(session.get('unrealized_pnl', 0))
-    perp = session.get('perp_hedge', {})
-    perp_pnl_dec   = _D(perp.get('realized_pnl', 0.0)) + _D(perp.get('unrealized_pnl', 0.0))
-
-    total_pnl_dec  = realized_dec + unrealized_dec + perp_pnl_dec
+    # BATCH-D FIX BUG-1: Use canonical _pnl_total() which includes fees and reverse_pnl.
+    # Previous inline formula omitted total_fees and reverse_pnl (same pattern as M-01 BUG-2).
+    total_pnl_dec  = _D(_pnl_total(session))
     total_loss_dec = abs(min(total_pnl_dec, _D(0)))
 
     original_credit_dec = _D(session.get('_straddle_initial_credit', 0))

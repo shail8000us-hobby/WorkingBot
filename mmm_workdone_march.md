@@ -1848,3 +1848,18 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 5. **P3 (M-21):** Singleton `get_storage()` lacked thread safety. Added double-checked lock.
 
 **Files changed:** `mmm_scaler.py`, `mmm_breakeven_engine.py`, `mmm_gamma_detector.py`, `mmm_state.py`, `mmm_storage.py`
+
+---
+
+## 2026-04-04: Batch D Systematic Safety Audit (8 P2 Modules)
+**Modules Audited:** M-26 to M-33 (`mmm_adaptive`, `mmm_atm_shield`, `mmm_reversal`, `mmm_pending_orders`, `mmm_adopter`, `mmm_trigger`, `mmm_initializer`, `mmm_straddle_roll`)
+**Result:** 3 bugs found and fixed across 3 modules (5 modules CLEAN). 1248/1248 tests passing.
+
+**Key Fixes:**
+1. **P1 (M-33):** `mmm_straddle_roll.py` Gate 10 loss abort used inline `realized + unrealized + perp_pnl`, missing `total_fees` and `reverse_pnl`. Same pattern as M-01 BUG-2. Loss abort gate saw inflated P&L → fires too late in losing sessions. Fixed → `compute_current_total_pnl()`.
+2. **P3 (M-32):** `mmm_initializer.py` `_extract_ticker_data` had 4 falsy-unsafe `or` chains — `0.0` (valid zero bid) treated as falsy. Same pattern as M-02 BUG-3. Fixed → key-presence checks.
+3. **P3 (M-30):** `mmm_adopter.py` `fetch_exchange_btc_options` silently swallowed Greeks/ticker fetch exceptions with bare `except Exception: pass`. Fixed → `log.debug()` for operator visibility.
+
+**Clean modules:** `mmm_adaptive.py` (stateless scoring engine), `mmm_atm_shield.py` (deferred re-sell correct), `mmm_reversal.py` (Decimal + cooldown correct), `mmm_pending_orders.py` (thread-safe, dual stale thresholds), `mmm_trigger.py` (%-based math, zero-snapshot guard, operator pin auto-expiry).
+
+**Files changed:** `mmm_straddle_roll.py`, `mmm_initializer.py`, `mmm_adopter.py`
