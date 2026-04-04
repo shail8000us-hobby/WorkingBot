@@ -1,19 +1,29 @@
 # MMM Algo — Module Audit Plan
 
 **Purpose:** Systematic, context-window-safe audit of all 51 MMM modules.
-**Method:** One module per session. Each session audits a single file by loading the module + its direct callers + the state fields it touches — keeping total context manageable.
+**Method:** Audit by tier batch — one tier per session (P0 = 4 modules, P1 = 5 modules, etc.). Each module is read in full; direct callers and state fields are cross-checked. Commit after each batch so findings are never lost to compaction.
 **Goal:** Find hidden bugs, broken invariants, race conditions, and cross-module interaction issues. Make the algo robust, correct, and fast.
 
 ---
 
 ## How To Run an Audit Session
 
-1. Upload this file to Claude Code.
-2. Say: **"Audit module M-XX"** (use the ID from the registry below).
-3. Claude will load the file, its callers, its state fields, and run the checklist.
-4. After the session, update the `Status` column in the registry below to `DONE` and note key findings.
+1. Open a new chat window. Upload this file (`mmm_audit_plan.md`) to Claude Code.
+2. Say: **"Audit batch [A/B/C/D/E]"** — Claude will audit all modules in that batch in sequence.
+3. For each module: read in full, cross-check callers, run the checklist A–G, list all bugs with severity.
+4. Apply all fixes found, run sealed tests, commit. Then update the `Status` column below.
 
-> **Never audit across multiple modules in one session.** Keep it focused.
+### Recommended Batch Groups
+
+| Batch | Modules | Count | Priority |
+|-------|---------|-------|----------|
+| **A** | M-05 `mmm_executor.py`, M-06 `mmm_margin_guardian.py`, M-07 `mmm_circuit_breaker.py`, M-08 `mmm_fill_sync.py` | 4 | P0 — do first |
+| **B** | M-09 `mmm_perp_hedge.py`, M-10 `mmm_replenish.py`, M-15 `mmm_wind_down.py`, M-16 `mmm_exit_all.py`, M-17 `mmm_reverse.py` | 5 | P1 |
+| **C** | M-18 to M-25 (`mmm_pnl_core`, `mmm_regime`, `mmm_state`, `mmm_storage`, `mmm_gamma`, `mmm_gamma_detector`, `mmm_breakeven_engine`, `mmm_scaler`) | 8 | P2 first half |
+| **D** | M-26 to M-33 (`mmm_adaptive`, `mmm_atm_shield`, `mmm_reversal`, `mmm_pending_orders`, `mmm_adopter`, `mmm_trigger`, `mmm_initializer`, `mmm_straddle_roll`) | 8 | P2 second half |
+| **E** | M-34 to M-51 (observer, activity, audit log, analytics, performance, watchdog, websocket, telegram, api, config, constants, etc.) | 18 | P3 — infra/supporting |
+
+> **Rule:** Commit after each batch. Never leave unfixed bugs uncommitted across a compact boundary.
 
 ---
 
@@ -78,10 +88,10 @@ When auditing a module, check ALL of the following:
 | M-02 | `mmm_engine.py` | P0 | Core P&L formulas, adjustment sizing, lot math | ✗ | DONE | BUG-1: `reconcile_pnl` compared options-only `tracked` vs perp+reverse-inclusive `net_pnl` → phantom discrepancies every heartbeat. BUG-2: `calculate_reversal_loss` had no explicit None check (unlike `calculate_standard_loss`). BUG-3: commission `or` chain falsy-unsafe for `paid_commission=0.0`. BUG-4: no sealed tests for 4 core functions (deferred). All 3 fixed 2026-04-04. |
 | M-03 | `mmm_guardian.py` | P0 | Multi-layer safety guardian — generation guard, G5 heartbeat check | ✗ | DONE | BUG-1 (P2): `handle_stale_monitor` skipped `_cleanup_roll_lock` — successor monitor blocked on straddle rolls. BUG-2 (P3): `record_close` accepted any `side` string silently — could corrupt `_beat_closed_lots`. BUG-3 (deferred): no sealed tests. 2 fixed 2026-04-04. |
 | M-04 | `mmm_safety.py` | P0 | Max loss check, lot velocity, gate enforcement | `test_sealed_mmm_safety.py` | DONE | BUG-1 (P2): `check_pnl_guardrail` used inline P&L formula missing fees and reverse_pnl (while `check_max_loss` and `check_trailing_stop` both used `compute_current_total_pnl`). BUG-2 (deferred): no sealed tests for `check_lot_velocity` / `check_whipsaw`. 1 fixed 2026-04-04. |
-| M-05 | `mmm_executor.py` | P0 | Places real orders on exchange — BUY/SELL/CANCEL | ✗ | TODO | |
-| M-06 | `mmm_margin_guardian.py` | P0 | Real-time margin check, emergency close trigger | `test_sealed_mmm_margin_guardian_async.py` | TODO | |
-| M-07 | `mmm_circuit_breaker.py` | P0 | Halts trading on repeated failures or anomalies | `test_sealed_mmm_circuit_breaker.py` | TODO | |
-| M-08 | `mmm_fill_sync.py` | P0 | Syncs exchange fills back into session state | ✗ | TODO | |
+| M-05 | `mmm_executor.py` | P0 | Places real orders on exchange — BUY/SELL/CANCEL | ✗ | DONE | BUG-1 (CRITICAL/P2): `emergency_execute()` returned success=True when state='filled' but unfilled_size==size (0 lots filled) — falsely marks position closed. BUG-2 (P3): `execute_adjustment()` missing `session_id` param — activity logs had no session context. BUG-3 (P3): cancel-during-reprice path used inline fill-price validation instead of `_parse_fill_price()` — missing range check. All 3 fixed 2026-04-04. |
+| M-06 | `mmm_margin_guardian.py` | P0 | Real-time margin check, emergency close trigger | `test_sealed_mmm_margin_guardian_async.py` | DONE | CLEAN — margin formula, tier evaluation, lots-to-close estimate all correct. `or 0` patterns are safe single-fallback None guards (not multi-chain). |
+| M-07 | `mmm_circuit_breaker.py` | P0 | Halts trading on repeated failures or anomalies | `test_sealed_mmm_circuit_breaker.py` | DONE | CLEAN — state machine transitions correct, exponential backoff correct, sliding window deque safe. |
+| M-08 | `mmm_fill_sync.py` | P0 | Syncs exchange fills back into session state | ✗ | DONE | BUG-1 (P3): `_get_session_symbols()` called `self._monitor.initializer.build_symbol()` without None guard — AttributeError silently swallowed, fills not matched. Fixed with getattr guard + fallback to stored symbol strings. 1 fixed 2026-04-04. |
 | M-09 | `mmm_perp_hedge.py` | P1 | Manages perpetual hedge positions | `test_sealed_mmm_perp_hedge.py` | TODO | |
 | M-10 | `mmm_replenish.py` | P1 | Auto-replenishes closed side using ranked strikes | `test_sealed_mmm_replenish.py` | TODO | |
 | M-11 | `mmm_close_at_5.py` | P1 | Closes positions when premium ≤ threshold | `test_sealed_mmm_close_at_5.py` | DONE | BUG-1 (P3): `_commission` extraction falsy-unsafe (same `or` chain pattern as M-02 BUG-3 — `paid_commission=0.0` falls through to `commission`). 1 fixed 2026-04-04. |
@@ -169,11 +179,11 @@ Known invariants to check against (from CLAUDE.md):
 
 | Phase | Modules | Done | Remaining |
 |-------|---------|------|-----------|
-| P0 — Safety Critical | M-01 to M-08 | 4 | 4 |
+| P0 — Safety Critical | M-01 to M-08 | 8 | 0 |
 | P1 — Order Execution | M-09 to M-17 | 4 | 5 |
 | P2 — Logic / P&L | M-18 to M-33 | 0 | 16 |
 | P3 — Supporting / Infra | M-34 to M-51 | 0 | 18 |
-| **Total** | **51** | **8** | **43** |
+| **Total** | **51** | **12** | **39** |
 
 ---
 
@@ -239,3 +249,7 @@ grep -n "process_close_at_5\|_process_adjustment\|_replenish" webui/backend/rout
 | 2026-04-04 | M-12 `mmm_strike_shift.py` | Claude | 0 | — | CLEAN |
 | 2026-04-04 | M-13 `mmm_harvester.py` | Claude | 0 | — | CLEAN |
 | 2026-04-04 | M-14 `mmm_recycler.py` | Claude | 0 | — | CLEAN |
+| 2026-04-04 | M-05 `mmm_executor.py` | Claude | 3 | 3 fixed | BUG-1 CRITICAL/P2 (`emergency_execute` returns success on 0-lot fill). BUG-2 P3 (`execute_adjustment` missing session_id). BUG-3 P3 (cancel-reprice path: inline validation missing range check). |
+| 2026-04-04 | M-06 `mmm_margin_guardian.py` | Claude | 0 | — | CLEAN |
+| 2026-04-04 | M-07 `mmm_circuit_breaker.py` | Claude | 0 | — | CLEAN |
+| 2026-04-04 | M-08 `mmm_fill_sync.py` | Claude | 1 | 1 fixed | BUG-1 P3 (`_get_session_symbols` unguarded `initializer` access silently fails fill sync). |

@@ -560,18 +560,16 @@ class MMMExecutor:
                     # May have filled while trying to cancel — check status
                     status = await self._get_order_status(order_id, product_id, rest_client)
                     if status and self._is_filled(status):
-                        # CRITICAL: Validate fill price before accepting
-                        # Robust v2 Fix #22 (cancel-during-reprice): Guard float parsing
-                        import math as _math_c  # noqa
+                        # Audit fix BUG-3: use _parse_fill_price() (same as main fill path)
+                        # instead of the old inline validation which omitted the range check
+                        # (price > 0 and < 1_000_000) that _parse_fill_price() provides.
                         raw_fill = status.get('average_fill_price')
                         _cancel_fill_ok = False
-                        if raw_fill and str(raw_fill).strip() != '' and str(raw_fill) != '0':
-                            try:
-                                fill_price = float(raw_fill)
-                                if not (_math_c.isnan(fill_price) or _math_c.isinf(fill_price)):
-                                    _cancel_fill_ok = True
-                            except (ValueError, TypeError):
-                                log.error(f"❌ Order {order_id} cancel-path unparseable fill_price: {raw_fill!r}")
+                        try:
+                            fill_price = _parse_fill_price(raw_fill)
+                            _cancel_fill_ok = True
+                        except ValueError as _cp_err:
+                            log.error(f"❌ Order {order_id} cancel-path invalid fill_price: {_cp_err}")
                         if _cancel_fill_ok:
                             # Robust v2 Fix #3 (cancel-during-reprice): Check unfilled_size
                             _cancel_raw_uf = status.get('unfilled_size')
@@ -811,15 +809,31 @@ class MMMExecutor:
                         )
                         fill_price = aggressive_price
 
-                    # Robust v2 Fix #3 (emergency path): Guard unfilled_size parsing
+                    # Audit fix BUG-1: Guard unfilled_size parsing.
+                    # When state='filled' but unfilled_size==size, nothing was actually
+                    # filled (exchange data race on reduce_only orders — same scenario
+                    # as smart_execute lines 432-457 which returns _failure() here).
+                    # Returning success=True in this case would falsely mark the position
+                    # closed on exchange while it remains open, silently bypassing max-loss.
                     raw_unfilled = order_data.get('unfilled_size')
                     if raw_unfilled is not None:
                         try:
                             unfilled_int = int(raw_unfilled)
                             filled_size = size - unfilled_int
                             if filled_size <= 0:
-                                log.error(f"❌ Emergency order {order_id} filled_size={filled_size} (size={size}, unfilled={unfilled_int})")
-                                filled_size = size  # Emergency: assume full fill as last resort
+                                log.error(
+                                    f"❌ Emergency order {order_id} state=filled but "
+                                    f"unfilled_size={unfilled_int} == size={size} "
+                                    f"(0 lots actually filled). Returning failure — "
+                                    f"position NOT closed on exchange."
+                                )
+                                return self._failure(
+                                    f"Emergency order filled but computed filled_size={filled_size} "
+                                    f"(unfilled_size={unfilled_int} == size={size})",
+                                    symbol, side, size,
+                                    order_id=order_id, attempts=attempt,
+                                    total_time=round(time.time() - start_time, 2),
+                                )
                         except (ValueError, TypeError):
                             log.error(f"❌ Emergency order {order_id} unparseable unfilled_size: {raw_unfilled!r}")
                             filled_size = size  # Emergency: assume full fill as last resort
@@ -1109,6 +1123,7 @@ class MMMExecutor:
         close_lots: int,
         open_symbol: str,
         open_lots: int,
+        session_id: str = None,  # Audit fix BUG-2: was missing — activity logs had no session context
     ) -> Dict[str, Any]:
         """
         Execute an adjustment: buy-to-close old + sell-to-open new.
@@ -1121,6 +1136,7 @@ class MMMExecutor:
             close_lots: Lots to close
             open_symbol: Symbol to sell (open)
             open_lots: Lots to open
+            session_id: Session ID for activity logging
 
         Returns:
             {
@@ -1136,7 +1152,8 @@ class MMMExecutor:
 
         # Step 1: Close existing position
         close_result = await self.smart_execute(
-            close_symbol, 'buy', close_lots, reduce_only=True
+            close_symbol, 'buy', close_lots, reduce_only=True,
+            session_id=session_id,
         )
 
         if not close_result.get('success'):
@@ -1151,7 +1168,8 @@ class MMMExecutor:
 
         # Step 2: Open new position
         open_result = await self.smart_execute(
-            open_symbol, 'sell', open_lots
+            open_symbol, 'sell', open_lots,
+            session_id=session_id,
         )
 
         close_cost = close_result['fill_price'] * close_result.get('filled_size', close_lots)

@@ -1801,3 +1801,21 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 **mmm_recycler.py** — CLEAN. Phase B recomputes lots from actual Phase A results (not pre-planned). Rollback uses deep-copied canonical position objects (not sparse view dicts). Viability 3-check (ratio, net lot gain, affordability) correct.
 
 **Files changed:** `mmm_close_at_5.py`
+
+## 2026-04-04 — Batch A audit complete: M-05, M-06, M-07, M-08
+
+**Session goal:** Systematic audit of the 4 remaining P0 modules in Batch A.
+
+**mmm_executor.py** — 3 bugs fixed:
+- BUG-1 (CRITICAL/P2): `emergency_execute()` — when exchange reports `state='filled'` but `unfilled_size == size` (0 lots actually filled, exchange data race on reduce_only orders), the code was setting `filled_size = size` and returning `success=True`. This mirrors the smart_execute path (lines 432-457) which correctly returns `_failure()` for this case. A false success here falsely marks the position closed in session state while the exchange still has the short open — critical for max-loss and margin situations. Fix: return `_failure()` with descriptive message identical to smart_execute behavior.
+- BUG-2 (P3): `execute_adjustment()` was missing a `session_id` parameter. Both inner `smart_execute()` calls were passed `session_id=None`, so all activity log entries from adjustments (buy-to-close + sell-to-open cycles) had no session context. Fix: add `session_id: str = None` parameter and thread it through both calls.
+- BUG-3 (P3): Cancel-during-reprice path used an inline fill-price validation block (legacy Robust v2 Fix #22) instead of the `_parse_fill_price()` helper. The inline version omitted the `price <= 0 or price > 1_000_000` range check. Fix: replace inline block with `_parse_fill_price()` call inside try/except ValueError.
+
+**mmm_margin_guardian.py** — CLEAN. Margin formula (`balance - available` primary, with blocked/portfolio/pos+order fallbacks) correct. Tier evaluation thresholds use proper `.get(key, default)` (no falsy-unsafe `or` chains). `estimate_lots_to_close()` proportional reduction math correct. `MarginGuardian.check()` consecutive-critical escalation path correct.
+
+**mmm_circuit_breaker.py** — CLEAN. Three-state machine (CLOSED/OPEN/HALF_OPEN) with exponential backoff (`RESET_TIMEOUT * 2^(depth-1)`, capped at 300s) correct. `_consecutive_opens` correctly tracks re-open-after-probe-failure count (used for `should_alert`). Sliding window deque safe. `summary()` reads fields outside `_lock` but is display-only.
+
+**mmm_fill_sync.py** — 1 bug fixed:
+- BUG-1 (P3): `_get_session_symbols()` called `self._monitor.initializer.build_symbol()` with no guard on `self._monitor.initializer`. If the monitor's initializer is None (not yet initialized or initialization failed), this raises `AttributeError` which is silently swallowed by the `sync()` wrapper — entire fill sync fails for that heartbeat with no warning. Fix: use `getattr(self._monitor, 'initializer', None)`, fall back to stored `pos.get('symbol')` strings when initializer is None, and emit a warning so the failure is visible.
+
+**Files changed:** `mmm_executor.py`, `mmm_fill_sync.py`

@@ -409,6 +409,13 @@ class FillSyncer:
     def _get_session_symbols(self, session: Dict, expiry: str) -> set:
         """All symbols this session has ever managed."""
         symbols = set()
+
+        # Audit fix BUG-1: guard against None initializer — if monitor is not fully
+        # initialized, build_symbol() would raise AttributeError which gets silently
+        # swallowed by sync(). Log a warning instead of letting a hidden failure
+        # prevent all fills from being matched.
+        initializer = getattr(self._monitor, 'initializer', None)
+
         for side_key in ('ce', 'pe'):
             side = session.get(side_key, {})
             opt = 'call' if side_key == 'ce' else 'put'
@@ -417,16 +424,31 @@ class FillSyncer:
             if sym:
                 symbols.add(sym)
 
+            if initializer is None:
+                # Can still use the literal symbol strings already stored on positions
+                for pos in side.get('positions', []):
+                    s = pos.get('symbol', '')
+                    if s:
+                        symbols.add(s)
+                continue
+
             active_strike = side.get('active_strike', 0)
             if active_strike:
-                symbols.add(self._monitor.initializer.build_symbol(
+                symbols.add(initializer.build_symbol(
                     opt, 'BTC', int(active_strike), expiry))
 
             for pos in side.get('positions', []):
                 s = pos.get('strike', 0)
                 if s:
-                    symbols.add(self._monitor.initializer.build_symbol(
+                    symbols.add(initializer.build_symbol(
                         opt, 'BTC', int(s), expiry))
+
+        if initializer is None:
+            sid = session.get('session_id', '?')
+            log.warning(
+                f"[{sid}] FillSync: monitor.initializer is None — "
+                f"symbol set built from stored symbols only (strikes may be missing)"
+            )
 
         return symbols
 
