@@ -213,3 +213,6 @@ webui/frontend.log
 webui/webui.log
 backtest_ui/*.log
 webui/backend/logs/
+# Claw Code local artifacts
+.claude/settings.local.json
+.claude/sessions/

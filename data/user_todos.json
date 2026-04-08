@@ -218,5 +218,25 @@
     "pinned": false,
     "createdAt": "2026-03-21T12:54:52.257379",
     "updatedAt": "2026-03-21T12:54:52.257386"
+  },
+  {
+    "id": "1775106908245",
+    "text": "",
+    "completed": false,
+    "priority": "medium",
+    "category": null,
+    "pinned": false,
+    "createdAt": "2026-04-02T10:45:08.245029",
+    "updatedAt": "2026-04-02T10:45:08.245040"
+  },
+  {
+    "id": "1775231010780",
+    "text": "CLI test at 21:13:30",
+    "completed": false,
+    "priority": "medium",
+    "category": null,
+    "pinned": false,
+    "createdAt": "2026-04-03T21:13:30.780968",
+    "updatedAt": "2026-04-03T21:13:30.780979"
   }
 ]

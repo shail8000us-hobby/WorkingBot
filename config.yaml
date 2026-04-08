@@ -12,7 +12,7 @@ instances:
     product_id: 27
     grid:
       geometry:
-        reference: 67500
+        reference: 68500
         lower: 66000
         upper: 72000
         step: 500
@@ -20,7 +20,7 @@ instances:
         max_open_positions: 20
         lot_size: 5
         max_open_orders: 20
-        max_qty_per_order: 1
+        max_qty_per_order: 5
       behavior:
         strict_grid: true
         rung_snap_mode: below

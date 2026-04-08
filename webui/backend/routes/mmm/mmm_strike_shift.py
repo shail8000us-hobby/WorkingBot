@@ -344,6 +344,7 @@ def activate_new_strike(
     lots: int,
     order_id: str = '',
     client_order_id: str = '',
+    old_premium: float = 0.0,
 ) -> Dict:
     """
     Set the new active strike after a shift.
@@ -453,13 +454,15 @@ def activate_new_strike(
             severity='INFO',
             remark=_ber('STRIKE_SHIFT', 'shifted',
                         side=side, old_strike=_old_strike,
-                        new_strike=int(new_strike), old_premium=fill_premium),
+                        new_strike=int(new_strike),
+                        old_premium=old_premium if old_premium > 0 else fill_premium),
             details={
                 'side': side,
                 'old_strike': _old_strike,
                 'new_strike': new_strike,
                 'lots': lots,
                 'fill_premium': fill_premium,
+                'old_premium': old_premium,
             },
         )
     except Exception:

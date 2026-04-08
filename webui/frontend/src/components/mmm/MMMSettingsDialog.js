@@ -33,6 +33,7 @@ import {
   InputLabel,
   FormControl,
   IconButton,
+  InputAdornment,
 } from '@mui/material';
 import {
   Settings as SettingsIcon,
@@ -42,6 +43,10 @@ import {
   HelpOutline as HelpIcon,
   Star as StarIcon,
   StarBorder as StarBorderIcon,
+  ArrowBack as ArrowBackIcon,
+  Search as SearchIcon,
+  Close as CloseIcon,
+  OpenInNew as OpenInNewIcon,
 } from '@mui/icons-material';
 import mmmService from './mmmService';
 import { HELP } from './MMMEducation';
@@ -52,6 +57,84 @@ import { HELP } from './MMMEducation';
 
 // Sealed params — logic is contract-tested and protected. Badge shown in UI.
 const SEALED_PARAMS = new Set(['max_loss_amount', 'initial_lots', 'adjustment_interval']);
+
+// =============================================================================
+// Category System — semantic hierarchy for navigator color coding
+// =============================================================================
+
+const CATEGORY_META = {
+  critical: {
+    label: 'CRITICAL',
+    base: '#ef4444',
+    bg: 'rgba(239,68,68,0.06)',
+    border: 'rgba(239,68,68,0.22)',
+    hoverBorder: 'rgba(239,68,68,0.50)',
+    hoverBg: 'rgba(239,68,68,0.11)',
+    badgeBg: 'rgba(239,68,68,0.13)',
+    badgeText: '#fca5a5',
+    dividerLabel: '⚠ Risk & Safety',
+  },
+  core: {
+    label: 'CORE',
+    base: '#3b82f6',
+    bg: 'rgba(59,130,246,0.05)',
+    border: 'rgba(59,130,246,0.20)',
+    hoverBorder: 'rgba(59,130,246,0.45)',
+    hoverBg: 'rgba(59,130,246,0.09)',
+    badgeBg: 'rgba(59,130,246,0.13)',
+    badgeText: '#93c5fd',
+    dividerLabel: '⚙ Core Strategy',
+  },
+  execution: {
+    label: 'EXECUTION',
+    base: '#10b981',
+    bg: 'rgba(16,185,129,0.05)',
+    border: 'rgba(16,185,129,0.18)',
+    hoverBorder: 'rgba(16,185,129,0.40)',
+    hoverBg: 'rgba(16,185,129,0.09)',
+    badgeBg: 'rgba(16,185,129,0.12)',
+    badgeText: '#6ee7b7',
+    dividerLabel: '⚡ Execution & Performance',
+  },
+  advanced: {
+    label: 'ADVANCED',
+    base: '#a855f7',
+    bg: 'rgba(168,85,247,0.05)',
+    border: 'rgba(168,85,247,0.20)',
+    hoverBorder: 'rgba(168,85,247,0.40)',
+    hoverBg: 'rgba(168,85,247,0.09)',
+    badgeBg: 'rgba(168,85,247,0.12)',
+    badgeText: '#d8b4fe',
+    dividerLabel: '🔬 Advanced / Experimental',
+  },
+};
+
+// Each section → category key. Determines card color + sort order in navigator.
+const SECTION_CATEGORY = {
+  safety:            'critical',
+  marginGuardian:    'critical',
+  expiry:            'critical',
+  windDown:          'critical',
+  atmShield:         'critical',
+  consecutiveDir:    'critical',
+  lotVelocity:       'critical',
+  core:              'core',
+  triggers:          'core',
+  regimeControls:    'core',
+  positionLifecycle: 'core',
+  balanceControl:    'core',
+  breakevenEngine:   'core',
+  perpHedge:         'execution',
+  adaptive:          'execution',
+  favorableScaleUp:  'execution',
+  autoReplenish:     'execution',
+  closeAt5Watcher:   'execution',
+  adaptiveTuning:    'execution',
+  gammaDetector:     'advanced',
+  reverseMode:       'advanced',
+};
+
+const CATEGORY_ORDER = ['critical', 'core', 'execution', 'advanced'];
 
 const PARAM_GROUPS = {
   core: {
@@ -64,7 +147,7 @@ const PARAM_GROUPS = {
     title: 'Trigger & Adjustment',
     color: '#4caf50',
     blurb: 'Controls when the algo adjusts and how it shifts strikes. Lower trigger = more sensitive.',
-    params: ['min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'proactive_shift_enabled', 'pre_sell_shift_enabled', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
+    params: ['min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold', 'shift_threshold_pct', 'shift_target_premium', 'shift_premium_tolerance', 'proactive_shift_enabled', 'pre_sell_shift_enabled', 'shift_match_opposite_lots', 'max_adjustments', 'cooldown_on_reversal'],
   },
   safety: {
     title: 'Safety Limits',
@@ -107,6 +190,9 @@ const PARAM_GROUPS = {
       'vol_regime_cooldown_beats',
       'gamma_cap_enabled', 'gamma_soft_limit', 'gamma_hard_limit',
       'gamma_emergency_limit', 'gamma_near_expiry_multiplier',
+      'gamma_directional_min_pct',
+      'gamma_side_imbalance_ratio', 'gamma_dte_relax_hours',
+      'gamma_dte_hedge_multiplier', 'gamma_rescue_window_minutes',
       'trend_enabled', 'trend_tier1_pct', 'trend_tier2_pct',
       'trend_tier3_pct', 'trend_tier4_pct', 'trend_tier1_lot_reduction',
       'trend_retrace_pct', 'trend_ema_period', 'trend_ema_slope_threshold',
@@ -347,6 +433,7 @@ const PARAM_TOOLTIPS = {
   shift_threshold: HELP.shift_threshold || 'Minimum premium at the hedge strike to avoid a strike shift.',
   shift_threshold_pct: HELP.shift_threshold_pct || 'Dynamic shift threshold as % of entry premium.',
   shift_target_premium: 'Target premium when looking for a new strike after a shift. The algo picks the strike closest to this premium value. Higher = deeper OTM (safer but less premium). Lower = closer to ATM (more premium but riskier).',
+  shift_premium_tolerance: '±$ tolerance around shift_target_premium for live candidate validation. Before placing a shift order, the bot fetches the selected strike\'s current live premium. If it has drifted outside target±tolerance, the chain is rescanned for a better strike. Critical for 0DTE where premiums move fast. Example: target=50, tolerance=10 → rescan if current premium is outside $40–$60. Set 0 to disable validation.',
   proactive_shift_enabled: 'Master switch for proactive strike shifting. When ON, the algo detects when the active-strike premium decays below shift_threshold and proactively shifts to a better strike before being forced to. Disable to lock the algo to its current strikes until an adjustment naturally triggers a shift. Default ON.',
   pre_sell_shift_enabled: 'Experimental: Before selling hedge lots at a cheap premium, shift to a better strike first. In an up-move, CE rises but PE drops — without this, the algo keeps selling PE at 60-80 when target is 100, causing lot imbalance. With this ON: if PE < shift_target_premium, find a closer-to-ATM PE strike at ~100 first, THEN sell fewer lots there. Falls back to current behavior if no better strike exists in the chain. Default OFF — enable to test.',
   shift_match_opposite_lots: 'Delta-neutral balance: when a strike shift opens a new position, sell AT LEAST as many lots as the opposite side has active. Example: PE has 11 lots, CE shifts → CE opens 11 lots too (not just 4). Prevents directional bias from lot asymmetry. Trend-tier lot reduction is applied proportionally so risk controls are respected. Recommended: ON.',
@@ -405,6 +492,11 @@ const PARAM_TOOLTIPS = {
   gamma_hard_limit: 'Dollar gamma hard limit. ALL new sell orders are blocked when exceeded. Adjustments blocked but risk-reducing trades continue. Suggested: max_loss × 0.02.',
   gamma_emergency_limit: 'Dollar gamma emergency limit. Forces wind-down buybacks to reduce gamma below the hard limit. This is the "gamma knife" defense for 0DTE. Suggested: max_loss × 0.04.',
   gamma_near_expiry_multiplier: 'In the last 30 minutes before expiry, multiply all gamma limits by this factor (e.g., 0.5 = limits cut in half). Gamma explodes near ATM at expiry — tighter control needed.',
+  gamma_directional_min_pct: 'Directional dead-band (% from session anchor): When spot has moved at least this % from the session anchor, the gamma block targets only the aggressor side — the side going ITM. Up move → block CE sells (calls going ITM). Down move → block PE sells (puts going ITM). Below this threshold, market direction is ambiguous and per-side gamma imbalance is used instead. Prevents flip-flopping when spot oscillates near anchor. Default: 0.10 (≈$67 at $67K BTC).',
+  gamma_side_imbalance_ratio: 'Tier B — Per-side gamma: One side must have ≥ this × the other side\'s dollar gamma to be identified as the danger side and blocked alone. E.g., 1.5 means PE needs 50% more $gamma than CE to be blocked. Lower = more sensitive directional blocking. Default: 1.5.',
+  gamma_dte_relax_hours: 'Tier C — DTE relax window (hours before expiry): Inside this window, hedge sells are evaluated against a relaxed limit (gamma_hard_limit × gamma_dte_hedge_multiplier). Near expiry, gamma is structurally high and the algo needs to hedge. Set to 0 to disable. Default: 2.0.',
+  gamma_dte_hedge_multiplier: 'Tier C — Relaxed hedge limit multiplier: Inside the DTE relax window, the gamma hard limit for HEDGE sells (not aggressor sells) is multiplied by this. E.g., 2.0 means hedge sells are allowed up to 2× the hard limit near expiry. Aggressor sells still use the standard hard limit. Default: 2.0.',
+  gamma_rescue_window_minutes: 'Tier D — Delta rescue window (minutes to expiry): When a trigger fires this close to expiry, the hedge sell is allowed even if a gamma regime block is active. The directional risk of NOT hedging outweighs the gamma risk near expiry. Set to 0 to disable. Only FORCE_REDUCE (gamma emergency) overrides this. Default: 120.',
   // Regime Controls — Tiered Trend Detection Guard (4 tiers: Alert → Guard → Block → Wind-Down)
   trend_enabled: 'Master switch for the tiered trend detection guard. Detects directional BTC moves from session anchor and activates graduated defences across 4 tiers. Tier 1 (Alert) reduces lot size, Tier 2 (Guard) blocks dangerous-side sells, Tier 3 (Block) blocks ALL sells, Tier 4 (Wind-Down) auto-triggers wind-down. The most impactful regime control.',
   trend_tier1_pct: 'Tier 1 — ALERT threshold (% move from anchor). When BTC moves this % from session anchor AND EMA confirms drift (or acceleration detected), lot sizes are reduced by the lot-reduction factor. At BTC $100K, 0.5% ≈ $500. Requires EMA confirmation or fast-move bypass. Recommended: 0.3–0.7.',
@@ -555,6 +647,8 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState(null);
   const [search, setSearch] = useState('');
+  // Navigator state: null = navigator screen, '_pinned' = My Controls, or a PARAM_GROUPS key
+  const [activeSection, setActiveSection] = useState(null);
 
   // Adaptive tuning indicators — derived from live session state + form values
   const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
@@ -599,6 +693,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       setErrors({});
       setSuccess(false);
       setServerError(null);
+      setActiveSection(null);
       return;
     }
 
@@ -1099,8 +1194,27 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     <Dialog open={open} onClose={() => !saving && onClose()} maxWidth="lg" fullWidth>
       <DialogTitle sx={{ pb: 1, background: '#1c2128', borderBottom: '1px solid #21262d' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-          <SettingsIcon color="primary" />
+          {activeSection ? (
+            <IconButton
+              size="small"
+              onClick={() => setActiveSection(null)}
+              sx={{ color: '#8b949e', '&:hover': { color: '#e6edf3', background: 'rgba(255,255,255,0.06)' }, mr: -0.5 }}
+            >
+              <ArrowBackIcon fontSize="small" />
+            </IconButton>
+          ) : (
+            <SettingsIcon color="primary" />
+          )}
           <span style={{ fontWeight: 600 }}>Strategy Settings</span>
+          {activeSection && (
+            <Typography sx={{
+              fontWeight: 700, fontSize: '0.93rem',
+              color: activeSection === '_pinned' ? '#ffd700' : (PARAM_GROUPS[activeSection]?.color || '#e6edf3'),
+              ml: 0.25,
+            }}>
+              / {activeSection === '_pinned' ? '⭐ My Controls' : PARAM_GROUPS[activeSection]?.title}
+            </Typography>
+          )}
           <Chip
             label={`Session: ${sessionId}`}
             size="small"
@@ -1109,18 +1223,36 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
           />
         </Box>
         <TextField
-          placeholder="Search parameters…"
+          placeholder="Search params, descriptions, or keywords… (e.g. atm, margin, trend)"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           size="small"
           fullWidth
+          autoComplete="off"
           sx={{
             mb: 1.5,
-            '& .MuiOutlinedInput-root': { background: '#0d1117' },
-            '& fieldset': { borderColor: '#30363d' },
-            '&:hover fieldset': { borderColor: '#6e7681' },
+            '& .MuiOutlinedInput-root': {
+              background: '#0d1117',
+              '& fieldset': { borderColor: search.trim() ? 'rgba(56,139,253,0.5)' : '#30363d' },
+              '&:hover fieldset': { borderColor: search.trim() ? 'rgba(56,139,253,0.7)' : '#6e7681' },
+              '&.Mui-focused fieldset': { borderColor: '#388bfd' },
+            },
           }}
-          inputProps={{ style: { fontSize: '0.82rem' } }}
+          InputProps={{
+            style: { fontSize: '0.85rem' },
+            startAdornment: (
+              <InputAdornment position="start">
+                <SearchIcon sx={{ fontSize: 16, color: search.trim() ? '#388bfd' : '#6e7681' }} />
+              </InputAdornment>
+            ),
+            endAdornment: search.trim() ? (
+              <InputAdornment position="end">
+                <IconButton size="small" onClick={() => setSearch('')} sx={{ color: '#6e7681', '&:hover': { color: '#e6edf3' }, p: '2px' }}>
+                  <CloseIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </InputAdornment>
+            ) : null,
+          }}
         />
         <Box sx={{
           background: 'rgba(56,139,253,0.08)',
@@ -1135,135 +1267,464 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         </Box>
       </DialogTitle>
 
-      <DialogContent sx={{ maxHeight: '72vh', overflowY: 'auto', background: '#161b22', p: '16px 20px' }}>
+      <DialogContent
+        sx={{
+          background: '#161b22',
+          p: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+          maxHeight: '72vh',
+        }}
+      >
         {loading && (
-          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4 }}>
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4, flex: 1 }}>
             <CircularProgress />
           </Box>
         )}
 
         {!loading && serverError && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setServerError(null)}>
+          <Alert severity="error" sx={{ mx: 2, mt: 2, mb: 1, flexShrink: 0 }} onClose={() => setServerError(null)}>
             {serverError}
           </Alert>
         )}
 
         {!loading && success && (
-          <Alert severity="success" sx={{ mb: 2 }}>
+          <Alert severity="success" sx={{ mx: 2, mt: 2, mb: 1, flexShrink: 0 }}>
             ✅ Parameters updated successfully! Heartbeat will use new values on next cycle.
           </Alert>
         )}
 
         {!loading && sessionData && (
-          <>
-            {/* ⭐ My Controls — always visible when any params are pinned */}
-            {pinned.size > 0 && (
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                  <Box sx={{ width: 3, height: 16, backgroundColor: '#ffd700', borderRadius: '2px', flexShrink: 0 }} />
-                  <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: '#ffd700' }}>
-                    ⭐ My Controls
-                  </Typography>
-                  <Chip
-                    label={`${pinned.size}`}
-                    size="small"
-                    sx={{ height: 16, fontSize: '0.65rem', background: 'rgba(255,215,0,0.12)', color: '#ffd700', border: '1px solid rgba(255,215,0,0.25)', '& .MuiChip-label': { px: '5px' } }}
-                  />
-                </Box>
-                <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem', pl: '11px' }}>
-                  💡 Click ⭐ on any parameter to pin or unpin it here.
-                </Typography>
-                <Grid container spacing={1}>
-                  {[...pinned].map(p => renderParam(p, true))}
-                </Grid>
-                <Divider sx={{ mt: 2, borderColor: '#21262d' }} />
-              </Box>
-            )}
-
+          <Box sx={{ flex: 1, overflow: 'hidden', display: 'flex', minHeight: 0 }}>
             {search.trim() ? (
-              /* Search mode: flat list, no group headers */
-              (() => {
-                const q = search.toLowerCase();
-                const params = paramsInfo?.params || {};
-                const matches = Object.keys(params).filter(p => {
-                  const info = params[p] || {};
-                  const desc = info.description || p;
-                  const pNorm = p.toLowerCase().replace(/_/g, ' ');
-                  return pNorm.includes(q) || p.toLowerCase().includes(q) || desc.toLowerCase().includes(q);
-                });
-                if (!matches.length) {
+              /* ── Search mode: grouped by section ── */
+              <Box sx={{ flex: 1, overflowY: 'auto', p: '16px 20px' }}>
+                {(() => {
+                  const q = search.toLowerCase();
+                  const params = paramsInfo?.params || {};
+
+                  // Build a map: sectionKey → matching param names
+                  // Search against: param key, description (backend), PARAM_TOOLTIPS (frontend rich text)
+                  const sectionMatches = {};
+                  Object.entries(PARAM_GROUPS).forEach(([sectionKey, group]) => {
+                    const allParams = group.params
+                      ? group.params
+                      : (group.sections || []).flatMap(s => s.params);
+                    const hits = allParams.filter(p => {
+                      const info = params[p] || {};
+                      const desc = (info.description || '').toLowerCase();
+                      const tooltip = (PARAM_TOOLTIPS[p] || '').toLowerCase();
+                      const pNorm = p.toLowerCase().replace(/_/g, ' ');
+                      const sectionTitle = group.title.toLowerCase();
+                      return (
+                        p.toLowerCase().includes(q) ||
+                        pNorm.includes(q) ||
+                        desc.includes(q) ||
+                        tooltip.includes(q) ||
+                        sectionTitle.includes(q)
+                      );
+                    });
+                    if (hits.length > 0) sectionMatches[sectionKey] = hits;
+                  });
+
+                  const matchedSections = Object.keys(sectionMatches);
+                  const totalParams = matchedSections.reduce((n, k) => n + sectionMatches[k].length, 0);
+
+                  if (!matchedSections.length) {
+                    return (
+                      <Box sx={{ textAlign: 'center', mt: 6 }}>
+                        <SearchIcon sx={{ fontSize: 36, color: '#30363d', mb: 1.5, display: 'block', mx: 'auto' }} />
+                        <Typography sx={{ color: '#6e7681', fontSize: '0.88rem' }}>
+                          No results for <strong style={{ color: '#8b949e' }}>"{search}"</strong>
+                        </Typography>
+                        <Typography sx={{ color: '#484f58', fontSize: '0.78rem', mt: 0.5 }}>
+                          Try a keyword, param name, or section name
+                        </Typography>
+                      </Box>
+                    );
+                  }
+
                   return (
-                    <Typography sx={{ color: '#6e7681', fontSize: '0.82rem', textAlign: 'center', mt: 4 }}>
-                      No parameters match "{search}"
-                    </Typography>
+                    <>
+                      {/* Summary bar */}
+                      <Box sx={{
+                        display: 'flex', alignItems: 'center', gap: 1, mb: 2,
+                        background: 'rgba(56,139,253,0.07)', border: '1px solid rgba(56,139,253,0.18)',
+                        borderRadius: '8px', px: 1.5, py: 0.75,
+                      }}>
+                        <SearchIcon sx={{ fontSize: 14, color: '#388bfd' }} />
+                        <Typography sx={{ fontSize: '0.82rem', color: '#79c0ff', flex: 1 }}>
+                          <strong>{totalParams}</strong> param{totalParams !== 1 ? 's' : ''} across{' '}
+                          <strong>{matchedSections.length}</strong> section{matchedSections.length !== 1 ? 's' : ''}
+                        </Typography>
+                        <Typography sx={{ fontSize: '0.75rem', color: '#484f58' }}>
+                          "{search}"
+                        </Typography>
+                      </Box>
+
+                      {/* One group per section */}
+                      {matchedSections.map((sectionKey, idx) => {
+                        const group = PARAM_GROUPS[sectionKey];
+                        const hits = sectionMatches[sectionKey];
+                        const cat = SECTION_CATEGORY[sectionKey] || 'advanced';
+                        const meta = CATEGORY_META[cat];
+                        return (
+                          <Box key={sectionKey} sx={{ mb: idx < matchedSections.length - 1 ? 3 : 0 }}>
+                            {/* Section header */}
+                            <Box sx={{
+                              display: 'flex', alignItems: 'center', gap: 1,
+                              mb: 1.25, pb: 0.75,
+                              borderBottom: `1px solid ${meta.border}`,
+                            }}>
+                              <Box sx={{ width: 4, height: 18, backgroundColor: group.color, borderRadius: '2px', flexShrink: 0 }} />
+                              <Typography sx={{ fontWeight: 700, fontSize: '0.88rem', color: group.color, flex: 1 }}>
+                                {group.title}
+                              </Typography>
+                              <Box component="span" sx={{
+                                fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.5px',
+                                background: meta.badgeBg, color: meta.badgeText,
+                                border: `1px solid ${meta.border}`,
+                                borderRadius: '4px', px: '5px', py: '1px',
+                              }}>
+                                {meta.label}
+                              </Box>
+                              <Chip
+                                label={`${hits.length} match${hits.length !== 1 ? 'es' : ''}`}
+                                size="small"
+                                sx={{
+                                  height: 18, fontSize: '0.63rem',
+                                  background: `${group.color}18`, color: group.color,
+                                  border: `1px solid ${group.color}40`,
+                                  '& .MuiChip-label': { px: '6px' },
+                                }}
+                              />
+                              <Tooltip title={`Open ${group.title} section`} placement="top">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => { setSearch(''); setActiveSection(sectionKey); }}
+                                  sx={{ color: '#6e7681', '&:hover': { color: group.color }, p: '3px' }}
+                                >
+                                  <OpenInNewIcon sx={{ fontSize: 13 }} />
+                                </IconButton>
+                              </Tooltip>
+                            </Box>
+                            {/* Matching params */}
+                            <Grid container spacing={1}>
+                              {hits.map(p => renderParam(p, true))}
+                            </Grid>
+                          </Box>
+                        );
+                      })}
+                    </>
                   );
-                }
-                return (
-                  <Grid container spacing={1}>
-                    {matches.map(p => renderParam(p, /* skipFilter */ true))}
-                  </Grid>
-                );
-              })()
-            ) : (
-              /* Normal grouped layout */
-              Object.entries(PARAM_GROUPS).map(([groupKey, group], idx) => (
-                <Box key={groupKey} sx={{ mb: 2 }}>
-                  {idx > 0 && <Divider sx={{ my: 2, borderColor: '#21262d' }} />}
+                })()}
+              </Box>
 
-                  {/* Group header */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    <Box sx={{ width: 3, height: 16, backgroundColor: group.color, borderRadius: '2px', flexShrink: 0 }} />
-                    <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: group.color }}>
-                      {group.title}
-                    </Typography>
-                    {groupKey === 'safety' && (
-                      <Box component="span" sx={{
-                        ml: 'auto', fontSize: '0.62rem', fontWeight: 700, letterSpacing: '0.5px',
-                        background: 'rgba(210,120,0,0.15)', border: '1px solid rgba(210,120,0,0.4)',
-                        color: '#f0883e', borderRadius: '4px', px: '6px', py: '1px', fontSize: '0.69rem',
-                      }}>⚠ CRITICAL</Box>
-                    )}
-                  </Box>
-                  {group.blurb && (
-                    <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem', pl: '11px' }}>
-                      💡 {group.blurb}
-                    </Typography>
+            ) : activeSection ? (
+              /* ── Section view: left sidebar + main content ── */
+              <>
+                {/* Left sidebar — all sections listed */}
+                <Box sx={{
+                  width: 215,
+                  flexShrink: 0,
+                  overflowY: 'auto',
+                  borderRight: '1px solid #21262d',
+                  background: '#1c2128',
+                  py: 1,
+                }}>
+                  {pinned.size > 0 && (
+                    <Box
+                      onClick={() => setActiveSection('_pinned')}
+                      sx={{
+                        display: 'flex', alignItems: 'center', gap: 1,
+                        px: 1.5, py: '7px', cursor: 'pointer',
+                        borderRadius: '6px', mx: 0.75,
+                        background: activeSection === '_pinned' ? 'rgba(255,215,0,0.10)' : 'transparent',
+                        borderLeft: activeSection === '_pinned' ? '3px solid #ffd700' : '3px solid transparent',
+                        '&:hover': { background: 'rgba(255,215,0,0.07)' },
+                        transition: 'background 0.15s',
+                      }}
+                    >
+                      <Typography sx={{
+                        fontSize: '0.80rem', color: '#ffd700',
+                        fontWeight: activeSection === '_pinned' ? 700 : 400,
+                        flex: 1, lineHeight: 1.3,
+                      }}>
+                        ⭐ My Controls
+                      </Typography>
+                      <Chip
+                        label={pinned.size}
+                        size="small"
+                        sx={{
+                          height: 16, fontSize: '0.60rem',
+                          background: 'rgba(255,215,0,0.12)', color: '#ffd700',
+                          border: 'none', '& .MuiChip-label': { px: '5px' },
+                        }}
+                      />
+                    </Box>
                   )}
-
-                  {group.sections ? (
-                    group.sections.map((section, sectionIdx) => (
-                      <Box key={sectionIdx}>
-                        {sectionIdx > 0 && <Divider sx={{ my: 1.5, borderStyle: 'dashed', borderColor: '#21262d' }} />}
-                        {section.header && (
+                  {Object.entries(PARAM_GROUPS).map(([key, group]) => {
+                    const count = group.params
+                      ? group.params.length
+                      : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
+                    const isActive = activeSection === key;
+                    return (
+                      <Box
+                        key={key}
+                        onClick={() => setActiveSection(key)}
+                        sx={{
+                          display: 'flex', alignItems: 'center', gap: 1,
+                          px: 1.5, py: '7px', cursor: 'pointer',
+                          borderRadius: '6px', mx: 0.75,
+                          background: isActive ? `${group.color}18` : 'transparent',
+                          borderLeft: isActive ? `3px solid ${group.color}` : '3px solid transparent',
+                          '&:hover': { background: `${group.color}0e` },
+                          transition: 'background 0.15s',
+                        }}
+                      >
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.6, flex: 1, minWidth: 0 }}>
+                          <Box sx={{
+                            width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                            backgroundColor: CATEGORY_META[SECTION_CATEGORY[key] || 'advanced'].base,
+                            opacity: isActive ? 1 : 0.35,
+                            transition: 'opacity 0.15s',
+                          }} />
                           <Typography sx={{
-                            display: 'block', fontWeight: 600, color: group.color || '#6e7681',
-                            mb: 1, mt: sectionIdx > 0 ? 0.5 : 0,
-                            letterSpacing: '0.6px', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.90,
+                            fontSize: '0.80rem',
+                            color: isActive ? group.color : '#9ba8b5',
+                            fontWeight: isActive ? 700 : 400,
+                            lineHeight: 1.3,
                           }}>
-                            {section.header}
+                            {group.title}
+                          </Typography>
+                        </Box>
+                        <Chip
+                          label={count}
+                          size="small"
+                          sx={{
+                            height: 16, fontSize: '0.60rem',
+                            background: isActive ? `${group.color}20` : 'rgba(139,148,158,0.10)',
+                            color: isActive ? group.color : '#6e7681',
+                            border: 'none', '& .MuiChip-label': { px: '5px' },
+                          }}
+                        />
+                      </Box>
+                    );
+                  })}
+                </Box>
+
+                {/* Main content area */}
+                <Box sx={{ flex: 1, overflowY: 'auto', p: '16px 20px' }}>
+                  {activeSection === '_pinned' ? (
+                    <>
+                      <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem' }}>
+                        💡 Click ⭐ on any parameter to pin or unpin it here.
+                      </Typography>
+                      <Grid container spacing={1}>
+                        {[...pinned].map(p => renderParam(p, true))}
+                      </Grid>
+                    </>
+                  ) : (() => {
+                    const group = PARAM_GROUPS[activeSection];
+                    if (!group) return null;
+                    return (
+                      <>
+                        {group.blurb && (
+                          <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem' }}>
+                            💡 {group.blurb}
                           </Typography>
                         )}
-                        <Grid container spacing={1}>
-                          {section.params.map((paramName) => renderParam(paramName))}
-                        </Grid>
-                      </Box>
-                    ))
-                  ) : (
-                    <Grid container spacing={1}>
-                      {group.params.map((paramName) => renderParam(paramName))}
-                    </Grid>
-                  )}
+                        {activeSection === 'safety' && (
+                          <Box component="span" sx={{
+                            display: 'inline-block', mb: 1.25,
+                            fontSize: '0.69rem', fontWeight: 700, letterSpacing: '0.5px',
+                            background: 'rgba(210,120,0,0.15)', border: '1px solid rgba(210,120,0,0.4)',
+                            color: '#f0883e', borderRadius: '4px', px: '6px', py: '1px',
+                          }}>⚠ CRITICAL</Box>
+                        )}
+                        {group.sections ? (
+                          group.sections.map((section, sectionIdx) => (
+                            <Box key={sectionIdx}>
+                              {sectionIdx > 0 && <Divider sx={{ my: 1.5, borderStyle: 'dashed', borderColor: '#21262d' }} />}
+                              {section.header && (
+                                <Typography sx={{
+                                  display: 'block', fontWeight: 600, color: group.color || '#6e7681',
+                                  mb: 1, mt: sectionIdx > 0 ? 0.5 : 0,
+                                  letterSpacing: '0.6px', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.90,
+                                }}>
+                                  {section.header}
+                                </Typography>
+                              )}
+                              <Grid container spacing={1}>
+                                {section.params.map((paramName) => renderParam(paramName))}
+                              </Grid>
+                            </Box>
+                          ))
+                        ) : (
+                          <Grid container spacing={1}>
+                            {group.params.map((paramName) => renderParam(paramName))}
+                          </Grid>
+                        )}
+                      </>
+                    );
+                  })()}
                 </Box>
-              ))
+              </>
+
+            ) : (
+              /* ── Navigator grid ── */
+              <Box sx={{ flex: 1, overflowY: 'auto', p: '16px 20px' }}>
+                {pinned.size > 0 && (
+                  <Box
+                    onClick={() => setActiveSection('_pinned')}
+                    sx={{
+                      display: 'flex', alignItems: 'center', gap: 1.5,
+                      background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.25)',
+                      borderRadius: '10px', p: '12px 16px', mb: 2,
+                      cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s',
+                      '&:hover': { borderColor: 'rgba(255,215,0,0.5)', background: 'rgba(255,215,0,0.09)' },
+                    }}
+                  >
+                    <Box sx={{ width: 4, height: 36, backgroundColor: '#ffd700', borderRadius: '2px', flexShrink: 0 }} />
+                    <Box sx={{ flex: 1 }}>
+                      <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: '#ffd700' }}>⭐ My Controls</Typography>
+                      <Typography sx={{ fontSize: '0.78rem', color: '#9ba8b5', mt: 0.25 }}>
+                        {pinned.size} pinned parameter{pinned.size !== 1 ? 's' : ''} — quick access
+                      </Typography>
+                    </Box>
+                    <Chip
+                      label={pinned.size}
+                      size="small"
+                      sx={{
+                        height: 20, fontSize: '0.68rem',
+                        background: 'rgba(255,215,0,0.15)', color: '#ffd700',
+                        border: '1px solid rgba(255,215,0,0.3)', '& .MuiChip-label': { px: '6px' },
+                      }}
+                    />
+                  </Box>
+                )}
+
+                <Grid container spacing={1.5}>
+                  {(() => {
+                    const sorted = Object.entries(PARAM_GROUPS).sort((a, b) =>
+                      CATEGORY_ORDER.indexOf(SECTION_CATEGORY[a[0]] || 'advanced') -
+                      CATEGORY_ORDER.indexOf(SECTION_CATEGORY[b[0]] || 'advanced')
+                    );
+                    let lastCat = null;
+                    const elements = [];
+                    sorted.forEach(([key, group]) => {
+                      const cat = SECTION_CATEGORY[key] || 'advanced';
+                      const meta = CATEGORY_META[cat];
+                      const count = group.params
+                        ? group.params.length
+                        : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
+
+                      // Category divider row
+                      if (cat !== lastCat) {
+                        lastCat = cat;
+                        elements.push(
+                          <Grid item xs={12} key={`divider-${cat}`}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mt: elements.length ? 1 : 0, mb: 0.25 }}>
+                              <Box sx={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: meta.base, flexShrink: 0 }} />
+                              <Typography sx={{
+                                fontSize: '0.70rem', fontWeight: 700, letterSpacing: '0.8px',
+                                textTransform: 'uppercase', color: meta.base, opacity: 0.9,
+                              }}>
+                                {meta.dividerLabel}
+                              </Typography>
+                              <Box sx={{ flex: 1, height: '1px', background: `linear-gradient(to right, ${meta.border}, transparent)` }} />
+                            </Box>
+                          </Grid>
+                        );
+                      }
+
+                      elements.push(
+                        <Grid item xs={12} sm={6} md={4} key={key}>
+                          <Box
+                            onClick={() => setActiveSection(key)}
+                            sx={{
+                              background: meta.bg,
+                              border: `1px solid ${meta.border}`,
+                              borderRadius: '10px',
+                              p: '14px 16px',
+                              cursor: 'pointer',
+                              height: '100%',
+                              display: 'flex',
+                              flexDirection: 'column',
+                              gap: 0.75,
+                              transition: 'border-color 0.15s, background 0.15s',
+                              '&:hover': { borderColor: meta.hoverBorder, background: meta.hoverBg },
+                            }}
+                          >
+                            <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
+                              <Box sx={{ width: 4, height: 20, backgroundColor: group.color, borderRadius: '2px', flexShrink: 0, mt: '2px' }} />
+                              <Typography sx={{ fontWeight: 700, fontSize: '0.90rem', color: '#e6edf3', flex: 1, lineHeight: 1.3 }}>
+                                {group.title}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
+                                <Box component="span" sx={{
+                                  fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.5px',
+                                  background: meta.badgeBg, color: meta.badgeText,
+                                  border: `1px solid ${meta.border}`,
+                                  borderRadius: '4px', px: '5px', py: '1px',
+                                }}>
+                                  {meta.label}
+                                </Box>
+                                <Chip
+                                  label={`${count}`}
+                                  size="small"
+                                  sx={{
+                                    height: 18, fontSize: '0.63rem',
+                                    background: `${group.color}18`, color: group.color,
+                                    border: `1px solid ${group.color}40`,
+                                    '& .MuiChip-label': { px: '5px' },
+                                  }}
+                                />
+                              </Box>
+                            </Box>
+                            {group.blurb && (
+                              <Typography sx={{
+                                fontSize: '0.75rem', color: '#8b949e', lineHeight: 1.4,
+                                display: '-webkit-box', WebkitLineClamp: 2,
+                                WebkitBoxOrient: 'vertical', overflow: 'hidden',
+                              }}>
+                                {group.blurb}
+                              </Typography>
+                            )}
+                          </Box>
+                        </Grid>
+                      );
+                    });
+                    return elements;
+                  })()}
+                </Grid>
+              </Box>
             )}
-          </>
+          </Box>
         )}
       </DialogContent>
 
       <DialogActions sx={{ px: 3, pb: 2, background: '#1c2128', borderTop: '1px solid #21262d' }}>
-        <Button onClick={() => onClose()} disabled={saving} sx={{ color: '#8b949e', borderColor: '#30363d', '&:hover': { borderColor: '#8b949e', color: '#e6edf3' } }} variant="outlined">
-          Cancel
-        </Button>
+        {activeSection && !search.trim() ? (
+          <Button
+            onClick={() => setActiveSection(null)}
+            disabled={saving}
+            sx={{ color: '#8b949e', borderColor: '#30363d', '&:hover': { borderColor: '#8b949e', color: '#e6edf3' } }}
+            variant="outlined"
+          >
+            ← Navigator
+          </Button>
+        ) : (
+          <Button
+            onClick={() => onClose()}
+            disabled={saving}
+            sx={{ color: '#8b949e', borderColor: '#30363d', '&:hover': { borderColor: '#8b949e', color: '#e6edf3' } }}
+            variant="outlined"
+          >
+            Cancel
+          </Button>
+        )}
         <Button
           variant="contained"
           onClick={handleSave}

@@ -344,16 +344,17 @@ class GuardianRiskDecisionEngine:
         
         # Check 6: RSI threshold (mode-specific)
         if self._is_rsi_overbought():
-            # Get mode-specific reason with actual threshold from config
+            # Use the threshold the RSICollector actually applied (instance-specific),
+            # not the global config value — they can differ when WebUI is used.
             if self.rsi_collector and hasattr(self.rsi_collector, 'bot_mode'):
                 bot_mode = self.rsi_collector.bot_mode.upper()
             else:
                 bot_mode = getattr(self.config.bot, 'mode', 'LONG').upper()
             if bot_mode == "LONG":
-                threshold = self.config.safety.rsi.long_threshold
+                threshold = self.rsi_collector.long_threshold if self.rsi_collector else self.config.safety.rsi.long_threshold
                 reason = f"RSI <= {threshold} (oversold) - market too weak for LONG positions"
             else:
-                threshold = self.config.safety.rsi.short_threshold
+                threshold = self.rsi_collector.short_threshold if self.rsi_collector else self.config.safety.rsi.short_threshold
                 reason = f"RSI >= {threshold} (overbought) - market too strong for SHORT positions"
             return self._make_stop_signal(
                 reason=reason,

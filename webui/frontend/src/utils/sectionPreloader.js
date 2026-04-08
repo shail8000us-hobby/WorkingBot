@@ -11,12 +11,10 @@
 // Only loads what's needed (adjacent tabs), NOT everything at once
 const sectionImports = {
   dashboard: [() => import('../components/MonitoringDashboard'), () => import('../components/MonitoringPanel')],
-  portfolio: [() => import('../components/SymbolPortfolio')],
   config: [() => import('../components/ConfigPanel'), () => import('../components/SyncReconciliationPanel')],
   risk: [() => import('../components/RiskSafetyDashboard'), () => import('../components/RobustnessPanel')],
   tradingview: [() => import('../components/TradingViewSignals')],
   rsi: [() => import('../components/RSIPanel')],
-  positions: [() => import('../components/PositionsPanel')],
   options: [() => import('../components/options')],
   options_chain: [() => import('../components/optionsChain')],
   strategy_builder: [() => import('../components/optionsStrategy')],
@@ -26,7 +24,6 @@ const sectionImports = {
   ml_trading: [() => import('../components/options/MLInsightsPanel')],
   botmanagement: [() => import('../components/BotManagement/BotManagementDashboard'), () => import('../components/PM2Panel')],
   intelligence: [() => import('../components/AIAdvisorWidget')],
-  system_health: [() => import('../components/SystemHealthPanel')],
   todos: [() => import('../components/TodoListPanel')],
   zero_dte: [() => import('../components/zero_dte/ZeroDTEDashboard')],
   experimental: [() => import('../components/ExperimentalPanel')],

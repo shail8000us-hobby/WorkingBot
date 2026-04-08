@@ -8,7 +8,7 @@
  * All state lives in the parent (OptionsPanel); this component receives
  * everything via props.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import SealedBadge from '../common/SealedBadge';
 import {
   Alert,
@@ -23,8 +23,6 @@ import {
   DialogContent,
   DialogTitle,
   IconButton,
-  MenuItem,
-  Select,
   TextField,
   Tooltip,
   Typography,
@@ -52,6 +50,8 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   batchOrderResults,
   setBatchOrderResults,
   batchExecuting,
+  // Option 4: bulk apply batch qty to all selected rows
+  onBulkApplyBatchQty,
   // Auto-loop state
   autoLoopEnabled,
   setAutoLoopEnabled,
@@ -86,6 +86,11 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   clearAutoLoopError,
   clearExpiryLoopError,
 }) {
+  // Option 4 — Bulk apply qty to all selected rows
+  const [bulkApplyQty, setBulkApplyQty] = useState('');
+
+  const selectedCount = Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length;
+
   if (!positions || positions.length === 0) return null;
 
   return (
@@ -112,20 +117,58 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           }}
         >
           {/* Left: Selection info and bulk ratio controls */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
             <Typography variant="body2" fontWeight="bold">
               Batch Order
             </Typography>
             <SealedBadge />
             <Chip
-              label={`${Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length} selected`}
+              label={`${selectedCount} selected`}
               size="small"
-              color={
-                Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length > 0
-                  ? 'primary'
-                  : 'default'
-              }
+              color={selectedCount > 0 ? 'primary' : 'default'}
             />
+
+            {/* Option 4 — Bulk apply: set one qty and push to all selected rows instantly */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+                Set selected rows:
+              </Typography>
+              <TextField
+                size="small"
+                type="number"
+                placeholder="±qty"
+                value={bulkApplyQty}
+                onChange={(e) => setBulkApplyQty(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const qty = parseInt(bulkApplyQty, 10);
+                    if (!isNaN(qty) && qty !== 0 && onBulkApplyBatchQty) {
+                      onBulkApplyBatchQty(qty);
+                      setBulkApplyQty('');
+                    }
+                  }
+                }}
+                sx={{
+                  width: 60,
+                  '& .MuiInputBase-input': { textAlign: 'center', padding: '3px 6px', fontSize: '0.8rem' },
+                }}
+              />
+              <Button
+                size="small"
+                variant="contained"
+                disabled={!bulkApplyQty || isNaN(parseInt(bulkApplyQty, 10)) || parseInt(bulkApplyQty, 10) === 0 || selectedCount === 0}
+                onClick={() => {
+                  const qty = parseInt(bulkApplyQty, 10);
+                  if (!isNaN(qty) && qty !== 0 && onBulkApplyBatchQty) {
+                    onBulkApplyBatchQty(qty);
+                    setBulkApplyQty('');
+                  }
+                }}
+                sx={{ fontSize: '0.7rem', py: '3px', px: 1, minWidth: 0, whiteSpace: 'nowrap' }}
+              >
+                Apply to {selectedCount}
+              </Button>
+            </Box>
           </Box>
 
           {/* Center: Quantity Control */}
@@ -138,9 +181,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 size="small"
                 onClick={() =>
                   setOrderQuantity((q) => {
-                    if (q === 1) return -1;  // skip 0: +1 → -1
-                    if (q > 1) return q - 1;
-                    return Math.max(-10, q - 1);
+                    const step = 1;
+                    if (q === step) return -step;  // skip 0: +1 → -1
+                    if (q > step) return q - step;
+                    return q - step;  // no lower bound — allow any value
                   })
                 }
                 sx={{
@@ -150,29 +194,43 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               >
                 <RemoveIcon fontSize="small" />
               </IconButton>
-              <Select
+              <TextField
                 value={orderQuantity}
-                onChange={(e) => setOrderQuantity(e.target.value)}
-                size="small"
-                sx={{
-                  minWidth: 80,
-                  bgcolor: 'rgba(255,255,255,0.1)',
-                  '& .MuiSelect-select': { py: 0.5 },
+                onChange={(e) => {
+                  const raw = e.target.value;
+                  // Allow typing negative sign or empty string without coercing
+                  if (raw === '' || raw === '-') {
+                    setOrderQuantity(raw);
+                    return;
+                  }
+                  const parsed = parseInt(raw, 10);
+                  if (!isNaN(parsed) && parsed !== 0) {
+                    setOrderQuantity(parsed);
+                  }
                 }}
-              >
-                {[-10, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 10].map((q) => (
-                  <MenuItem key={q} value={q}>
-                    {q > 0 ? `+${q}` : q}
-                  </MenuItem>
-                ))}
-              </Select>
+                onBlur={(e) => {
+                  // On blur, ensure value is a valid non-zero integer
+                  const parsed = parseInt(e.target.value, 10);
+                  if (isNaN(parsed) || parsed === 0) {
+                    setOrderQuantity(1);  // fallback to 1
+                  }
+                }}
+                size="small"
+                inputProps={{ style: { textAlign: 'center', width: 60, padding: '4px 6px' } }}
+                sx={{
+                  bgcolor: 'rgba(255,255,255,0.1)',
+                  borderRadius: 1,
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
+                }}
+              />
               <IconButton
                 size="small"
                 onClick={() =>
                   setOrderQuantity((q) => {
-                    if (q === -1) return 1;  // skip 0: -1 → +1
-                    if (q < -1) return q + 1;
-                    return Math.min(10, q + 1);
+                    const step = 1;
+                    if (q === -step) return step;  // skip 0: -1 → +1
+                    if (q < -step) return q + step;
+                    return q + step;  // no upper bound — allow any value
                   })
                 }
                 sx={{

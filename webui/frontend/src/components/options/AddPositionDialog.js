@@ -23,7 +23,7 @@ import {
   TrendingDown,
 } from '@mui/icons-material';
 
-const QUICK_SIZES = [1, 2, 5, 10, 20, 50];
+const QUICK_SIZES = [1, 2, 5, 10, 20, 50, 60, 70, 80, 90, 100];
 
 const ORDER_TYPES = {
   maker_first: {

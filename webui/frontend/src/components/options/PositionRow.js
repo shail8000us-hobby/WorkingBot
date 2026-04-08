@@ -15,7 +15,7 @@
  * Sealed: Mar 12, 2026 — Test: src/components/options/__tests__/test_sealed_position_row_actions.test.js
  */
 
-import React from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import {
     TableCell,
     Box,
@@ -76,6 +76,155 @@ const getPositionType = (symbol) => {
     if (symbol.startsWith('MV-')) return { type: 'MV STRADDLE', color: '#00bcd4' };
     return { type: 'UNKNOWN', color: '#6b7280' };
 };
+
+// ─── Option 1: Quick-fill preset buttons + Option 3: Scroll wheel ────────────
+// Extracted as a separate component so it can use hooks (useRef/useEffect/useCallback)
+// without forcing PositionRow to re-render on scroll activation state changes.
+function BatchQtyCell({ pos, batchQty, savedBatchQtyValue, cellSx, onBatchQtyChange, onSaveBatchQty, onUnsaveBatchQty }) {
+    const wheelRef = useRef(null);
+
+    // Stable ref for the wheel handler so we don't re-attach the listener on every batchQty change
+    const wheelHandlerRef = useRef(null);
+    wheelHandlerRef.current = useCallback((e) => {
+        e.preventDefault();
+        const delta = e.deltaY < 0 ? 1 : -1;
+        const current = batchQty || 0;
+        let next = current + delta;
+        if (next === 0) next = delta;  // skip 0
+        onBatchQtyChange(pos.product_symbol, next);
+    }, [batchQty, onBatchQtyChange, pos.product_symbol]);
+
+    // Non-passive wheel listener so preventDefault() actually stops page scroll
+    useEffect(() => {
+        const el = wheelRef.current;
+        if (!el) return;
+        const handler = (e) => wheelHandlerRef.current(e);
+        el.addEventListener('wheel', handler, { passive: false });
+        return () => el.removeEventListener('wheel', handler);
+    }, []); // attach once; current value is accessed via wheelHandlerRef
+
+    const QUICK_PRESETS = [1, 5, 10, 25];
+
+    return (
+        <TableCell align="center" sx={cellSx}>
+            <Box ref={wheelRef} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
+                {/* Main input + bookmark */}
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+                    <TextField
+                        size="small"
+                        type="number"
+                        placeholder="±qty"
+                        value={batchQty || ''}
+                        onChange={(e) => {
+                            const value = e.target.value === '' ? 0 : parseInt(e.target.value);
+                            onBatchQtyChange(pos.product_symbol, value);
+                        }}
+                        inputProps={{
+                            // Suppress native number-input scroll so our wheel handler is the only one
+                            onWheel: (e) => e.target.blur(),
+                        }}
+                        sx={{
+                            width: '60px',
+                            '& .MuiInputBase-input': {
+                                textAlign: 'center',
+                                fontSize: '0.875rem',
+                                padding: '4px 6px',
+                                color: batchQty > 0 ? '#10b981' : batchQty < 0 ? '#ef4444' : 'inherit',
+                            },
+                        }}
+                    />
+                    <Tooltip
+                        title={
+                            savedBatchQtyValue
+                                ? `Saved: ${savedBatchQtyValue > 0 ? '+' : ''}${savedBatchQtyValue} — click to unsave`
+                                : batchQty
+                                ? `Save ${batchQty > 0 ? '+' : ''}${batchQty} for this strike`
+                                : 'Enter a qty first, then save'
+                        }
+                    >
+                        <span>
+                            <IconButton
+                                size="small"
+                                disabled={!savedBatchQtyValue && !batchQty}
+                                onClick={() => {
+                                    if (savedBatchQtyValue) {
+                                        onUnsaveBatchQty(pos.product_symbol);
+                                    } else {
+                                        onSaveBatchQty(pos.product_symbol, batchQty);
+                                    }
+                                }}
+                                sx={{ padding: '2px' }}
+                            >
+                                {savedBatchQtyValue ? (
+                                    <BookmarkIcon sx={{ fontSize: '0.9rem', color: '#06b6d4' }} />
+                                ) : (
+                                    <BookmarkBorderIcon sx={{ fontSize: '0.9rem', color: 'text.disabled' }} />
+                                )}
+                            </IconButton>
+                        </span>
+                    </Tooltip>
+                </Box>
+
+                {/* Option 1 — Quick-fill preset buttons (+N, sign-aware) */}
+                <Tooltip title="Click to set qty (preserves sign if already negative). Right-click for opposite sign.">
+                    <Box sx={{ display: 'flex', gap: '2px' }}>
+                        {QUICK_PRESETS.map((preset) => (
+                            <Button
+                                key={preset}
+                                size="small"
+                                variant="outlined"
+                                onClick={() => {
+                                    // preserve current sign; default to positive
+                                    const sign = batchQty < 0 ? -1 : 1;
+                                    onBatchQtyChange(pos.product_symbol, sign * preset);
+                                }}
+                                onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    const sign = batchQty >= 0 ? -1 : 1;  // flip sign on right-click
+                                    onBatchQtyChange(pos.product_symbol, sign * preset);
+                                }}
+                                sx={{
+                                    minWidth: 0,
+                                    px: '4px',
+                                    py: '1px',
+                                    fontSize: '0.6rem',
+                                    lineHeight: 1.2,
+                                    color: batchQty < 0 ? '#ef4444' : '#10b981',
+                                    borderColor: batchQty < 0 ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)',
+                                    '&:hover': {
+                                        borderColor: batchQty < 0 ? '#ef4444' : '#10b981',
+                                        bgcolor: batchQty < 0 ? 'rgba(239,68,68,0.1)' : 'rgba(16,185,129,0.1)',
+                                    },
+                                }}
+                            >
+                                {preset}
+                            </Button>
+                        ))}
+                    </Box>
+                </Tooltip>
+
+                {/* Saved value quick-load */}
+                {savedBatchQtyValue && savedBatchQtyValue !== batchQty && (
+                    <Tooltip title={`Load saved qty: ${savedBatchQtyValue > 0 ? '+' : ''}${savedBatchQtyValue}`}>
+                        <Typography
+                            variant="caption"
+                            onClick={() => onBatchQtyChange(pos.product_symbol, savedBatchQtyValue)}
+                            sx={{
+                                fontSize: '0.65rem',
+                                color: '#06b6d4',
+                                cursor: 'pointer',
+                                lineHeight: 1,
+                                '&:hover': { textDecoration: 'underline' },
+                            }}
+                        >
+                            📌 {savedBatchQtyValue > 0 ? '+' : ''}{savedBatchQtyValue}
+                        </Typography>
+                    </Tooltip>
+                )}
+            </Box>
+        </TableCell>
+    );
+}
 
 /**
  * Single position row for the options table.
@@ -339,79 +488,15 @@ function PositionRow({
 
             {/* Batch Quantity Input */}
             {visibleColumns.batchQty && (
-                <TableCell align="center" sx={cellSx}>
-                    <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-                            <TextField
-                                size="small"
-                                type="number"
-                                placeholder="±qty"
-                                value={batchQty || ''}
-                                onChange={(e) => {
-                                    const value = e.target.value === '' ? 0 : parseInt(e.target.value);
-                                    onBatchQtyChange(pos.product_symbol, value);
-                                }}
-                                sx={{
-                                    width: '60px',
-                                    '& .MuiInputBase-input': {
-                                        textAlign: 'center',
-                                        fontSize: '0.875rem',
-                                        padding: '4px 6px',
-                                        color:
-                                            batchQty > 0 ? '#10b981' : batchQty < 0 ? '#ef4444' : 'inherit',
-                                    },
-                                }}
-                            />
-                            <Tooltip
-                                title={
-                                    savedBatchQtyValue
-                                        ? `Saved: ${savedBatchQtyValue > 0 ? '+' : ''}${savedBatchQtyValue} — click to unsave`
-                                        : batchQty
-                                        ? `Save ${batchQty > 0 ? '+' : ''}${batchQty} for this strike`
-                                        : 'Enter a qty first, then save'
-                                }
-                            >
-                                <span>
-                                    <IconButton
-                                        size="small"
-                                        disabled={!savedBatchQtyValue && !batchQty}
-                                        onClick={() => {
-                                            if (savedBatchQtyValue) {
-                                                onUnsaveBatchQty(pos.product_symbol);
-                                            } else {
-                                                onSaveBatchQty(pos.product_symbol, batchQty);
-                                            }
-                                        }}
-                                        sx={{ padding: '2px' }}
-                                    >
-                                        {savedBatchQtyValue ? (
-                                            <BookmarkIcon sx={{ fontSize: '0.9rem', color: '#06b6d4' }} />
-                                        ) : (
-                                            <BookmarkBorderIcon sx={{ fontSize: '0.9rem', color: 'text.disabled' }} />
-                                        )}
-                                    </IconButton>
-                                </span>
-                            </Tooltip>
-                        </Box>
-                        {savedBatchQtyValue && savedBatchQtyValue !== batchQty && (
-                            <Tooltip title={`Load saved qty: ${savedBatchQtyValue > 0 ? '+' : ''}${savedBatchQtyValue}`}>
-                                <Typography
-                                    variant="caption"
-                                    onClick={() => onBatchQtyChange(pos.product_symbol, savedBatchQtyValue)}
-                                    sx={{
-                                        fontSize: '0.65rem',
-                                        color: '#06b6d4',
-                                        cursor: 'pointer',
-                                        lineHeight: 1,
-                                        '&:hover': { textDecoration: 'underline' },
-                                    }}
-                                >
-                                    📌 {savedBatchQtyValue > 0 ? '+' : ''}{savedBatchQtyValue}
-                                </Typography>
-                            </Tooltip>
-                        )}
-                    </Box>
-                </TableCell>
+                <BatchQtyCell
+                    pos={pos}
+                    batchQty={batchQty}
+                    savedBatchQtyValue={savedBatchQtyValue}
+                    cellSx={cellSx}
+                    onBatchQtyChange={onBatchQtyChange}
+                    onSaveBatchQty={onSaveBatchQty}
+                    onUnsaveBatchQty={onUnsaveBatchQty}
+                />
             )}
 
             {/* Cashflow */}

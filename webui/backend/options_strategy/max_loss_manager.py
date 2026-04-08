@@ -117,6 +117,27 @@ except Exception as e:
     get_options_notifier = None
     NOTIFICATIONS_ENABLED = False
 
+def _is_expiry_past(expiry_code: str) -> bool:
+    """
+    Returns True if a DDMMYY expiry code has passed Delta Exchange settlement time.
+    Delta Exchange options settle at 5:30 PM IST = 12:00 UTC on the expiry date.
+
+    Examples:
+        "250326" → 25-Mar-2026 → settled at 2026-03-25 12:00 UTC
+        "040426" → 04-Apr-2026 → settled at 2026-04-04 12:00 UTC
+    """
+    try:
+        from datetime import timezone
+        day = int(expiry_code[:2])
+        month = int(expiry_code[2:4])
+        year = 2000 + int(expiry_code[4:6])
+        # Settlement at 5:30 PM IST = 12:00 PM UTC
+        expiry_utc = datetime(year, month, day, 12, 0, 0, tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > expiry_utc
+    except Exception:
+        return False
+
+
 def get_max_loss_manager():
     """Get or create the singleton MaxLossManager instance"""
     global _max_loss_manager
@@ -795,6 +816,49 @@ class MaxLossMonitor:
                 "error": str(e)
             }
     
+    def _cleanup_expired_limits(self):
+        """
+        Remove monitoring limits for strikes/expiries that have passed Delta Exchange
+        settlement time (5:30 PM IST = 12:00 UTC).
+
+        Called at the top of every loop iteration — before position data is fetched —
+        so expired limits are removed even when the positions cache is stale.  This
+        prevents the monitor from wasting CPU on contracts that no longer exist on the
+        exchange (e.g. strikes from days or weeks ago still sitting in the DB).
+        """
+        # --- Strike limits ---
+        strike_limits = [s for s in self.manager.get_all_strike_max_loss() if s.get("enabled")]
+        for limit in strike_limits:
+            symbol = limit["symbol"]
+            parts = symbol.split("-")
+            if len(parts) == 4:
+                expiry_code = parts[3]
+                if _is_expiry_past(expiry_code):
+                    logger.info(f"⏰ Auto-removing expired strike limit: {symbol} (settled {expiry_code})")
+                    add_activity_event("cleanup", f"⏰ Stopped monitoring {symbol} — contract settled", {
+                        "symbol": symbol,
+                        "reason": "contract_settled",
+                        "expiry_code": expiry_code
+                    })
+                    self.manager.remove_strike_max_loss(symbol)
+                    self._symbol_miss_count.pop(symbol, None)
+                    with self._close_attempts_lock:
+                        self._close_attempted.pop(symbol, None)
+                    with self._warned_symbols_lock:
+                        self._warned_symbols.discard(symbol)
+
+        # --- Expiry limits ---
+        expiry_limits = [e for e in self.manager.get_all_expiry_max_loss() if e.get("enabled")]
+        for limit in expiry_limits:
+            expiry_code = limit["expiry_code"]
+            if _is_expiry_past(expiry_code):
+                logger.info(f"⏰ Auto-removing expired expiry limit: {expiry_code} (settlement passed)")
+                add_activity_event("cleanup", f"⏰ Stopped monitoring expiry {expiry_code} — contract settled", {
+                    "expiry_code": expiry_code,
+                    "reason": "contract_settled"
+                })
+                self.manager.remove_expiry_max_loss(expiry_code)
+
     def _monitor_loop(self):
         """Main monitoring loop - runs continuously in background"""
         logger.info("🔄 Max loss monitor loop started")
@@ -804,6 +868,11 @@ class MaxLossMonitor:
         while self._running:
             iteration += 1
             try:
+                # Remove limits for contracts that have already settled on Delta Exchange
+                # (5:30 PM IST = 12:00 UTC on the expiry date). This runs unconditionally
+                # before fetching positions so stale-cache failures don't prevent cleanup.
+                self._cleanup_expired_limits()
+
                 # Only check if there are active max loss limits
                 strike_limits = self.manager.get_all_strike_max_loss()
                 expiry_limits = self.manager.get_all_expiry_max_loss()

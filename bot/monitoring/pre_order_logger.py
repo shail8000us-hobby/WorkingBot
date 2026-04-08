@@ -117,8 +117,9 @@ class PreOrderDecisionLogger:
             price_gap = current_price - target_price
             price_gap_pct = (price_gap / current_price) * 100
             
+            age_str = f"{price_age:.1f}s" if price_age is not None else "unknown"
             log.info(f"📊 PRICE ANALYSIS:")
-            log.info(f"  ├─ Current Price: ${current_price:,.2f} (age: {price_age:.1f}s)")
+            log.info(f"  ├─ Current Price: ${current_price:,.2f} (age: {age_str})")
             log.info(f"  ├─ Target BUY: ${target_price:,.2f}")
             log.info(f"  ├─ Price Gap: ${price_gap:,.2f} ({price_gap_pct:+.2f}%)")
             
@@ -256,7 +257,8 @@ class PreOrderDecisionLogger:
             price_gap_pct = (price_gap / current_price) * 100
             
             log.info(f"📊 PRICE ANALYSIS:")
-            log.info(f"  ├─ Current Price: ${current_price:,.2f} (age: {price_age:.1f}s)")
+            age_str = f"{price_age:.1f}s" if price_age is not None else "unknown"
+            log.info(f"  ├─ Current Price: ${current_price:,.2f} (age: {age_str})")
             log.info(f"  ├─ Target SELL: ${target_price:,.2f}")
             log.info(f"  ├─ Price Gap: ${price_gap:,.2f} ({price_gap_pct:+.2f}%)")
             

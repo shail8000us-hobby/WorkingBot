@@ -119,8 +119,11 @@ def check_replenish_eligibility(
     if open_total <= 0:
         return False, 'open_side_has_no_lots'
 
-    # Gate 11: lot velocity — block if the rolling window is already at/over limit.
-    # Pre-flight mirror of MMMSafety.check_lot_velocity — keep params/logic in sync.
+    # Gate 11: lot velocity — block if the rolling window for the CLOSED SIDE
+    # is already at/over limit.
+    # NOTE: Only same-side lots count. A CE strike_shift must not block PE replenish
+    # — replenish is defensive (hedge restoration) and each side has its own velocity
+    # budget.  Cross-side velocity is not a replenish concern.
     if params.get('lot_velocity_enabled', True):
         _vel_limit = params.get('lot_velocity_limit', 10)
         _vel_window = params.get('lot_velocity_window_mins', 30)
@@ -128,6 +131,9 @@ def check_replenish_eligibility(
         _lots_in_window = 0
         for _adj in session.get('adjustment_history', []):
             if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
+                continue
+            # Only count same-side lots — opposite-side velocity is irrelevant
+            if _adj.get('side', '') != closed_side:
                 continue
             try:
                 _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
@@ -138,7 +144,7 @@ def check_replenish_eligibility(
             except (ValueError, TypeError):
                 continue
         if _lots_in_window >= _vel_limit:
-            return False, f'lot_velocity_limit ({_lots_in_window}/{_vel_limit} lots in window)'
+            return False, f'lot_velocity_limit ({_lots_in_window}/{_vel_limit} lots in window on {closed_side.upper()} side)'
 
     return True, 'eligible'
 

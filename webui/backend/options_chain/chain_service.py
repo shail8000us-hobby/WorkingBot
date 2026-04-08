@@ -508,14 +508,27 @@ class OptionsChainService:
             return 0
     
     def invalidate_cache(self, underlying: str = None, expiry: str = None):
-        """Invalidate cache entries"""
+        """Invalidate cache entries.
+
+        When invalidating a specific chain (underlying + expiry), also clear the
+        tickers_{underlying} cache.  The retry path in mmm_monitor calls
+        invalidate_cache immediately before re-calling get_chain_data; without
+        this, _get_option_tickers() gets a cache-hit on the same stale data
+        (tickers TTL = 5 s) and the rebuilt chain is identical — causing repeated
+        "Nearest OTM strikes: NONE" failures even though a fresh chain was
+        nominally fetched.
+        """
         if underlying and expiry:
             _cache.invalidate(f"chain_{underlying}_{expiry}")
+            # Also clear the tickers cache so _get_option_tickers() fetches fresh
+            # data when get_chain_data rebuilds the chain on the next call.
+            _cache.invalidate(f"tickers_{underlying}")
         elif underlying:
             _cache.invalidate(underlying)
+            _cache.invalidate(f"tickers_{underlying}")
         else:
             _cache.invalidate()
-        
+
         log.info(f"Cache invalidated: underlying={underlying}, expiry={expiry}")
     
     def get_option_ticker(self, symbol: str) -> Dict:

@@ -708,10 +708,14 @@ const OptionsPanel = () => {
 
   // Assign a position symbol to a group (removes from any previous group first)
   const handleAssignToGroup = useCallback((symbol, groupId) => {
-    // Persist to server
-    assignSymbolOnServer(expiryGroupKey, symbol, groupId || null);
+    // In merged-ALL mode, find the actual key for the target group (or source group if unassigning)
+    const actualKey = groupId ? getGroupActualKey(groupId) : getGroupActualKey(
+      Object.keys(positionGroups).find((id) => (positionGroups[id]?.symbols || []).includes(symbol)) || ''
+    );
+    const keyToUse = actualKey || expiryGroupKey;
+    assignSymbolOnServer(keyToUse, symbol, groupId || null);
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const slice = prev[keyToUse] || { groups: {}, collapsed: {}, order: [] };
       const prevGroups = slice.groups || {};
 
       // PASS 1: Update symbols in all groups
@@ -745,9 +749,9 @@ const OptionsPanel = () => {
         next[id] = { ...g, color };
       }
 
-      return { ...prev, [expiryGroupKey]: { ...slice, groups: next } };
+      return { ...prev, [keyToUse]: { ...slice, groups: next } };
     });
-  }, [expiryGroupKey, assignSymbolOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, getGroupActualKey, positionGroups, assignSymbolOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the groupId a symbol belongs to (or null)
   const getSymbolGroup = useCallback((symbol) => {
@@ -759,18 +763,18 @@ const OptionsPanel = () => {
 
   // Toggle collapse for a group
   const toggleGroupCollapse = useCallback((groupId) => {
+    const actualKey = getGroupActualKey(groupId);
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [] };
       const prevCollapsed = slice.collapsed || {};
       const nextCollapsed = { ...prevCollapsed, [groupId]: !prevCollapsed[groupId] };
-      // Persist collapsed state to server
-      updateMetaOnServer(expiryGroupKey, { collapsed: nextCollapsed });
+      updateMetaOnServer(actualKey, { collapsed: nextCollapsed });
       return {
         ...prev,
-        [expiryGroupKey]: { ...slice, collapsed: nextCollapsed },
+        [actualKey]: { ...slice, collapsed: nextCollapsed },
       };
     });
-  }, [expiryGroupKey, updateMetaOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [getGroupActualKey, updateMetaOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Group Notes ───────────────────────────────────────────────────────────
   // noteEditAnchor: { mouseX, mouseY, groupId } | null — controls popover visibility
@@ -780,15 +784,15 @@ const OptionsPanel = () => {
 
   // Persist note text into the group object for the current expiry
   const handleSaveGroupNote = useCallback((groupId, text) => {
-    // Persist note to server
-    updateGroupOnServer(expiryGroupKey, groupId, { note: text });
+    const actualKey = getGroupActualKey(groupId);
+    updateGroupOnServer(actualKey, groupId, { note: text });
     setAllExpiryGroupData((prev) => {
-      const slice = prev[expiryGroupKey] || { groups: {}, collapsed: {}, order: [] };
+      const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [] };
       const prevGroups = slice.groups || {};
       if (!prevGroups[groupId]) return prev; // group was deleted mid-edit
       return {
         ...prev,
-        [expiryGroupKey]: {
+        [actualKey]: {
           ...slice,
           groups: {
             ...prevGroups,
@@ -797,7 +801,7 @@ const OptionsPanel = () => {
         },
       };
     });
-  }, [expiryGroupKey, updateGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [getGroupActualKey, updateGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // SL/TP Dialog state
   const [slTpDialogOpen, setSlTpDialogOpen] = useState(false);
@@ -4758,6 +4762,14 @@ const OptionsPanel = () => {
             stopExpiryAutoLoop={stopExpiryAutoLoop}
             clearAutoLoopError={clearAutoLoopError}
             clearExpiryLoopError={clearExpiryLoopError}
+            onBulkApplyBatchQty={(qty) => {
+              // Option 4: write qty into batchQuantities for every currently-selected row
+              const updates = {};
+              Object.keys(selectedStrikes).forEach((symbol) => {
+                if (selectedStrikes[symbol]) updates[symbol] = qty;
+              });
+              setBatchQuantities((prev) => ({ ...prev, ...updates }));
+            }}
           />
 
           <ConditionalExitPanel

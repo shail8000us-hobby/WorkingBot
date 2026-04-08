@@ -276,11 +276,8 @@ class GridEngine:
                 log.warning(f"Pre-order logging failed: {e}")
 
             try:
-                anomaly_detected = self.anomaly_detector.check_before_order(
-                    side=side,
-                    price=target,
-                    current_price=current_price
-                )
+                anomalies = self.anomaly_detector.run_all_checks(current_price=current_price)
+                anomaly_detected = len(anomalies) > 0
             except Exception as e:
                 log.warning(f"Anomaly detection failed: {e}")
                 anomaly_detected = False
@@ -288,11 +285,8 @@ class GridEngine:
             if anomaly_detected:
                 log.warning(f"⚠️  Anomaly detected before {side.upper()} order @ ${target:,.2f} - proceeding with caution")
 
-            # CRITICAL FIX (Nov 20, 2025): Use separate lot sizes for LONG/SHORT
-            if side == "sell":
-                size = getattr(self.config.grid.limits, 'short_lot_size', self.lot_size)
-            else:
-                size = self.lot_size
+            # Use instance lot_size (already mode-specific from GridEngine init)
+            size = self.lot_size
 
             # SHORT mode: use REPLACE_PENDING_SELL_ORDER to enforce single-entry-order
             # invariant. Phase 1b (orphan sweep) catches stale exchange orders even when

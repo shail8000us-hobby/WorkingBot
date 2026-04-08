@@ -152,86 +152,37 @@ async def create_buy_fill_saga(
     ))
     
     # STEP 2: Place TP Order
+    # TP orders are reduce_only (risk-reducing) — Guardian must NEVER block them.
+    # Blocking a TP leaves a position unprotected, which is worse than any risk
+    # Guardian is trying to mitigate.
     async def place_tp_action() -> Dict[str, Any]:
         nonlocal tp_result
-        
+
         if not position_result:
             raise Exception("No position result available")
-        
+
         tp_price = position_result["tp_price"]
-        
+
         log.info(f"[SAGA] Placing TP order @ {tp_price} for position {position_id}")
-        
-        # CRITICAL FIX (Dec 12, 2025): Check Guardian signal before placing TP order
-        # This prevents unhedged positions during Guardian STOP periods
-        from bot.strategy.modules.event_store import EventType
-        import time as time_module
-        
-        try:
-            guardian_events = event_store.get_events_by_type(
-                [EventType.GUARDIAN_SIGNAL_GO, EventType.GUARDIAN_SIGNAL_STOP],
-                limit=1
-            )
-            
-            if guardian_events:
-                latest_guardian = guardian_events[0]
-                signal = 'GO' if latest_guardian.event_type == EventType.GUARDIAN_SIGNAL_GO else 'STOP'
-                signal_age = time_module.time() - latest_guardian.timestamp
-                
-                if signal == 'STOP':
-                    reason = latest_guardian.data.get('reason', 'No reason provided')
-                    log.warning(f"⚠️ [SAGA] Guardian signal is STOP - Cannot place TP SELL order")
-                    log.warning(f"   Reason: {reason}")
-                    log.warning(f"   ⚠️  MISSED TP ORDER: SELL @ ${tp_price:,.0f}")
-                    log.warning(f"   💡 TIP: TP order will be scheduled for retry when Guardian signal becomes GO")
-                    
-                    # Schedule TP retry via position actor
-                    try:
-                        await position_actor.mailbox.put(
-                            Message("SCHEDULE_TP_RETRY", {
-                                "position": {
-                                    "position_id": position_id,
-                                    "entry_price": fill_data["fill_price"],
-                                    "tp_price": tp_price,
-                                    "size": fill_data["fill_size"]
-                                },
-                                "retry_count": 0,
-                                "max_retries": 5
-                            }, None, correlation_id)
-                        )
-                        log.info(f"⏰ [SAGA] TP order scheduled for retry")
-                    except Exception as e:
-                        log.error(f"❌ [SAGA] Failed to schedule TP retry: {e}")
-                    
-                    return {"status": "skipped", "reason": f"guardian_stop: {reason}", "tp_scheduled_for_retry": True}
-                
-                if signal_age > 30:
-                    log.warning(f"⚠️ [SAGA] Guardian signal is stale ({signal_age:.0f}s old) - Proceeding with caution")
-            else:
-                log.warning(f"⚠️ [SAGA] No Guardian signal found - Cannot place TP order safely")
-                return {"status": "skipped", "reason": "no_guardian_signal"}
-                
-        except Exception as guardian_error:
-            log.error(f"❌ [SAGA] Error checking Guardian signal: {guardian_error}")
-            return {"status": "skipped", "reason": f"guardian_check_error: {str(guardian_error)}"}
-        
+
         # Send message to actor
         reply_queue = asyncio.Queue()
         await order_actor.mailbox.put(
             Message("PLACE_TP", {
                 "price": tp_price,
                 "size": fill_data["fill_size"],
-                "position_id": position_id
+                "position_id": position_id,
+                "side": "sell"  # LONG mode TP is a SELL
             }, reply_queue, correlation_id)
         )
-        
+
         # Wait for reply
         result = await asyncio.wait_for(reply_queue.get(), timeout=10.0)
-        
+
         if result["status"] != "ok":
             # TP placement failed - schedule for retry queue
             log.warning(f"⚠️ [SAGA] TP placement failed: {result.get('error')} - scheduling retry")
-            
+
             # Schedule TP retry via position actor
             try:
                 await position_actor.mailbox.put(
@@ -240,7 +191,8 @@ async def create_buy_fill_saga(
                             "position_id": position_id,
                             "entry_price": fill_data["fill_price"],
                             "tp_price": tp_price,
-                            "size": fill_data["fill_size"]
+                            "size": fill_data["fill_size"],
+                            "side": "sell"  # LONG mode TP is a SELL
                         },
                         "retry_count": 0,
                         "max_retries": 5
@@ -249,23 +201,24 @@ async def create_buy_fill_saga(
                 log.info(f"⏰ [SAGA] Position scheduled for TP retry")
             except Exception as e:
                 log.error(f"❌ [SAGA] Failed to schedule TP retry: {e}")
-            raise Exception(f"TP placement failed and retry scheduling failed: {e}")
-        else:
-            tp_order_id = result.get("order_id")
-            log.info(f"✅ [SAGA] TP order placed successfully: {tp_order_id}")
-            
-            # Update position with tp_order_id for reconciliation
-            if tp_order_id:
-                try:
-                    await position_actor.mailbox.put(
-                        Message("UPDATE_POSITION", {
-                            "position_id": position_id,
-                            "tp_order_id": str(tp_order_id)
-                        }, None, correlation_id)
-                    )
-                except Exception as e:
-                    log.warning(f"Failed to update position with tp_order_id: {e}")
-        
+            # Return success with retry flag to allow saga to continue to Step 3
+            return {"status": "ok", "tp_scheduled_for_retry": True, "error": result.get('error')}
+
+        tp_order_id = result.get("order_id")
+        log.info(f"✅ [SAGA] TP order placed successfully: {tp_order_id}")
+
+        # Update position with tp_order_id for reconciliation
+        if tp_order_id:
+            try:
+                await position_actor.mailbox.put(
+                    Message("UPDATE_POSITION", {
+                        "position_id": position_id,
+                        "tp_order_id": str(tp_order_id)
+                    }, None, correlation_id)
+                )
+            except Exception as e:
+                log.warning(f"Failed to update position with tp_order_id: {e}")
+
         return result
     
     async def place_tp_compensation(tp_order: Dict[str, Any]) -> None:
@@ -900,87 +853,37 @@ async def create_short_entry_saga(
     ))
     
     # STEP 2: Place TP Order (BUY at lower price)
+    # TP orders are reduce_only (risk-reducing) — Guardian must NEVER block them.
+    # Blocking a TP leaves a SHORT position unprotected, which is worse than any
+    # risk Guardian is trying to mitigate.
     async def place_tp_action() -> Dict[str, Any]:
         nonlocal tp_result
-        
+
         if not position_result:
             raise Exception("No position result available")
-        
+
         tp_price = position_result["tp_price"]
-        
+
         log.info(f"[SHORT-SAGA] Placing TP (BUY) @ {tp_price} for position {position_id}")
-        
-        # CRITICAL FIX (Dec 12, 2025): Check Guardian signal before placing TP order
-        # This prevents unhedged positions during Guardian STOP periods
-        from bot.strategy.modules.event_store import EventType
-        import time as time_module
-        
-        try:
-            guardian_events = event_store.get_events_by_type(
-                [EventType.GUARDIAN_SIGNAL_GO, EventType.GUARDIAN_SIGNAL_STOP],
-                limit=1
-            )
-            
-            if guardian_events:
-                latest_guardian = guardian_events[0]
-                signal = 'GO' if latest_guardian.event_type == EventType.GUARDIAN_SIGNAL_GO else 'STOP'
-                signal_age = time_module.time() - latest_guardian.timestamp
-                
-                if signal == 'STOP':
-                    reason = latest_guardian.data.get('reason', 'No reason provided')
-                    log.warning(f"⚠️ [SHORT-SAGA] Guardian signal is STOP - Cannot place TP BUY order")
-                    log.warning(f"   Reason: {reason}")
-                    log.warning(f"   ⚠️  MISSED TP ORDER: BUY @ ${tp_price:,.0f}")
-                    log.warning(f"   💡 TIP: TP order will be scheduled for retry when Guardian signal becomes GO")
-                    
-                    # Schedule TP retry via position actor
-                    try:
-                        await position_actor.mailbox.put(
-                            Message("SCHEDULE_TP_RETRY", {
-                                "position": {
-                                    "position_id": position_id,
-                                    "entry_price": fill_data["fill_price"],
-                                    "tp_price": tp_price,
-                                    "size": fill_data["fill_size"]
-                                },
-                                "retry_count": 0,
-                                "max_retries": 5
-                            }, None, correlation_id)
-                        )
-                        log.info(f"⏰ [SHORT-SAGA] TP order scheduled for retry")
-                    except Exception as e:
-                        log.error(f"❌ [SHORT-SAGA] Failed to schedule TP retry: {e}")
-                    
-                    return {"status": "skipped", "reason": f"guardian_stop: {reason}", "tp_scheduled_for_retry": True}
-                
-                if signal_age > 30:
-                    log.warning(f"⚠️ [SHORT-SAGA] Guardian signal is stale ({signal_age:.0f}s old) - Proceeding with caution")
-            else:
-                log.warning(f"⚠️ [SHORT-SAGA] No Guardian signal found - Cannot place TP order safely")
-                return {"status": "skipped", "reason": "no_guardian_signal"}
-                
-        except Exception as guardian_error:
-            log.error(f"❌ [SHORT-SAGA] Error checking Guardian signal: {guardian_error}")
-            return {"status": "skipped", "reason": f"guardian_check_error: {str(guardian_error)}"}
-        
+
         # Send message to actor
         reply_queue = asyncio.Queue()
         await order_actor.mailbox.put(
             Message("PLACE_TP", {
                 "price": tp_price,
-                "size": fill_data["fill_size"],  # Use same size as filled order
+                "size": fill_data["fill_size"],
                 "position_id": position_id,
                 "side": "buy"  # SHORT mode TP is a BUY
             }, reply_queue, correlation_id)
         )
-        
+
         # Wait for reply
         result = await asyncio.wait_for(reply_queue.get(), timeout=10.0)
-        
+
         if result["status"] != "ok":
             # TP placement failed - schedule for retry queue
             log.warning(f"⚠️ [SHORT-SAGA] TP placement failed: {result.get('error')} - scheduling retry")
-            
+
             # Schedule TP retry via position actor
             try:
                 await position_actor.mailbox.put(
@@ -989,7 +892,8 @@ async def create_short_entry_saga(
                             "position_id": position_id,
                             "entry_price": fill_data["fill_price"],
                             "tp_price": tp_price,
-                            "size": fill_data["fill_size"]
+                            "size": fill_data["fill_size"],
+                            "side": "buy"  # SHORT mode TP is a BUY
                         },
                         "retry_count": 0,
                         "max_retries": 5
@@ -998,10 +902,10 @@ async def create_short_entry_saga(
                 log.info(f"⏰ [SHORT-SAGA] Position scheduled for TP retry")
             except Exception as e:
                 log.error(f"❌ [SHORT-SAGA] Failed to schedule TP retry: {e}")
-            
+
             # Return success with retry flag to allow saga to continue to Step 3
             return {"status": "ok", "tp_scheduled_for_retry": True, "error": result.get('error')}
-        
+
         tp_result = result
         return result
     

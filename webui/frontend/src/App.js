@@ -28,6 +28,8 @@ import './styles/micro-interactions.css';
 import { useSocketConnection } from './hooks/useSocketConnection';
 import { useConfigManager } from './hooks/useConfigManager';
 import { useTradingData } from './hooks/useTradingData';
+import MMMErrorBoundary from './components/mmm/MMMErrorBoundary';
+import { MMMProvider } from './components/mmm/MMMContext';
 import { AutoloopProvider } from './context/AutoloopContext';
 import AutoloopStatusBar from './components/positionAdjustment/AutoloopStatusBar';
 import IdleIndicator from './components/IdleIndicator';
@@ -37,6 +39,8 @@ import OfflineIndicator from './components/OfflineIndicator';
 // and must be available immediately (lazy components need Suspense which may not be ready)
 import BackendDownError from './components/BackendDownError';
 import SymbolContextBar from './components/layout/SymbolContextBar';
+import ConnectionStatusBar from './components/layout/ConnectionStatusBar';
+import BatteryIndicator from './components/BatteryIndicator';
 // Mobile indicators removed for cleaner UI
 // import MobileBatteryIndicator from './components/MobileBatteryIndicator';
 // import TailscaleMobileOptimizer from './components/TailscaleMobileOptimizer';
@@ -49,22 +53,20 @@ import MobileNav from './components/layout/MobileNav';
 
 // Phase 12: Route-level lazy loading — each page is its own chunk, only downloaded when visited
 const TodosPage = React.lazy(() => import('./pages/TodosPage'));
-const PortfolioPage = React.lazy(() => import('./pages/PortfolioPage'));
 const OptionsPage = React.lazy(() => import('./pages/OptionsPage'));
 const SSRAlgoPage = React.lazy(() => import('./pages/SSRAlgoPage'));
 const TradingViewPage = React.lazy(() => import('./pages/TradingViewPage'));
 const ZeroDTEPage = React.lazy(() => import('./pages/ZeroDTEPage'));
-const SystemHealthPage = React.lazy(() => import('./pages/SystemHealthPage'));
 const ExperimentalPage = React.lazy(() => import('./pages/ExperimentalPage'));
 const AdvancedFeaturesPage = React.lazy(() => import('./pages/AdvancedFeaturesPage'));
 const MVStraddlePage = React.lazy(() => import('./pages/MVStraddlePage'));
-const PositionsPage = React.lazy(() => import('./pages/PositionsPage'));
 const RSIPage = React.lazy(() => import('./pages/RSIPage'));
 const RiskPage = React.lazy(() => import('./pages/RiskPage'));
 const IntelligencePage = React.lazy(() => import('./pages/IntelligencePage'));
 const OptionsChainPage = React.lazy(() => import('./pages/OptionsChainPage'));
 const StrategyBuilderPage = React.lazy(() => import('./pages/StrategyBuilderPage'));
 const MMMPage = React.lazy(() => import('./pages/MMMPage'));
+const MMMXPage = React.lazy(() => import('./pages/MMMXPage'));
 const ICPage = React.lazy(() => import('./pages/ICPage'));
 const SSDHPage = React.lazy(() => import('./pages/SSDHPage'));
 const PortfolioMarginPage = React.lazy(() => import('./pages/PortfolioMarginPage'));
@@ -81,6 +83,13 @@ const OIPage = React.lazy(() => import('./pages/OIPage'));
 // Lazy components still used directly in App.js
 const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceWidget'));
 
+// Mobile pages
+const MobileDashboard = React.lazy(() => import('./mobile/MobileDashboard'));
+const MobileControl = React.lazy(() => import('./mobile/MobileControl'));
+const MobileSettingsNav = React.lazy(() => import('./mobile/MobileSettingsNav'));
+const MobileConfig = React.lazy(() => import('./mobile/MobileConfig'));
+const MobileRisk = React.lazy(() => import('./mobile/MobileRisk'));
+const MobileMonitoring = React.lazy(() => import('./mobile/MobileMonitoring'));
 
 
 function App() {
@@ -122,12 +131,9 @@ function App() {
   const {
     tradingSnapshot,
     setTradingSnapshot,
-    positionsData,
-    setPositionsData,
     botStatus,
     setBotStatus,
     botIsRunning,
-    openPositions,
     pendingOrders,
     totalPnl,
   } = useTradingData();
@@ -144,7 +150,6 @@ function App() {
     setBackendDown,
     setBotStatus,
     setTradingSnapshot,
-    setPositionsData,
     setLogs,
     setFeatureFlags,
     setLastUpdated,
@@ -220,7 +225,6 @@ function App() {
     setConfigMeta,
     setBotStatus,
     setTradingSnapshot,
-    setPositionsData,
     setLogs,
     setConnectionState,
     setConnectionQuality,
@@ -250,8 +254,8 @@ function App() {
 
   // Phase 2.3: Navigation sections extracted to config/navigationSections.js
   const sections = useMemo(
-    () => buildSections({ openPositions, pendingOrders, guardianEnabled }),
-    [openPositions, pendingOrders, guardianEnabled]
+    () => buildSections({ pendingOrders, guardianEnabled }),
+    [pendingOrders, guardianEnabled]
   );
 
   useEffect(() => {
@@ -328,13 +332,15 @@ function App() {
           warnings={globalWarnings}
         />
 
-        {/* Phase 2: Symbol Context Bar - Always visible below TopBar */}
-        <SymbolContextBar
-          gridInfo={config?.grid}
-          status={{ running: botIsRunning }}
-          pnl={totalPnl ? { total: totalPnl } : null}
-          botStatus={botStatus}
-        />
+        {/* Phase 2: Symbol Context Bar - Always visible below TopBar on desktop, hidden on mobile */}
+        {!isMobile && (
+          <SymbolContextBar
+            gridInfo={config?.grid}
+            status={{ running: botIsRunning }}
+            pnl={totalPnl ? { total: totalPnl } : null}
+            botStatus={botStatus}
+          />
+        )}
 
         <Sidebar
           sections={sections}
@@ -343,29 +349,22 @@ function App() {
         />
 
         <main
-          className="relative z-0 pt-12 lg:pt-56 pb-[calc(7rem+env(safe-area-inset-bottom))]"
+          className={`relative z-0 pt-12 lg:pt-56 ${isMobile ? 'pb-16' : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'}`}
           style={{ marginTop: 'calc(env(safe-area-inset-top) + 8px)' }}
         >
-          <MobileNav
-            sections={sections}
-            activeSection={activeSection}
-            onSelect={handleSectionSelect}
-          />
           <div className="w-full">
             <div className="animate-fade-in" style={{ animationDuration: '150ms' }}>
               <Suspense fallback={<div className="flex items-center justify-center p-12 text-slate-500">Loading...</div>}>
                 <Routes>
-                  <Route path="/" element={<Navigate to={`/${userPreferences.selectedSection || 'options'}`} replace />} />
+                  <Route path="/" element={<Navigate to={`/${userPreferences.selectedSection || 'dashboard'}`} replace />} />
                   <Route path="/todos" element={<TodosPage />} />
-                  <Route path="/system_health" element={<SystemHealthPage />} />
-                  <Route path="/dashboard" element={<DashboardPage socket={socket} latencyStats={latencyStats} connectionQuality={connectionQuality} botIsRunning={botIsRunning} isMobile={isMobile} botStatus={botStatus} config={config} />} />
-                  <Route path="/portfolio" element={<PortfolioPage />} />
-                  <Route path="/positions" element={<PositionsPage botIsRunning={botIsRunning} isMobile={isMobile} />} />
+                  <Route path="/dashboard" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileDashboard socket={socket} /></MMMProvider></MMMErrorBoundary> : <DashboardPage socket={socket} latencyStats={latencyStats} connectionQuality={connectionQuality} botIsRunning={botIsRunning} isMobile={isMobile} botStatus={botStatus} config={config} />} />
                   <Route path="/options" element={<OptionsPage />} />
                   <Route path="/options_chain" element={<OptionsChainPage navParams={navParams} />} />
                   <Route path="/strategy_builder" element={<StrategyBuilderPage onNavigateToTab={handleNavigateToTab} />} />
                   <Route path="/mv_straddle" element={<MVStraddlePage />} />
-                  <Route path="/mmm" element={<MMMPage socket={socket} />} />
+                  <Route path="/mmm" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileDashboard socket={socket} /></MMMProvider></MMMErrorBoundary> : <MMMPage socket={socket} />} />
+                  <Route path="/mmmx" element={<MMMXPage socket={socket} />} />
                   <Route path="/ic" element={<ICPage socket={socket} />} />
                   <Route path="/ssr_algo" element={<SSRAlgoPage />} />
                   <Route path="/ssdh" element={<SSDHPage />} />
@@ -373,6 +372,8 @@ function App() {
                   <Route path="/tradingview" element={<TradingViewPage />} />
                   <Route path="/rsi" element={<RSIPage isMobile={isMobile} />} />
                   <Route path="/config" element={<ConfigPage config={config} configMeta={configMeta} busy={busy} loading={loading} isMobile={isMobile} featureFlags={featureFlags} handleConfigUpdate={handleConfigUpdate} handleClearCache={handleClearCache} />} />
+                  <Route path="/control" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileControl socket={socket} /></MMMProvider></MMMErrorBoundary> : <Navigate to="/dashboard" replace />} />
+                  <Route path="/settings_mobile" element={isMobile ? <MobileSettingsNav /> : <Navigate to="/config" replace />} />
                   <Route path="/ml_trading" element={<MLTradingPage isMobile={isMobile} />} />
                   <Route path="/botmanagement" element={<BotManagementPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/emergency" element={<EmergencyPage isMobile={isMobile} socket={socket} />} />
@@ -392,11 +393,21 @@ function App() {
           </div>
         </main>
 
+        {/* Mobile Bottom Navigation - rendered outside main for proper fixed positioning */}
+        {isMobile && (
+          <MobileNav
+            sections={sections}
+            activeSection={activeSection}
+            onSelect={handleSectionSelect}
+          />
+        )}
+
         <Snackbar
           open={notification.open}
           autoHideDuration={5000}
           onClose={handleCloseNotification}
-          anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+          anchorOrigin={isMobile ? { vertical: 'top', horizontal: 'center' } : { vertical: 'bottom', horizontal: 'right' }}
+          style={isMobile ? { marginTop: '80px' } : {}}
         >
           <Alert
             onClose={handleCloseNotification}
@@ -422,10 +433,20 @@ function App() {
         {/* Safety Warning - Shows bots are still running */}
         <SafetyWarningBanner />
 
-        {/* Floating Price Widget - Real-time BTC/ETH prices */}
-        <Suspense fallback={null}>
-          <FloatingPriceWidget />
-        </Suspense>
+        {/* Mobile Status Indicators (Battery + Connection) */}
+        {isMobile && (
+          <>
+            <BatteryIndicator />
+            <ConnectionStatusBar connectionState={connectionState} connectionQuality={connectionQuality} />
+          </>
+        )}
+
+        {/* Floating Price Widget - Real-time BTC/ETH prices (hidden on mobile) */}
+        {!isMobile && (
+          <Suspense fallback={null}>
+            <FloatingPriceWidget />
+          </Suspense>
+        )}
       </div>
     </AutoloopProvider>
   );

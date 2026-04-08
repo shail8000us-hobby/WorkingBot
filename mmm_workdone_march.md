@@ -1851,6 +1851,15 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 
 ---
 
+## 2026-04-04 — MMMX plan corrected to monthly strategy model
+
+- Updated `mmmx_plan.md` to preserve approved MMMX isolation architecture while replacing 0DTE-style behavior with true monthly-options logic.
+- Removed 0DTE carryover concepts from plan scope (`mmmx_strike_shift.py`, close-at-5 style exit model) and replaced with monthly trigger/action model (delta drift + IV expansion + roll/reduce/close-all).
+- Enforced hard safety requirement in plan: `close_at_dte` is mandatory close behavior with minimum allowed value 7 (no warning-only behavior below 7 DTE).
+- Added explicit implementation/verification requirements for monthly engine math, trigger priority order, heartbeat cadence (24h base, 1h post-trigger), initializer failure handling, API surface, frontend MVP risk panels, and isolation checks.
+
+---
+
 ## 2026-04-04: Batch D Systematic Safety Audit (8 P2 Modules)
 **Modules Audited:** M-26 to M-33 (`mmm_adaptive`, `mmm_atm_shield`, `mmm_reversal`, `mmm_pending_orders`, `mmm_adopter`, `mmm_trigger`, `mmm_initializer`, `mmm_straddle_roll`)
 **Result:** 3 bugs found and fixed across 3 modules (5 modules CLEAN). 1248/1248 tests passing.
@@ -1863,3 +1872,747 @@ Audited 4 modules in a single session (user confirmed it was safe to run all at 
 **Clean modules:** `mmm_adaptive.py` (stateless scoring engine), `mmm_atm_shield.py` (deferred re-sell correct), `mmm_reversal.py` (Decimal + cooldown correct), `mmm_pending_orders.py` (thread-safe, dual stale thresholds), `mmm_trigger.py` (%-based math, zero-snapshot guard, operator pin auto-expiry).
 
 **Files changed:** `mmm_straddle_roll.py`, `mmm_initializer.py`, `mmm_adopter.py`
+
+---
+
+## 2026-04-06 — Strike Shift Observability: Cache + Remark Fixes
+
+**Trigger:** User noticed strike shift activity showed "NONE" for old premium and no reason was shown in WebUI activity log for why the shift occurred.
+
+**Root Cause 1 (chain_service.py):** `invalidate_cache('BTC', expiry)` only cleared `chain_BTC_{expiry}` but NOT `tickers_BTC`. The retry path in mmm_monitor re-called `get_chain_data` → `_get_option_tickers` immediately hit the still-live 5s tickers cache → returned same stale/empty data → "Nearest OTM strikes: NONE". Fix: also invalidate `tickers_{underlying}` whenever a specific-chain cache is cleared.
+
+**Root Cause 2 (mmm_strike_shift.py / mmm_monitor.py):** `activate_new_strike` was always using `fill_premium` (the NEW strike's fill price) as `old_premium` in the STRIKE_SHIFT remark. The old-strike premium was never captured before being overwritten. Fix:
+- Added `old_premium: float = 0.0` parameter to `activate_new_strike`.
+- Captured `_old_strike_premium = hedge_premium` in `_process_shift()` before the new-strike logic runs.
+- Passed `old_premium=_old_strike_premium` to `activate_new_strike` and into `log_activity('strike_shift', ...)` and `log_activity('adjustment_complete', ...)` messages.
+- WebUI activity log now shows: "old premium $X.XX < threshold $Y threshold" with the correct pre-shift premium.
+
+**Files changed:** `chain_service.py`, `mmm_strike_shift.py`, `mmm_monitor.py`
+
+---
+
+## 2026-04-06 — Fix: Cross-Side Velocity Block Preventing PE Replenish
+
+**Live session**: `mmm06apr26-1` — PE=0 lots, CE=397 lots open. Session PAUSED. `replenish_enabled=True`, premiums available, cooldown elapsed, no regime/margin blocks — but replenish still not firing.
+
+**Root cause found in logs and session DB:**
+- PE fully closed at 10:09 IST → ONE-SIDE CLOSE GUARD fired → tried `_process_replenish(pe, ce)`
+- Gate 11 (lot velocity) **blocked replenish** because `adjustment_history` had a CE strike_shift at 04:25 that sold 228 lots — counted against the 200-lot velocity limit
+- **The count was cross-side**: CE lots sold in the window were counted against PE replenish velocity
+- PE-side velocity was actually 0/200 — completely safe to replenish
+
+**Why it's wrong:** Gate 11 was computing `lots_in_window` across ALL sides combined. A CE adjustment consumes CE velocity budget, not PE velocity. The hedge restoration principle (established in 2026-04-02 incident) already removed regime/wind-down gates from replenish; the same reasoning applies to cross-side velocity: each side's velocity is independent.
+
+**Fix (2 files):**
+
+1. **`mmm_replenish.py` Gate 11** — added `if _adj.get('side', '') != closed_side: continue` filter. Now only counts same-side lots. Reason updated to include side label.
+
+2. **`mmm_monitor.py` `_process_replenish()` headroom cap** — same filter added. Headroom is now per-side (not combined).
+
+**Effect on current session:** PE-side velocity = 0 lots / 200 limit → Gate 11 passes → replenish will fire on next heartbeat after backend restart.
+
+**Tests added to `test_sealed_mmm_replenish.py`** (25 → 28 contracts):
+- `test_blocked_when_same_side_velocity_exceeded` — same-side block still works
+- `test_cross_side_velocity_does_not_block_replenish` — CE lots don't block PE replenish (the exact incident)
+- `test_eligible_when_same_side_velocity_under_limit` — eligible when under limit
+
+**Test result:** 1251 passed, 0 failed.
+
+**Files changed:** `mmm_replenish.py`, `mmm_monitor.py`, `tests/test_sealed_mmm_replenish.py`
+
+---
+
+## 2026-04-06 — Fix: Replenish→ATM Shield Cycle (PE Closed Immediately After Replenish)
+
+**Live incident (mmm06apr26-1):** PE replenished at 12:29:40 (sold @ 92.0), closed again at 12:32:26 (bought @ 99.5 — loss). PE ended at 0 lots with CE=228 lots unhedged. Session paused. Broker fees wasted on 2 round-trips.
+
+**Root cause: Replenish picked strike 68600, which was already within ATM Shield's proximity threshold.**
+
+Timeline:
+1. 12:06:57 IST — ATM Shield fired on PE (BTC falling toward 68600). Shield closed PE @ 119.5, re-sell blocked (probably vol/gamma regime or no suitable farther-OTM strike).
+2. 12:29:40 IST — `_process_replenish` ran. Used `_rank_strikes` (selects by `|premium - desired|`) → best match at strike 68600 (premium ~92).
+3. At that moment, BTC spot ~69000. PE dist = (69000-68600)/69000 = 0.58%. ATM shield threshold = 0.5% (base) × 1.0 (time_mult at 5h to expiry) = 0.5%. Dist 0.58% > 0.5% → position passed proximity check at entry time.
+4. 12:30 heartbeat (next beat) — BTC had dropped to ~68960. PE dist = (68960-68600)/68960 = 0.52%. Still outside 0.5% threshold.
+5. BTC continued falling (PE premium 92→99.5 = 8.2% rise in put price) → dist dropped below 0.5% → shield fired, closed PE @ 12:32:26.
+
+**Why the re-sell failed after shield:** `sells_possible = False` because `vol_gamma_blocked=True` (gamma regime HARD/EMERGENCY near expiry) OR `find_new_strike` returned None (no liquid strike at 1.5% OTM target). Either way, shield close without re-sell → PE=0.
+
+**The bug:** `_rank_strikes` has no awareness of the ATM Shield proximity threshold. It finds the "best premium match" regardless of OTM distance safety. The replenish→shield cycle burns fees and re-creates the problem it was trying to solve.
+
+**Fix (`mmm_monitor.py` `_process_replenish`):**
+
+Added Step 3b-ATM (proximity guard) after `_rank_strikes` selects a candidate:
+1. Compute `eff_prox_pct = atm_shield_proximity_pct × time_mult` (mirrors ATM Shield's own formula)
+2. Apply 2× safety buffer: `safe_pct = eff_prox_pct × 2.0` — gives the position room to survive at least one heartbeat interval even if spot moves against it
+3. If candidate dist ≤ safe_pct:
+   a. Call `find_new_strike(min_otm_distance = spot × safe_pct / 100)` — same function ATM Shield uses to find safer strikes
+   b. If a safe strike found → use it instead of the premium-matched candidate
+   c. If no safe strike → `return False` (PAUSE takes over) — better to pause than to burn fees in a cycle
+
+**At 5h to expiry:** `eff_prox_pct = 0.5 × 1.0 = 0.5%`, `safe_pct = 1.0%`. Strike 68600 at 0.58% OTM would be blocked (0.58% ≤ 1.0%). System attempts `find_new_strike` with min 1.0% OTM. If no viable strike → PAUSE (correct — better than cycling).
+
+**Tests:** 28 passed (all replenish sealed tests still pass, no regressions).
+
+**Files changed:** `mmm_monitor.py`
+
+---
+
+## 2026-04-06 — MMMX Strict Analysis + Phase Planning (No Code Changes)
+
+- Completed a strict line-by-line analysis pass for MMMX design artifacts before implementation planning.
+- Re-read and cross-mapped core MMMX strategy + architecture docs for consistency and implementation readiness:
+  - `MMMX_COMPLETE.md`
+  - `MMMX_IMPLEMENTATION_PLAN.md`
+  - `mmmx_brain.md`
+  - `mmmx_plan.md`
+  - `MMMX_WEBUI_DESIGN.md`
+- Produced planning artifacts (in chat) covering: separate strategy logic map, separate system architecture map, wiring verification with conflict/missing risk flags, failure-path traces, and micro-phase decomposition + handoff structure.
+- No runtime/code behavior changed in this session; this was a pre-implementation design validation and sequencing pass to reduce integration surprises.
+
+---
+
+## 2026-04-06 — MMMX Document Normalization (Contradiction Cleanup)
+
+- Updated `MMMX_COMPLETE.md` to remove internal contradictions and lock implementation semantics:
+  - Deployment queue retracement changed to **directional retracement** (against queue direction) instead of absolute distance.
+  - Hard-stop-vs-shield behavior unified to **atomic step completion + immediate next control-boundary hard stop** (no mid-step interrupt).
+  - Trigger table fixed: `NEAR_ITM (>=0.70)` now maps to `close_all` for consistency with delta gates.
+  - Removed stale heartbeat reference to `side loss` trigger (already removed from design).
+  - Hedge close policy clarified: hard stop leaves hedges orphaned; DTE_CLOSE flow closes hedges only after shorts are confirmed closed.
+  - Fee/P&L formulas normalized to avoid ambiguity: fees deducted exactly once at portfolio level.
+- Updated `MMMX_IMPLEMENTATION_PLAN.md` to mirror the same normalized rules:
+  - Trigger table row for `NEAR_ITM` aligned to `close_all`.
+  - Queue retracement edge-case row updated to directional retracement wording.
+  - Isolation contract strengthened: MMM read-only helpers must be accessed via MMMX-local adapters; direct non-adapter MMM imports fail CI isolation scan.
+- Why: reduce coder ambiguity before implementation and prevent divergent behavior between strategy spec and implementation plan.
+
+---
+
+## 2026-04-06 — MMMX Escalation Wording Cleanup (Telegram-only)
+
+- Updated `MMMX_IMPLEMENTATION_PLAN.md` to remove mixed SMS/Telegram escalation wording and standardize naked-position escalation to Telegram `CRITICAL` at both 30-minute and 2-hour checkpoints.
+  - Section 3.8: changed watchdog line to Telegram-only.
+  - Phase 9 build checklist: removed "Telegram + SMS hook" phrasing.
+  - Section 9 A9: renamed ambiguity label and clarified no secondary gateway is configured in-repo.
+- Updated `MMMX_COMPLETE.md` to align escalation language in the naked-timeout flow from "SMS/emergency" to "Telegram CRITICAL alert".
+- Why: eliminate channel ambiguity before implementation so runtime behavior, alerts, and tests all align to one escalation path.
+
+## 2026-04-06 — MMMX Phase 2: Execution Engine (4 new files, 40 tests)
+
+- `mmmx_executor.py` (new): MMMX's only exchange-facing module. `smart_execute()` with sha256 deterministic client_order_id (dedup within minute), preflight margin check (SELL blocked >= 80%, BUY blocked >= 95%), `_being_closed` TTL guard, limit reprice loop (mid → bid/ask in second half), mid-loop margin check (>= 85% falls to market, >= 95% aborts), emergency_execute fallback (IOC). `emergency_execute()` standalone IOC path for crash/margin breach. `ExecutionResult` dataclass with `to_dict()`. Zero `routes.mmm.*` imports.
+- `mmmx_circuit_breaker.py` (new): 3-state fault isolator (CLOSED/HALF_OPEN/OPEN) keyed by session_id. Thread-safe with lock. N=3 consecutive failures → HALF_OPEN; probe failure → OPEN; 5s cooldown → HALF_OPEN for next probe; probe success → CLOSED.
+- `mmmx_margin_guardian.py` (new): Read-only adapter over MMM's `fetch_margin_utilization`. The ONLY mmmx file allowed to import from `routes.mmm.*`. Async `current_utilization()` (caches last value on error), sync `estimated_margin_for_order()`. Singleton via `get_margin_guardian()`.
+- `mmmx_reconciler.py` (new): Partial fill tracker. `track_partial_fill()` records residuals in-memory + audit log. `tick_partials(session)` retries each residual each heartbeat (smart_execute for < 20 lots, emergency_execute for >= 20 lots). `reconcile_with_exchange(session)` compares DB positions vs live exchange (Phase 9 manual trigger). `get_pending_residuals()`, `clear_all_residuals()` for monitoring and tests.
+- `tests/test_phase2.py` (new): 40 tests — all Phase 2 exit criteria passing. Patching done at correct module boundaries (lazy imports respected).
+- `MMMX_IMPLEMENTATION_PLAN.md`: Phase 2 marked ✅ COMPLETE (2026-04-06, 109 total tests). Phase 3 NEXT AI prompt added.
+- Total test count: 109/109 passing (69 Phase 1 + 40 Phase 2). MMM isolation scan clean.
+
+## 2026-04-06 — MMMX Phase 3: Monitoring Core (3 files touched, 36 tests)
+
+- `mmmx_safety.py` (new): Pre-beat safety checks — pure function, no I/O. `pre_beat_check(session, stored_gen, my_generation) → SafetyVerdict`. Priority order: (1) STALE_GENERATION → abort; (2) status not in RUNNING/PAUSED → skip_beat; (3) _pnl_calculation_incomplete → skip_beat; (4) expiry_datetime=None (dte=-1.0) → abort EXPIRY_PAST; (5) naked positions → log warning only. PAUSED passes the status guard (trigger evaluator handles skipping PAUSED separately).
+- `mmmx_trigger.py` (new): Priority-ordered trigger evaluator — pure function, no async, no I/O. `evaluate(session, metrics) → Optional[TriggerHit]`. 7-priority table: DTE_CLOSE → HARD_STOP → IV_CATASTROPHE → NEAR_ITM → PORTFOLIO_DELTA → DELTA_DRIFT → IV_SPIKE. First match wins. Returns None if status != RUNNING. `TriggerHit` dataclass: trigger_name, reason, severity, data. Helper scanners: `_scan_near_itm()` (abs delta fallback to entry_delta), `_scan_delta_drift()` (skips legs without current_delta).
+- `mmmx_monitor.py` (updated): Replaced `_heartbeat_stub` with full `async def _heartbeat()` hot-path. Steps: (1) G5 generation guard; (2) `safety.pre_beat_check()` — abort/skip as directed; (3) `compute_portfolio_pnl/delta/lot_imbalance/dte` + `recalc_hard_stop`; (4) PnLIncompleteError → set flag, bump beat, save; (5) `trigger.evaluate()`; (6) dispatch: HARD_STOP/DTE_CLOSE → `_dispatch_close_all()`, others log-only; (7) emit_heartbeat + save. Added `_dispatch_close_all(session, reason)` — emergency_execute for all ACTIVE legs (buy-to-close), audit all fills (success AND failure), transition_status(COMPLETE), emit_safety (sync), Telegram, save. `_run_loop` now calls `asyncio.run(_heartbeat())`. Added `_stale_abort_gen` field to `__init__`.
+- `tests/test_phase3.py` (new): 36 tests. TestSafetyVerdict (9 tests), TestTriggerEvaluate (15 tests), TestMonitorHeartbeat (5 tests), TestMMMIsolation (5 tests). Isolation check uses regex (actual import lines only) rather than raw string search to avoid false positives from docstrings.
+- Key design decisions: isolation docstrings say "MMM namespace" not "routes.mmm.*" to avoid confusing isolation scanner; PAUSED status is allowed by safety (not status guard) but trigger evaluator skips PAUSED; compute_dte_days clamps to 0.0 for past datetimes — EXPIRY_PAST abort only fires when expiry_datetime=None.
+- `MMMX_IMPLEMENTATION_PLAN.md`: Phase 3 marked ✅ COMPLETE (2026-04-06, 36 tests). Phase 4 NEXT AI prompt added.
+- Total test count: 145/145 passing (69 Phase 1 + 40 Phase 2 + 36 Phase 3). MMM isolation scan clean.
+
+## 2026-04-06 — MMMX Phase 4+5: Audit Log + ATM Shield (60 new tests, 249 total)
+
+- `mmmx_audit_log.py` (new, Phase 4): Append-only JSONL audit log. `MMMXAuditLog` class with background writer thread. `enqueue_event()` — non-blocking; `flush()` — blocks until queue drained; `get_audit_log()` singleton. Zero `routes.mmm.*` imports. (Phase 4 details from prior session.)
+- `tests/test_phase4.py` (new): Phase 4 exit criteria tests. (From prior session.)
+- `mmmx_atm_shield.py` (new, Phase 5): Full ATM Shield implementation per spec.
+  - `evaluate(session, spot)` — scans all ACTIVE CE/PE legs; OTM% = `(strike-spot)/spot*100` (CE), `(spot-strike)/spot*100` (PE); candidate if OTM% < threshold.
+  - `sort_by_priority(candidates)` — G38: sorts by worst unrealized_pnl first.
+  - `multi_shield_margin_precheck(candidates)` — G38 stub; always True for now.
+  - `allocate_reserve(session, loss_usd, ce_premium, pe_premium)` — G39: `ce_needed = ceil(loss×0.30 / (ce_prem×LOT_SIZE_BTC))`; `pe_needed = ceil(loss×0.70 / (pe_prem×LOT_SIZE_BTC))`; per-side independent capping to reserve; `partial=True` if either side short-filled; `exhausted=True` if both sides = 0.
+  - `execute_shield(session, candidate, executor, audit, spot, save_fn)` — 6-step sequence: buyback (10 limit + 1 market); if buyback fails → abort (no naked); sell new (10 limit + 1 market); if sell fails → session PAUSED + naked logged + no recovery tranche; allocate reserve + create recovery tranche; recalc hard stop; G13 mid-beat persist via `save_fn`.
+  - `evaluate_and_fire(session, spot, executor, audit, save_fn)` — G38 multi-shield: evaluates, sorts, pre-checks margin, fires sequentially; stops cascade on naked.
+  - `create_recovery_tranche(session, parent_tranche, ...)` — sibling tranche with string IDs ("2A", "2B"); full first-class citizen; `tranches_deployed`/`tranches_remaining` NOT changed.
+  - Import pollution fix: `_engine.recalc_hard_stop()` called via module attr (not bound name) to survive test patching.
+  - Zero `routes.mmm.*` imports confirmed.
+- `mmmx_reconciler.py` (updated, Phase 5): Added `check_naked_watchdog(session, executor) → List[Dict]`. G37: `>30 min` → `emergency_execute` + Telegram; `>2 hr` → CRITICAL alert + Telegram. Resolved positions removed from `_naked_positions`.
+- `mmmx_monitor._heartbeat` (updated, Phase 5): Added steps 4b (naked watchdog) and 4c (ATM shield evaluation) between trigger dispatch and emit+save. ATM shield only fires if `spot_price` is present in metrics (no live feed in Phase 5).
+- `tests/test_phase5.py` (new): 60 tests covering all Phase 5 exit criteria — evaluate, sort, allocate_reserve, execute_shield (success/buyback-abort/naked paths), evaluate_and_fire (multi-shield, cascade, reserve exhaustion), recovery tranche citizenship, G37 naked watchdog (all thresholds), isolation, state invariants.
+- Total test count: 249/249 passing. MMM isolation scan clean.
+
+## 2026-04-06 — MMMX Phase 7: Premium Listener + Tier-0 CBs + Heartbeat Watchdog + Hedger
+
+- `mmmx_premium_listener.py` (new): `PremiumListener` class with its own daemon watchdog thread.
+  - `subscribe(session)`: collects CE/PE symbols from active tranches; initialises `live_quotes` and `_listener_force_count`.
+  - `on_tick(tick, session)`: updates `session['live_quotes']`; calls `evaluate_cbs()`.
+  - `evaluate_cbs(tick, session)` (async): evaluates all 4 Tier-0 circuit breakers:
+    - `CB_PREMIUM_JUMP`: leg premium > 50% above entry_premium → `force_heartbeat()`
+    - `CB_DELTA_BLOWOUT`: abs(portfolio_delta) > emergency_delta (0.70) → `force_heartbeat()`
+    - `CB_IV_FLASH_SPIKE`: IV/iv_rank > iv_catastrophe_pct (80%) → `force_heartbeat()`
+    - `CB_NEAR_ITM`: any active position delta >= 0.72 → `await executor.emergency_execute()` (50% reduce) THEN `force_heartbeat()`. Only CB that executes orders directly.
+  - `force_heartbeat(session, reason)`: sets `session['_force_check']=True`, increments `_listener_force_count`, signals `monitor.signal_force_check()` (lazy import to avoid circular).
+  - `check_stale_ws(session)`: 5-min watchdog — WS stale → Telegram WARNING + force_heartbeat; WS AND monitor both stale → Telegram CRITICAL.
+  - Registry: `_mmmx_listeners` dict with `RLock` (prevents deadlock when `stop()` is called inside `start_session_listener()`).
+  - `start_session_listener(session_id, my_generation, executor)`, `stop_session_listener`, `get_listener`.
+
+- `mmmx_hedger.py` (new): Deferred hedge execution after Tr5+ deployment.
+  - `schedule_post_deploy(session, tranche_id, deployed_at)`: appends PENDING entry to `session['_hedge_schedule']`; only if `tranches_deployed >= 5` AND `hedging_enabled=True`. Tr1–Tr4 produce no entries.
+  - `tick(session, executor, audit)` (async): iterates PENDING entries; executes CE+PE buys via `smart_execute` when `now >= execute_after`; creates hedge via `make_hedge()`; appends to `session['hedges']`; marks entry EXECUTED. On CE or PE failure: marks FAILED, no hedge created.
+  - `update_hedge_pnl(session, live_quotes)`: LONG unrealised P&L = (current − entry) × lots × LOT_SIZE_BTC for all ACTIVE hedges. Skips ORPHANED.
+  - `detect_displacement(session, repositioned_parent_id)`: marks associated hedge ORPHANED + logs + Telegram. Does NOT close. Hard-stop path calls this → hedges stay ORPHANED.
+
+- `mmmx_monitor.py` (updated):
+  - `MMMXMonitor.__init__`: added `_force_wake_event = threading.Event()`.
+  - `stop()`: now also sets `_force_wake_event` so sleeping thread wakes immediately.
+  - `signal_force_check()` (new method): sets `_force_wake_event`. Called by `PremiumListener.force_heartbeat()`.
+  - `_run_loop` sleep: replaced `_stop_event.wait(beat_secs)` with `_force_wake_event.wait(beat_secs)` + clear. When listener fires a CB, monitor wakes immediately instead of sleeping for up to 1 hour.
+  - `_heartbeat` step 5d (new): calls `mmmx_hedger.tick()` then `update_hedge_pnl()`. Inserted between profit booking (5c) and emit+save (6).
+  - Deployment step 5b: now captures `_deployed_tranche` return value from `execute_tranche_deploy()`; calls `schedule_post_deploy()` on success.
+  - `start_session_monitor()`: also starts `PremiumListener` with same generation + executor.
+  - `stop_session_monitor()`: also calls `stop_session_listener()`.
+
+- `tests/test_phase7.py` (new): 65 tests covering all Phase 7 exit criteria across 14 test classes.
+- Total test count: 385/385 passing (320 prior + 65 Phase 7). Zero regressions.
+
+## 2026-04-06 — Phase 8: UI + Hot Reload (WebUI Integration)
+
+- `webui/backend/routes/mmmx/mmmx_config.py`:
+  - Fixed `hedge_distance_pct` min bound: `1.0` → `10.0` (bug per spec Section 5.1).
+  - Added `split_hot_reload_patch(patch) → (applied, rejected)`: splits a hot-reload patch without raising. Disallowed keys → rejected with reason; invalid values → rejected with validation message. `validate_hot_reload_patch()` still raises (backward compat preserved).
+
+- `webui/backend/routes/mmmx/mmmx_api.py`:
+  - Reworked `PATCH /params` (hot_reload_params): now uses `split_hot_reload_patch` for partial success. Applied keys merged, rejected keys returned. `hard_stop_multiplier` change triggers `recalc_hard_stop()`. Response: `{ok, applied, rejected, audit_id}`. HTTP 422 only when ALL keys rejected.
+  - Added `POST /pause`: stops monitor ONLY (NOT `stop_session_monitor()` — that would kill listener). Premium Listener stays alive during pause.
+  - Added `POST /resume`: calls `start_session_monitor()` which bumps generation and co-starts listener.
+  - Added `GET /scan_strikes`: returns `{reason: "no_live_chain"}` when no live chain available (chain=[] short-circuits scan_strikes).
+  - Added `POST /deploy_tranche1`: calls `deploy_manual_tranche1` via `asyncio.run`.
+  - Added `POST /profit_book`: calls `queue_close`; returns updated `_profit_booking_queue`.
+  - Added `POST /reconcile`: calls `reconcile_with_exchange`; returns `ReconciliationReport` as JSON via `dataclasses.asdict`.
+
+- Frontend (new files):
+  - `webui/frontend/src/components/mmmx/mmmxService.js`: REST client (all 15 API functions).
+  - `webui/frontend/src/components/mmmx/MMMXContext.js`: React context + `MMMXProvider` + `useMMMX`. Subscribes to all 12 `mmmx_*` WS events. Exposes `{session, tranches, hedges, risk, activity, isConnected}`.
+  - `webui/frontend/src/components/mmmx/useMMMXWebSocket.js`: thin hook connecting socket to context.
+  - `webui/frontend/src/components/mmmx/MMMXDashboard.js`: 7-tab MUI dashboard (Status, Tranches, Hedges, Risk, Adjustments, Profit Booking, Parameters). Hot-reload param editor with allowlist lock icons + diff preview.
+  - `webui/frontend/src/pages/MMMXPage.js`: thin page wrapper (MMMXProvider + MMMXDashboard).
+
+- Frontend wiring:
+  - `navigationSections.js`: added `mmmx` entry to Algorithms group with `TrendingUp` icon.
+  - `App.js`: added `const MMMXPage = React.lazy(...)` + `<Route path="/mmmx" .../>`.
+
+- `tests/test_phase8.py` (new): 43 tests across 8 test classes. All 428 tests pass (385 prior + 43 Phase 8). Zero regressions.
+
+## 2026-04-06 — Phase 9: Fault Tolerance (Watchdog, Reconciliation, Restart)
+
+- `webui/backend/routes/mmmx/mmmx_watchdog.py` (new):
+  - `MMMXWatchdog` class: supervisor daemon thread polling every 30s. On each tick:
+    - Loads session status for each registered monitor. Only restarts RUNNING sessions.
+    - Dead monitor (RUNNING) → `_restart_monitor()` calls `start_session_monitor()` (bumps generation).
+    - Dead/None listener (RUNNING) → `_restart_listener()` calls `start_session_listener()` with current gen.
+    - PAUSED/COMPLETE/ERROR sessions: no restart (intentional dead threads).
+  - Telegram alerts deduped with 300s TTL per session+component key.
+  - `get_watchdog()` singleton (global `_watchdog_instance`).
+  - Isolation: ZERO imports from routes.mmm.*.
+
+- `webui/backend/routes/mmmx/init_mmmx.py` (new):
+  - `on_startup()`: called at Flask startup.
+    1. Loads all sessions from DB.
+    2. RUNNING sessions → `transition_status(PAUSED, reason="startup_landing")` + Telegram alert.
+    3. Clears expired `_being_closed` guards (older than BEING_CLOSED_TTL_SECS=180s).
+    4. `_whipsaw` state restored automatically (persisted in session dict — no mutation needed).
+    5. Starts the global watchdog.
+
+- `webui/backend/routes/mmmx/mmmx_reconciler.py` (extended):
+  - Added `apply_recon_confirmation(session, operator_decision)`:
+    - `accept_db`: logs audit event; DB state confirmed correct; no mutation.
+    - `accept_exchange`: closes matching DB tranche leg (status→CLOSED, close_reason→recon_accept_exchange).
+    - `manual_close`: adds divergence to `session._naked_positions` for watchdog tracking.
+    - Unknown action → ValueError.
+  - Added `_force_close_db_leg()`: helper matching by "symbol:tranche_id:leg" divergence_id format.
+
+- `webui/backend/routes/mmmx/mmmx_api.py` (extended):
+  - Added `POST /api/mmmx/session/<id>/confirm-reconcile`:
+    - Validates action (accept_db | accept_exchange | manual_close). 422 on bad action.
+    - Calls `apply_recon_confirmation(session, body)`. Saves session. Returns `{ok, session_id}`.
+  - Updated `GET /api/mmmx/health`: added `watchdog_alive` and `last_watchdog_tick` fields.
+
+- Frontend:
+  - `mmmxService.js`: added `confirmReconcile(id, divergenceId, action, notes)`.
+  - `MMMXDashboard.js` (extended):
+    - Added 8th tab "Reconcile": shows ReconciliationReport with per-divergence action buttons
+      (Accept DB / Accept Exchange / Manual Close) calling POST /confirm-reconcile.
+    - Status tab: added watchdog status chip (alive/dead), last tick timestamp, monitor counts.
+      Fetched from GET /health on session status change.
+
+- `tests/test_phase9.py` (new): 35 tests across 8 test classes. All 463 tests pass (428 prior + 35 Phase 9). Zero regressions.
+
+## 2026-04-06 — MMMX Production Wiring (Post-Phase-9)
+
+- `webui/backend/app.py`: Registered `mmmx_bp` Blueprint, called `init_mmmx_websocket(socketio)` and `init_mmmx()` immediately after the MMM block. MMMX REST API is now live at `/api/mmmx/*` when the backend starts.
+
+- `webui/backend/routes/mmmx/mmmx_iv_adapter.py` (new): Read-only IV rank adapter wrapping `services/patience_iv.get_current_iv_percentile()`. Exposes `get_iv_rank()`. Zero `routes.mmm.*` imports — isolation clean. Resolves Ambiguity A8 from the implementation plan.
+
+- `webui/backend/routes/mmmx/mmmx_monitor.py`: Replaced hardcoded `iv_rank: None` and `spot_price: None` in the heartbeat metrics dict with live values. `iv_rank` comes from `mmmx_iv_adapter.get_iv_rank()`; `spot_price` from `options_chain.chain_service._get_spot_price('BTC')`. Both are None-safe — failures are swallowed and callers already guard with `or 0.0`.
+
+- Frontend build refreshed: `npm run build` confirmed all 70 JS files within budget. MMMX lazy chunk (`8540.e3704a34.chunk.js`) confirmed present. Navigation entry, `/mmmx` route, and MMMXPage already wired in prior phase.
+
+- All 463 MMMX tests pass. MMM isolation scan clean.
+
+## 2026-04-06 — MMMX Control Terminal Architecture Analysis (No Runtime Changes)
+
+- Per mandatory process, completed deep read/audit before design output:
+  - Specs: `MMMX_COMPLETE.md`, `MMMX_IMPLEMENTATION_PLAN.md` (full pass)
+  - Existing MMM UI control surface: `MMMDashboard.js`, `MMMContext.js`, `mmmService.js`, `MMMSettingsDialog.js`, `MMMConfigPanel.js`, `MMMStatusBanner.js`, `MMMPositionsTable.js`, `MMMBothSidesAlert.js`, plus all dashboard-imported risk/safety/audit panels.
+  - Existing MMMX WebUI baseline: `MMMXDashboard.js`, `MMMXContext.js`, `mmmxService.js`, `useMMMXWebSocket.js`.
+
+- Produced a mission-critical MMMX WebUI control-interface architecture focused on operator safety and failure visibility:
+  - WebSocket-first live state/event model,
+  - trigger-priority-aware operator workflows,
+  - explicit escalation/acknowledgement ladder for naked/partial/orphan states,
+  - hot-reload governance grouped by risk domain,
+  - edge-case runbooks (recovery tranches, residual fills, reserve depletion, orphan hedges, restart+reconcile).
+
+- No production backend/frontend trading logic was modified in this session.
+
+## 2026-04-07 — MMMX WebUI Specification Document (`mmmx_webUI.md`)
+
+- Created new documentation file: `mmmx_webUI.md` (repository root).
+- Document defines mission-critical MMMX control-terminal design only (no code changes), including:
+  - terminal layout (session rail, command strip, execution core, risk stack),
+  - WebSocket-first live event/state contract,
+  - control gating + confirmation tiers,
+  - incident severity/escalation model,
+  - hot-reload governance by risk domain,
+  - edge-case operator runbooks (recovery tranches, partial fills, reserve depletion, orphan hedges, restart+reconcile),
+  - explicit “NOT DEFINED IN SPEC” list for unresolved product decisions.
+- No backend or frontend runtime behavior was modified in this session.
+
+  ## 2026-04-07 — MMMX WebUI Gap Analysis + Completion Addendum (Doc-Only)
+
+  - Updated `mmmx_webUI.md` with a **critical gap-analysis completion addendum** (no redesign of existing sections 1–14):
+    - Added identified safety/state/execution/decision/stress/health gaps with severity and current-state flags.
+    - Added full design for 10 mandatory missing control components:
+      1) Global Kill Switch System,
+      2) State Integrity Monitor,
+      3) Order Lifecycle Timeline,
+      4) Critical Mode UI,
+      5) Operator Error Prevention Layer,
+      6) System Health Score Engine,
+      7) Delta/Change Tracking Panel,
+      8) Action Recommendation Engine,
+      9) Trigger Explanation Panel,
+      10) Incident Auto-Focus System.
+    - For each component, documented: purpose, location, data, visual design, operator interaction, failure behavior, event wiring, and per-scenario failure-test expectations (API failure / WS disconnect / partial data / stale state).
+    - Added integration mapping to existing MMMX tabs/panels and explicit cross-component safety completion gates.
+
+  - Explicitly flagged unresolved dependencies as `NOT DEFINED IN SPEC` where contracts are missing (e.g., per-order lifecycle events, trigger-evaluation payload schema, command-ack correlation schema, integrity checksum/version contract).
+
+  - Document-only session: no backend/frontend runtime trading logic changed.
+
+## 2026-04-07 — MMMX WebUI Executable Phase Plan Conversion (Doc-Only)
+
+- Created `mmmx_webUI_implementation_plan.md` as a strict conversion of finalized `mmmx_webUI.md` into a granular implementation program (no redesign, no requirement removal).
+- Plan includes:
+  - full parsed requirement inventory (components, controls, invariants, event dependencies),
+  - micro, independently testable phase sequence with strict per-phase fields:
+    - phase name,
+    - objective,
+    - components,
+    - data contracts,
+    - websocket events,
+    - UI states,
+    - failure states,
+    - strict exit criteria,
+  - cross-phase wiring map (N→N+1),
+  - dependency graph + per-phase BLOCKED/READY validation,
+  - control safety validation matrix (enabled/disabled/blockers/confirmation),
+  - event contract validation report with explicit tags:
+    `EVENT MISSING`, `EVENT MISMATCH`, `EVENT INSUFFICIENT`,
+  - missing backend requirements list,
+  - implementation risk register.
+
+- Confirmed and documented live contract drifts in current code (not fixed in this doc-only task), including:
+  - `mmmx_whipsaw` (backend emit) vs `mmmx_whipsaw_update` (frontend subscribe),
+  - payload shape mismatches for heartbeat/tranche/hedge/circuit-breaker consumer expectations.
+
+- No backend/frontend runtime trading logic was modified in this session.
+
+## 2026-04-07 — MMMX WebUI Implementation Start (Phase 0/2 Foundation + Force Heartbeat)
+
+- Started live implementation from `mmmx_webUI_implementation_plan.md` with an incremental safety-first slice (no redesign):
+  - **Phase 0 contract baseline wiring** (frontend runtime validation + drift visibility),
+  - **Phase 2 control-safety base** (deterministic lock reasons + stale-context gating),
+  - missing manual control path for **Force Heartbeat** endpoint (backend + frontend client wiring).
+
+- **Frontend changes**
+  - `webui/frontend/src/components/mmmx/mmmxEventContracts.js` (new)
+    - Added event contract registry and payload validator.
+    - Added explicit issue typing (`EVENT_MISSING`, `EVENT_MISMATCH`, `EVENT_INSUFFICIENT`) and helpers for circuit-breaker/heartbeat normalization.
+  - `webui/frontend/src/components/mmmx/MMMXContext.js`
+    - Added contract state (`SYNCED/DRIFT/UNKNOWN`) + violation tracking in context reducer.
+    - Added runtime contract validation per websocket event.
+    - Fixed emitter/consumer mismatch handling:
+      - subscribe to both `mmmx_whipsaw` and legacy `mmmx_whipsaw_update`,
+      - normalize circuit breaker state from `state || new_state || old_state`,
+      - fallback refresh path when tranche/hedge array payloads are insufficient.
+    - Added missing event consumers: `mmmx_naked_position`, `mmmx_session_created`, `mmmx_session_stopped`.
+  - `webui/frontend/src/components/mmmx/mmmxControlSafety.js` (new)
+    - Added deterministic control enable/disable rules and lock reasons for B/C controls.
+    - Added stale-context lock policy (WS disconnected / contract UNKNOWN).
+  - `webui/frontend/src/components/mmmx/MMMXDashboard.js`
+    - Integrated control-safety locks into session card actions and Status tab controls.
+    - Added contract-status visibility chip and control-lock reason panel.
+    - Added command pending-state wrapper to block duplicate submissions.
+    - Wired Force Heartbeat action in UI controls.
+  - `webui/frontend/src/components/mmmx/mmmxService.js`
+    - Added `forceHeartbeat(sessionId, reason)` REST client method.
+
+- **Backend changes**
+  - `webui/backend/routes/mmmx/mmmx_api.py`
+    - Added `POST /api/mmmx/session/<id>/force-heartbeat` endpoint.
+    - Endpoint behavior:
+      - allows RUNNING/PAUSED only,
+      - wakes monitor immediately via existing signal path,
+      - uses listener path when attached,
+      - persists `_force_check` markers best-effort,
+      - treats generation-save conflict as non-fatal (`save_ok=false`) because wake signal is already dispatched.
+
+- **Tests**
+  - `webui/backend/routes/mmmx/tests/test_phase8.py`
+    - Added Force Heartbeat endpoint coverage:
+      - success path,
+      - listener-attached path,
+      - invalid status,
+      - dead monitor,
+      - unknown session,
+      - generation-conflict non-fatal save case.
+  - Verification run: `python3 -m pytest webui/backend/routes/mmmx/tests/test_phase8.py -q`
+    - **50 passed**, 0 failed.
+
+- Why this slice first:
+  - closes high-risk contract drift blind spots before deeper feature rollout,
+  - enforces safer operator actions under stale/degraded context,
+  - enables explicit manual heartbeat forcing using existing listener/monitor architecture.
+
+## 2026-04-07 — MMMX Trigger Evaluation Contract (winner + ladder)
+
+- Added backend trigger explainability contract so each beat can publish full trigger-priority evaluation, not just the winner:
+  - `webui/backend/routes/mmmx/mmmx_trigger.py`
+    - introduced `evaluate_with_ladder(session, metrics)` returning `(winner, ladder)`.
+    - ladder rows include priority/status/reason/data for all trigger checks.
+    - preserved legacy behavior via `evaluate()` delegating to `evaluate_with_ladder()` and returning only winner (backward compatible with existing logic/tests).
+
+- Added WebSocket emitter for trigger explainability payloads:
+  - `webui/backend/routes/mmmx/mmmx_websocket.py`
+    - new `emit_trigger_evaluation(...)` emitting `mmmx_trigger_evaluation` with `session_id`, `beat_number`, `status`, optional `winner`, `ladder`, and optional `metrics`.
+
+- Wired monitor heartbeat to emit trigger evaluation every beat:
+  - `webui/backend/routes/mmmx/mmmx_monitor.py`
+    - switched trigger evaluation call to `evaluate_with_ladder(...)`.
+    - emits `mmmx_trigger_evaluation` before dispatch path, preserving existing HARD_STOP/DTE dispatch behavior.
+
+- Wired frontend contract + consumer path for the new event:
+  - `webui/frontend/src/components/mmmx/mmmxEventContracts.js`
+    - registered `mmmx_trigger_evaluation` payload contract.
+  - `webui/frontend/src/components/mmmx/MMMXContext.js`
+    - subscribed to `mmmx_trigger_evaluation`.
+    - stores `risk.trigger_winner`, `risk.trigger_ladder`, `risk.last_trigger_eval_at`.
+    - pushes lightweight activity entries when a winner is present.
+  - `webui/frontend/src/components/mmmx/MMMXDashboard.js`
+    - surfaced trigger winner + ladder preview in `Risk` tab.
+
+- Added tests for the new contract slice:
+  - `webui/backend/routes/mmmx/tests/test_phase10.py`
+    - validates trigger ladder semantics (priority winner + blocked rows + backward compatibility), websocket emitter payload shape, and monitor heartbeat wiring for trigger evaluation emission.
+
+- Verification runs:
+  - `python3 -m pytest webui/backend/routes/mmmx/tests/test_phase10.py -q` → **5 passed**.
+  - `python3 -m pytest webui/backend/routes/mmmx/tests/test_phase3.py webui/backend/routes/mmmx/tests/test_phase8.py -q` → **86 passed**.
+
+## 2026-04-07 — MMMX Phase 7 unblock: Granular Order Lifecycle Stream
+
+- `webui/backend/routes/mmmx/mmmx_websocket.py`
+  - Added granular lifecycle emitters required by Phase 7 execution timeline contract:
+    `mmmx_order_intent`, `mmmx_order_ack`, `mmmx_order_partial`, `mmmx_order_retry`, `mmmx_order_filled`, `mmmx_order_failed`.
+  - Added shared `_order_payload_base(...)` to keep payload shape consistent across events.
+
+- `webui/backend/routes/mmmx/mmmx_executor.py`
+  - Instrumented `smart_execute()` and `emergency_execute()` to emit end-to-end lifecycle transitions:
+    intent at order start, ack on placement, retry on reprices/fallback loops, partial on residual fills,
+    filled on successful completion, failed on terminal errors.
+  - Added fallback correlation plumbing (`origin_client_order_id`) for limit→emergency escalation visibility.
+  - Added terminal-failure guard in emergency path to prevent duplicate `mmmx_order_failed` terminal emits.
+
+- `webui/backend/routes/mmmx/mmmx_hedger.py`
+  - Passed `session_id` and `tranche_id` into hedge `smart_execute()` calls so lifecycle telemetry is attributable per session/tranche.
+
+- `webui/backend/routes/mmmx/mmmx_premium_listener.py`
+  - Passed `session_id` and `tranche_id` into CB_NEAR_ITM emergency-reduce execution calls for full lifecycle attribution.
+
+- `webui/frontend/src/components/mmmx/mmmxEventContracts.js`
+  - Registered payload contracts for all 6 lifecycle events to eliminate `EVENT MISSING` for this stream.
+
+- `webui/frontend/src/components/mmmx/MMMXContext.js`
+  - Added `execution` state (`timeline`, `last_event_at`) and reducer support for lifecycle events.
+  - Subscribed to all 6 lifecycle websocket events and routed them into timeline state (session-scoped).
+
+- `webui/frontend/src/components/mmmx/MMMXDashboard.js`
+  - Added new **Execution** tab with lifecycle timeline rendering and filters (stage/side/symbol).
+  - Shows attempt/mode/IDs/fill-residual/reason metadata for operator troubleshooting.
+
+- `webui/backend/routes/mmmx/tests/test_phase11.py` (new)
+  - Added Phase 11 tests for lifecycle emitters + executor wiring:
+    emitter payload checks, smart_execute intent/ack/fill flow, preflight-failure flow,
+    partial-fill emission, and emergency retry/fail flow.
+
+- Verification:
+  - `python3 -m pytest webui/backend/routes/mmmx/tests/test_phase11.py webui/backend/routes/mmmx/tests/test_phase2.py webui/backend/routes/mmmx/tests/test_phase10.py -q`
+  - Result: **50 passed**, 0 failed.
+
+## 2026-04-07 — MMMX Section 20 Closures (Integrity + Kill Progress + Critical UX)
+
+- `webui/backend/routes/mmmx/mmmx_integrity.py` (new)
+  - Added deterministic integrity signature builder (`state_version`, `state_checksum`, schema, generated timestamp) for snapshot/stream drift detection.
+
+- `webui/backend/routes/mmmx/mmmx_api.py`
+  - `GET /session/<id>` now includes `_integrity` payload.
+  - `POST /kill-switch` now emits lifecycle progress (`accepted`, per-session `session_result`, `completed`) and returns `correlation_id` for UI tracking.
+
+- `webui/backend/routes/mmmx/mmmx_monitor.py`
+  - Heartbeat now computes integrity signature each beat and emits it in websocket heartbeat extras.
+
+- `webui/backend/routes/mmmx/mmmx_websocket.py`
+  - Added `emit_kill_switch_progress(...)` event emitter.
+
+- `webui/backend/routes/mmmx/mmmx_trigger.py`
+  - Enriched trigger ladder rows with `threshold`, `value`, `excluded_by`, and `would_status` metadata for operator explainability.
+
+- `webui/backend/routes/mmmx/tests/test_phase8.py`
+  - Added API assertion coverage for `_integrity` snapshot payload shape.
+
+- `webui/backend/routes/mmmx/tests/test_phase9.py`
+  - Added kill-switch lifecycle telemetry assertions (`accepted → session_result → completed`) + `correlation_id` checks.
+
+- `webui/backend/routes/mmmx/tests/test_phase10.py`
+  - Added assertions for new trigger ladder explainability fields.
+
+- `webui/frontend/src/components/mmmx/mmmxEventContracts.js`
+  - Added heartbeat optional `integrity` contract and `mmmx_kill_switch_progress` contract.
+
+- `webui/frontend/src/components/mmmx/MMMXContext.js`
+  - Added stream/snapshot integrity state tracking with mismatch detection and drift promotion.
+  - Added kill-switch progress subscription/state updates.
+
+- `webui/frontend/src/components/mmmx/MMMXDashboard.js`
+  - Added command-strip kill-switch progress chip + progress bar.
+  - Added Status-tab State Integrity Monitor card (stream vs snapshot versions/checksums + mismatch display).
+  - Added incident ETA chips, critical panel ETA chips, and dedicated critical-mode emergency layout.
+  - Extended Trigger Engine rendering with exclusion + would-status context.
+
+- `mmmx_webUI.md`
+  - Updated Section 20 progress matrix: closed prior partials for A1, B1, D2, E1, E3 and updated Section 19 gate re-check summary.
+
+- Verification:
+  - `python3 -m pytest -q webui/backend/routes/mmmx/tests/test_phase8.py webui/backend/routes/mmmx/tests/test_phase9.py webui/backend/routes/mmmx/tests/test_phase10.py`
+  - Result: **95 passed, 8 warnings**, 0 failed.
+
+## 2026-04-07 — MMMX WebUI Final Consistency Closure (Doc Sync)
+
+- `mmmx_webUI.md`
+  - Closed stale “NOT DEFINED” contract notes that were already implemented in code.
+  - Section 16.1 updated: kill-switch command progress contract now documented as implemented via `mmmx_kill_switch_progress` with correlation lifecycle (`accepted → session_result → completed`).
+  - Section 16.3 updated: granular order lifecycle events now documented as implemented (`mmmx_order_intent/ack/partial/retry/filled/failed`).
+  - Section 16.9 updated: trigger explanation payload event now documented as implemented (`mmmx_trigger_evaluation`).
+  - Section 17.2 rewritten from generic unresolved list to resolved-state notes for whipsaw drift normalization, lifecycle events, and trigger-evaluation payload; left only one genuinely open item: unified non-kill command-ack schema.
+
+- Why:
+  - User requested checking for remaining work in `mmmx_webUI.md`; this pass removes stale contradictions between spec text and implemented MMMX backend/frontend behavior.
+
+## 2026-04-07 — MMMX WebUI Full Refactor: 3500-line monolith → modular component tree
+
+### What changed and why
+
+- **Root cause**: `MMMXDashboard.js` was a 3,500-line monolith containing all tabs, dialogs, helpers, constants, and derivation functions inline. This made it unmaintainable and error-prone (e.g., whipsaw score bug silently returned 0 after page reload).
+
+### Files created
+
+**Utilities:**
+- `utils/mmmxConstants.js` — All shared constants: STATUS_CFG, scfg, HEDGE_COLOR, ORDER_EVENT_META, HOT_RELOAD_ALLOWLIST, INCIDENT_RANK, INCIDENT_COLOR
+- `utils/mmmxFormatters.js` — Pure formatting/time utilities: fmt, pnlColor, computeDTE, heartbeatAge, sessionDisplayName, computeUpcomingExpiries, deriveWhipsawLevel (new — matches Python backend get_level() exactly)
+- `utils/mmmxDerivations.js` — All derived state: deriveIntegrityState, deriveConfidence, buildIncidentQueue, deriveSystemHealth, deriveRecommendations
+
+**Core UI:**
+- `MMMXErrorBoundary.js` — Class component error boundary; wraps all tab panels so one crash can't blank the dashboard
+- `MMMXSessionCard.js` — Session list card with DTE animation (pulse at ≤7 DTE, fast pulse at ≤3 DTE)
+- `MMMXTopCommandStrip.js` — Status strip with WS/integrity/health/confidence/incident chips + kill buttons
+- `MMMXIncidentQueuePanel.js` — Scrollable incident list with ETA countdown chips
+- `MMMXCriticalModePanel.js` — Emergency layout panel shown on L3+ incidents
+- `MMMXCreateSessionDialog.js` — Create session + Deploy Tranche 1 dialogs (live expiry picker from Delta Exchange)
+
+**Tabs (10 original):**
+- `tabs/MMMXStatusTab.js`, `MMMXTranchesTab.js`, `MMMXHedgesTab.js`, `MMMXTriggerEngineTab.js`
+- `tabs/MMMXRiskTab.js`, `MMMXExecutionTab.js`, `MMMXAdjustmentsTab.js`
+- `tabs/MMMXProfitBookingTab.js`, `MMMXParametersTab.js`, `MMMXReconcileTab.js`
+
+**Phase 3 panels (7 new):**
+- `panels/MMMXSafetyPanel.js` — Filters activity by type==='safety', severity-colored list
+- `panels/MMMXTradeAuditPanel.js` — Paginated trade audit log from `/session/:id/audit`
+- `panels/MMMXFeesCapitalPanel.js` — fees_tracking.* stats + budget/capital utilisation
+- `panels/MMMXRegimePanel.js` — Whipsaw state machine score bar + ATM shield event trail (uses session._whipsaw_score, shield_event_history, shield_fire_count)
+- `panels/MMMXDeltaExposurePanel.js` — Per-tranche CE/PE entry_delta/current_delta breakdown + portfolio delta bar
+- `panels/MMMXPnLChart.js` — Pure SVG sparkline of P&L + delta over heartbeat history (no chart library)
+- `panels/MMMXPerformancePanel.js` — Analytics summary: premium efficiency, fee ratio, hedge cost, P&L std dev
+
+**Dashboard shell:**
+- `MMMXDashboard.js` — Slimmed from 3,321 → 646 lines (orchestration only). Now has 17 tabs total (10 original + 7 new), visibility-aware polling for session list, Snackbar action feedback, MMMXErrorBoundary wrapping on every tab, auto-focus incident routing updated for Safety/Regime tabs.
+
+### Bugs fixed
+
+- `MMMXContext.js` line 117: `s?._whipsaw?.score ?? 0` → `s?._whipsaw_score ?? 0` — whipsaw score was always 0 after page reload until next WS event (nested field `_whipsaw` doesn't exist; backend uses flat `_whipsaw_score`)
+- `MMMXContext.js`: Added `pnlHistory` state accumulation (PUSH_PNL_SNAPSHOT on every heartbeat) — enables PnL sparkline chart without backend changes
+
+### Invariants preserved
+
+- No changes to MMM algo logic (mmm_monitor, mmm_engine, etc.)
+- No changes to MMMX backend (routes/mmmx/*)
+- No new backend endpoints required for Phase 1–3
+- Tiered confirmation system (A/B/C) preserved exactly
+- All original control safety gating preserved exactly
+
+## 2026-04-07 — MMMX WebUI Phase 4/5: Risk Rail + Health Radar
+
+- Implemented **Phase 4 persistent right risk rail** in `webui/frontend/src/components/mmmx/MMMXDashboard.js`:
+  - Upgraded layout from 2-column to 3-column (`left list` + `center detail` + fixed `right 220px risk rail`).
+  - Added new right rail shell with LIVE/STALE connectivity chip.
+  - Kept existing tab indices 0–16 unchanged.
+
+- Added new panel `webui/frontend/src/components/mmmx/panels/MMMXRiskRail.js`:
+  - Sectioned risk widgets in outlined cards: portfolio delta, whipsaw, circuit breaker, hard-stop utilization, CE/PE reserve levels.
+  - Added pure-SVG mini P&L sparkline (last 20 points from `pnlHistory`).
+  - Added reserve history mini-sparklines (CE/PE) using new `reserveHistory` context data.
+  - Graceful empty-state handling (`No session` / `No history yet`).
+
+- Implemented **Phase 5a health radar tab** with new panel `webui/frontend/src/components/mmmx/panels/MMMXHealthRadar.js`:
+  - Pure SVG radar/spider chart with 6 dimensions (Connectivity, Heartbeat, Delta Balance, Whipsaw, Reserve, P&L Health).
+  - Added overall health score badge with threshold coloring.
+
+- Updated `webui/frontend/src/components/mmmx/MMMXDashboard.js`:
+  - Imported/wired `MMMXRiskRail` and `MMMXHealthRadar`.
+  - Added new tab label **Health Radar** at index **17**.
+  - Added `TabPanel` index 17 wrapped in `MMMXErrorBoundary`.
+
+- Updated `webui/frontend/src/components/mmmx/MMMXContext.js` for **Phase 5b reserve history accumulation**:
+  - Added `reserveHistory` to init state (`[{ at, ce, pe }]`, max 100).
+  - Added reducer action `PUSH_RESERVE_SNAPSHOT`.
+  - Added heartbeat dispatch (immediately after `PUSH_PNL_SNAPSHOT`) to capture reserve snapshots using heartbeat values with session fallback.
+  - Exposed `reserveHistory` in context value alongside `pnlHistory`.
+
+- Validation:
+  - Ran frontend diagnostics on all modified/new files via VS Code problems check.
+  - Result: **No errors** in `MMMXDashboard.js`, `MMMXContext.js`, `MMMXRiskRail.js`, `MMMXHealthRadar.js`.
+
+## 2026-04-07 — MMMX Phase 4/5 verification pass (no additional code changes)
+
+- Re-checked `MMMXDashboard.js`, `MMMXContext.js`, `panels/MMMXRiskRail.js`, and `panels/MMMXHealthRadar.js` against the Phase 4/5 task requirements.
+- Confirmed the required 3-column layout, persistent right risk rail, Health Radar tab at index 17, reserve history accumulation, and reserve sparklines are already implemented and wired.
+- Ran diagnostics on all target MMMX files; result was clean with no reported errors.
+
+
+## 2026-04-07 — MMMX scan_strikes endpoint fix (strike preview always pending)
+
+- Fixed `webui/backend/routes/mmmx/mmmx_api.py` — `scan_strikes_endpoint`:
+  - Bug 1: Endpoint rejected DRAFT status with 409 — but the Status tab only calls scan_strikes on DRAFT sessions. Added DRAFT to the allowed status set.
+  - Bug 2: Endpoint passed `chain=[], spot=None` hardcoded, so `scan_strikes()` always returned None → always `no_live_chain`. Now fetches live chain via `OptionsChainService`.
+  - Bug 3: Expiry format mismatch — session stores DDMMYY (6-char) but chain service `_build_chain` needs DDMMYYYY (8-char). Added conversion.
+  - Bug 4: Response format mismatch — frontend expects `{ce: {...}, pe: {...}}` but endpoint returned `{ce_candidates: [...], pe_candidates: [...]}`. Fixed response format to include `ce`, `pe` flat objects with `mark_price` and `iv` fields.
+- Updated `webui/backend/routes/mmmx/tests/test_phase8.py`:
+  - Updated `TestScanStrikes` to patch `OptionsChainService` instead of `scan_strikes` directly.
+  - Updated `test_draft_session_returns_409` → `test_draft_session_now_allowed` (200 not 409).
+  - Added `test_draft_no_expiry_returns_no_expiry_set` for new no_expiry_set path.
+  - Updated `ce_candidates` → `ce: None` assertion.
+
+## 2026-04-07 — MMMX scan_strikes expiry not found (follow-up fix)
+
+- Root cause: `mmmx_state.py` `create_session()` initialized `expiry_ddmmyy: None` and never read `target_expiry_ddmmyy` from the incoming params. So all new sessions were stored with `expiry_ddmmyy=None` even when user selected an expiry in the dialog.
+- The `list_sessions` query in storage already had the fallback (`blob.get('expiry_ddmmyy') or blob.get('params.target_expiry_ddmmyy')`), which is why the sidebar showed DTE correctly — but `load_session` returns raw JSON, so the scan_strikes endpoint got `None`.
+- Fix 1: `mmmx_state.py` — `create_session()` now pops `target_expiry_ddmmyy` from merged_params and sets it as root-level `expiry_ddmmyy`.
+- Fix 2: `mmmx_api.py` `scan_strikes_endpoint` — added fallback to `params.target_expiry_ddmmyy` for existing sessions already in the DB with the old schema.
+
+---
+
+## 2026-04-08 — Fix Reversal-Skip Loop: Three Hedge Failures
+
+**Investigation trigger**: Session `mmm08apr26-1` stuck at P&L -$108 with 3 consecutive `reversal_skip` events. No PE sold to hedge CE losses despite 30 adjustments. Spot was rising, CE @ 72800 losing, but algo kept skipping.
+
+**Root cause analysis** (via DB read + code trace): Three compounding failure modes:
+
+### FM2 — Frozen Position Profit Masking (primary cause)
+`calculate_reversal_loss` (mmm_engine.py) aggregated P&L across ALL CE adj positions (active strike 72800 + frozen strike 73000). Frozen CE @ 73000 (entry 64.0, now ~15) was so profitable it offset the active CE @ 72800 loss (entry 69.5, now ~80), making net `adjustment_pnl` positive → `should_skip_reversal_adjustment` returned True → no PE sold.
+
+**Fix**: Track `active_strike_pnl` (fills at current active strike only) separately from `total_adj_pnl` (all positions). `calculate_reversal_loss` now returns 4 values: `(loss_to_cover, active_strike_pnl, total_adj_pnl, incomplete)`. Skip gate changed to: skip iff BOTH `active_strike_pnl >= 0 AND total_adj_pnl >= 0`. Frozen profits at old strikes can no longer block hedging of genuine active-strike losses.
+
+### FM3 — Trigger Reset After Reversal Skip (loss amnesia)
+`handle_reversal_skip_transition` called `update_trigger_snapshots(ce_now, pe_now)` even when no hedge was placed, ratcheting the CE trigger from entry (69.5) up to current price (80+). Subsequent standard-formula beats computed loss as `(current - 80)`, losing the 10.5-point accumulated loss from entry.
+
+**Fix**: After calling `update_trigger_snapshots`, restore the aggressor's trigger snapshot to `min(old_trigger, agg_now)` — the trigger can only ratchet DOWN after a skip, never UP. Loss baseline from entry is preserved for the next hedge.
+
+### FM1 — Consecutive Reversal-Skip Circuit Breaker (safety net)
+CE skips → `last_aggressor=CE` → PE triggers → PE skips → `last_aggressor=PE` → CE triggers → reversal loop repeats indefinitely.
+
+**Fix**: Added `_consecutive_reversal_skip_count` counter, incremented in `handle_reversal_skip_transition`, reset to 0 on successful hedge execution. If count reaches `reversal_skip_force_through` param (default: 3), bypass reversal detection and force standard formula regardless of direction.
+
+**Files changed**:
+- `mmm_engine.py` — `calculate_reversal_loss`: 4-value return, `active_strike_pnl` tracked separately
+- `mmm_reversal.py` — `should_skip_reversal_adjustment`: new signature (active, total); skip gate = both >= 0. `handle_reversal_skip_transition`: increments counter, aggressor trigger no-ratchet-up
+- `mmm_monitor.py` — circuit breaker before `detect_reversal`; updated call sites; `_consecutive_reversal_skip_count` reset on hedge success
+- `tests/test_sealed_mmm_reversal.py` — updated S1-S3 → S1-S6; added H5-H6 contracts
+- `tests/test_sealed_calculate_loss.py` — updated C-RL-* for 4-value return; added C-RL-11 (FM2 key case)
+- `tests/test_mmm_reversal.py` — updated `should_skip_reversal_adjustment` call sites
+
+**Test result**: 1257 passed, 0 failed.
+
+## 2026-04-08 — Fix Strike Shift Failed: No-Hedge Loop When All OTM Options Are Cheap
+
+**Root cause**: `_process_strike_shift` had a `return` after emitting the "Strike Shift Failed" warning when `find_new_strike` returned None. `_process_shift_fallback` existed (with full logic to sell at the decayed strike) but was **never called** — dead code. This caused an indefinite no-hedge loop near expiry or after a large market move when all OTM CE strikes have premium < `shift_threshold` ($50).
+
+**Scenario**: PE triggered → CE is hedge → CE @ 72800 premium = $16.22 (below $50 threshold) → `find_new_strike` returns None (all OTM calls cheap) → no hedge executed → repeats every heartbeat.
+
+**Fix**:
+- `mmm_monitor.py`: After `find_new_strike` returns None (post all scan retries), call `_process_shift_fallback(side, loss, hedge_premium, ce_now, pe_now)` instead of silently returning. Gated by new param `shift_fallback_enabled` (default `True`). Updated `emit_safety` message to say "Activating fallback" instead of "Retrying next heartbeat".
+- `mmm_state.py`: Added `'shift_fallback_enabled': True` to `DEFAULT_PARAMS` and to `HOT_RELOAD_PARAMS`.
+- `mmm_config.py`: Added `shift_fallback_enabled` to `HOT_RELOAD_PARAMS` dict (hot=True) and to descriptions.
+
+**Files changed**:
+- `mmm_monitor.py` — `_process_strike_shift`: call `_process_shift_fallback` when no new strike found
+- `mmm_state.py` — `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS`: added `shift_fallback_enabled`
+- `mmm_config.py` — `HOT_RELOAD_PARAMS` + descriptions: added `shift_fallback_enabled`
+
+**Test result**: 1257 passed, 0 failed.
+
+## 2026-04-08 — Dangerous Mode: Operator-Controlled Safety Gate Bypass
+
+**Problem**: During 0DTE expiry (typically after 11 AM IST when positions become near-ATM), all safety gates (cooldowns, regime blocks, whipsaw, consecutive direction limits) prevent timely hedging. The algo was designed for 5DTE with recovery time; near expiry these protections become obstacles.
+
+**Solution**: `dangerous_mode` — a hot-reloadable param (default OFF) that bypasses all time-based and strategy-level blockers. Operator activates manually when fast response is needed. Max loss hard stop, ITM guard, auto-close near expiry, and margin ORANGE wind-down remain active regardless.
+
+**Bypassed when ON:**
+1. Reversal cooldown (is_cooldown_active check, Step 5)
+2. Whipsaw cooldown (stop_adjustments safety action)
+3. Consecutive direction block (IMP-5 limiter)
+4. Strike shift cooldown (shift_cooldown_sec)
+5. Regime FORCE_REDUCE (gamma emergency pause → skipped, log only)
+6. Regime ACTION_PAUSE (vol/trend pause → skipped, log only)
+7. Regime ACTION_BLOCK_ALL_SELLS (→ skipped, trigger evaluation continues)
+8. Margin YELLOW sell-block (→ skipped, ORANGE wind-down still enforced)
+9. Asymmetry 7:1 block (_asymmetry_blocked_side check)
+10. FM1 reversal-skip circuit breaker (_consecutive_reversal_skip_count)
+
+**Still enforced in dangerous mode:**
+- max_loss hard stop (auto_close action — never bypassed)
+- auto-close near expiry (auto_close action — never bypassed)
+- ITM guard (selling ITM options is never correct near expiry)
+- Margin ORANGE/RED wind-down (margin critical → still forces buyback)
+
+**Files changed:**
+- `mmm_state.py` — `dangerous_mode: False` in DEFAULT_PARAMS and HOT_RELOAD_PARAMS
+- `mmm_config.py` — added to HOT_RELOAD_PARAMS dict (hot=True) + description
+- `mmm_monitor.py` — bypass logic wired at all 10 gate locations; `_dangerous_mode` computed once early in heartbeat
+- `MMMDashboard.js` — Dangerous Mode button (RUNNING/PAUSED sessions only), red banner when active, CONFIRM dialog requiring user to type "CONFIRM" before enabling; DISABLE button in banner to turn off instantly
+
+**Test result:** 1257 passed, 0 failed.

@@ -14,7 +14,6 @@ export function useSocketConnection({
   setConfigMeta,
   setBotStatus,
   setTradingSnapshot,
-  setPositionsData,
   setLogs,
   setConnectionState,
   setConnectionQuality,
@@ -79,11 +78,6 @@ export function useSocketConnection({
       if (snapshot.trading_status) {
         setTradingSnapshot(snapshot.trading_status);
       }
-    });
-
-    // Incremental updates
-    manager.on('positions_update', (data) => {
-      setPositionsData(data);
     });
 
     manager.on('config_updated', (newConfig) => {

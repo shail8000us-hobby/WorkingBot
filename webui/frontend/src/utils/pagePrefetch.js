@@ -11,16 +11,13 @@
 // Page-level imports (match App.js React.lazy exactly)
 const pageImports = {
   todos: () => import('../pages/TodosPage'),
-  portfolio: () => import('../pages/PortfolioPage'),
   options: () => import('../pages/OptionsPage'),
   ssr_algo: () => import('../pages/SSRAlgoPage'),
   tradingview: () => import('../pages/TradingViewPage'),
   zero_dte: () => import('../pages/ZeroDTEPage'),
-  system_health: () => import('../pages/SystemHealthPage'),
   experimental: () => import('../pages/ExperimentalPage'),
   advanced_features: () => import('../pages/AdvancedFeaturesPage'),
   mv_straddle: () => import('../pages/MVStraddlePage'),
-  positions: () => import('../pages/PositionsPage'),
   rsi: () => import('../pages/RSIPage'),
   risk: () => import('../pages/RiskPage'),
   intelligence: () => import('../pages/IntelligencePage'),

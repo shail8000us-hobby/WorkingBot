@@ -19,7 +19,6 @@ export function useConfigManager({
   setBackendDown,
   setBotStatus,
   setTradingSnapshot,
-  setPositionsData,
   setLogs,
   setFeatureFlags,
   setLastUpdated,
@@ -33,7 +32,7 @@ export function useConfigManager({
 }) {
   const [config, setConfig] = useState({});
   const [configMeta, setConfigMeta] = useState({});
-  const { selectedSymbol, fetchWithSymbol } = useSymbolSafe();
+  const { fetchWithSymbol } = useSymbolSafe();
 
   // Use refs for callbacks and values that change often but shouldn't re-create fetchInitialData
   const globalWarningsRef = useRef(globalWarnings);
@@ -82,12 +81,9 @@ export function useConfigManager({
       setBackendDown(false);
 
       // Fetch all secondary data in parallel (no batching delay)
-      const [tradingData, logsData, positionsResponse, flagsData] = await Promise.all([
+      const [tradingData, logsData, flagsData] = await Promise.all([
         robustApiClient.get('/api/trading_status').catch(() => ({})),
         robustApiClient.get('/api/logs', { params: { limit: 50 } }), // Reduced from 120 to 50 for faster load
-        fetchWithSymbol('/api/positions')
-          .then((r) => r.json())
-          .catch(() => null),
         flagsPromise,
       ]);
 
@@ -96,9 +92,6 @@ export function useConfigManager({
       setConfigMeta(meta);
       setTradingSnapshot(tradingData);
       setBotStatus(botData);
-      if (positionsResponse) {
-        setPositionsData(positionsResponse);
-      }
 
       // Update global status context with trading snapshot (blockers, warnings, last sync)
       if (Array.isArray(tradingData?.blockers)) {
@@ -148,12 +141,10 @@ export function useConfigManager({
       setLoading(false);
     }
   }, [
-    selectedSymbol,
     fetchWithSymbol,
     setBackendDown,
     setBotStatus,
     setTradingSnapshot,
-    setPositionsData,
     setLogs,
     setFeatureFlags,
     setLastUpdated,

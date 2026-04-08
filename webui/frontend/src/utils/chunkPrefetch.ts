@@ -61,7 +61,7 @@ export const prefetchChunks = (chunkNames: string[], options?: PrefetchOptions):
  */
 export const prefetchForRoute = (routeName: string): void => {
   const routePrefetchMap: Record<string, string[]> = {
-    dashboard: ['monitoring', 'positions', 'charts'],
+    dashboard: ['monitoring', 'charts'],
     options: ['optionsChain', 'strategyBuilder'],
     config: ['configPanel', 'logsPanel'],
     guardian: ['guardianDashboard', 'guardianPanel'],
@@ -112,7 +112,6 @@ export const prefetchCriticalChunks = (): void => {
 function executePrefetch() {
   // Prefetch chunks likely to be needed soon
   const criticalChunks = [
-    'positions', // User likely checks positions
     'monitoring', // Health monitoring frequently accessed
     'options', // Options trading interface
   ];

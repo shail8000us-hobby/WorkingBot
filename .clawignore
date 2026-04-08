@@ -1,0 +1,35 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and data files
+*.log
+*.csv
+*.json
+*.db
+*.pkl
+*.parquet
+logs/
+data/
+
+# Environment and dependencies
+venv/
+.venv/
+env/
+node_modules/
+
+# Git
+.git/
+
+# IDE
+.vscode/
+.idea/
+
+# Claw sessions
+.claw/
+
+# Large config/output files
+*.xlsx
+*.zip

@@ -34,16 +34,27 @@ C-SL-12: Multiple frozen positions — losses accumulate correctly
 
 --- calculate_reversal_loss contracts ---
 
-C-RL-1:  All adjustment fills profitable → (0.0, positive_pnl, False) — DO NOTHING
-C-RL-2:  All adjustments underwater → (|loss|, negative_pnl, False) — hedge the loss
-C-RL-3:  No adjustments at all → (0.0, 0.0, False) — pnl=0 is "profitable"
+Returns 4 values: (loss_to_cover, active_strike_pnl, total_adj_pnl, incomplete)
+  active_strike_pnl: P&L of adjustment fills at the current active strike only
+  total_adj_pnl: full P&L including frozen positions at old strikes
+  loss_to_cover: abs(active_strike_pnl) when active < 0;
+                 abs(total_adj_pnl) when active >= 0 but total < 0; else 0.0.
+  FM2 fix: active_strike_pnl is tracked separately from frozen P&L so the
+  skip gate (should_skip_reversal_adjustment) can gate on active position only.
+
+C-RL-1:  All active fills profitable → (0.0, +pnl, +pnl, False)
+C-RL-2:  All active fills underwater → (|active_loss|, -pnl, -pnl, False)
+C-RL-3:  No adjustments at all → (0.0, 0.0, 0.0, False)
 C-RL-4:  Original frozen positions excluded (type='original' → skip)
-C-RL-5:  Frozen adjustment positions included (type='standard' → counted)
+C-RL-5:  Frozen adjustment losing, no active fills → (|frozen_loss|, 0.0, -pnl, False)
 C-RL-6:  fetch_premium_fn raises → position skipped, incomplete=True
-C-RL-7:  Mixed fills: net profitable → (0.0, pnl, False)
-C-RL-8:  Mixed fills: net underwater → (|loss|, pnl, False)
-C-RL-9:  adj_pnl exactly 0.0 → (0.0, 0.0, False) — treated as "profitable"
-C-RL-10: Active adjustment fills + frozen adjustment fills — both counted
+C-RL-7:  Mixed: active profitable, frozen losing, net profitable → (0.0, +active, +net, False)
+C-RL-8:  Mixed: active profitable, frozen deeply losing, net underwater
+          → (|total_loss|, +active, -net, False) — frozen loss drives loss_to_cover
+C-RL-9:  active_strike_pnl exactly 0.0, total 0.0 → (0.0, 0.0, 0.0, False)
+C-RL-10: Active fills + frozen adj fills — active tracked separately
+C-RL-11: FM2 key case: active losing, frozen very profitable, net positive
+          → (|active_loss|, -active, +net, False) — frozen profit does NOT reduce loss
 """
 
 import math
@@ -343,6 +354,7 @@ class TestCalculateReversalLoss:
         engine = _make_engine()
         if fetch_fn is None:
             fetch_fn = lambda strike, opt_type: 100.0
+        # FM2 fix: now returns 4 values (loss, active_strike_pnl, total_adj_pnl, incomplete)
         return engine.calculate_reversal_loss(session, aggressor_side, fetch_fn)
 
     def _make_session(self, aggressor_side='ce', adjustment_fills=None, frozen_positions=None):
@@ -355,65 +367,74 @@ class TestCalculateReversalLoss:
             'params': {},
         }
 
-    # C-RL-1: All profitable → (0.0, pnl, False)
+    # C-RL-1: Active fills profitable → (0.0, +pnl, +pnl, False)
     def test_rl_c1_profitable_fills_do_nothing(self):
-        """entry=100, current=80 → fill_pnl=(100-80)×5×0.001=0.10 > 0 → DO NOTHING."""
+        """entry=100, current=80 → fill_pnl=(100-80)×5×0.001=+0.10 — active profitable."""
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
         )
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 80.0)
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 80.0)
         assert loss == 0.0
-        assert abs(pnl - 0.10) < 1e-9
+        assert abs(active_pnl - 0.10) < 1e-9
+        assert abs(total_pnl - 0.10) < 1e-9
         assert incomplete is False
 
-    # C-RL-2: All underwater → (|loss|, pnl, False)
+    # C-RL-2: Active fills underwater → (|active_loss|, -pnl, -pnl, False)
     def test_rl_c2_underwater_fills_hedge_loss(self):
-        """entry=100, current=130 → fill_pnl=(100-130)×5×0.001=-0.15 < 0 → hedge."""
+        """entry=100, current=130 → fill_pnl=(100-130)×5×0.001=-0.15 — hedge active loss."""
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
         )
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 130.0)
-        assert abs(loss - 0.15) < 1e-9
-        assert abs(pnl - (-0.15)) < 1e-9
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 130.0)
+        assert abs(loss - 0.15) < 1e-9   # loss_to_cover = abs(active_pnl)
+        assert abs(active_pnl - (-0.15)) < 1e-9
+        assert abs(total_pnl - (-0.15)) < 1e-9
         assert incomplete is False
 
-    # C-RL-3: No adjustments → (0.0, 0.0, False)
+    # C-RL-3: No adjustments → (0.0, 0.0, 0.0, False)
     def test_rl_c3_no_adjustments_do_nothing(self):
-        """No fills, no frozen → pnl=0 → treated as profitable → DO NOTHING."""
+        """No fills, no frozen → both pnl=0 → treated as profitable → DO NOTHING."""
         sess = self._make_session()
-        loss, pnl, incomplete = self._run(sess, 'ce')
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce')
         assert loss == 0.0
-        assert pnl == 0.0
+        assert active_pnl == 0.0
+        assert total_pnl == 0.0
         assert incomplete is False
 
     # C-RL-4: Original frozen positions excluded
     def test_rl_c4_original_frozen_excluded(self):
-        """type='original' in frozen_positions → skipped even though current > entry."""
+        """type='original' in frozen_positions → skipped, not counted in any P&L."""
         sess = self._make_session(
             frozen_positions=[{
                 'type': 'original', 'strike': 79000,
                 'entry_premium': 100.0, 'lots': 5,
             }],
         )
-        # fetch would return 150 if called — original should be skipped
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 150.0)
+        loss, active_pnl, total_pnl, incomplete = self._run(
+            sess, 'ce', fetch_fn=lambda s, t: 150.0
+        )
         assert loss == 0.0
-        assert pnl == 0.0
+        assert active_pnl == 0.0
+        assert total_pnl == 0.0
         assert incomplete is False
 
-    # C-RL-5: Frozen adjustment positions included
+    # C-RL-5: Frozen adjustment losing, no active fills → total drives loss
     def test_rl_c5_frozen_adjustment_included(self):
-        """type='standard' frozen → counted. entry=100, current=130 → -0.09."""
+        """type='standard' frozen losing (no active fills) → total_pnl drives loss_to_cover."""
         sess = self._make_session(
             frozen_positions=[{
                 'type': 'standard', 'strike': 78000,
                 'entry_premium': 100.0, 'lots': 3,
             }],
         )
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 130.0)
-        expected_pnl = (100.0 - 130.0) * 3 * LOT_SIZE_BTC  # -0.09
+        loss, active_pnl, total_pnl, incomplete = self._run(
+            sess, 'ce', fetch_fn=lambda s, t: 130.0
+        )
+        expected_total = (100.0 - 130.0) * 3 * LOT_SIZE_BTC  # -0.09
+        # active_pnl = 0 (no active fills); total < 0 → loss = abs(total)
+        assert active_pnl == 0.0
+        assert abs(total_pnl - expected_total) < 1e-9
         assert abs(loss - 0.09) < 1e-9
-        assert abs(pnl - expected_pnl) < 1e-9
         assert incomplete is False
 
     # C-RL-6: fetch raises → incomplete=True
@@ -426,17 +447,18 @@ class TestCalculateReversalLoss:
         def bad_fetch(strike, opt_type):
             raise RuntimeError("Exchange timeout")
 
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=bad_fetch)
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=bad_fetch)
         assert loss == 0.0  # all fetches failed → pnl=0 → "profitable"
-        assert pnl == 0.0
+        assert active_pnl == 0.0
+        assert total_pnl == 0.0
         assert incomplete is True
 
-    # C-RL-7: Mixed — net profitable
+    # C-RL-7: Mixed — active profitable, frozen losing, net profitable → DO NOTHING
     def test_rl_c7_mixed_net_profitable(self):
         """
-        active fill: (100-80)×5×0.001 = +0.10
+        active fill: (100-80)×5×0.001 = +0.10  (active_pnl = +0.10)
         frozen:      (100-130)×3×0.001 = -0.09
-        net = +0.01 → DO NOTHING
+        total = +0.01 → both active and total >= 0 → loss=0.0
         """
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
@@ -451,18 +473,20 @@ class TestCalculateReversalLoss:
                 return 80.0
             return 130.0
 
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
-        expected_pnl = (100.0 - 80.0) * 5 * LOT_SIZE_BTC + (100.0 - 130.0) * 3 * LOT_SIZE_BTC
-        assert loss == 0.0
-        assert abs(pnl - expected_pnl) < 1e-9
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
+        expected_active = (100.0 - 80.0) * 5 * LOT_SIZE_BTC   # +0.10
+        expected_total = expected_active + (100.0 - 130.0) * 3 * LOT_SIZE_BTC  # +0.01
+        assert loss == 0.0   # both active >= 0 and total >= 0 → no hedge
+        assert abs(active_pnl - expected_active) < 1e-9
+        assert abs(total_pnl - expected_total) < 1e-9
         assert incomplete is False
 
-    # C-RL-8: Mixed — net underwater
+    # C-RL-8: Mixed — active profitable, frozen deeply losing, net underwater
     def test_rl_c8_mixed_net_underwater(self):
         """
-        active fill: (100-80)×5×0.001 = +0.10
+        active fill: (100-80)×5×0.001 = +0.10  (active_pnl = +0.10, still profitable)
         frozen:      (100-150)×30×0.001 = -1.50
-        net = -1.40 → hedge 1.40
+        total = -1.40 → active >= 0 but total < 0 → loss = abs(total) = 1.40
         """
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
@@ -477,26 +501,32 @@ class TestCalculateReversalLoss:
                 return 80.0
             return 150.0
 
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
-        expected_pnl = (100.0 - 80.0) * 5 * LOT_SIZE_BTC + (100.0 - 150.0) * 30 * LOT_SIZE_BTC
-        assert abs(loss - abs(expected_pnl)) < 1e-9
-        assert abs(pnl - expected_pnl) < 1e-9
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
+        expected_active = (100.0 - 80.0) * 5 * LOT_SIZE_BTC          # +0.10
+        expected_total = expected_active + (100.0 - 150.0) * 30 * LOT_SIZE_BTC  # -1.40
+        # active >= 0 but total < 0 → loss_to_cover = abs(total)
+        assert abs(loss - abs(expected_total)) < 1e-9
+        assert abs(active_pnl - expected_active) < 1e-9
+        assert abs(total_pnl - expected_total) < 1e-9
         assert incomplete is False
 
-    # C-RL-9: adj_pnl exactly 0.0 → treated as "profitable" → (0.0, 0.0, False)
+    # C-RL-9: both pnl exactly 0.0 → treated as "profitable" → (0.0, 0.0, 0.0, False)
     def test_rl_c9_pnl_zero_treated_as_profitable(self):
-        """entry=current → pnl=0.0 → 0 >= 0 → return (0.0, 0.0, False)."""
+        """entry=current → active_pnl=0, total_pnl=0 → both >= 0 → loss=0."""
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
         )
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=lambda s, t: 100.0)
+        loss, active_pnl, total_pnl, incomplete = self._run(
+            sess, 'ce', fetch_fn=lambda s, t: 100.0
+        )
         assert loss == 0.0
-        assert pnl == 0.0
+        assert active_pnl == 0.0
+        assert total_pnl == 0.0
         assert incomplete is False
 
-    # C-RL-10: Active fills + frozen adjustment — both counted
+    # C-RL-10: Active fills + frozen adjustment — active tracked separately
     def test_rl_c10_active_and_frozen_both_counted(self):
-        """Active fill and frozen adjustment — both contribute to reversal pnl."""
+        """Active fill and frozen adjustment — both contribute to total_pnl."""
         sess = self._make_session(
             adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
             frozen_positions=[
@@ -505,14 +535,47 @@ class TestCalculateReversalLoss:
         )
 
         def fetch_fn(strike, opt_type):
-            # both underwater
-            return 130.0
+            return 130.0  # both underwater
 
-        loss, pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
-        expected_pnl = (
-            (100.0 - 130.0) * 5 * LOT_SIZE_BTC +
-            (90.0 - 130.0) * 4 * LOT_SIZE_BTC
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
+        expected_active = (100.0 - 130.0) * 5 * LOT_SIZE_BTC           # -0.15
+        expected_total = expected_active + (90.0 - 130.0) * 4 * LOT_SIZE_BTC  # -0.31
+        # active < 0 → loss_to_cover = abs(active_pnl)
+        assert abs(loss - abs(expected_active)) < 1e-9
+        assert abs(active_pnl - expected_active) < 1e-9
+        assert abs(total_pnl - expected_total) < 1e-9
+        assert incomplete is False
+
+    # C-RL-11: FM2 key case — active losing, frozen very profitable, net positive
+    def test_rl_c11_fm2_frozen_profit_does_not_reduce_active_loss(self):
+        """
+        FM2 fix: active fill (80000) losing, frozen (78000) very profitable.
+        active_pnl = (100-130)×5×0.001 = -0.15  (losing)
+        frozen_pnl = (100-20)×30×0.001  = +2.40  (very profitable)
+        total_pnl  = -0.15 + 2.40 = +2.25  (net positive)
+
+        Old behaviour: total >= 0 → loss=0 → no hedge (wrong!).
+        FM2 fix: active < 0 → loss = abs(active_pnl) = 0.15 (hedge the active loss).
+        """
+        sess = self._make_session(
+            adjustment_fills=[{'strike': 80000, 'premium': 100.0, 'lots': 5}],
+            frozen_positions=[{
+                'type': 'strike_shift', 'strike': 78000,
+                'entry_premium': 100.0, 'lots': 30,
+            }],
         )
-        assert abs(loss - abs(expected_pnl)) < 1e-9
-        assert abs(pnl - expected_pnl) < 1e-9
+
+        def fetch_fn(strike, opt_type):
+            if int(strike) == 80000:
+                return 130.0   # active strike: current > entry → losing
+            return 20.0        # frozen strike: current << entry → very profitable
+
+        loss, active_pnl, total_pnl, incomplete = self._run(sess, 'ce', fetch_fn=fetch_fn)
+        expected_active = (100.0 - 130.0) * 5 * LOT_SIZE_BTC   # -0.15
+        expected_total = expected_active + (100.0 - 20.0) * 30 * LOT_SIZE_BTC  # +2.25
+        assert abs(active_pnl - expected_active) < 1e-9
+        assert abs(total_pnl - expected_total) < 1e-9
+        assert total_pnl > 0, "total is positive — old code would skip"
+        # FM2: active is losing → loss_to_cover = abs(active_pnl), NOT 0.0
+        assert abs(loss - abs(expected_active)) < 1e-9
         assert incomplete is False

@@ -5,7 +5,7 @@ Functions sealed:
   - detect_reversal(session, current_aggressor) → bool
   - is_cooldown_active(session) → bool
   - activate_cooldown(session) → None
-  - should_skip_reversal_adjustment(session, adjustment_pnl) → (bool, str)
+  - should_skip_reversal_adjustment(session, active_strike_pnl, total_adj_pnl) → (bool, str)
   - record_reversal(session, from_side, to_side) → None
   - handle_reversal_skip_transition(session, aggressor, ce_now, pe_now, fetch_premium_fn) → None
 
@@ -15,7 +15,13 @@ Audit outcome (2026-03-20):
   - No bugs found.
   - compute_adjustment_pnl referenced in audit plan does not exist; replaced by
     calculate_reversal_loss in mmm_engine.py (already sealed #83).
-  - should_skip_reversal_adjustment accepts session but doesn't use it — harmless.
+
+2026-04-08 — FM2/FM3 fixes:
+  - should_skip_reversal_adjustment: signature changed to accept active_strike_pnl
+    and total_adj_pnl separately. Skip gate now uses active_strike_pnl only.
+    Frozen positions at old strikes must not mask a genuine active-strike loss.
+  - handle_reversal_skip_transition: increments _consecutive_reversal_skip_count;
+    aggressor trigger NOT ratcheted up after skip (loss amnesia fix).
 
 Contracts:
 
@@ -43,10 +49,16 @@ Contracts:
   A3.  already in cooldown → no-op (does not re-activate)
   A4.  cooldown_until is timezone-aware UTC ISO string
 
-  [should_skip_reversal_adjustment — 3 contracts]
-  S1.  adjustment_pnl > 0 (profitable) → (True, non-empty reason)
-  S2.  adjustment_pnl = 0 (break-even) → (True, non-empty reason)
-  S3.  adjustment_pnl < 0 (underwater) → (False, '')
+  [should_skip_reversal_adjustment — 6 contracts]
+  Skip gate: skip iff BOTH active_strike_pnl >= 0 AND total_adj_pnl >= 0.
+  S1.  active >= 0, total >= 0 (all profitable) → (True, non-empty reason)
+  S2.  active = 0, total = 0 (break-even) → (True, non-empty reason)
+  S3.  active < 0, total < 0 (both underwater) → (False, '')
+  S4.  active < 0, total >= 0 (FM2: frozen profit masks active loss)
+       → (False, '') — frozen profit must not block hedging active-strike loss
+  S5.  active >= 0, total < 0 (active fine but frozen losing)
+       → (False, '') — frozen loss still needs hedging
+  S6.  active < 0, total < 0 (both underwater) → (False, '')
 
   [record_reversal — 5 contracts]
   R1.  empty history → records event, increments reversal_count to 1
@@ -55,11 +67,13 @@ Contracts:
   R4.  different from→to direction → new record added
   R5.  history > 50 entries → capped to most recent 50
 
-  [handle_reversal_skip_transition — 4 contracts]
+  [handle_reversal_skip_transition — 6 contracts]
   H1.  last_aggressor updated to new aggressor direction
   H2.  appends entry with type='reversal_skip' to adjustment_history
   H3.  adjustment_history capped at 200 entries
   H4.  update_trigger_snapshots called with session, ce_now, pe_now
+  H5.  _consecutive_reversal_skip_count incremented on each skip
+  H6.  aggressor trigger NOT ratcheted up after skip (FM3: loss-amnesia prevention)
 """
 
 import pytest
@@ -225,24 +239,49 @@ def test_a4_cooldown_until_is_timezone_aware_utc():
     assert until.tzinfo is not None
 
 
-# ─── S1–S3: should_skip_reversal_adjustment ────────────────────────────────────
+# ─── S1–S5: should_skip_reversal_adjustment ────────────────────────────────────
 
-def test_s1_positive_pnl_returns_skip_true():
-    skip, reason = should_skip_reversal_adjustment(_session(), 10.0)
+def test_s1_both_profitable_returns_skip_true():
+    # active >= 0, total >= 0 → all profitable → skip
+    skip, reason = should_skip_reversal_adjustment(_session(), 10.0, 10.0)
     assert skip is True
     assert reason  # non-empty explanation
 
 
-def test_s2_zero_pnl_returns_skip_true():
-    skip, reason = should_skip_reversal_adjustment(_session(), 0.0)
+def test_s2_both_breakeven_returns_skip_true():
+    # active = 0, total = 0 → break-even → skip
+    skip, reason = should_skip_reversal_adjustment(_session(), 0.0, 0.0)
     assert skip is True
     assert reason
 
 
-def test_s3_negative_pnl_returns_skip_false():
-    skip, reason = should_skip_reversal_adjustment(_session(), -5.0)
+def test_s3_both_underwater_returns_skip_false():
+    # active < 0, total < 0 → both losing → do NOT skip
+    skip, reason = should_skip_reversal_adjustment(_session(), -5.0, -5.0)
     assert skip is False
     assert reason == ''
+
+
+def test_s4_frozen_profit_masks_active_loss_still_hedges():
+    # FM2: active losing (-3), frozen very profitable (+10), total=+7
+    # Old logic: adj_pnl=+7 → skip (wrong). New logic: active<0 → do NOT skip.
+    skip, reason = should_skip_reversal_adjustment(_session(), -3.0, 7.0)
+    assert skip is False
+    assert reason == ''
+
+
+def test_s5_active_fine_but_frozen_losing_still_hedges():
+    # Active profitable but frozen positions losing → total < 0 → do NOT skip
+    skip, reason = should_skip_reversal_adjustment(_session(), 5.0, -2.0)
+    assert skip is False
+    assert reason == ''
+
+
+def test_s6_active_profitable_frozen_also_profitable_skips():
+    # Both profitable → skip (the normal case when no hedging needed)
+    skip, reason = should_skip_reversal_adjustment(_session(), 3.0, 5.0)
+    assert skip is True
+    assert reason
 
 
 # ─── R1–R5: record_reversal ────────────────────────────────────────────────────
@@ -295,7 +334,7 @@ def test_r5_history_capped_at_50():
     assert session['reversal_count'] == 60
 
 
-# ─── H1–H4: handle_reversal_skip_transition ────────────────────────────────────
+# ─── H1–H6: handle_reversal_skip_transition ────────────────────────────────────
 
 def test_h1_last_aggressor_updated_to_new_direction():
     session = _session(last_aggressor='CE')
@@ -328,3 +367,43 @@ def test_h4_calls_update_trigger_snapshots_with_prices():
         handle_reversal_skip_transition(session, 'ce', 52.0, 48.0,
                                         fetch_premium_fn=mock_fn)
     mock_uts.assert_called_once_with(session, 52.0, 48.0, fetch_premium_fn=mock_fn)
+
+
+def test_h5_consecutive_skip_count_incremented():
+    # H5: each call increments _consecutive_reversal_skip_count
+    session = _session()
+    with patch('webui.backend.routes.mmm.mmm_reversal.update_trigger_snapshots'):
+        handle_reversal_skip_transition(session, 'ce', 50.0, 45.0)
+    assert session.get('_consecutive_reversal_skip_count', 0) == 1
+
+    with patch('webui.backend.routes.mmm.mmm_reversal.update_trigger_snapshots'):
+        handle_reversal_skip_transition(session, 'pe', 50.0, 45.0)
+    assert session.get('_consecutive_reversal_skip_count', 0) == 2
+
+
+def test_h6_aggressor_trigger_not_ratcheted_up_after_skip():
+    # H6 (FM3): if agg_now > old trigger, the old trigger is preserved (no loss amnesia)
+    session = _session(
+        ce={'active_strike': 80000,
+            'trigger_snapshot': {'80000': 60.0},  # old trigger
+            'active_lots': 5,
+            'frozen_positions': [],
+            'adjustment_fills': []},
+        pe={'active_strike': 75000,
+            'trigger_snapshot': {'75000': 100.0},
+            'active_lots': 5,
+            'frozen_positions': [],
+            'adjustment_fills': []},
+    )
+    # Aggressor is CE; ce_now=80 > old_trigger=60 → must NOT ratchet up to 80
+    with patch('webui.backend.routes.mmm.mmm_reversal.update_trigger_snapshots') as mock_uts:
+        # Simulate update_trigger_snapshots setting CE trigger to ce_now=80
+        def side_effect(s, ce_now, pe_now, fetch_premium_fn=None):
+            s.get('ce', {}).setdefault('trigger_snapshot', {})['80000'] = ce_now
+            s.get('pe', {}).setdefault('trigger_snapshot', {})['75000'] = pe_now
+        mock_uts.side_effect = side_effect
+        handle_reversal_skip_transition(session, 'ce', 80.0, 90.0)
+    # CE trigger must be restored to old value (60), not ratcheted to 80
+    assert session['ce']['trigger_snapshot']['80000'] == 60.0
+    # PE trigger reset normally (pe_now=90 — hedge side, no restriction)
+    assert session['pe']['trigger_snapshot']['75000'] == 90.0

@@ -105,10 +105,26 @@ class RSICollector:
             if hasattr(instance_cfg, 'safety') and hasattr(instance_cfg.safety, 'rsi'):
                 instance_rsi_config = instance_cfg.safety.rsi
                 log.info(f"Using instance-specific RSI config for {_resolved_instance}")
-        
+
+        # Store instance name so reload_thresholds can use the same config path
+        self._instance_name = _resolved_instance
+
+        # Resolve global safety.rsi — this is the section the WebUI reads and writes.
+        # It is the single source of truth for thresholds managed via the UI.
+        global_rsi_config = None
+        if hasattr(config, 'safety') and hasattr(config.safety, 'rsi'):
+            global_rsi_config = config.safety.rsi
+
         # Get RSI config (NO HARDCODED DEFAULTS - must be in config.yaml)
         if instance_rsi_config:
-            # v6.0: Instance-specific RSI config uses stop_threshold based on mode
+            # v6.0: Instance config supplies operational fields (enabled, period, timeframe, etc.)
+            # but threshold fields come from global safety.rsi — the section the WebUI manages.
+            # This ensures changing a threshold in the WebUI immediately affects the Guardian.
+            #
+            # Threshold priority:
+            #   1. Global safety.rsi.short_threshold / long_threshold  (WebUI-managed)
+            #   2. Instance stop_threshold                              (legacy field, pre-WebUI)
+            #   3. Hardcoded default
             rsi_config = instance_rsi_config
             self.enabled = getattr(rsi_config, 'enabled', True)
             self.period = getattr(rsi_config, 'period', 14)
@@ -116,17 +132,15 @@ class RSICollector:
             self.cache_ttl = getattr(rsi_config, 'cache_ttl', 60)
             self.hysteresis_seconds = getattr(rsi_config, 'hysteresis_seconds', 60)
             self.hysteresis_band = getattr(rsi_config, 'hysteresis_band', 2.0)
-            # Instance config uses stop_threshold for the mode-specific value
             stop_threshold = getattr(rsi_config, 'stop_threshold', None)
-            resume_threshold = getattr(rsi_config, 'resume_threshold', None)
             if self.bot_mode == "LONG":
-                # LONG mode: stop when RSI <= threshold (oversold)
-                self.long_threshold = stop_threshold if stop_threshold is not None else 30
-                self.short_threshold = 75  # Not used for LONG, but set a default
+                global_long = getattr(global_rsi_config, 'long_threshold', None) if global_rsi_config else None
+                self.long_threshold = global_long if global_long is not None else (stop_threshold if stop_threshold is not None else 30)
+                self.short_threshold = 75  # not used in LONG mode
             else:
-                # SHORT mode: stop when RSI >= threshold (overbought)
-                self.short_threshold = stop_threshold if stop_threshold is not None else 70
-                self.long_threshold = 25  # Not used for SHORT, but set a default
+                global_short = getattr(global_rsi_config, 'short_threshold', None) if global_rsi_config else None
+                self.short_threshold = global_short if global_short is not None else (stop_threshold if stop_threshold is not None else 70)
+                self.long_threshold = 25  # not used in SHORT mode
         elif hasattr(config, 'safety') and hasattr(config.safety, 'rsi'):
             rsi_config = config.safety.rsi
             self.enabled = getattr(rsi_config, 'enabled', True)
@@ -158,34 +172,40 @@ class RSICollector:
         log.info(f"  Cache TTL: {self.cache_ttl}s")
     
     def reload_thresholds(self, config):
-        """Reload RSI thresholds from config (for hot reload support)"""
-        if hasattr(config, 'safety') and hasattr(config.safety, 'rsi'):
-            rsi_config = config.safety.rsi
-            if not hasattr(rsi_config, 'long_threshold'):
-                raise ValueError("safety.rsi.long_threshold missing in config.yaml")
-            if not hasattr(rsi_config, 'short_threshold'):
-                raise ValueError("safety.rsi.short_threshold missing in config.yaml")
-            
-            old_long = self.long_threshold
-            old_short = self.short_threshold
-            
-            self.long_threshold = rsi_config.long_threshold
-            self.short_threshold = rsi_config.short_threshold
-            self.hysteresis_seconds = getattr(rsi_config, 'hysteresis_seconds', 60)
-            
-            # Validate new thresholds
-            if not (0 < self.long_threshold <= 100):
-                raise ValueError(f"Invalid long_threshold {self.long_threshold} - must be between 0 and 100")
-            if not (0 <= self.short_threshold < 100):
-                raise ValueError(f"Invalid short_threshold {self.short_threshold} - must be between 0 and 100")
-            
-            if old_long != self.long_threshold or old_short != self.short_threshold:
-                log.warning(f"🔄 RSI Thresholds reloaded: LONG {old_long}→{self.long_threshold}, SHORT {old_short}→{self.short_threshold}")
-                # Reset hysteresis when thresholds change
-                self._hysteresis_start_time = None
-                self._current_signal = None
-        else:
+        """Reload RSI thresholds from config (for hot reload support).
+
+        Reads from global safety.rsi — the same section the WebUI writes to —
+        so a threshold change in the UI takes effect immediately without restarting
+        the Guardian.
+        """
+        if not (hasattr(config, 'safety') and hasattr(config.safety, 'rsi')):
             raise ValueError("safety.rsi configuration section missing in config.yaml")
+
+        rsi_config = config.safety.rsi
+
+        if not hasattr(rsi_config, 'long_threshold'):
+            raise ValueError("safety.rsi.long_threshold missing in config.yaml")
+        if not hasattr(rsi_config, 'short_threshold'):
+            raise ValueError("safety.rsi.short_threshold missing in config.yaml")
+
+        old_long = self.long_threshold
+        old_short = self.short_threshold
+
+        self.long_threshold = rsi_config.long_threshold
+        self.short_threshold = rsi_config.short_threshold
+        self.hysteresis_seconds = getattr(rsi_config, 'hysteresis_seconds', self.hysteresis_seconds)
+
+        # Validate new thresholds
+        if not (0 < self.long_threshold <= 100):
+            raise ValueError(f"Invalid long_threshold {self.long_threshold} - must be between 0 and 100")
+        if not (0 <= self.short_threshold < 100):
+            raise ValueError(f"Invalid short_threshold {self.short_threshold} - must be between 0 and 100")
+
+        if old_long != self.long_threshold or old_short != self.short_threshold:
+            log.warning(f"🔄 RSI Thresholds reloaded: LONG {old_long}→{self.long_threshold}, SHORT {old_short}→{self.short_threshold}")
+            # Reset hysteresis when thresholds change
+            self._hysteresis_start_time = None
+            self._current_signal = None
     
     def _validate_config(self) -> None:
         """Validate RSI configuration parameters."""

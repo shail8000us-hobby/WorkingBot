@@ -18,6 +18,7 @@ from typing import Dict, Any, Tuple
 from datetime import datetime, timedelta, timezone
 
 from .mmm_trigger import update_trigger_snapshots
+from .mmm_constants import strike_key
 
 log = logging.getLogger('mmm_reversal')
 
@@ -142,22 +143,29 @@ def activate_cooldown(session: Dict):
 
 def should_skip_reversal_adjustment(
     session: Dict,
-    adjustment_pnl: float,
+    active_strike_pnl: float,
+    total_adj_pnl: float,
 ) -> Tuple[bool, str]:
     """
-    §9: If adjustment positions are STILL NET POSITIVE, skip the adjustment.
+    §9: If ACTIVE-STRIKE adjustment positions are still net positive, skip.
+
+    FM2 fix: skip gate uses active_strike_pnl only (fills at the current
+    active strike). Profitable frozen positions at old strikes must not
+    be able to mask a genuine loss at the current active strike — their
+    profit comes from a different price regime and is not a valid offset.
 
     Args:
         session: Full session dict
-        adjustment_pnl: Computed P&L of adjustment positions on aggressor side
+        active_strike_pnl: P&L of adjustment fills at the current active strike
+        total_adj_pnl: Full P&L including frozen positions (for logging only)
 
     Returns:
         (should_skip, reason)
     """
-    if adjustment_pnl >= 0:
+    if active_strike_pnl >= 0 and total_adj_pnl >= 0:
         return True, (
-            f"Reversal detected but adjustments still profitable "
-            f"(P&L: ${adjustment_pnl:.2f}). Skipping."
+            f"Reversal detected but all adjustment positions profitable "
+            f"(active=${active_strike_pnl:.2f}, total=${total_adj_pnl:.2f}). Skipping."
         )
     return False, ''
 
@@ -252,15 +260,46 @@ def handle_reversal_skip_transition(
     if len(_hist) > 200:
         del _hist[:-200]
 
+    # FM3 fix: Consecutive reversal-skip counter for circuit breaker.
+    # Incremented here so the monitor can detect when too many skips
+    # have accumulated without a real hedge executing.
+    session['_consecutive_reversal_skip_count'] = (
+        session.get('_consecutive_reversal_skip_count', 0) + 1
+    )
+
+    # FM3 fix: Capture aggressor trigger BEFORE the full snapshot update.
+    # After a reversal skip (no hedge placed), the aggressor-side trigger
+    # must NOT ratchet upward — that would permanently forgive accumulated
+    # losses from entry. The trigger baseline can only move DOWN or stay
+    # the same after a skip, so the next standard-formula beat captures
+    # the full loss from the original entry, not just the increment from
+    # the skipped level.
+    _agg_side = session.get(aggressor, {})
+    _agg_active_key = strike_key(_agg_side.get('active_strike', 0))
+    _agg_now = ce_now if aggressor == 'ce' else pe_now
+    _old_agg_trigger = _agg_side.get('trigger_snapshot', {}).get(_agg_active_key, float('inf'))
+
     # §6.2: Update BOTH trigger snapshots to current premiums.
     # This resets the baseline so the trigger system works correctly
     # from the new direction.
     update_trigger_snapshots(session, ce_now, pe_now,
                              fetch_premium_fn=fetch_premium_fn)
 
+    # FM3 fix: Undo upward ratchet on the aggressor side.
+    # update_trigger_snapshots set it to agg_now; if agg_now > old trigger
+    # that would erase the accumulated loss. Restore old value in that case.
+    if _agg_now > _old_agg_trigger:
+        _agg_side_post = session.get(aggressor, {})
+        _agg_side_post.setdefault('trigger_snapshot', {})[_agg_active_key] = _old_agg_trigger
+        log.info(
+            f"Reversal skip: {aggressor.upper()} trigger NOT ratcheted up "
+            f"({_old_agg_trigger:.2f} → {_agg_now:.2f} suppressed — "
+            f"accumulated loss preserved for next hedge)"
+        )
+
     log.info(
         f"Reversal skip transition: last_aggressor {old_aggressor} → "
-        f"{aggressor.upper()}, triggers updated to current premiums "
-        f"(CE={ce_now:.2f}, PE={pe_now:.2f})"
+        f"{aggressor.upper()}, skip_count={session['_consecutive_reversal_skip_count']}, "
+        f"triggers updated (CE={ce_now:.2f}, PE={pe_now:.2f})"
     )
 

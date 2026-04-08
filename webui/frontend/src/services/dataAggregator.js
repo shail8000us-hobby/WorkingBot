@@ -23,12 +23,10 @@ class DataAggregator {
     this.isRunning = false;
     // Phase 4: Optimized polling intervals aligned with backend cache (5s)
     this.pollInterval = 20000; // 20 seconds default (4x backend cache, ensures fresh data)
-    this.pollIntervalFast = 10000; // 10 seconds for active trading (2x backend cache)
     this.pollIntervalSlow = 120000; // 120 seconds for idle/hidden tab (saves resources)
     this.consecutiveErrors = 0;
     this.maxConsecutiveErrors = 5;
     this.isDocumentVisible = true;
-    this.hasActivePositions = false;
     this._lastResponseHash = null; // Skip updates when data hasn't changed
   }
 
@@ -109,12 +107,9 @@ class DataAggregator {
    */
   _getAdaptiveInterval() {
     if (!this.isDocumentVisible) {
-      return this.pollIntervalSlow; // 10s when tab hidden
+      return this.pollIntervalSlow; // 120s when tab hidden
     }
-    if (this.hasActivePositions) {
-      return this.pollIntervalFast; // 3s when trading
-    }
-    return this.pollInterval; // 5s default
+    return this.pollInterval; // 20s default
   }
 
   /**
@@ -170,8 +165,7 @@ class DataAggregator {
       store.setLoading(true);
 
       // Fetch all endpoints in parallel
-      const [positionsRes, ordersRes, healthRes, pnlRes] = await Promise.allSettled([
-        apiClient.get('/api/positions'),
+      const [ordersRes, healthRes, pnlRes] = await Promise.allSettled([
         apiClient.get('/api/orders'),
         apiClient.get('/api/health/detailed'),
         apiClient.get('/api/pnl/summary'),
@@ -180,12 +174,6 @@ class DataAggregator {
       // Process results (even if some failed)
       const updates = {};
       let successCount = 0;
-
-      // Process positions
-      if (positionsRes.status === 'fulfilled' && positionsRes.value) {
-        updates.positions = positionsRes.value.positions || [];
-        successCount++;
-      }
 
       // Process orders
       if (ordersRes.status === 'fulfilled' && ordersRes.value) {
@@ -226,7 +214,6 @@ class DataAggregator {
 
       // Log errors for failed fetches
       const errors = [
-        positionsRes.status === 'rejected' ? `positions: ${positionsRes.reason}` : null,
         ordersRes.status === 'rejected' ? `orders: ${ordersRes.reason}` : null,
         healthRes.status === 'rejected' ? `health: ${healthRes.reason}` : null,
         pnlRes.status === 'rejected' ? `pnl: ${pnlRes.reason}` : null,
@@ -234,7 +221,7 @@ class DataAggregator {
 
       if (errors.length > 0) {
         console.warn(
-          `⚠️ Data aggregator partial failure (${successCount}/4 succeeded):`,
+          `⚠️ Data aggregator partial failure (${successCount}/3 succeeded):`,
           errors.join(', ')
         );
         this.consecutiveErrors++;

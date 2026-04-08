@@ -6,7 +6,7 @@
  *
  * Usage:
  *   import { buildSections } from '../config/navigationSections';
- *   const sections = useMemo(() => buildSections({ openPositions, pendingOrders, guardianEnabled }), [openPositions, pendingOrders, guardianEnabled]);
+ *   const sections = useMemo(() => buildSections({ pendingOrders, guardianEnabled }), [pendingOrders, guardianEnabled]);
  */
 
 import {
@@ -19,11 +19,9 @@ import {
   RadioTower,
   Terminal,
   Code,
-  Activity,
   BarChart3,
   Brain,
   Database,
-  PieChart,
   Table2,
   Workflow,
   Scale,
@@ -32,18 +30,18 @@ import {
   ListChecks,
   CandlestickChart,
   Wallet,
+  TrendingUp,
 } from 'lucide-react';
 
 /**
  * Build the sections array with dynamic badges and feature flags.
  *
  * @param {Object} opts
- * @param {number|null} opts.openPositions  - active position count (badge)
  * @param {number|null} opts.pendingOrders  - pending order count (badge)
  * @param {boolean}     opts.guardianEnabled - whether the Guardian dashboard feature flag is on
  * @returns {Array} sections list consumed by Sidebar and MobileNav
  */
-export function buildSections({ openPositions, pendingOrders, guardianEnabled }) {
+export function buildSections({ pendingOrders, guardianEnabled }) {
   return [
     // ── Grid Bot ──────────────────────────────────────────────
     {
@@ -52,21 +50,6 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       icon: LayoutDashboard,
       badge: pendingOrders ?? undefined,
       description: 'Trading overview & telemetry',
-      group: 'Grid Bot',
-    },
-    {
-      id: 'portfolio',
-      label: '📊 Portfolio',
-      icon: PieChart,
-      description: 'Multi-symbol overview - all symbols at a glance',
-      group: 'Grid Bot',
-    },
-    {
-      id: 'positions',
-      label: 'Positions',
-      icon: Layers3,
-      badge: openPositions ?? undefined,
-      description: 'Active grids & execution state',
       group: 'Grid Bot',
     },
     {
@@ -125,6 +108,13 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       label: '💰 MMM',
       icon: Coins,
       description: 'Money Mind & Method - BTC 0DTE options selling algorithm',
+      group: 'Algorithms',
+    },
+    {
+      id: 'mmmx',
+      label: '📈 MMMX',
+      icon: TrendingUp,
+      description: 'MMMX — Options selling algorithm with hedging & circuit breakers',
       group: 'Algorithms',
     },
     {
@@ -199,13 +189,6 @@ export function buildSections({ openPositions, pendingOrders, guardianEnabled })
       label: 'Bot Management',
       icon: Terminal,
       description: 'tmux control, process management, and emergency controls',
-      group: 'System',
-    },
-    {
-      id: 'system_health',
-      label: 'System Health',
-      icon: Activity,
-      description: 'Real-time system monitoring - CPU, memory, disk, process health, alerts',
       group: 'System',
     },
     {

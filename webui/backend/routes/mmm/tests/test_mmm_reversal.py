@@ -197,18 +197,19 @@ class TestSkipReversal:
 
     def test_skip_when_profitable(self):
         session = _make_session()
-        should_skip, reason = _reversal.should_skip_reversal_adjustment(session, 50.0)
+        # FM2: now takes (session, active_strike_pnl, total_adj_pnl)
+        should_skip, reason = _reversal.should_skip_reversal_adjustment(session, 50.0, 50.0)
         assert should_skip is True
         assert 'profitable' in reason.lower() or 'skip' in reason.lower()
 
     def test_skip_when_breakeven(self):
         session = _make_session()
-        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, 0.0)
+        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, 0.0, 0.0)
         assert should_skip is True
 
     def test_dont_skip_when_loss(self):
         session = _make_session()
-        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, -100.0)
+        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, -100.0, -100.0)
         assert should_skip is False
 
 
@@ -288,8 +289,8 @@ class TestHandleReversalSkipTransition:
         # Step 1: Reversal detected (CE→PE)
         assert _reversal.detect_reversal(session, 'pe') is True
 
-        # Step 2: P&L is positive → skip
-        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, 25.0)
+        # Step 2: P&L is positive → skip (both active and total positive)
+        should_skip, _ = _reversal.should_skip_reversal_adjustment(session, 25.0, 25.0)
         assert should_skip is True
 
         # Step 3: Apply the transition fix

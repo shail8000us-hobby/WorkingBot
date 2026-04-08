@@ -8,7 +8,7 @@ Functions sealed:
 These are pure decision functions with no I/O.  The monitor's
 _process_replenish() method (async, I/O) is not sealed here.
 
-25 contracts total.
+29 contracts total.
 """
 
 import time
@@ -236,6 +236,58 @@ class TestCheckReplenishEligibility:
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
         assert ok is False
         assert 'open_side_has_no_lots' in reason
+
+    @pytest.mark.sealed
+    def test_blocked_when_same_side_velocity_exceeded(self):
+        """Gate 11: replenish blocked when SAME-SIDE lots in velocity window >= limit."""
+        s = _base_session()
+        s['params']['lot_velocity_enabled'] = True
+        s['params']['lot_velocity_limit'] = 50
+        s['params']['lot_velocity_window_mins'] = 30
+        # CE had 60 lots sold in the last 10 min (same side as replenish target)
+        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        s['adjustment_history'] = [
+            {'aggressor': 'PE', 'lots_sold': 60, 'side': 'ce', 'timestamp': ts_recent},
+        ]
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is False
+        assert 'lot_velocity_limit' in reason
+        assert '60/50' in reason
+
+    @pytest.mark.sealed
+    def test_cross_side_velocity_does_not_block_replenish(self):
+        """Gate 11: CE strike_shift must NOT block PE replenish (cross-side velocity is irrelevant).
+        This is the exact scenario from the 2026-04-06 live incident where 228 CE lots
+        blocked PE replenish despite PE-side velocity being 0/200."""
+        s = _base_session()
+        s['params']['lot_velocity_enabled'] = True
+        s['params']['lot_velocity_limit'] = 200
+        s['params']['lot_velocity_window_mins'] = 30
+        # CE sold 228 lots 5 min ago (cross-side — should not count against PE replenish)
+        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        s['adjustment_history'] = [
+            {'aggressor': 'PE', 'lots_sold': 228, 'side': 'ce', 'timestamp': ts_recent},
+        ]
+        # Replenishing PE (closed) while CE (open) has lots — swap sides
+        s['ce'] = {'active_lots': 228, 'total_lots': 228, 'positions': []}
+        s['pe'] = {'active_lots': 0, 'total_lots': 0, 'positions': []}
+        # Replenishing PE: ce side has velocity over limit, pe side has 0 — must pass
+        ok, reason = check_replenish_eligibility(s, 'pe', 'ce')
+        assert ok is True, f"Cross-side velocity blocked PE replenish: {reason}"
+
+    @pytest.mark.sealed
+    def test_eligible_when_same_side_velocity_under_limit(self):
+        """Gate 11: replenish eligible when same-side lots < limit."""
+        s = _base_session()
+        s['params']['lot_velocity_enabled'] = True
+        s['params']['lot_velocity_limit'] = 50
+        s['params']['lot_velocity_window_mins'] = 30
+        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        s['adjustment_history'] = [
+            {'aggressor': 'CE', 'lots_sold': 30, 'side': 'ce', 'timestamp': ts_recent},
+        ]
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"Unexpected block: {reason}"
 
 
 # ─── determine_replenish_lots ─────────────────────────────────────────────────

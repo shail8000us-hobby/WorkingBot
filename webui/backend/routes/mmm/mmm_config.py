@@ -65,7 +65,9 @@ PARAM_RULES = {
     'shift_threshold_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'shift_match_opposite_lots': {'type': bool,  'min': None, 'max': None,  'hot': True},
     'pre_sell_shift_enabled':    {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'shift_fallback_enabled':    {'type': bool,  'min': None, 'max': None,  'hot': True},
     'proactive_shift_enabled':   {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'dangerous_mode':            {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Adaptive interval
     'adaptive_interval_enabled': {'type': bool,  'min': None, 'max': None,  'hot': True},
     # Wind-down mode
@@ -630,6 +632,8 @@ def get_param_info() -> Dict[str, Dict]:
         'shift_threshold_pct': 'Dynamic shift threshold as % of current entry premium. E.g. 0.30 = shift only when hedge premium drops below 30% of what you paid. Overrides the fixed shift_threshold when non-zero. 0 = use fixed shift_threshold instead.',
         'shift_match_opposite_lots': 'Delta-neutral balance: when shifting strikes, sell at least as many lots as the opposite side. E.g. PE has 11 lots → CE shift opens 11 lots (not just formula lots). Prevents directional bias. Trend-tier reductions still apply. Recommended: ON.',
         'pre_sell_shift_enabled': 'Experimental: shift to target premium BEFORE selling cheap hedge lots. In an up-move, CE rises but PE drops — algo would normally sell PE at 60-80 (below target 100), accumulating many cheap lots. With this ON: if PE < shift_target_premium, find a better OTM strike at ~100 first, then sell fewer lots there. Falls back to current behavior if no better strike exists. Default OFF.',
+        'shift_fallback_enabled': 'When no new strike with premium >= shift_threshold is found, fall back to selling at the current (decayed) active strike. Prevents the indefinite no-hedge loop that occurs near expiry or after a large market move when all OTM options are cheap. Sub-optimal premium but ensures hedging occurs. Default ON.',
+        'dangerous_mode': '⚠️ DANGEROUS MODE: Bypasses ALL safety gates — cooldowns (reversal, whipsaw, consecutive-direction, shift), regime blocks (BLOCK_ALL_SELLS, BLOCK_CE, BLOCK_PE, FORCE_REDUCE, PAUSE), margin YELLOW block, and asymmetry 7:1 block. Only max_loss hard stop, ITM guard, and auto-close near expiry remain active. Intended for operator use during 0DTE expiry when fast algo response is required. REQUIRES typing CONFIRM in UI. Default OFF.',
         'proactive_shift_enabled': 'Master switch for proactive strike shifting. When ON, the algo detects when the active-strike premium decays below shift_threshold and proactively shifts to a better strike before being forced to. Disable to lock the algo to its current strikes until an adjustment naturally triggers a shift. Default ON.',
         # Trend Boost
         'trend_boost_enabled': 'Trend Boost: multiply hedge lots by tier multipliers when a trend is active. When CE is the aggressor in an uptrend, CE adjustment lots are scaled up to catch up faster. Each tier has its own multiplier.',

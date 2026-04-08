@@ -272,6 +272,11 @@ class MMMEngine:
 
         # Fix #19: Use Decimal internally for P&L accumulation
         adjustment_pnl = _D(0)
+        # FM2 fix: track active-strike P&L separately from frozen positions.
+        # The skip gate uses active_strike_pnl only — a profitable frozen
+        # position at an old strike must not mask a genuine loss at the
+        # current active strike.
+        active_strike_pnl = _D(0)
 
         # Check adjustment fills at active strike
         for fill in side_state.get('adjustment_fills', []):
@@ -295,6 +300,7 @@ class MMMEngine:
                 # Fix #19: Decimal arithmetic for P&L accumulation
                 fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
+                active_strike_pnl += fill_pnl  # FM2: track separately
             except Exception as e:
                 _fetch_errors += 1
                 log.warning(f"Failed to compute reversal P&L for {strike}: {e}")
@@ -323,6 +329,8 @@ class MMMEngine:
                 continue
             try:
                 # Fix #19: Decimal arithmetic
+                # FM2: frozen P&L added to adjustment_pnl for lot-sizing but NOT
+                # to active_strike_pnl — the skip gate ignores frozen profits/losses.
                 fill_pnl = (_D(entry_prem) - _D(current)) * _D(lots) * _LOT
                 adjustment_pnl += fill_pnl
                 log.debug(
@@ -334,9 +342,10 @@ class MMMEngine:
                 log.warning(f"Failed to compute reversal P&L for frozen {strike}: {e}")
 
         adj_pnl_float = float(adjustment_pnl)
+        active_pnl_float = float(active_strike_pnl)
         log.info(
             f"Reversal P&L for {aggressor_side.upper()} adjustments: "
-            f"{adj_pnl_float:.2f}"
+            f"active_strike={active_pnl_float:.2f}, total={adj_pnl_float:.2f}"
         )
 
         # Robust v2 Fix #2: Flag calculation as incomplete
@@ -347,11 +356,21 @@ class MMMEngine:
                 f"premium fetches failed. Reversal P&L may be inaccurate."
             )
 
+        # FM2 fix: loss_to_cover is based on active_strike_pnl, not total.
+        # Frozen positions at old strikes must not reduce the loss we need to
+        # cover for the current active strike — their profit/loss is separate.
         # Return float at API boundary (Fix #19: Decimal was internal only)
-        if adjustment_pnl >= _D(0):
-            return 0.0, adj_pnl_float, calculation_incomplete
+        if active_strike_pnl < _D(0):
+            # Active strike positions are losing — hedge that loss.
+            # Frozen losses are ignored for lot-sizing (handled by standard formula).
+            loss_to_cover = float(abs(active_strike_pnl))
+        elif adjustment_pnl < _D(0):
+            # Active strike fine but frozen positions losing — use total.
+            loss_to_cover = float(abs(adjustment_pnl))
         else:
-            return float(abs(adjustment_pnl)), adj_pnl_float, calculation_incomplete
+            loss_to_cover = 0.0
+
+        return loss_to_cover, active_pnl_float, adj_pnl_float, calculation_incomplete
 
     # =========================================================================
     # §5.3-5.4: Determine strike and lots

@@ -65,6 +65,7 @@ import {
   Error as ErrorIcon,
   Circle as CircleIcon,
   Bolt as BoltIcon,
+  LocalFireDepartment as DangerIcon,
 } from '@mui/icons-material';
 import { useMMM } from './MMMContext';
 import mmmService from './mmmService';
@@ -2006,6 +2007,35 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
     qty: 1, loading: false, error: '',
   });
 
+  // Dangerous Mode dialog state
+  const [dangerDlg, setDangerDlg] = useState({ open: false, confirmText: '', loading: false });
+  const isDangerousMode = session?.params?.dangerous_mode === true;
+
+  const handleDangerousModeToggle = async () => {
+    if (isDangerousMode) {
+      // Turn OFF — no confirmation needed
+      try {
+        await mmmService.updateSessionParams(session.session_id, { dangerous_mode: false });
+      } catch (e) {
+        console.error('Failed to disable dangerous mode', e);
+      }
+    } else {
+      setDangerDlg({ open: true, confirmText: '', loading: false });
+    }
+  };
+
+  const handleDangerConfirm = async () => {
+    if (dangerDlg.confirmText !== 'CONFIRM') return;
+    setDangerDlg(d => ({ ...d, loading: true }));
+    try {
+      await mmmService.updateSessionParams(session.session_id, { dangerous_mode: true });
+      setDangerDlg({ open: false, confirmText: '', loading: false });
+    } catch (e) {
+      console.error('Failed to enable dangerous mode', e);
+      setDangerDlg(d => ({ ...d, loading: false }));
+    }
+  };
+
   // M-30 fix: Reset tab when session changes (avoids showing empty P&L tab on fresh session)
   useEffect(() => {
     setDetailTab(0);
@@ -2392,7 +2422,43 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                 </Tooltip>
               )}
             </Box>
-            <StatusChip status={status} />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {['RUNNING', 'PAUSED'].includes(status) && (
+                <Tooltip title={isDangerousMode
+                  ? 'DANGEROUS MODE ON — click to disable and restore all safety gates'
+                  : '⚠️ Dangerous Mode — bypass all safety gates except max loss & ITM guard. Use during 0DTE expiry only.'
+                }>
+                  <Button
+                    size="small"
+                    variant={isDangerousMode ? 'contained' : 'outlined'}
+                    startIcon={<DangerIcon fontSize="small" />}
+                    onClick={handleDangerousModeToggle}
+                    sx={{
+                      fontSize: '0.7rem',
+                      py: 0.3,
+                      px: 1,
+                      fontWeight: 700,
+                      minWidth: 0,
+                      borderColor: '#b71c1c',
+                      color: isDangerousMode ? '#fff' : '#ef9a9a',
+                      backgroundColor: isDangerousMode ? '#c62828' : 'transparent',
+                      animation: isDangerousMode ? 'pulse-danger 1.5s ease-in-out infinite' : 'none',
+                      '@keyframes pulse-danger': {
+                        '0%, 100%': { boxShadow: '0 0 0 0 rgba(244,67,54,0.5)' },
+                        '50%': { boxShadow: '0 0 0 6px rgba(244,67,54,0)' },
+                      },
+                      '&:hover': {
+                        backgroundColor: isDangerousMode ? '#b71c1c' : 'rgba(183,28,28,0.15)',
+                        borderColor: '#f44336',
+                      },
+                    }}
+                  >
+                    {isDangerousMode ? '🔥 DANGEROUS MODE: ON' : 'Dangerous Mode'}
+                  </Button>
+                </Tooltip>
+              )}
+              <StatusChip status={status} />
+            </Box>
           </Box>
 
           {/* KPI Cards Row */}
@@ -2754,6 +2820,39 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
             <MMMGammaPanel
               gamma={heartbeat?.gamma || session._gamma_result}
             />
+          )}
+
+          {/* Dangerous Mode banner — shown whenever dangerous_mode is ON */}
+          {isDangerousMode && (
+            <Alert
+              severity="error"
+              icon={<DangerIcon />}
+              sx={{
+                mb: 2,
+                backgroundColor: 'rgba(180,0,0,0.18)',
+                border: '2px solid #f44336',
+                fontWeight: 700,
+              }}
+              action={
+                <Button
+                  color="inherit"
+                  size="small"
+                  variant="outlined"
+                  sx={{ borderColor: '#f44336', color: '#f44336', fontWeight: 700 }}
+                  onClick={handleDangerousModeToggle}
+                >
+                  DISABLE
+                </Button>
+              }
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#f44336' }}>
+                ⚠️ DANGEROUS MODE ACTIVE
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#ffcdd2' }}>
+                All safety gates are OFF. Only max loss hard stop, ITM guard, and auto-close near expiry remain active.
+                Operator is fully responsible for risk management.
+              </Typography>
+            </Alert>
           )}
 
           {/* Why Paused — prominent banner in detail view */}
@@ -3346,6 +3445,91 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
           {activeStrikeSnack.message}
         </Alert>
       </Snackbar>
+
+      {/* ── Dangerous Mode CONFIRM dialog ── */}
+      <Dialog
+        open={dangerDlg.open}
+        onClose={() => !dangerDlg.loading && setDangerDlg(d => ({ ...d, open: false, confirmText: '' }))}
+        maxWidth="sm"
+        fullWidth
+        PaperProps={{ sx: { border: '2px solid #f44336', backgroundColor: '#1a0000' } }}
+      >
+        <DialogTitle sx={{ fontWeight: 800, color: '#f44336', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <DangerIcon sx={{ color: '#f44336' }} />
+          ⚠️ Enable Dangerous Mode
+        </DialogTitle>
+        <DialogContent>
+          <Alert severity="error" icon={false} sx={{ mb: 2, backgroundColor: 'rgba(183,28,28,0.25)', border: '1px solid #f44336' }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1 }}>
+              ALL SAFETY GATES WILL BE DISABLED
+            </Typography>
+            <Typography variant="body2" sx={{ mb: 0.5 }}>
+              The following protections will be bypassed:
+            </Typography>
+            <Box component="ul" sx={{ m: 0, pl: 2 }}>
+              {[
+                'Reversal cooldown',
+                'Whipsaw protection',
+                'Consecutive direction block',
+                'Strike shift cooldown',
+                'Regime blocks (BLOCK_ALL, FORCE_REDUCE, PAUSE)',
+                'Margin YELLOW sell-block',
+                'Asymmetry 7:1 block',
+                'FM1 reversal circuit breaker',
+              ].map(item => (
+                <Typography key={item} component="li" variant="body2" sx={{ color: '#ef9a9a', mb: 0.25 }}>
+                  {item}
+                </Typography>
+              ))}
+            </Box>
+          </Alert>
+          <Alert severity="info" icon={false} sx={{ mb: 2, backgroundColor: 'rgba(0,50,80,0.4)' }}>
+            <Typography variant="body2">
+              <strong>Still active:</strong> Max loss hard stop · ITM guard · Auto-close near expiry · Margin ORANGE wind-down
+            </Typography>
+          </Alert>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            This mode is intended for use during <strong>0DTE expiry</strong> when the operator is actively monitoring
+            and fast algo response is required. You are fully responsible for risk management while this is ON.
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
+            Type <strong style={{ color: '#f44336' }}>CONFIRM</strong> to enable:
+          </Typography>
+          <TextField
+            fullWidth
+            size="small"
+            placeholder="Type CONFIRM"
+            value={dangerDlg.confirmText}
+            onChange={e => setDangerDlg(d => ({ ...d, confirmText: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && dangerDlg.confirmText === 'CONFIRM' && handleDangerConfirm()}
+            disabled={dangerDlg.loading}
+            sx={{
+              '& .MuiOutlinedInput-root': {
+                borderColor: dangerDlg.confirmText === 'CONFIRM' ? '#f44336' : undefined,
+              },
+            }}
+            autoFocus
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button
+            onClick={() => setDangerDlg(d => ({ ...d, open: false, confirmText: '' }))}
+            disabled={dangerDlg.loading}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="contained"
+            color="error"
+            onClick={handleDangerConfirm}
+            disabled={dangerDlg.confirmText !== 'CONFIRM' || dangerDlg.loading}
+            startIcon={dangerDlg.loading ? <CircularProgress size={16} color="inherit" /> : <DangerIcon />}
+            sx={{ fontWeight: 700 }}
+          >
+            {dangerDlg.loading ? 'Enabling...' : 'Enable Dangerous Mode'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

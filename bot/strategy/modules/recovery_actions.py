@@ -315,10 +315,14 @@ class RecoveryActions:
 
                 try:
                     # Place TP via order actor
+                    # side is stored in retry entry since Apr 2026 fix;
+                    # fall back to "sell" (LONG default) for old entries
+                    tp_side = position.get("side", "sell")
                     result = await self.order_actor.ask("PLACE_TP", {
                         "price": tp_price,
                         "size": size,
-                        "position_id": position_id
+                        "position_id": position_id,
+                        "side": tp_side
                     }, timeout=15.0)
 
                     if result.get("status") == "ok":

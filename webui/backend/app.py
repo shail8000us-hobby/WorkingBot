@@ -90,7 +90,6 @@ try:
     from .routes.yaml_config_api import yaml_config_bp  # NOV 15: YAML config API
     from .routes.file_manager import file_manager_bp  # NOV 16: File Manager for Phase 2
     from .routes.mode_switcher import mode_switcher_bp  # NOV 16: Phase 3 - Mode Switcher
-    from .routes.system_health import system_health_bp  # NOV 16: Phase 3 - System Health Monitor
     from .routes.instance_manager import instance_bp  # NOV 16: Phase 3 - Instance Manager
     from .routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
     from .routes.recovery import bp as recovery_bp  # NOV 20: Recovery systems
@@ -123,7 +122,6 @@ except ImportError:
     from routes.yaml_config_api import yaml_config_bp  # NOV 15: YAML config API
     from routes.file_manager import file_manager_bp  # NOV 16: File Manager for Phase 2
     from routes.mode_switcher import mode_switcher_bp  # NOV 16: Phase 3 - Mode Switcher
-    from routes.system_health import system_health_bp  # NOV 16: Phase 3 - System Health Monitor
     from routes.instance_manager import instance_bp  # NOV 16: Phase 3 - Instance Manager
     from routes.code_explainer import code_explainer_bp  # NOV 16: Phase 3 - Code Explainer AI
     from routes.recovery import bp as recovery_bp  # NOV 20: Recovery system
@@ -184,7 +182,7 @@ CORS(app, origins=ALLOWED_ORIGINS.split(','), supports_credentials=True)
 _ASYNC_MODE = os.environ.get('SOCKETIO_ASYNC_MODE', 'threading')
 socketio = SocketIO(
     app,
-    cors_allowed_origins=["http://localhost:3000", "http://localhost:5555", "http://127.0.0.1:3000", "http://127.0.0.1:5555"],
+    cors_allowed_origins="*",  # FIXED: Allow all origins (Tailscale IPs, local, etc)
     async_mode=_ASYNC_MODE,
     engineio_logger=False,  # DISABLED: Reduce log spam
     logger=False,  # DISABLED: Reduce log spam
@@ -194,6 +192,7 @@ socketio = SocketIO(
     # max_http_buffer_size increased for larger payloads
     max_http_buffer_size=1000000
 )
+print("✅ SocketIO initialized successfully")
 
 # ============================================================================
 # Register All Blueprints
@@ -261,9 +260,6 @@ print(f"✅ Registered file_manager blueprint")
 # Register Phase 3 blueprints (NOV 16)
 app.register_blueprint(mode_switcher_bp)
 print(f"✅ Registered mode_switcher blueprint")
-
-app.register_blueprint(system_health_bp)
-print(f"✅ Registered system_health blueprint")
 
 app.register_blueprint(instance_bp)
 print(f"✅ Registered instance_manager blueprint")
@@ -576,6 +572,23 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register mmm blueprint: {e}")
     log.warning(f"MMM routes not available: {e}")
+
+# Register MMMX blueprint (Monthly BTC Options Strategy — 20–45 DTE premium selling)
+try:
+    from webui.backend.routes.mmmx import mmmx_bp, init_mmmx, init_websocket as init_mmmx_websocket
+    app.register_blueprint(mmmx_bp)
+    print(f"✅ Registered mmmx blueprint (Monthly BTC Options Strategy — 20–45 DTE)")
+
+    # Initialize MMMX WebSocket for real-time events
+    init_mmmx_websocket(socketio)
+    print(f"✅ MMMX WebSocket initialized")
+
+    # Initialize MMMX and restore any active sessions
+    init_mmmx()
+    print(f"✅ MMMX initialized and sessions restored")
+except Exception as e:
+    print(f"⚠️ Could not register mmmx blueprint: {e}")
+    log.warning(f"MMMX routes not available: {e}")
 
 # Register IC blueprint (Iron Condor — BTC options 4-leg premium harvesting algo)
 try:
@@ -950,8 +963,12 @@ def handle_connect():
     """Handle WebSocket connection"""
     global _log_tailer_thread, _log_tailer_running
     
+    # IMPORTANT: This must be called FIRST to see if handler is triggered
+    print(f"🔌 [SOCKET.IO] Client connected: {request.sid}", flush=True)
+    import sys
+    sys.stdout.flush()
+    
     try:
-        print(f"🔌 Client connected: {request.sid}")
         emit('connected', {'status': 'Connected to GridBot WebUI'})
         
         # Start log tailer if not already running
@@ -960,6 +977,24 @@ def handle_connect():
             _log_tailer_thread = threading.Thread(target=tail_logs_and_emit, daemon=True, name="LogTailer")
             _log_tailer_thread.start()
             print("✅ Log tailer thread started")
+        
+        # Send initial state snapshot to populate the frontend UI
+        try:
+            # Get current config
+            current_config = cfg.to_flat_dict() if hasattr(cfg, 'to_flat_dict') else {}
+            
+            # Emit initial state snapshot with basic data
+            state_snapshot = {
+                'config': current_config,
+                'bot_status': {},
+                'positions': {},
+                'timestamp': time.time()
+            }
+            emit('state_snapshot', state_snapshot)
+            print(f"📦 Sent initial state snapshot to client {request.sid}")
+        except Exception as e:
+            print(f"⚠️  Error sending state snapshot: {e}")
+            log.error(f"Error sending state snapshot on connect: {e}", exc_info=True)
         
         # Send recent logs on connect (last 30 lines)
         try:
@@ -1662,7 +1697,6 @@ if __name__ == '__main__':
             for name, url in [
                 ('bot/status', f'http://127.0.0.1:{port}/api/bot/status'),
                 ('options/dashboard', f'http://127.0.0.1:{port}/api/options/dashboard'),
-                ('positions', f'http://127.0.0.1:{port}/api/positions'),
             ]:
                 try:
                     urllib.request.urlopen(url, timeout=15).read()
@@ -1675,6 +1709,31 @@ if __name__ == '__main__':
         print("\n" + "=" * 60)
         print("✅ All monitors initialized")
         print("=" * 60 + "\n")
+
+    # Background state broadcaster - emits state to all connected clients every 5 seconds
+    def broadcast_state():
+        """Periodically broadcast current state to all connected WebSocket clients"""
+        while True:
+            try:
+                _threading.Event().wait(5)  # Wait 5 seconds
+                state_snapshot = {
+                    'config': cfg.to_flat_dict() if hasattr(cfg, 'to_flat_dict') else {},
+                    'bot_status': {},
+                    'positions': {},
+                    'timestamp': time.time()
+                }
+                socketio.emit('state_snapshot', state_snapshot, broadcast=True)
+                print(f"📤 Broadcasted state snapshot to all {len(socketio.server.eio.sids)} clients")
+            except Exception as e:
+                print(f"⚠️  Error broadcasting state: {e}")
+                
+    # Start state broadcaster as daemon thread
+    _threading.Thread(
+        target=broadcast_state,
+        daemon=True,
+        name='state-broadcaster'
+    ).start()
+    print("✅ State broadcaster started")
 
     # Launch deferred init as a daemon thread — does NOT block socketio.run()
     _threading.Thread(

@@ -603,6 +603,13 @@
     // ── Init ─────────────────────────────────────────────────────────────────────
 
     function init() {
+        // Skip on mobile devices — AI Advisor is desktop-only
+        const isMobile = window.innerWidth < 768 || /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i.test(navigator.userAgent.toLowerCase()) || navigator.maxTouchPoints > 0;
+        if (isMobile) {
+            console.info('[OptionsAI] Skipping AI Advisor on mobile device.');
+            return;
+        }
+
         injectStyles();
         buildPanel();
         console.info('[OptionsAI] Panel ready. Click "🤖 AI Advisor" to open.');
