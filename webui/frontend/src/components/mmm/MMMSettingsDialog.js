@@ -654,16 +654,34 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
   const operatorLocked = new Set(sessionData?._adaptive_operator_overrides || []);
 
-  // SHORT_STRADDLE: groups that are preset-disabled and must not be hot-reloaded
+  // SHORT_STRADDLE: only 5 groups are relevant — all others locked.
+  // Locked = 40% opacity, not clickable, 🔒 badge. Settings still exist in backend
+  // but operator cannot accidentally hot-reload them and break the roll mechanism.
   const isShortStraddle = sessionData?.params?._preset_source === 'SHORT_STRADDLE';
   const SHORT_STRADDLE_LOCKED_GROUPS = new Set([
-    'windDown',           // wind_down_enabled=False — fights roll mechanism
-    'positionLifecycle',  // harvest_enabled=False, recycle disabled
-    'balanceControl',     // asymmetry rebalancing is strangle-specific
-    'regimeControls',     // 37 strangle trend/vol/gamma params — unused in straddle
-    'consecutiveDir',     // directional sell limiter — no directional selling in straddle
+    // ── Preset-disabled (would fight roll mechanism if re-enabled) ──
+    'windDown',           // wind_down_enabled=False — closes OTM leg, breaks straddle structure
+    'positionLifecycle',  // harvest_enabled=False — partial closes break CE/PE symmetry
+    'balanceControl',     // CE/PE asymmetry rebalancing is strangle-only
     'favorableScaleUp',   // scale_enabled=False in preset
-    'reverseMode',        // reverse mode is incompatible with straddle roll
+    'reverseMode',        // incompatible with straddle roll
+
+    // ── Strangle-specific infrastructure (N/A for straddle) ──
+    'triggers',           // min_trigger_move/shift_threshold = individual leg shift params; straddle rolls both legs together
+    'safety',             // whipsaw/ITM guard = strangle-specific; straddle expects one leg ITM on every move
+    'regimeControls',     // 37 trend/vol/gamma params — strangle directional intelligence, unused in straddle
+    'consecutiveDir',     // directional sell limiter — straddle has no directional selling
+    'autoReplenish',      // replenish re-opens one side only = naked position; straddle rolls both legs together
+    'perpHedge',          // perp_hedge_enabled=False in preset
+    'adaptiveTuning',     // adaptive_mode locked to 'preset' at session creation
+
+    // ── Conflicts with roll mechanism ──
+    'atmShield',          // ATM Shield retreats to OTM; straddle should ROLL instead — these two conflict directly
+    'lotVelocity',        // lot velocity cap could throttle/block the 4-leg roll execution
+
+    // ── Monitoring tools calibrated for strangle shape ──
+    'marginGuardian',     // defaults are correct; operator has no reason to change margin tiers
+    'gammaDetector',      // P&L curvature tool calibrated for strangle strikes, not symmetric straddle
   ]);
 
   // Pinned / Favorites — persisted to backend so they survive builds and cache clears
