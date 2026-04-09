@@ -654,6 +654,18 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
   const operatorLocked = new Set(sessionData?._adaptive_operator_overrides || []);
 
+  // SHORT_STRADDLE: groups that are preset-disabled and must not be hot-reloaded
+  const isShortStraddle = sessionData?.params?._preset_source === 'SHORT_STRADDLE';
+  const SHORT_STRADDLE_LOCKED_GROUPS = new Set([
+    'windDown',           // wind_down_enabled=False — fights roll mechanism
+    'positionLifecycle',  // harvest_enabled=False, recycle disabled
+    'balanceControl',     // asymmetry rebalancing is strangle-specific
+    'regimeControls',     // 37 strangle trend/vol/gamma params — unused in straddle
+    'consecutiveDir',     // directional sell limiter — no directional selling in straddle
+    'favorableScaleUp',   // scale_enabled=False in preset
+    'reverseMode',        // reverse mode is incompatible with straddle roll
+  ]);
+
   // Pinned / Favorites — persisted to backend so they survive builds and cache clears
   const [pinned, setPinned] = useState(new Set());
 
@@ -1469,17 +1481,20 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       ? group.params.length
                       : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
                     const isActive = activeSection === key;
+                    const isLocked = isShortStraddle && SHORT_STRADDLE_LOCKED_GROUPS.has(key);
                     return (
                       <Box
                         key={key}
-                        onClick={() => setActiveSection(key)}
+                        onClick={() => { if (!isLocked) setActiveSection(key); }}
                         sx={{
                           display: 'flex', alignItems: 'center', gap: 1,
-                          px: 1.5, py: '7px', cursor: 'pointer',
+                          px: 1.5, py: '7px',
+                          cursor: isLocked ? 'not-allowed' : 'pointer',
                           borderRadius: '6px', mx: 0.75,
+                          opacity: isLocked ? 0.35 : 1,
                           background: isActive ? `${group.color}18` : 'transparent',
                           borderLeft: isActive ? `3px solid ${group.color}` : '3px solid transparent',
-                          '&:hover': { background: `${group.color}0e` },
+                          ...(!isLocked && { '&:hover': { background: `${group.color}0e` } }),
                           transition: 'background 0.15s',
                         }}
                       >
@@ -1492,23 +1507,27 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                           }} />
                           <Typography sx={{
                             fontSize: '0.80rem',
-                            color: isActive ? group.color : '#9ba8b5',
+                            color: isLocked ? '#555' : (isActive ? group.color : '#9ba8b5'),
                             fontWeight: isActive ? 700 : 400,
                             lineHeight: 1.3,
                           }}>
                             {group.title}
                           </Typography>
                         </Box>
-                        <Chip
-                          label={count}
-                          size="small"
-                          sx={{
-                            height: 16, fontSize: '0.60rem',
-                            background: isActive ? `${group.color}20` : 'rgba(139,148,158,0.10)',
-                            color: isActive ? group.color : '#6e7681',
-                            border: 'none', '& .MuiChip-label': { px: '5px' },
-                          }}
-                        />
+                        {isLocked ? (
+                          <Typography sx={{ fontSize: '0.60rem', color: '#555' }}>🔒</Typography>
+                        ) : (
+                          <Chip
+                            label={count}
+                            size="small"
+                            sx={{
+                              height: 16, fontSize: '0.60rem',
+                              background: isActive ? `${group.color}20` : 'rgba(139,148,158,0.10)',
+                              color: isActive ? group.color : '#6e7681',
+                              border: 'none', '& .MuiChip-label': { px: '5px' },
+                            }}
+                          />
+                        )}
                       </Box>
                     );
                   })}
@@ -1605,6 +1624,18 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   </Box>
                 )}
 
+                {isShortStraddle && (
+                  <Box sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.5,
+                    background: 'rgba(255,167,38,0.08)', border: '1px solid rgba(255,167,38,0.3)',
+                    borderRadius: '8px', p: '10px 14px', mb: 2,
+                  }}>
+                    <Typography sx={{ fontSize: '0.80rem', color: '#ffb74d', lineHeight: 1.4 }}>
+                      🎯 <strong>Short Straddle Mode</strong> — 🔒 grayed panels are preset-locked and have no effect on this session. Only active (white) panels apply.
+                    </Typography>
+                  </Box>
+                )}
+
                 <Grid container spacing={1.5}>
                   {(() => {
                     const sorted = Object.entries(PARAM_GROUPS).sort((a, b) =>
@@ -1619,6 +1650,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       const count = group.params
                         ? group.params.length
                         : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
+                      const isLocked = isShortStraddle && SHORT_STRADDLE_LOCKED_GROUPS.has(key);
 
                       // Category divider row
                       if (cat !== lastCat) {
@@ -1642,50 +1674,64 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       elements.push(
                         <Grid item xs={12} sm={6} md={4} key={key}>
                           <Box
-                            onClick={() => setActiveSection(key)}
+                            onClick={() => { if (!isLocked) setActiveSection(key); }}
                             sx={{
                               background: meta.bg,
                               border: `1px solid ${meta.border}`,
                               borderRadius: '10px',
                               p: '14px 16px',
-                              cursor: 'pointer',
+                              cursor: isLocked ? 'not-allowed' : 'pointer',
                               height: '100%',
                               display: 'flex',
                               flexDirection: 'column',
                               gap: 0.75,
+                              opacity: isLocked ? 0.38 : 1,
                               transition: 'border-color 0.15s, background 0.15s',
-                              '&:hover': { borderColor: meta.hoverBorder, background: meta.hoverBg },
+                              ...(!isLocked && { '&:hover': { borderColor: meta.hoverBorder, background: meta.hoverBg } }),
                             }}
                           >
                             <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1 }}>
-                              <Box sx={{ width: 4, height: 20, backgroundColor: group.color, borderRadius: '2px', flexShrink: 0, mt: '2px' }} />
-                              <Typography sx={{ fontWeight: 700, fontSize: '0.90rem', color: '#e6edf3', flex: 1, lineHeight: 1.3 }}>
+                              <Box sx={{ width: 4, height: 20, backgroundColor: isLocked ? '#555' : group.color, borderRadius: '2px', flexShrink: 0, mt: '2px' }} />
+                              <Typography sx={{ fontWeight: 700, fontSize: '0.90rem', color: isLocked ? '#555' : '#e6edf3', flex: 1, lineHeight: 1.3 }}>
                                 {group.title}
                               </Typography>
                               <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, flexShrink: 0 }}>
-                                <Box component="span" sx={{
-                                  fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.5px',
-                                  background: meta.badgeBg, color: meta.badgeText,
-                                  border: `1px solid ${meta.border}`,
-                                  borderRadius: '4px', px: '5px', py: '1px',
-                                }}>
-                                  {meta.label}
-                                </Box>
-                                <Chip
-                                  label={`${count}`}
-                                  size="small"
-                                  sx={{
-                                    height: 18, fontSize: '0.63rem',
-                                    background: `${group.color}18`, color: group.color,
-                                    border: `1px solid ${group.color}40`,
-                                    '& .MuiChip-label': { px: '5px' },
-                                  }}
-                                />
+                                {isLocked ? (
+                                  <Box component="span" sx={{
+                                    fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.5px',
+                                    background: 'rgba(80,80,80,0.3)', color: '#666',
+                                    border: '1px solid #444',
+                                    borderRadius: '4px', px: '5px', py: '1px',
+                                  }}>
+                                    🔒 LOCKED
+                                  </Box>
+                                ) : (
+                                  <>
+                                    <Box component="span" sx={{
+                                      fontSize: '0.58rem', fontWeight: 700, letterSpacing: '0.5px',
+                                      background: meta.badgeBg, color: meta.badgeText,
+                                      border: `1px solid ${meta.border}`,
+                                      borderRadius: '4px', px: '5px', py: '1px',
+                                    }}>
+                                      {meta.label}
+                                    </Box>
+                                    <Chip
+                                      label={`${count}`}
+                                      size="small"
+                                      sx={{
+                                        height: 18, fontSize: '0.63rem',
+                                        background: `${group.color}18`, color: group.color,
+                                        border: `1px solid ${group.color}40`,
+                                        '& .MuiChip-label': { px: '5px' },
+                                      }}
+                                    />
+                                  </>
+                                )}
                               </Box>
                             </Box>
                             {group.blurb && (
                               <Typography sx={{
-                                fontSize: '0.75rem', color: '#8b949e', lineHeight: 1.4,
+                                fontSize: '0.75rem', color: isLocked ? '#444' : '#8b949e', lineHeight: 1.4,
                                 display: '-webkit-box', WebkitLineClamp: 2,
                                 WebkitBoxOrient: 'vertical', overflow: 'hidden',
                               }}>
