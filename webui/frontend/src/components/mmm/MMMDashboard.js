@@ -1002,7 +1002,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   Pure ATM straddle optimized for daily BTC options. All 52 parameters
-                  auto-scale based on hours remaining to 5:30 PM IST expiry (2–12h range).
+                  auto-scale based on hours remaining to 5:30 PM IST expiry (1–24h range).
                 </Typography>
                 <Typography variant="caption" color="text.secondary">
                   Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
