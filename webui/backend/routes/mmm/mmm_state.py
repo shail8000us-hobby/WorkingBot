@@ -361,7 +361,6 @@ DEFAULT_PARAMS = {
     'shift_threshold': 50.0,            # min premium to sell at current strike
     'shift_target_premium': 100.0,      # target premium for new strike on shift
     'shift_premium_tolerance': 10.0,   # ±$ tolerance around shift_target_premium for candidate validation
-    'shift_fallback_enabled': True,     # when no new strike meets threshold, sell at current (decayed) strike anyway
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'close_at_use_bid': True,           # use bid price (not mark) for close_at_5 checks — more accurate for illiquid options
     'close_at_watch_interval': 30,      # seconds between proactive close-at-5 watcher checks (0 = disabled)
@@ -398,7 +397,8 @@ DEFAULT_PARAMS = {
     'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
     'pre_sell_shift_enabled': False,       # shift to target premium BEFORE selling when hedge premium < shift_target_premium
     'shift_cooldown_sec': 120,             # minimum seconds between consecutive strike shifts
-    'shift_fallback_enabled': True,     # when no new strike meets threshold, sell at current (decayed) strike anyway
+    'shift_fallback_enabled': True,     # when no new strike meets threshold, try fallback sell at current (decayed) strike
+    'shift_fallback_min_premium': 25.0, # fallback only fires if decayed premium >= this; below = skip (near-worthless adds delta risk for no credit)
 
     # Dangerous Mode — operator-controlled expiry sprint
     'dangerous_mode': False,            # bypass all safety gates (cooldowns, regime, whipsaw, asymmetry). max_loss, ITM guard, and auto-close near expiry still active. OPERATOR MUST TYPE CONFIRM TO ENABLE.
@@ -651,6 +651,15 @@ DEFAULT_PARAMS = {
     'straddle_roll_loss_abort_mult':    3.0,
     'straddle_roll_lot_scale':          1.0,
     'straddle_roll_iv_spike_mult':      2.0,
+    'straddle_roll_price_max_age_secs': 5,   # Gate 9 freshness check (was hardcoded)
+    '_straddle_roll_trigger_pts':       0,   # computed at session startup
+
+    # Price Guard (SHORT_STRADDLE real-time monitoring)
+    'price_guard_enabled': True,
+    'price_guard_interval_secs': 5,
+    'price_guard_buffer_pts': 50,
+    'price_guard_cooldown_secs': 30,
+    'straddle_roll_max_spread_pct': 15.0,  # reject roll if avg bid-ask spread > this %
 
     # Auto-Reconciliation — periodic drift check between bot state and exchange
     # Runs every N heartbeats; emits SAFETY_ALERT on mismatch (does not self-heal).
@@ -678,7 +687,7 @@ HOT_RELOAD_PARAMS = {
     'dte_category', 'total_dte_hours', 'session_window_hours',
     'adjustment_interval', 'min_trigger_move', 'min_trigger_dollar', 'min_frozen_trigger_dollar', 'shift_threshold',
     'shift_threshold_pct', 'shift_target_premium', 'shift_premium_tolerance', 'shift_match_opposite_lots',
-    'pre_sell_shift_enabled', 'shift_fallback_enabled', 'shift_cooldown_sec', 'dangerous_mode',
+    'pre_sell_shift_enabled', 'shift_fallback_enabled', 'shift_fallback_min_premium', 'shift_cooldown_sec', 'dangerous_mode',
     'close_at_threshold', 'close_at_watch_interval', 'close_at_max_per_beat',
     'close_at_watcher_force_enabled', 'close_at_watch_hours_before_expiry', 'close_at_watch_near_expiry_interval',
     'premium_buffer_pct', 'max_lots_per_side',
@@ -799,6 +808,11 @@ HOT_RELOAD_PARAMS = {
     'straddle_roll_min_credit_pct', 'straddle_roll_slippage_factor',
     'straddle_roll_loss_abort_mult', 'straddle_roll_lot_scale',
     'straddle_roll_iv_spike_mult',
+    'straddle_roll_price_max_age_secs',
+    # Price Guard
+    'price_guard_enabled', 'price_guard_interval_secs',
+    'price_guard_buffer_pts', 'price_guard_cooldown_secs',
+    'straddle_roll_max_spread_pct',
     # Reverse Mode
     'reverse_enabled', 'reverse_capacity_pct', 'reverse_num_slots',
     'reverse_slot_size_override', 'reverse_max_adjustments',

@@ -179,7 +179,14 @@ def check_straddle_roll_gates(
     pe_iv = monitor_iv_data.get('pe_iv', 0)
     current_iv = (ce_iv + pe_iv) / 2 if (ce_iv and pe_iv) else max(ce_iv, pe_iv)
     if entry_iv > 0 and current_iv > entry_iv * straddle_roll_iv_spike_mult:
-        return False, 'iv_spike', {}
+        log.warning(
+            f"[{sid}] IV spike noted (current={current_iv:.1f} > "
+            f"{entry_iv:.1f} × {straddle_roll_iv_spike_mult}) "
+            f"— proceeding with roll. High IV = higher new premium. "
+            f"Margin gate (Gate 5) is the real protection."
+        )
+        session['_straddle_last_roll_iv_spike'] = True  # audit trail
+        # Do NOT block — fall through to remaining gates
 
     # ── Gate 6 — Max rolls not exhausted ─────────────────────────────────────
     if roll_count < straddle_roll_max_per_session:
@@ -218,16 +225,65 @@ def check_straddle_roll_gates(
             elapsed_secs = float('inf')
 
     normal_cooldown = elapsed_secs >= straddle_roll_cooldown_mins * 60
-    emergency_bypass = distance_pct >= straddle_roll_trigger_pct * straddle_roll_emergency_mult
+    # Emergency bypass uses same trigger_pts as Gate 8.
+    # Compute spot_move_pts here too since Gate 8 hasn't run yet at this point.
+    # NOTE: current_atm_strike is read at top of Gate 8 — but Gate 7 runs before Gate 8.
+    # Read it locally here for the bypass check.
+    _g7_atm = session.get('ce', {}).get('active_strike', 0)
+    _g7_spot_move = abs(spot - _g7_atm) if _g7_atm > 0 else 0
+    _g7_trigger = session.get('_straddle_roll_trigger_pts', 0) or (
+        straddle_roll_trigger_pct / 100.0 * spot if spot > 0 else 0
+    )
+    emergency_bypass = (
+        _g7_trigger > 0 and
+        _g7_spot_move >= _g7_trigger * straddle_roll_emergency_mult
+    )
     if not (normal_cooldown or emergency_bypass):
         return False, 'cooldown_not_elapsed', {}
 
-    # ── Gate 8 — Distance trigger ─────────────────────────────────────────────
+    # ── Gate 8 — Distance trigger (premium-points based) ─────────────────────
+    # Roll fires when spot has moved ≥ (CE_entry_premium + PE_entry_premium) points.
+    # This is the financial breakeven of a short straddle seller.
+    # Fallback chain: session key → live positions → pct-based floor → block.
     current_atm_strike = session.get('ce', {}).get('active_strike', 0)
     if not current_atm_strike or current_atm_strike <= 0:
         return False, 'invalid_atm_strike', {}
-    if distance_pct < straddle_roll_trigger_pct:
-        return False, 'distance_below_trigger', {}
+
+    spot_move_pts = abs(spot - current_atm_strike)
+
+    trigger_pts = session.get('_straddle_roll_trigger_pts', 0)
+    if trigger_pts <= 0:
+        # Fallback 1: compute live from active positions
+        _ce_pos = [p for p in session.get('ce', {}).get('positions', [])
+                   if p.get('status') == 'active' and p.get('lots', 0) > 0]
+        _pe_pos = [p for p in session.get('pe', {}).get('positions', [])
+                   if p.get('status') == 'active' and p.get('lots', 0) > 0]
+        _ce_lots = sum(p.get('lots', 0) for p in _ce_pos)
+        _pe_lots = sum(p.get('lots', 0) for p in _pe_pos)
+        _ce_avg = (sum(float(p.get('entry_premium', 0)) * p.get('lots', 0)
+                       for p in _ce_pos) / _ce_lots) if _ce_lots > 0 else 0
+        _pe_avg = (sum(float(p.get('entry_premium', 0)) * p.get('lots', 0)
+                       for p in _pe_pos) / _pe_lots) if _pe_lots > 0 else 0
+        trigger_pts = _ce_avg + _pe_avg
+        if trigger_pts > 0:
+            session['_straddle_roll_trigger_pts'] = round(trigger_pts, 2)
+            log.info(f"[{sid}] Gate 8 fallback: healed trigger_pts={trigger_pts:.2f}pts from positions")
+        else:
+            # Fallback 2: pct-based floor (wrong but better than blocking all rolls)
+            pct_fallback = straddle_roll_trigger_pct / 100.0 * spot if spot > 0 else 0
+            if pct_fallback > 0:
+                trigger_pts = pct_fallback
+                log.warning(
+                    f"[{sid}] Gate 8 pct-fallback: trigger_pts={trigger_pts:.2f}pts "
+                    f"(no entry_premium on positions — check position state)"
+                )
+            else:
+                return False, 'no_trigger_pts', {}
+
+    if spot_move_pts < trigger_pts:
+        return False, (
+            f'distance_below_trigger ({spot_move_pts:.0f} < {trigger_pts:.0f} pts)'
+        ), {}
 
     # ── Gate 10 — Loss abort using total P&L (HIGH-RISK FIX H-1: Decimal precision) ──
     # BATCH-D FIX BUG-1: Use canonical _pnl_total() which includes fees and reverse_pnl.
@@ -391,6 +447,15 @@ async def _execute_straddle_roll_inner(
     if not new_atm_strike or new_atm_strike <= 0:
         log.warning(f"[{sid}] Gate 9: Invalid ATM strike from preview — skipping roll")
         return False
+
+    # CHANGE 3-B: Same-strike guard — no point rolling to the same strike
+    old_atm_strike = session.get('ce', {}).get('active_strike', 0)
+    if new_atm_strike == old_atm_strike:
+        log.info(
+            f"[{sid}] Roll skipped: new ATM strike ({new_atm_strike:.0f}) == "
+            f"old ATM ({old_atm_strike:.0f}) — spot move insufficient for strike migration"
+        )
+        return False
     new_ce_premium = roll_preview.get('ce', {}).get('mid_price', 0)
     new_pe_premium = roll_preview.get('pe', {}).get('mid_price', 0)
     if new_ce_premium <= 0 or new_pe_premium <= 0:
@@ -408,6 +473,24 @@ async def _execute_straddle_roll_inner(
             f"original ${original_credit:.4f} — skipping roll"
         )
         return False
+
+    # CHANGE 3-D: Spread check — reject if bid-ask spread is too wide
+    max_spread_pct = params.get('straddle_roll_max_spread_pct', 15.0)
+    ce_bid = roll_preview.get('ce', {}).get('bid', 0)
+    ce_ask = roll_preview.get('ce', {}).get('ask', 0)
+    pe_bid = roll_preview.get('pe', {}).get('bid', 0)
+    pe_ask = roll_preview.get('pe', {}).get('ask', 0)
+    if ce_ask > 0 and ce_bid > 0 and pe_ask > 0 and pe_bid > 0:
+        ce_spread_pct = (ce_ask - ce_bid) / ce_ask * 100
+        pe_spread_pct = (pe_ask - pe_bid) / pe_ask * 100
+        avg_spread_pct = (ce_spread_pct + pe_spread_pct) / 2
+        if avg_spread_pct > max_spread_pct:
+            log.warning(
+                f"[{sid}] Gate 9 spread: CE spread={ce_spread_pct:.1f}%, "
+                f"PE spread={pe_spread_pct:.1f}%, avg={avg_spread_pct:.1f}% "
+                f"> max {max_spread_pct:.0f}% — skipping roll (illiquid)"
+            )
+            return False
 
     # ══════════════════════════════════════════════════════════════════════════
     # All 12 gates passed — execute 4-leg roll
@@ -582,6 +665,14 @@ async def _execute_straddle_roll_inner(
         + new_roll_credit
     )
 
+    # Update premium-based trigger for NEXT roll — use actual fill prices, not preview.
+    new_trigger_pts = ce_fill_price_dec + pe_fill_price_dec
+    session['_straddle_roll_trigger_pts'] = float(round(new_trigger_pts, 2))
+    log.info(
+        f"[{sid}] Roll trigger updated: "
+        f"{new_trigger_pts:.2f}pts (CE={float(ce_fill_price_dec):.2f} + PE={float(pe_fill_price_dec):.2f})"
+    )
+
     # ── Step 7 — Event log ────────────────────────────────────────────────────
     try:
         from .mmm_audit_log import get_event_log
@@ -618,11 +709,55 @@ async def _execute_straddle_roll_inner(
     except Exception:
         pass  # fire-and-forget, never let audit failure crash the roll
 
-    # ── Step 8 — Activity log + return ────────────────────────────────────────
+    # ── Step 8 — Activity log + Telegram + return ─────────────────────────────
     log_activity(
         'straddle_roll',
         f"Roll #{roll_count+1}: ATM {old_atm_strike:.0f}→{new_atm_strike:.0f} "
         f"(dist {distance_pct:.2f}%) | {roll_lots} lots | credit ${new_roll_credit:.3f}",
         sid, 'warning',
     )
+
+    # CHANGE 3-E: Telegram alert on successful roll
+    try:
+        from .mmm_telegram import alert_straddle_roll_executed
+        alert_straddle_roll_executed(
+            sid, roll_count + 1,
+            old_atm_strike, new_atm_strike,
+            roll_lots, new_roll_credit,
+        )
+    except ImportError:
+        pass  # alert function not yet defined — will be added
+    except Exception:
+        pass  # fire-and-forget
+
+    # CHANGE 3-A: Post-roll clean state reset — stale regime/trigger state
+    # from the old strike position must not leak into the new position's first beat.
+    session.pop('_trend_regime', None)
+    session.pop('_trend_tier', None)
+    session.pop('_trend_direction', None)
+    session.pop('_trend_anchor_spot', None)
+    session.pop('_trend_since', None)
+    session.pop('_trend_high', None)
+    session.pop('_trend_low', None)
+    session.pop('_trend_calm_beats', None)
+    session.pop('_trend_plateau_beats', None)
+    session.pop('_trend_t4_beats', None)
+    session.pop('_trend_ema', None)
+    session.pop('_trend_ema_prev', None)
+    session.pop('_trend_ema_slope', None)
+    session.pop('_trend_move_pct', None)
+    session.pop('_trend_acceleration_move_pct', None)
+    session.pop('_effective_min_trigger_move', None)
+    session.pop('_theta_accelerated', None)
+    session.pop('_straddle_entry_iv', None)  # re-capture on next heartbeat
+    # Clear IV spike audit trail from this roll
+    session.pop('_straddle_last_roll_iv_spike', None)
+    # Reset adaptive interval
+    session.pop('_adaptive_tier', None)
+    session.pop('_adaptive_interval', None)
+
+    log.info(
+        f"[{sid}] Post-roll state reset: regime/trend/IV/adaptive cleared for clean slate"
+    )
+
     return True

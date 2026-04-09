@@ -35,7 +35,7 @@ Contracts:
   F5.  Returns {frozen_lots, old_strike, frozen_entry}
   F6.  _initial_hedge_premium preserved from original_premium BEFORE recompute zeroes it
 
-  [find_new_strike — 8 contracts]
+  [find_new_strike — 9 contracts]
   N1.  No expiry set → None
   N2.  Chain fetch fails (success=False) → None
   N3.  Empty chain list → None
@@ -43,7 +43,8 @@ Contracts:
   N5.  ITM call (strike <= spot for CE) skipped
   N6.  OTM put with premium >= threshold → returned
   N7.  Candidate at active old_strike excluded
-  N8.  Candidate at frozen strike excluded
+  N8.  Frozen strike skipped when non-frozen candidate also exists (pass 1 preferred)
+  N9.  Frozen strike used as last resort when it is the ONLY viable candidate (pass 2)
 
   [activate_new_strike — 7 contracts]
   A1.  active_strike updated to new_strike
@@ -324,15 +325,35 @@ def test_n7_active_old_strike_excluded():
     assert result is None
 
 
-def test_n8_frozen_strike_excluded():
-    # Strike 92000 has frozen lots → must be excluded
+def test_n8_frozen_strike_skipped_when_non_frozen_exists():
+    # When a non-frozen candidate also exists, the frozen strike must NOT be
+    # returned in pass 1 (non-frozen candidate preferred).
+    row_frozen = _chain_row(92000, bid=120.0, mark=125.0, symbol='BTC-CE-92000')
+    row_clean  = _chain_row(93000, bid=80.0,  mark=85.0,  symbol='BTC-CE-93000')
+    init = _make_initializer(chain_rows=[row_frozen, row_clean])
+    session = _session(shift_threshold=50.0, original_strike=90000)
+    session['ce']['active_strike'] = 90000
+    session['ce']['frozen_positions'] = [{'strike': 92000, 'lots': 3}]
+    result = find_new_strike(init, session, 'ce', 88000.0)
+    assert result is not None
+    # Must return the non-frozen candidate
+    assert result['strike'] == 93000
+
+
+def test_n9_frozen_strike_used_as_last_resort():
+    # When the ONLY viable OTM candidate is a frozen strike (all non-frozen
+    # are below threshold or ITM), pass 2 must return it rather than None.
+    # This is the 0DTE near-expiry scenario: market has moved so far that
+    # frozen strikes are the only OTM options with real premium.
     row = _chain_row(92000, bid=120.0, mark=125.0, symbol='BTC-CE-92000')
     init = _make_initializer(chain_rows=[row])
     session = _session(shift_threshold=50.0, original_strike=90000)
     session['ce']['active_strike'] = 90000
     session['ce']['frozen_positions'] = [{'strike': 92000, 'lots': 3}]
     result = find_new_strike(init, session, 'ce', 88000.0)
-    assert result is None
+    assert result is not None
+    assert result['strike'] == 92000
+    assert result['is_frozen_strike'] is True
 
 
 # ─── A1–A7: activate_new_strike ───────────────────────────────────────────────

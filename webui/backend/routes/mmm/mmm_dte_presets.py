@@ -150,15 +150,15 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
     """
     H = hours_to_expiry
 
-    if H < 2:
+    if H < 1:
         raise ValueError(
-            f"Short straddle requires ≥2h to expiry (got {H:.1f}h). "
-            f"Below 2h, gamma risk dominates and theta is insufficient."
+            f"Short straddle requires ≥1h to expiry (got {H:.1f}h). "
+            f"Below 1h, gamma risk dominates and theta is insufficient."
         )
-    if H > 12:
-        raise ValueError(
-            f"Short straddle preset supports ≤12h (got {H:.1f}h). "
-            f"For longer sessions, use PRESET_SHORT_WINDOW or PRESET_5DTE."
+    if H > 24:
+        log.warning(
+            f"Short straddle preset designed for ≤24h (got {H:.1f}h). "
+            f"Proceeding, but consider PRESET_5DTE for multi-day sessions."
         )
 
     def clamp(val, min_val, max_val):
@@ -204,11 +204,7 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'theta_acceleration_window': clamp(round(H * 36), 60, 360),
 
         # ── Wind-Down (scaled — consumed by mmm_wind_down.py) ──
-        'wind_down_enabled': True,
-        'wind_down_hours_before_expiry': round(clamp(H * 0.20, 0.5, 2.0), 1),
-        'wind_down_close_threshold': 30.0,
-        'wind_down_floor_action': 'close_all',
-        'wind_down_on_atm': False,
+        'wind_down_enabled': False,  # disabled — fights roll mechanism
 
         # ── P&L Guardrails (fixed) ──
         'max_loss_amount': 3000.0,
@@ -267,18 +263,12 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
 
         # ── Lot Lifecycle (scaled harvest age) ──
         'scale_enabled': False,
-        'harvest_enabled': True,
-        'harvest_profit_pct': 30.0,
-        'harvest_min_age_mins': clamp(round(H * 3), 10, 30),
-        'harvest_max_per_beat': 3,
-        'harvest_pressure_threshold': 0.3,
-        'recycle_enabled': False,
-        'proactive_shift_enabled': False,
+        'harvest_enabled': False,  # disabled — fights roll by closing rolled positions prematurely
 
         # ── Straddle Roll (scaled trigger, fixed caps) ──
         'straddle_roll_enabled':            True,
         'straddle_roll_trigger_pct':        round(clamp(0.4 + H * 0.05, 0.5, 1.5), 2),
-        'straddle_roll_max_per_session':    3,
+        # straddle_roll_max_per_session INTENTIONALLY OMITTED — operator must set explicitly
         'straddle_roll_cooldown_mins':      15,
         'straddle_roll_emergency_mult':     2.0,
         'straddle_roll_min_time_to_expiry': 90,
@@ -287,6 +277,7 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
         'straddle_roll_loss_abort_mult':    3.0,
         'straddle_roll_lot_scale':          1.0,
         'straddle_roll_iv_spike_mult':      2.0,
+        'straddle_roll_max_spread_pct':     15.0,
 
         # ── Adaptive (fixed) ──
         'adaptive_mode': 'preset',

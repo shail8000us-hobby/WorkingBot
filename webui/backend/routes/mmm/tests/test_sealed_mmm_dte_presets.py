@@ -53,11 +53,11 @@ C-AP-2: user params override preset values
 C-AP-3: unknown preset → returns params unchanged
 C-AP-4: SHORT_STRADDLE without expiry → returns params unchanged
 C-AP-5: SHORT_STRADDLE valid → dte_category='0DTE', _preset_source='SHORT_STRADDLE'
-C-AP-6: SHORT_STRADDLE hours<2 → ValueError caught, returns params unchanged
+C-AP-6: SHORT_STRADDLE hours<1 → ValueError caught, returns params unchanged
 
 --- build_short_straddle_preset contracts ---
-C-BSS-1: H < 2 → raises ValueError
-C-BSS-2: H > 12 → raises ValueError
+C-BSS-1: H < 1 → raises ValueError
+C-BSS-2: H > 24 → does not raise (warning only)
 C-BSS-3: H = 5.0 → returns complete dict
 C-BSS-4: max_loss_amount = 3000.0 (not 3.0 — BUG FIXED)
 C-BSS-5: dte_category = '0DTE'
@@ -331,9 +331,9 @@ class TestApplyPreset:
     def test_c_ap_6_short_straddle_hours_below_2_returns_unchanged(self):
         from webui.backend.routes.mmm.mmm_dte_presets import apply_preset
         params = {'expiry': '21032026', 'initial_lots': 1}
-        # Hours < 2 → build_short_straddle_preset raises ValueError → caught, params returned
+        # Hours < 1 → build_short_straddle_preset raises ValueError → caught, params returned
         with patch('webui.backend.routes.mmm.mmm_dte_presets.compute_total_dte_hours',
-                   return_value=1.0):
+                   return_value=0.5):
             result = apply_preset(params, 'SHORT_STRADDLE')
         assert '_preset_source' not in result
         assert result.get('initial_lots') == 1
@@ -346,16 +346,18 @@ class TestApplyPreset:
 class TestBuildShortStraddlePreset:
 
     @pytest.mark.sealed
-    def test_c_bss_1_below_2h_raises(self):
+    def test_c_bss_1_below_1h_raises(self):
         from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        with pytest.raises(ValueError, match='2h'):
-            build_short_straddle_preset(1.9)
+        with pytest.raises(ValueError, match='1h'):
+            build_short_straddle_preset(0.9)
 
     @pytest.mark.sealed
-    def test_c_bss_2_above_12h_raises(self):
+    def test_c_bss_2_above_24h_does_not_raise(self):
         from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        with pytest.raises(ValueError, match='12h'):
-            build_short_straddle_preset(12.1)
+        # H > 24 now produces a warning, not an error
+        result = build_short_straddle_preset(25.0)
+        assert isinstance(result, dict)
+        assert 'dte_category' in result
 
     @pytest.mark.sealed
     def test_c_bss_3_valid_h5_returns_complete_dict(self):
@@ -390,11 +392,15 @@ class TestBuildShortStraddlePreset:
         result = build_short_straddle_preset(5.0)
         # max_adjustments: clamp(round(5*4)=20, 10, 50) = 20
         assert result['max_adjustments'] == 20
-        # wind_down_hours_before_expiry: round(clamp(5*0.2=1.0, 0.5, 2.0), 1) = 1.0
-        assert result['wind_down_hours_before_expiry'] == 1.0
+        # wind_down_enabled is False (disabled — fights roll mechanism)
+        assert result['wind_down_enabled'] is False
         # straddle_roll_trigger_pct: round(clamp(0.4+5*0.05=0.65, 0.5, 1.5), 2) = 0.65
         assert abs(result['straddle_roll_trigger_pct'] - 0.65) < 0.01
         # ATM shield disabled for straddle (both legs start at spot)
         assert result['atm_shield_enabled'] is False
         # Perp hedge disabled
         assert result['perp_hedge_enabled'] is False
+        # straddle_roll_max_per_session NOT in preset (operator must set explicitly)
+        assert 'straddle_roll_max_per_session' not in result
+        # harvest_enabled is False (disabled — fights roll)
+        assert result['harvest_enabled'] is False

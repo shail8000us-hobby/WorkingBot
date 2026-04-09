@@ -1011,9 +1011,10 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   {' • '}Adjustments: auto-scaled
                 </Typography>
                 <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
-                  🔄 Straddle Roll: auto-repositions at ATM when spot moves ≥ trigger %
-                  {' • '}Max {dtePresets[dtePreset].straddle_roll_max_per_session || 3} rolls/session
+                  🔄 Straddle Roll: auto-repositions at ATM when spot moves ≥ CE+PE entry premium pts
+                  {' • '}Max rolls/session set by operator (required)
                   {' • '}Cooldown {dtePresets[dtePreset].straddle_roll_cooldown_mins || 15}min
+                  {' • '}⚡ Price Guard: 5s real-time spot monitor
                 </Typography>
                 <Typography variant="caption" color="warning.main" sx={{ display: 'block', mt: 0.5 }}>
                   ⏱ Params computed at session creation from time-to-expiry. Select today's expiry above.
@@ -2405,18 +2406,41 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
               {(session.params?._preset_source === 'SHORT_STRADDLE' || session.params?.dte_category === 'SHORT_STRADDLE') &&
                 session._straddle_roll_count != null && (
                 <Tooltip title={
-                  session._straddle_last_roll_at
-                    ? `Last roll: ${new Date(session._straddle_last_roll_at).toLocaleTimeString()}`
-                    : 'No rolls yet'
+                  <span>
+                    {session._straddle_last_roll_at
+                      ? `Last roll: ${new Date(session._straddle_last_roll_at).toLocaleTimeString()}`
+                      : 'No rolls yet'}
+                    {session._straddle_roll_trigger_pts > 0
+                      ? ` | Next trigger: ±${Math.round(session._straddle_roll_trigger_pts)} pts`
+                      : ''}
+                    {' • Hot-reloadable: change max_per_session in settings to add more rolls'}
+                  </span>
                 }>
                   <Chip
-                    label={`🔄 Rolls: ${session._straddle_roll_count}/${session.params?.straddle_roll_max_per_session || 3}`}
+                    label={`🔄 Rolls: ${session._straddle_roll_count}/${session.params?.straddle_roll_max_per_session ?? '?'}`}
                     size="small"
                     sx={{
                       fontFamily: 'monospace',
                       fontWeight: 600,
                       bgcolor: session._straddle_roll_count > 0 ? 'rgba(33,150,243,0.15)' : 'rgba(255,255,255,0.06)',
                       color: session._straddle_roll_count > 0 ? '#42a5f5' : 'text.secondary',
+                    }}
+                  />
+                </Tooltip>
+              )}
+              {/* Price Guard indicator — shows when real-time 5s spot monitor is active */}
+              {(session.params?._preset_source === 'SHORT_STRADDLE' || session.params?.dte_category === 'SHORT_STRADDLE') &&
+                session.params?.price_guard_enabled !== false &&
+                status === 'RUNNING' && (
+                <Tooltip title="⚡ Price Guard active — spot monitored every 5s, heartbeat forced when approaching roll trigger">
+                  <Chip
+                    label="⚡ Guard"
+                    size="small"
+                    sx={{
+                      fontSize: '0.65rem',
+                      fontFamily: 'monospace',
+                      bgcolor: 'rgba(76,175,80,0.15)',
+                      color: '#66bb6a',
                     }}
                   />
                 </Tooltip>

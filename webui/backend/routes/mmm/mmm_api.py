@@ -349,6 +349,22 @@ def create_session_endpoint():
         # Create session state
         session = create_session(mode=mode, params=validated)
 
+        # ── SHORT_STRADDLE validation: require operator-explicit params ─────
+        if session.get('params', {}).get('_preset_source') == 'SHORT_STRADDLE':
+            _missing = []
+            if 'initial_lots' not in (data.get('params') or {}):
+                _missing.append('initial_lots')
+            if 'straddle_roll_max_per_session' not in (data.get('params') or {}):
+                _missing.append('straddle_roll_max_per_session')
+            if _missing:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f"SHORT_STRADDLE requires explicit: {', '.join(_missing)}. "
+                        f"These are intentionally not preset-defaulted for safety."
+                    ),
+                }), 400
+
         # For import mode, initialize sides immediately
         if mode == 'import':
             import_data = data.get('import_data', {})

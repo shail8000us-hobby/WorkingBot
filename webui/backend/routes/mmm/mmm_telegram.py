@@ -202,6 +202,45 @@ async def _alert_half_roll_recovery_needed_async(session_id: str, state: str):
     await _send_async(msg, f"startup_half_roll_{session_id}")
 
 
+def alert_straddle_roll_executed(
+    session_id: str,
+    roll_number: int,
+    old_strike: float,
+    new_strike: float,
+    lots: int,
+    new_credit: float,
+):
+    """Alert user that a straddle roll was successfully executed (sync wrapper)."""
+    try:
+        asyncio.create_task(_alert_straddle_roll_executed_async(
+            session_id, roll_number, old_strike, new_strike, lots, new_credit,
+        ))
+    except Exception:
+        pass  # fire-and-forget
+
+
+async def _alert_straddle_roll_executed_async(
+    session_id: str,
+    roll_number: int,
+    old_strike: float,
+    new_strike: float,
+    lots: int,
+    new_credit: float,
+):
+    """Alert user that a straddle roll was successfully executed."""
+    direction = '📈' if new_strike > old_strike else '📉'
+    msg = f"""{direction} *STRADDLE ROLL #{roll_number} EXECUTED*
+
+🔄 Strike: *{old_strike:.0f} → {new_strike:.0f}*
+📦 Lots: *{lots}*
+💰 New credit: *${new_credit:.3f}*
+
+🤖 Session: `{session_id}`
+⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
+
+    await _send_async(msg, f"straddle_roll_{session_id}_{roll_number}")
+
+
 # ─────────────────────────────────────────────────────────────────────
 async def alert_emergency_close(
     session_id: str,

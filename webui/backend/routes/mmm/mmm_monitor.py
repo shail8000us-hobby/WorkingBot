@@ -391,11 +391,40 @@ class MMMMonitor:
                     f"[{self.session_id}] Straddle Roll state initialised — "
                     f"initial_credit={self.session['_straddle_initial_credit']}"
                 )
+            # ── Compute premium-based roll trigger (CHANGE 1-A) ────────────────
+            # Roll fires when spot has moved ≥ (CE_entry_premium + PE_entry_premium) points.
+            # This is the financial breakeven of a short straddle seller.
+            # Stored per-roll: updated in mmm_straddle_roll.py after each successful roll.
+            if '_straddle_roll_trigger_pts' not in self.session or self.session.get('_straddle_roll_trigger_pts', 0) <= 0:
+                _ce_active = [p for p in (self.session.get('ce') or {}).get('positions', [])
+                              if p.get('status') == 'active' and p.get('lots', 0) > 0]
+                _pe_active = [p for p in (self.session.get('pe') or {}).get('positions', [])
+                              if p.get('status') == 'active' and p.get('lots', 0) > 0]
+                _ce_lots = sum(p.get('lots', 0) for p in _ce_active)
+                _pe_lots = sum(p.get('lots', 0) for p in _pe_active)
+                _ce_avg = (sum(float(p.get('entry_premium', 0)) * p.get('lots', 0)
+                               for p in _ce_active) / _ce_lots) if _ce_lots > 0 else 0
+                _pe_avg = (sum(float(p.get('entry_premium', 0)) * p.get('lots', 0)
+                               for p in _pe_active) / _pe_lots) if _pe_lots > 0 else 0
+                _trigger_pts = _ce_avg + _pe_avg
+                if _trigger_pts > 0:
+                    self.session['_straddle_roll_trigger_pts'] = round(_trigger_pts, 2)
+                    log.info(
+                        f"[{self.session_id}] Straddle trigger initialised: "
+                        f"{_trigger_pts:.2f}pts (CE_avg={_ce_avg:.2f}, PE_avg={_pe_avg:.2f})"
+                    )
+                else:
+                    log.warning(
+                        f"[{self.session_id}] Could not compute trigger_pts — "
+                        f"positions may lack entry_premium. Fallback will apply at Gate 8."
+                    )
+
             # AUDIT FIX M-2: Always seed these keys via setdefault for restart safety.
             # Gate 6 reads _straddle_roll_blocked/.._block_logged with .get() fallback,
             # but Step 6 += on _straddle_cumulative_credit needs a numeric seed.
             self.session.setdefault('_straddle_roll_blocked', False)
             self.session.setdefault('_straddle_roll_block_logged', False)
+            self.session.setdefault('_straddle_roll_trigger_pts', 0)
             self.session.setdefault(
                 '_straddle_cumulative_credit',
                 self.session.get('_straddle_initial_credit', 0),
@@ -492,6 +521,10 @@ class MMMMonitor:
         self._thread.start()
         self._start_close_watcher()
         self._start_price_ticker()
+
+        # Price Guard: start real-time spot monitor for SHORT_STRADDLE sessions only
+        if self.session.get('params', {}).get('_preset_source') == SHORT_STRADDLE_CATEGORY:
+            self._start_price_guard()
 
         # M-3 fix: emit correct restored status, not always 'RUNNING'
         restored_status = 'PAUSED' if self._paused else 'RUNNING'
@@ -824,6 +857,91 @@ class MMMMonitor:
                 return
             remaining = end_time - time.monotonic()
             self._stop_event.wait(timeout=min(0.5, max(0, remaining)))
+
+    # =========================================================================
+    # Price Guard — Real-time spot monitoring for SHORT_STRADDLE sessions
+    # =========================================================================
+
+    def _start_price_guard(self):
+        """Start a background thread that polls spot price and forces heartbeat
+        when price approaches the roll trigger distance.
+
+        Only started for SHORT_STRADDLE sessions (called from start()).
+        Uses the same threading pattern as _start_price_ticker / _start_close_watcher.
+        """
+        try:
+            from eventlet.patcher import original as _ep_original
+            _RealThread = _ep_original('threading').Thread
+        except (ImportError, AttributeError):
+            _RealThread = threading.Thread
+        t = _RealThread(
+            target=self._run_price_guard_loop,
+            name=f"mmm-price-guard-{self.session_id}",
+            daemon=True,
+        )
+        t.start()
+        log.info(f"[{self.session_id}] Price Guard: started")
+
+    def _run_price_guard_loop(self):
+        """Poll spot price and fire force_heartbeat when trigger proximity detected.
+
+        Fires at most once per cooldown period to avoid heartbeat flooding.
+        Reads spot from session['analytics']['last_spot_price'] (set by price ticker).
+        """
+        sid = self.session_id
+        _last_fire = 0.0
+
+        while self._running and not self._stop_event.is_set():
+            params = self.session.get('params', {})
+            if not params.get('price_guard_enabled', True):
+                self._stop_event.wait(timeout=5)
+                continue
+
+            interval = max(1, params.get('price_guard_interval_secs', 5))
+            buffer_pts = params.get('price_guard_buffer_pts', 50)
+            cooldown = params.get('price_guard_cooldown_secs', 30)
+
+            self._stop_event.wait(timeout=interval)
+            if self._stop_event.is_set() or not self._running:
+                break
+
+            try:
+                spot = self.session.get('analytics', {}).get('last_spot_price', 0)
+                if not spot or spot <= 0:
+                    continue
+
+                atm_strike = self.session.get('ce', {}).get('active_strike', 0)
+                trigger_pts = self.session.get('_straddle_roll_trigger_pts', 0)
+                if atm_strike <= 0 or trigger_pts <= 0:
+                    continue
+
+                spot_move = abs(spot - atm_strike)
+                fire_threshold = max(0, trigger_pts - buffer_pts)
+
+                if spot_move >= fire_threshold:
+                    now = time.monotonic()
+                    if now - _last_fire >= cooldown:
+                        _last_fire = now
+                        log.warning(
+                            f"[{sid}] Price Guard: spot={spot:.0f} moved "
+                            f"{spot_move:.0f}pts from ATM={atm_strike:.0f} "
+                            f"(threshold={fire_threshold:.0f}pts) — forcing heartbeat"
+                        )
+                        self.force_heartbeat()
+                        try:
+                            emit_price_tick(sid, {
+                                'event': 'price_guard_fire',
+                                'spot': spot,
+                                'atm_strike': atm_strike,
+                                'spot_move': round(spot_move, 1),
+                                'trigger_pts': trigger_pts,
+                            })
+                        except Exception:
+                            pass
+            except Exception as _e:
+                log.debug(f"[{sid}] Price Guard: error (non-fatal): {_e}")
+
+        log.info(f"[{sid}] Price Guard: stopped")
 
     # =========================================================================
     # Main Loop
@@ -4940,16 +5058,35 @@ class MMMMonitor:
                 f"(${hedge_premium:.2f}).",
             )
             # Fallback: sell at the current (decayed) active strike so hedging is not
-            # skipped indefinitely. shift_fallback_enabled (default True) gates this.
-            # When all OTM strikes are cheap (near expiry / large move), waiting for
-            # a good-premium strike to appear is an infinite no-hedge loop.
+            # skipped indefinitely. Two gates:
+            #   1. shift_fallback_enabled (default True) — master switch
+            #   2. shift_fallback_min_premium (default $25) — premium floor.
+            #      If decayed premium < floor: skip entirely. Selling near-worthless
+            #      options generates negligible credit while adding full delta risk —
+            #      worse than not hedging (e.g. PE @ $7.50 on 70 lots = $525 credit
+            #      but 70 lots of near-zero-premium PE delta is a liability, not a hedge).
+            _fallback_min = params.get('shift_fallback_min_premium', 25.0)
             if params.get('shift_fallback_enabled', True):
-                log.warning(
-                    f"[{sid}] Shift fallback ACTIVE — selling {side.upper()} at "
-                    f"decayed strike {old_strike} (${hedge_premium:.2f}). "
-                    f"Set shift_fallback_enabled=False to revert to skip behavior."
-                )
-                await self._process_shift_fallback(side, loss, hedge_premium, ce_now, pe_now)
+                if hedge_premium >= _fallback_min:
+                    log.warning(
+                        f"[{sid}] Shift fallback ACTIVE — selling {side.upper()} at "
+                        f"decayed strike {old_strike} (${hedge_premium:.2f} >= "
+                        f"floor ${_fallback_min:.0f})."
+                    )
+                    await self._process_shift_fallback(side, loss, hedge_premium, ce_now, pe_now)
+                else:
+                    log.warning(
+                        f"[{sid}] Shift fallback SKIPPED — {side.upper()} premium "
+                        f"${hedge_premium:.2f} is below fallback floor ${_fallback_min:.0f}. "
+                        f"Selling near-worthless options adds delta risk without meaningful credit."
+                    )
+                    log_activity('shift_fallback_below_floor',
+                                f'⛔ Shift Fallback Skipped: {side.upper()} premium '
+                                f'${hedge_premium:.2f} < fallback floor ${_fallback_min:.0f}. '
+                                f'Near-worthless premium — skipping to avoid delta risk.',
+                                sid, 'warning',
+                                {'side': side.upper(), 'premium': hedge_premium,
+                                 'fallback_min': _fallback_min, 'strike': old_strike})
             return
 
         # Validate: fetch the candidate's current live premium before committing.
@@ -6233,6 +6370,17 @@ class MMMMonitor:
                 except Exception as _atm_err:
                     log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {_atm_err}")
 
+            # Strangle-mode params — hoisted here so the ATM-guard fallback (below)
+            # can reuse the same chain data and premium threshold without re-fetching.
+            _desired = params.get(
+                f'desired_{closed_side}_premium',
+                params.get('replenish_min_premium', 30.0),
+            )
+            _opt_type = 'call' if closed_side == 'ce' else 'put'
+            _above_spot = (closed_side == 'ce')
+            _chain_result = None   # populated below if strangle path runs
+            _chain_spot = spot_price
+
             if not strike_info:
                 # Strangle mode or straddle fallback: scan only the closed side's chain
                 # using _rank_strikes — the same scoring used at session start.
@@ -6243,12 +6391,6 @@ class MMMMonitor:
                 # PE to produce a result and returns success=False if either side has no
                 # candidate — which would block PE replenish whenever CE happens to have
                 # no suitable strike, and vice versa. We only need the closed side.
-                _desired = params.get(
-                    f'desired_{closed_side}_premium',
-                    params.get('replenish_min_premium', 30.0),
-                )
-                _opt_type = 'call' if closed_side == 'ce' else 'put'
-                _above_spot = (closed_side == 'ce')
                 try:
                     _chain_result = await asyncio.get_running_loop().run_in_executor(
                         None, self.initializer.get_full_chain, expiry
@@ -6300,8 +6442,9 @@ class MMMMonitor:
             #
             # Fix: check the candidate against a 2× safety buffer of the effective
             # proximity threshold.  If too close:
-            #   (a) Try find_new_strike with the safe minimum OTM distance — it may find
-            #       a farther-OTM strike with sufficient premium.
+            #   (a) Re-scan the already-fetched chain for strikes outside the buffer
+            #       using replenish_min_premium (NOT shift_threshold — find_new_strike
+            #       uses shift_threshold which is too strict for replenish).
             #   (b) If no safe strike exists → return False so PAUSE takes over.
             if strike_info and params.get('atm_shield_enabled', False):
                 _mins_rem = self._get_minutes_to_expiry() or 360
@@ -6323,13 +6466,47 @@ class MMMMonitor:
                         f"{closed_side.upper()} candidate {_cand_strike} is within ATM "
                         f"safety buffer ({_cand_dist_pct:.2f}% <= {_safe_pct:.2f}% = "
                         f"2× shield threshold {_eff_prox_pct:.2f}%). "
-                        f"Trying find_new_strike for a safer OTM position."
+                        f"Scanning for a safer OTM position outside the buffer."
                     )
                     _min_abs_dist = spot_price * _safe_pct / 100.0
-                    _safe_strike_info = find_new_strike(
-                        self.initializer, session, closed_side, spot_price,
-                        min_otm_distance=_min_abs_dist,
-                    )
+                    # Use the already-fetched chain with replenish_min_premium threshold
+                    # (not shift_threshold). find_new_strike uses shift_threshold which
+                    # can block viable strikes like 71600 at $35 when shift_threshold=$50.
+                    _safe_strike_info = None
+                    if _chain_result and _chain_result.get('success'):
+                        # Filter chain to only strikes safely outside the ATM buffer
+                        _safe_chain = [
+                            row for row in _chain_result.get('chain', [])
+                            if (closed_side == 'ce'
+                                and row.get('strike', 0) >= spot_price + _min_abs_dist)
+                            or (closed_side == 'pe'
+                                and row.get('strike', 0) <= spot_price - _min_abs_dist)
+                        ]
+                        try:
+                            _safe_best, _ = self.initializer._rank_strikes(
+                                chain=_safe_chain,
+                                option_type=_opt_type,
+                                desired_premium=_desired,
+                                spot_price=_chain_spot,
+                                above_spot=_above_spot,
+                                expiry=_chain_result.get('expiry', expiry),
+                                underlying='BTC',
+                            )
+                            if _safe_best:
+                                _safe_strike_info = {
+                                    'strike': _safe_best['strike'],
+                                    'premium': _safe_best.get('premium', 0),
+                                    'symbol': _safe_best.get('symbol', ''),
+                                }
+                        except Exception as _safe_err:
+                            log.warning(f"[{sid}] Replenish ATM guard safe scan failed: "
+                                        f"{_safe_err}")
+                    else:
+                        # Chain not available (straddle path or fetch failed): fall back
+                        _safe_strike_info = find_new_strike(
+                            self.initializer, session, closed_side, spot_price,
+                            min_otm_distance=_min_abs_dist,
+                        )
                     if _safe_strike_info:
                         log.info(
                             f"[{sid}] Replenish: safer {closed_side.upper()} strike "
@@ -9347,17 +9524,25 @@ class MMMMonitor:
                 if s:
                     strike_pairs.add((float(s), opt))
 
-        # Seed the cache with already-fetched active-strike premiums
+        # Keep ce_now/pe_now as fallbacks for active strikes (used below if fresh fetch fails).
+        # Do NOT seed active strikes into cache before computing to_fetch — doing so would
+        # exclude them from the fetch loop, which is the only place bid_cache is populated.
+        # Bug: active strikes seeded into mark_cache but never into bid_cache → _make_bid_fetch_fn
+        # fell back to mark price for active strikes even when close_at_use_bid=True.
+        # When mark > threshold but bid < threshold, close_at_5 never fired.
         ce_state = session.get('ce', {})
         pe_state = session.get('pe', {})
+        _active_fallbacks: Dict[tuple, float] = {}
         if ce_state.get('active_strike'):
-            cache[(float(ce_state['active_strike']), 'call')] = ce_now
+            _active_fallbacks[(float(ce_state['active_strike']), 'call')] = ce_now
         if pe_state.get('active_strike'):
-            cache[(float(pe_state['active_strike']), 'put')] = pe_now
+            _active_fallbacks[(float(pe_state['active_strike']), 'put')] = pe_now
 
-        # Fetch any remaining strikes not yet in cache — Bug #12 fix: parallel
+        # Fetch ALL strikes — including active strikes — so bid prices are populated for them.
+        # Active strikes were previously excluded (pre-seeded into cache), leaving bid_cache
+        # empty for them. Now they go through _fetch_one like any other strike.
         rest = getattr(self, '_heartbeat_rest', None) or self._create_heartbeat_rest_client()
-        to_fetch = [(s, o) for s, o in strike_pairs if (s, o) not in cache]
+        to_fetch = list(strike_pairs)
 
         bid_cache: Dict[tuple, float] = {}
         if to_fetch:
@@ -9413,6 +9598,15 @@ class MMMMonitor:
                     cache[key] = mark_price
                     # Store bid price: use bid if available, else fall back to mark
                     bid_cache[key] = bid_price if bid_price and bid_price > 0 else mark_price
+
+        # Fallback: if fetch failed for an active strike, seed mark price from ce_now/pe_now
+        # so _make_fetch_fn still has a value for trigger / engine calculations.
+        # bid_cache is intentionally NOT seeded with mark price — a missing bid entry
+        # causes _make_bid_fetch_fn to fall back to mark_cache, which is correct behaviour
+        # (mark > threshold → don't close, even if bid fetch failed).
+        for key, fallback_mark in _active_fallbacks.items():
+            if key not in cache:
+                cache[key] = fallback_mark
 
         self._premium_cache = cache
         # AUDIT FIX: Replace bid_cache fresh each beat to prevent stale entries

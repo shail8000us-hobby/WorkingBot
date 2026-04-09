@@ -2616,3 +2616,178 @@ CE skips → `last_aggressor=CE` → PE triggers → PE skips → `last_aggresso
 - `MMMDashboard.js` — Dangerous Mode button (RUNNING/PAUSED sessions only), red banner when active, CONFIRM dialog requiring user to type "CONFIRM" before enabling; DISABLE button in banner to turn off instantly
 
 **Test result:** 1257 passed, 0 failed.
+
+## 2026-04-09 — Fix close_at_threshold: Reprice Must Not Exceed Threshold
+
+**Problem**: When `close_at_threshold` fires a buy-back order (premium ≤ threshold, e.g. 15), if the order doesn't fill within 60s the reprice loop in `smart_execute` fetches fresh market quotes and reprices to the new mid-price — with no awareness of the configured threshold. If the premium bounces from 12 → 16 → 21 during retries, the algo was placing buy orders at 16, 18, 21, etc., defeating the purpose of the threshold.
+
+**Root cause**: `smart_execute` is a generic execution engine. It had no concept of a price ceiling for buy orders. The `close_at_5` caller never passed a cap, so repricing was unconstrained.
+
+**Fix**: Added `max_buy_price: float = None` parameter to `smart_execute` in `mmm_executor.py`:
+1. **Initial placement guard** — Before placing the first order, if `mid_price > max_buy_price`, abort immediately (handles premium bounce between scan and execution).
+2. **Reprice loop guard** — In each reprice iteration, after fetching fresh quotes, if `new_mid > max_buy_price`, cancel the pending order and return failure. The next heartbeat's scan will re-evaluate whether the position is still closeable.
+
+In `mmm_close_at_5.py`, `close_position` now sets `_max_buy_price = close_at_threshold` for `mechanism == 'close_at_5'` and passes it to `smart_execute`. Other mechanisms (harvest, recycler, wind_down, etc.) pass `None` and are unaffected.
+
+**Files changed**:
+- `mmm_executor.py` — `smart_execute`: added `max_buy_price` param, initial placement guard, reprice loop guard
+- `mmm_close_at_5.py` — `close_position`: extract threshold from session params, pass as `max_buy_price` for `close_at_5` mechanism only
+
+**Test result**: 1258 passed, 0 failed.
+
+## 2026-04-09 — Fix close_at_5: Bid Price Never Used for Active Strikes Despite close_at_use_bid=True
+
+**Problem**: Positions at the active CE/PE strike were not being closed by close_at_5 even when their bid price was well below `close_at_threshold`. The operator could see bid = $2.49 on a position with threshold = 15, but close_at_5 never fired.
+
+**Root cause**: In `_prefetch_all_premiums`, active strikes were seeded into `cache` (mark price cache) from `ce_now`/`pe_now` BEFORE `to_fetch` was computed:
+```python
+cache[(active_pe, 'put')] = pe_now   # seeded
+to_fetch = [... if key not in cache]  # active_pe excluded
+bid_cache = {}                         # never gets active_pe entry
+```
+`_fetch_one` (the only place bid prices are fetched and stored into `bid_cache`) was never called for active strikes. When `_make_bid_fetch_fn` looked up the active strike, `bid_cache` had no entry, so it fell back to `mark_cache` (mark price). If mark > threshold but bid < threshold, the position was NOT added to `closeable` → close_at_5 silently skipped it.
+
+**Fix** (`mmm_monitor.py` — `_prefetch_all_premiums`):
+- Moved active strike fallbacks into `_active_fallbacks` dict (no longer seeded before `to_fetch`)
+- Changed `to_fetch = list(strike_pairs)` — includes ALL strikes, active ones included
+- Active strikes now go through `_fetch_one` → bid price fetched → stored in `bid_cache`
+- After fetch loop, apply `_active_fallbacks` to mark cache only (not bid_cache) for any failed fetches
+- `_make_bid_fetch_fn` now returns actual bid price for active strikes when `close_at_use_bid=True`
+
+**Cost**: 1-2 extra ticker + orderbook API calls per heartbeat (for active CE and PE strikes). These were already being fetched in `_fetch_premiums_with_fallback` at heartbeat start, so the exchange sees 2× requests for active strikes. Acceptable tradeoff to fix the correctness bug.
+
+**Files changed**: `mmm_monitor.py` — `_prefetch_all_premiums` only
+
+**Test result**: 1258 passed, 0 failed.
+
+## 2026-04-09 — Fix Replenish ATM Guard: Wrong Premium Threshold in Fallback Scan
+
+**Root cause**: When the best replenish candidate is too close to ATM (< 2× ATM shield proximity), the ATM guard tries to find a safer farther-OTM strike. The fallback scan called `find_new_strike()` which uses `shift_threshold` (e.g. $50) to filter candidates. But `replenish_min_premium` is typically lower ($30). So a perfectly viable CE strike like 71600 at $35 would be REJECTED by `find_new_strike` → no safe strike found → replenish blocked → "Human Action Required" banner.
+
+**Live symptom (2026-04-09)**: BTC spot ~70,850. CE closed by close_at_5. Best CE candidate: 71200 (0.49% OTM). ATM buffer requires >= 1.0% OTM. `find_new_strike` then scanned for a safer strike but filtered by `shift_threshold=$50`. CE @ 71600 (~$35) and 71800 (~$21) were both below $50 → no safe strike found → replenish blocked every heartbeat.
+
+**Fix** (`mmm_monitor.py` — `_process_replenish`):
+- Hoisted `_desired`, `_opt_type`, `_above_spot`, `_chain_result`, `_chain_spot` variables to before the `if not strike_info:` strangle block so the ATM guard can reuse the already-fetched chain data.
+- Replaced `find_new_strike()` call in ATM guard with a direct chain filter + `_rank_strikes` call:
+  - Filter chain to strikes with OTM distance >= `_min_abs_dist` (the safe boundary)
+  - Use `_rank_strikes` with `_desired` (= `replenish_min_premium`) as premium threshold
+  - If safe strike found with premium >= `min_premium` → use it (correct behavior)
+  - Falls back to `find_new_strike` only in straddle mode where chain data isn't pre-fetched
+
+**Result**: Replenish can now find CE @ 71600 ($35) as a safe re-entry when 71200 is too close to ATM and `replenish_min_premium=$30`.
+
+**Files changed**: `mmm_monitor.py` — `_process_replenish` (ATM guard fallback only)
+
+**Tests**: 28/28 sealed replenish tests pass. 0 regressions.
+
+## 2026-04-09 — Fix 3 Bugs in mmm_replenish.py + mmm_safety.py
+
+**Bug analysis from reported list of 14 potential bugs. 3 confirmed real and fixed.**
+
+**BUG-1 (P1 — replenish.py): Gate 10 used `total_lots` instead of `active_lots`**
+- `total_lots = active + frozen`. If open side had 20 frozen lots (all mid-close from wind-down) and 0 active, Gate 10 passed and replenish sold a new hedge leg — but PE was about to fully close, leaving a dangling unhedged CE leg.
+- **Fix**: Gate 10 now checks `active_lots` only. Reason string unchanged (`'open_side_has_no_lots'`) so sealed test still passes.
+
+**BUG-2 (P2 — replenish.py): Gate 9 caught `ImportError` in `except Exception`**
+- If `mmm_initializer` failed to import (circular import, missing module), Gate 9 was silently bypassed with a warning. Replenish could then fire 2 minutes before expiry.
+- **Fix**: Split into two try blocks — `ImportError` is a hard block (`return False, 'gate9_import_error'`), parse exceptions remain soft-skip with warning.
+
+**BUG-3 (P2 — safety.py): Whipsaw guard silently disabled after history truncation**
+- If `adjustment_history` was compacted and `len(algo_history) < _whipsaw_last_checked_idx`, the guard condition `len > last_idx` was permanently False. History had to regrow past the old stale index before whipsaw detection resumed — potentially thousands of heartbeats.
+- **Fix**: Added `elif last_checked_idx > len(algo_history):` bounds reset with warning log.
+
+**Bugs confirmed real but NOT fixed (require sealed test unseal):**
+- Bug 1 (report): `check_asymmetry()` uses `total_lots` — includes frozen lots → false 7:1 hard block during wind-down. Needs C-AS-2 through C-AS-8 test updates.
+- Bug 7 (report): `check_pnl_guardrail` fires at 80%+ overlapping with `check_max_loss`. Needs C-PG-3 and C-PG-5 test updates.
+
+**Bugs confirmed NOT real:**
+- Bug 3 (report): `block_heavy_side_sells` intentionally excluded from `should_block_adjustment()` — C-SBA-5 seals this. `mmm_monitor.py:2216` already handles it with custom code.
+- Bug 5 (report): `match_active` lot sizing is intentional — matching current active lots is the correct hedge amount.
+- Bug 9 (report): `update_peak_pnl` as module-level function is correct — all callers import it directly, no method call.
+
+**Tests**: 119 passed, 0 failed (sealed_mmm_replenish + sealed_mmm_safety).
+
+**Files changed**: `mmm_replenish.py`, `mmm_safety.py`
+
+## 2026-04-09 — Straddle Roll Fix Plan Rev 2.0 — Quant Audit (PLANNING ONLY, no code)
+
+**What**: Critical review of STRADDLE_ROLL_FIX_PLAN.md Rev 1.0, upgraded to Rev 2.0 with 12 findings.
+
+**Code files read for audit** (no changes made): `mmm_straddle_roll.py`, `mmm_monitor.py` (init block + heartbeat Step 5.4), `mmm_dte_presets.py` (SHORT_STRADDLE preset), `mmm_state.py` (DEFAULT_PARAMS), `mmm_wind_down.py` (is_wind_down_active), `mmm_api.py` (session creation).
+
+**12 findings added to plan**:
+- Q-1: "Roll fires at exact breakeven" claim corrected — gamma/time value creates ~2-5% drag per roll. Still dramatically better than old % trigger.
+- Q-2 (FIX-1.5): `_straddle_entry_iv` must reset after roll — old entry IV causes Gate 5.5 to false-block new straddle.
+- Q-3: Adaptive heartbeat interval must reset from possibly 600s back to base 120s after roll.
+- Q-4 (ROBUST-4): Same-strike roll guard — if new ATM == old ATM, skip roll to avoid paying execution costs for zero benefit.
+- Q-5 (ROBUST-5): Telegram alert on successful roll — operator needs to know market moved ≥400 pts.
+- Q-6 (ROBUST-6): Re-fetch ATM after closing both legs — market may move during 4-leg sequential execution.
+- Q-7: FIX-4 detection mechanism made concrete — check `'initial_lots' in raw_body` to distinguish default from explicit.
+- Q-8: `straddle_roll_price_max_age_secs` missing from DEFAULT_PARAMS (referenced in Gate 9 code but not in mmm_state.py).
+- Q-9: Table header "rupee terms" → "USD terms" (Delta Exchange is USD-settled).
+- Q-10: Added §5.4 with realistic profitability analysis across 5 scenarios with actual dollar numbers.
+- Q-11: Wind-down race condition analyzed and proven safe (existing guards handle it).
+- Q-12: Gate 8 fallback path made concrete with 3-level cascade (live positions → pct-based → block).
+
+**Profitability conclusion**: Strategy is viable. Profitable in ranging markets (~60-70% of sessions), slightly positive even with 3 rolls in trending markets, loss-capped in crashes. Only losing scenario is extreme repeated whipsaw (3 rolls) where collected premium doesn't offset gamma drag — rare and bounded.
+
+**No code files changed. Planning only.** File changed: `tasks/STRADDLE_ROLL_FIX_PLAN.md`
+
+---
+
+## 2026-04-09 — Straddle Roll Rev 3.0 implementation + sealed tests
+
+### Code changes (by another coding AI, audited by Claude Code):
+
+**`mmm_straddle_roll.py`**
+- Gate 8 replaced: now uses `_straddle_roll_trigger_pts` (CE+PE entry premiums in points) instead of `distance_pct >= trigger_pct`. 3-level fallback: session key → live position entry_premium → pct-based floor → `no_trigger_pts` block.
+- Gate 5.5 IV spike: converted from hard block to soft warning + `_straddle_last_roll_iv_spike` audit flag. High IV = higher new premium; margin gate (Gate 5) is the real protection.
+- Gate 7 emergency bypass: now uses `trigger_pts × emergency_mult` (was pct × mult). Consistent with Gate 8.
+- Same-strike guard (CHANGE 3-B): skips roll if `new_atm_strike == old_atm_strike`. Prevents paying execution costs for zero benefit.
+- Spread check (CHANGE 3-D): blocks roll if avg CE+PE bid-ask spread > `straddle_roll_max_spread_pct` (default 15%). Skipped silently if preview has no bid/ask.
+- Post-roll trigger update (CHANGE 1-C): `_straddle_roll_trigger_pts` updated to actual CE+PE fill prices after each roll.
+- Post-roll state reset (CHANGE 3-A): 20 keys popped after successful roll — trend/regime/IV/adaptive state cleared for clean slate at new ATM.
+- Telegram alert (CHANGE 3-E): `alert_straddle_roll_executed()` called after successful roll (fire-and-forget).
+
+**`mmm_monitor.py`**
+- CHANGE 1-A: `_straddle_roll_trigger_pts` computed at session startup from lot-weighted CE+PE entry premiums. Resume-safe (skips if already > 0).
+- CHANGE 1-D: `_run_price_guard_loop()` background thread started for SHORT_STRADDLE sessions. Reads `session['analytics']['last_spot_price']` every 5s, fires `force_heartbeat()` when within `price_guard_buffer_pts` (50pts) of trigger. Cooldown 30s.
+- Bonus (out-of-scope): shift fallback premium floor (`shift_fallback_min_premium=25`), replenish ATM guard chain re-scan fix, bid cache active-strike bug fix.
+
+**`mmm_dte_presets.py`**
+- `build_short_straddle_preset()`: min hours lowered from 2h → 1h; max hours raised from 12h (ValueError) → 24h (warning only, no raise).
+- `wind_down_enabled`: False (was True). Wind-down closes profitable OTM leg, fighting roll mechanism.
+- `harvest_enabled`: False (was True). Partial closes break straddle symmetry.
+- `straddle_roll_max_per_session`: removed from preset — operator must provide explicitly.
+- Added `straddle_roll_max_spread_pct: 15.0`.
+
+**`mmm_state.py`**
+- Added to DEFAULT_PARAMS: `_straddle_roll_trigger_pts`, `price_guard_enabled`, `price_guard_interval_secs`, `price_guard_buffer_pts`, `price_guard_cooldown_secs`, `straddle_roll_max_spread_pct`, `straddle_roll_price_max_age_secs`, `shift_fallback_min_premium`.
+- All new params added to HOT_RELOAD_PARAMS.
+
+**`mmm_api.py`**
+- SHORT_STRADDLE session creation now rejects (HTTP 400) if `initial_lots` or `straddle_roll_max_per_session` not in request body. Both are intentionally omitted from preset.
+
+**`mmm_telegram.py`**
+- Added `alert_straddle_roll_executed()` + async impl.
+
+**`tests/test_sealed_mmm_dte_presets.py`** and **`test_sealed_mmm_strike_shift.py`**: updated sealed contracts for changed behavior (H<1 threshold, H>24 warning, wind-down/harvest flags).
+
+### New sealed tests (Claude Code, this session):
+- `tests/test_sealed_straddle_roll_rev3.py`: 23 new tests covering Gate 8 premium-points trigger (5 tests), IV spike soft warning, emergency bypass, hot-reload, preset flags, hard stop path, same-strike guard, spread gate, post-roll reset, API validation. All 23 pass.
+- Suite: 1281 passed (was 1258 before this session; +23 new).
+
+### Invariants preserved:
+- Three-layer stale monitor protection: untouched.
+- Reverse mode: untouched.
+- Regular strangle (0DTE, 5DTE, SHORT_WINDOW): zero code path overlap — all changes gated behind `_preset_source == 'SHORT_STRADDLE'` and `straddle_roll_enabled=True`.
+
+---
+
+## 2026-04-09 — Phase 4: UI updates (MMMDashboard.js)
+
+**`webui/frontend/src/components/mmm/MMMDashboard.js`**
+- CHANGE 4-A (preset description): Updated straddle roll description from "spot moves ≥ trigger %" to "spot moves ≥ CE+PE entry premium pts". Removed hardcoded "Max 3 rolls" — now shows "operator (required)". Added "⚡ Price Guard: 5s real-time spot monitor".
+- CHANGE 4-B (roll badge): `|| 3` replaced with `?? '?'` — shows `?` when operator hasn't set max_rolls (not possible after API validation, but defensive). Tooltip now shows `Next trigger: ±N pts` from `_straddle_roll_trigger_pts` session key.
+- CHANGE 4-C (price guard chip): New `⚡ Guard` chip shown when session is RUNNING + SHORT_STRADDLE + price_guard not disabled. Green color, monospace, tooltip explains 5s monitoring.
+- Frontend build: clean, all bundles within budget.
