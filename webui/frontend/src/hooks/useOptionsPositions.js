@@ -501,6 +501,29 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     };
   }, []);
 
+  // ---- Exchange fees per options symbol ----
+  // { "C-BTC-95000-300425": 1.23, ... }  — polled every 60s (fees change only on fills)
+  const [feesMap, setFeesMap] = useState({});
+
+  const fetchFees = useCallback(async () => {
+    try {
+      const { data } = await api.get('/api/options/fees-summary');
+      if (data?.success && data.fees) {
+        setFeesMap(data.fees);
+      }
+    } catch (err) {
+      // Non-critical — fees column just shows nothing if unavailable
+      console.warn('[useOptionsPositions] fees-summary fetch failed:', err.message);
+    }
+  }, []);
+
+  // Fetch fees once on mount, then every 60s
+  useEffect(() => {
+    fetchFees();
+    const id = setInterval(fetchFees, 60000);
+    return () => clearInterval(id);
+  }, [fetchFees]);
+
   return {
     // State
     positions,
@@ -516,6 +539,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     pendingOrdersError,
     marginData,
     lastDataUpdate,
+    feesMap,
 
     // Fetchers
     fetchDashboard,

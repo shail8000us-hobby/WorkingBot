@@ -431,6 +431,7 @@ const OptionsPanel = () => {
     handleCancelPendingOrder, handleRefresh,
     hasPositionsRef, activeIntervalsRef,
     marginData, lastDataUpdate,
+    feesMap,
   } = useOptionsPositions({ pollInterval });
 
   // Phase 2: Secondary toolbar visibility (persisted)
@@ -848,6 +849,8 @@ const OptionsPanel = () => {
     posVega: false,
     // F2: IV Rank — hidden by default
     ivr: false,
+    // Exchange fees paid — hidden by default
+    fees: false,
   }), []);
   const [visibleColumns, setVisibleColumns] = usePersistedState('options_visible_columns', DEFAULT_VISIBLE_COLUMNS, {
     transform: (parsed) => ({ ...DEFAULT_VISIBLE_COLUMNS, ...parsed }),
@@ -880,6 +883,8 @@ const OptionsPanel = () => {
     { key: 'posVega', label: 'Vega' },
     // F2: IV Rank
     { key: 'ivr', label: 'IVR' },
+    // Exchange fees paid (cumulative, from /v2/fills)
+    { key: 'fees', label: 'Fees Paid' },
   ];
 
   // Toggle column visibility (auto-saved by usePersistedState)
@@ -4277,6 +4282,13 @@ const OptionsPanel = () => {
                         </Tooltip>
                       </TableCell>
                     )}
+                    {visibleColumns.fees && (
+                      <TableCell align="right" sx={{ minWidth: 70 }}>
+                        <Tooltip title="Cumulative exchange fees paid on this symbol (USD, last 30 days)">
+                          <Box>Fees Paid</Box>
+                        </Tooltip>
+                      </TableCell>
+                    )}
                     {visibleColumns.actions && <TableCell align="center">Actions</TableCell>}
                   </TableRow>
                 </TableHead>
@@ -4402,6 +4414,7 @@ const OptionsPanel = () => {
                                   popValue={popData[pos.product_symbol]}
                                   posGreeks={positionGreeks[pos.product_symbol]}
                                   ivrData={ivStats[pos.product_symbol]}
+                                  feesPaid={feesMap[pos.product_symbol] || 0}
                                   skipConfirmStrike={skipConfirmStrikes[pos.product_symbol]}
                                   scalingRecommendation={scalingRecommendations[pos.product_symbol]}
                                   onToggleStrikeSelection={toggleStrikeSelection}

@@ -261,6 +261,12 @@ POSITIONS_CACHE_SECONDS = 10.0  # Cache positions for 10 seconds (was 3s — too
 _tickers_cache = {'data': None, 'time': 0}
 TICKERS_CACHE_SECONDS = 8.0  # Slightly shorter than positions cache so it stays fresh
 
+# Fees summary cache — sums commission per options symbol from /v2/fills
+# Fees change only when a new trade is placed, so 60s staleness is acceptable.
+_fees_cache = {'data': None, 'time': 0}
+FEES_CACHE_SECONDS = 60.0
+_fees_fetch_lock = threading.Lock()
+
 # One-at-a-time fetch lock — prevents concurrent greenlets from each launching
 # their own _run_async(fetch()) when the cache expires simultaneously.
 # With eventlet's patched Lock, waiting greenlets yield (don't block the worker).
@@ -2796,3 +2802,135 @@ def get_circuit_breaker_status():
         })
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@options_bp.route('/fees-summary', methods=['GET'])
+def get_options_fees_summary():
+    """
+    Return cumulative exchange fees paid per options symbol.
+
+    Fetches fills from the last 30 days via /v2/fills, filters to options
+    symbols (C-* / P-*), groups by product_symbol, and sums the commission
+    field (USD).  Result is cached for 60 seconds — fees only change when a
+    new order is filled.
+
+    Returns:
+        JSON: {
+            success: bool,
+            fees: { "<symbol>": <total_usd_float>, ... },
+            cached: bool,
+            timestamp: str
+        }
+    """
+    global _fees_cache
+
+    now = time.time()
+
+    # Fast path: serve from cache
+    if now - _fees_cache['time'] < FEES_CACHE_SECONDS and _fees_cache['data'] is not None:
+        return jsonify({
+            'success': True,
+            'fees': _fees_cache['data'],
+            'cached': True,
+            'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+        })
+
+    with _fees_fetch_lock:
+        # Double-check after acquiring lock
+        now = time.time()
+        if now - _fees_cache['time'] < FEES_CACHE_SECONDS and _fees_cache['data'] is not None:
+            return jsonify({
+                'success': True,
+                'fees': _fees_cache['data'],
+                'cached': True,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+            })
+
+        try:
+            client = get_unified_client()
+
+            async def fetch_fees():
+                _PAGE_SIZE = 200
+                _MAX_PAGES = 3
+                _LOOKBACK_SEC = 30 * 24 * 3600  # 30 days
+
+                end_us = int(time.time() * 1_000_000)
+                start_us = end_us - _LOOKBACK_SEC * 1_000_000
+
+                all_fills = []
+                page_start_us = start_us
+
+                for _page in range(_MAX_PAGES):
+                    resp = await client.rest_client._request_with_retry(
+                        method='GET',
+                        path='/v2/fills',
+                        params={
+                            'start_time': page_start_us,
+                            'end_time': end_us,
+                            'page_size': _PAGE_SIZE,
+                        },
+                    )
+                    page_fills = resp.get('result', [])
+                    if not isinstance(page_fills, list) or not page_fills:
+                        break
+
+                    all_fills.extend(page_fills)
+
+                    if len(page_fills) < _PAGE_SIZE:
+                        break  # Last page
+
+                    # Advance cursor past newest fill on this page
+                    newest_us = page_start_us
+                    for f in page_fills:
+                        raw_ts = f.get('created_at', '')
+                        if raw_ts:
+                            try:
+                                from datetime import datetime, timezone
+                                dt = datetime.fromisoformat(raw_ts.replace('Z', '+00:00'))
+                                ts_us = int(dt.timestamp() * 1_000_000)
+                                if ts_us > newest_us:
+                                    newest_us = ts_us
+                            except Exception:
+                                pass
+                    if newest_us <= page_start_us:
+                        break
+                    page_start_us = newest_us + 1
+
+                # Group by symbol, sum commission (USD)
+                fees: dict = {}
+                for fill in all_fills:
+                    sym = (
+                        fill.get('product', {}).get('symbol', '')
+                        or fill.get('product_symbol', '')
+                    )
+                    if not sym or not (sym.startswith('C-') or sym.startswith('P-')):
+                        continue
+                    commission = float(fill.get('commission', 0) or 0)
+                    fees[sym] = fees.get(sym, 0.0) + commission
+
+                return fees
+
+            fees_data = _run_async(fetch_fees(), timeout=25)
+
+            _fees_cache['data'] = fees_data
+            _fees_cache['time'] = time.time()
+
+            return jsonify({
+                'success': True,
+                'fees': fees_data,
+                'cached': False,
+                'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+            })
+
+        except Exception as e:
+            log.error(f"Failed to fetch options fees summary: {e}")
+            # Serve stale cache rather than failing the UI
+            if _fees_cache['data'] is not None:
+                return jsonify({
+                    'success': True,
+                    'fees': _fees_cache['data'],
+                    'cached': True,
+                    'warning': f'Using stale fees data: {str(e)}',
+                    'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'),
+                })
+            return jsonify({'success': False, 'error': str(e), 'fees': {}}), 500

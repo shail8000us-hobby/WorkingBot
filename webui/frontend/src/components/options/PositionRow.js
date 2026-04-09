@@ -261,6 +261,7 @@ function PositionRow({
     popValue,
     posGreeks,
     ivrData,
+    feesPaid,
     skipConfirmStrike,
     scalingRecommendation,
     // Callbacks
@@ -796,6 +797,17 @@ function PositionRow({
                             fontSize: '0.78rem',
                         }}>
                             {posGreeks ? '$' + posGreeks.vega.toFixed(2) : '-'}
+                        </Typography>
+                    </Tooltip>
+                </TableCell>
+            )}
+
+            {/* Exchange fees paid */}
+            {visibleColumns.fees && (
+                <TableCell align="right" sx={cellSx}>
+                    <Tooltip title="Cumulative exchange fees paid on this symbol (USD, last 30 days from /v2/fills)">
+                        <Typography variant="body2" sx={{ color: '#f59e0b', fontSize: '0.78rem', fontWeight: 500 }}>
+                            {feesPaid > 0 ? `$${feesPaid.toFixed(2)}` : (feesPaid === 0 ? '$0.00' : '-')}
                         </Typography>
                     </Tooltip>
                 </TableCell>
