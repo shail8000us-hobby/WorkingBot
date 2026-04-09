@@ -15,7 +15,6 @@ export { default as OptionsChainPage } from './OptionsChainPage';
 export { default as StrategyBuilderPage } from './StrategyBuilderPage';
 export { default as MMMPage } from './MMMPage';
 export { default as ICPage } from './ICPage';
-export { default as GuardianPage } from './GuardianPage';
 export { default as MLTradingPage } from './MLTradingPage';
 export { default as BotManagementPage } from './BotManagementPage';
 export { default as EmergencyPage } from './EmergencyPage';

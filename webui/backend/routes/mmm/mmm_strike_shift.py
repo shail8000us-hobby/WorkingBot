@@ -231,69 +231,95 @@ def find_new_strike(
             return None
 
         option_type = 'call' if side == 'ce' else 'put'
-        candidates = []
         old_strike = session.get(side, {}).get('active_strike', 0)
 
-        for row in chain_list:
-            strike = row.get('strike', 0)
-            option_data = row.get(option_type, {})
-            if not option_data:
-                continue
+        # Build frozen strike set once — used in both passes
+        frozen = session.get(side, {}).get('frozen_positions', [])
+        frozen_strikes = {f.get('strike', 0) for f in frozen if f.get('lots', 0) > 0}
 
-            bid = float(option_data.get('bid', 0) or 0)
-            ask = float(option_data.get('ask', 0) or 0)
-            mark = float(option_data.get('mark_price', 0) or 0)
-            symbol = option_data.get('symbol', '')
-
-            # Use mark_price for candidate filtering (consistent with _rank_strikes).
-            # mark_price is the exchange's theoretical fair value — more stable than
-            # bid on 0DTE/illiquid options where bids can be stale or pulled.
-            # Actual execution will still use bid-based pricing via smart_execute.
-            if mark > 0:
-                premium = mark
-            elif bid > 0 and ask > 0:
-                premium = (bid + ask) / 2
-            elif bid > 0:
-                premium = bid
-            else:
-                continue  # No usable price data
-
-            if premium < effective_threshold:
-                continue
-
-            # Must be OTM
-            if option_type == 'call' and strike <= spot_price:
-                continue
-            if option_type == 'put' and strike >= spot_price:
-                continue
-
-            # ATM Shield: enforce minimum OTM distance
-            if min_otm_distance > 0:
-                if option_type == 'call' and strike < spot_price + min_otm_distance:
-                    continue
-                if option_type == 'put' and strike > spot_price - min_otm_distance:
+        def _scan_chain(include_frozen: bool) -> list:
+            """Single pass over the chain. include_frozen=True allows frozen strikes."""
+            results = []
+            for row in chain_list:
+                strike = row.get('strike', 0)
+                option_data = row.get(option_type, {})
+                if not option_data:
                     continue
 
-            # Don't re-select the current active strike
-            if abs(strike - old_strike) < 1:
-                continue
+                bid = float(option_data.get('bid', 0) or 0)
+                ask = float(option_data.get('ask', 0) or 0)
+                mark = float(option_data.get('mark_price', 0) or 0)
+                symbol = option_data.get('symbol', '')
 
-            # AUDIT FIX BUG5: Don't shift back to a strike with frozen positions
-            frozen = session.get(side, {}).get('frozen_positions', [])
-            frozen_strikes = {f.get('strike', 0) for f in frozen if f.get('lots', 0) > 0}
-            if any(abs(strike - fs) < 1 for fs in frozen_strikes):
-                continue
+                # Use mark_price for candidate filtering (consistent with _rank_strikes).
+                # mark_price is the exchange's theoretical fair value — more stable than
+                # bid on 0DTE/illiquid options where bids can be stale or pulled.
+                # Actual execution will still use bid-based pricing via smart_execute.
+                if mark > 0:
+                    premium = mark
+                elif bid > 0 and ask > 0:
+                    premium = (bid + ask) / 2
+                elif bid > 0:
+                    premium = bid
+                else:
+                    continue  # No usable price data
 
-            candidates.append({
-                'strike': strike,
-                'premium': premium,
-                'symbol': symbol,
-                'distance_from_spot': abs(strike - spot_price),
-            })
+                if premium < effective_threshold:
+                    continue
+
+                # Must be OTM
+                if option_type == 'call' and strike <= spot_price:
+                    continue
+                if option_type == 'put' and strike >= spot_price:
+                    continue
+
+                # ATM Shield: enforce minimum OTM distance
+                if min_otm_distance > 0:
+                    if option_type == 'call' and strike < spot_price + min_otm_distance:
+                        continue
+                    if option_type == 'put' and strike > spot_price - min_otm_distance:
+                        continue
+
+                # Don't re-select the current active strike
+                if abs(strike - old_strike) < 1:
+                    continue
+
+                # AUDIT FIX BUG5: Don't shift back to a strike with frozen positions.
+                # Exception: second pass (include_frozen=True) allows frozen strikes as
+                # last resort — near expiry the frozen strikes may be the only OTM
+                # strikes with meaningful premium. Skipping them entirely causes an
+                # infinite no-shift loop even when the chain shows viable options.
+                if not include_frozen:
+                    if any(abs(strike - fs) < 1 for fs in frozen_strikes):
+                        continue
+
+                results.append({
+                    'strike': strike,
+                    'premium': premium,
+                    'symbol': symbol,
+                    'distance_from_spot': abs(strike - spot_price),
+                    'is_frozen_strike': any(abs(strike - fs) < 1 for fs in frozen_strikes),
+                })
+            return results
+
+        # Pass 1: prefer non-frozen strikes (normal behavior)
+        candidates = _scan_chain(include_frozen=False)
+
+        # Pass 2: if nothing found, include frozen strikes as last resort.
+        # This handles the case where all OTM strikes with real premium happen
+        # to be strikes with existing frozen positions (common in long 0DTE sessions
+        # that have shifted multiple times as the market moved).
+        if not candidates and frozen_strikes:
+            candidates = _scan_chain(include_frozen=True)
+            if candidates:
+                log.warning(
+                    f"No non-frozen {side.upper()} candidates found — using frozen strike "
+                    f"as last resort (frozen={sorted(frozen_strikes)}). "
+                    f"Sells will add to existing frozen position at that strike."
+                )
 
         if not candidates:
-            # Diagnostic: log first 5 OTM strikes to show why each was rejected.
-            # If this recurs, the log will immediately show bid vs mark values.
+            # Diagnostic: show OTM strikes with their premium AND whether frozen/ITM blocked them
             diag = []
             for row in chain_list[:20]:
                 s = row.get('strike', 0)
@@ -305,13 +331,18 @@ def find_new_strike(
                 is_otm = (option_type == 'call' and s > spot_price) or \
                          (option_type == 'put' and s < spot_price)
                 if is_otm:
-                    diag.append(f"{s}(bid={b:.1f},mark={m:.1f})")
+                    reason = ''
+                    if m < effective_threshold and b < effective_threshold:
+                        reason = 'low_prem'
+                    elif any(abs(s - fs) < 1 for fs in frozen_strikes):
+                        reason = 'frozen'
+                    diag.append(f"{s}(bid={b:.1f},mark={m:.1f}{(','+reason) if reason else ''})")
                 if len(diag) >= 5:
                     break
             log.warning(
                 f"No suitable strike for {side.upper()} shift "
                 f"(threshold=${effective_threshold:.0f}, spot={spot_price:.0f}, "
-                f"old_strike={old_strike}). "
+                f"old_strike={old_strike}, frozen={sorted(frozen_strikes)}). "
                 f"Nearest OTM strikes: {', '.join(diag) if diag else 'NONE'}"
             )
             return None

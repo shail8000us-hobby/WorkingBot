@@ -97,12 +97,20 @@ def check_replenish_eligibility(
     if last_at > 0 and elapsed < cooldown_sec:
         return False, f'cooldown ({elapsed:.0f}s < {cooldown_sec}s)'
 
-    # Gate 9: not too close to expiry
+    # Gate 9: not too close to expiry.
+    # ImportError is separated from parse errors: a missing/broken import is a hard
+    # block (replenish on an expiring contract is worse than skipping the replenish),
+    # while a parse failure is a soft skip (expiry string may be in an unexpected format).
     expiry_str = params.get('expiry', '')
     stop_adj_mins = params.get('stop_adjustment_mins', 15)
     if expiry_str:
         try:
             from .mmm_initializer import expiry_to_utc_datetime
+        except ImportError as _import_err:
+            log.error(f"[replenish] Gate 9: cannot import expiry_to_utc_datetime "
+                      f"({_import_err}) — blocking replenish as safety fallback")
+            return False, 'gate9_import_error'
+        try:
             expiry_iso = expiry_to_utc_datetime(expiry_str, params)
             expiry_dt = datetime.fromisoformat(expiry_iso)
             if expiry_dt.tzinfo is None:
@@ -114,9 +122,11 @@ def check_replenish_eligibility(
             log.warning(f"[replenish] Gate 9 expiry parse failed ({expiry_str!r}): "
                         f"{_gate9_err} — near-expiry guard skipped")
 
-    # Gate 10: open side must actually have lots
-    open_total = session.get(open_side, {}).get('total_lots', 0)
-    if open_total <= 0:
+    # Gate 10: open side must have active lots (not just frozen/winding-down lots).
+    # total_lots = active + frozen; if open side is all frozen (mid-close), replenishing
+    # the closed side creates a dangling leg once the frozen side fully closes.
+    open_active = session.get(open_side, {}).get('active_lots', 0)
+    if open_active <= 0:
         return False, 'open_side_has_no_lots'
 
     # Gate 11: lot velocity — block if the rolling window for the CLOSED SIDE

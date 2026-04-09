@@ -1,33 +1,23 @@
 """
-Todos Routes Blueprint
+Simple Todo Routes Blueprint
 
-This module handles all API routes related to user improvement todos/tasks.
+This module handles API routes for the WebUI todo list.
 
-Routes:
-- GET  /api/todos - Get all todos
-- POST /api/todos - Create a new todo
-- PUT  /api/todos/:id - Update a todo (toggle completed or edit text)
-- DELETE /api/todos/:id - Delete a todo
+Core fields:
+- title: short task name
+- work: human-language task details
 
-Dependencies:
-- JSON file storage (data/user_todos.json)
-
-Refactored from app.py (8,850 lines)
-Date: 2025-10-31
+Legacy compatibility:
+- accepts and returns a `text` field composed as "title\nwork"
 """
 
 import json
-import time
 import logging
-from pathlib import Path
+import time
 from datetime import datetime
-from flask import Blueprint, jsonify, request
+from pathlib import Path
 
-# Import cache
-try:
-    from webui.backend.cache import cache, CACHE_TIMEOUTS
-except ImportError:
-    from cache import cache, CACHE_TIMEOUTS
+from flask import Blueprint, jsonify, request
 
 log = logging.getLogger(__name__)
 
@@ -36,223 +26,273 @@ todos_bp = Blueprint('todos', __name__)
 
 # File paths
 BASE_DIR = Path(__file__).parent.parent.parent.parent
-TODO_FILE = BASE_DIR / "data" / "user_todos.json"
+TODO_FILE = BASE_DIR / 'data' / 'user_todos.json'
+
 
 # ============================================================================
 # Helper Functions
 # ============================================================================
 
+
+def _safe_str(value):
+    return value.strip() if isinstance(value, str) else ''
+
+
+def _split_legacy_text(text):
+    """Split legacy `text` into title + work."""
+    cleaned = _safe_str(text)
+    if not cleaned:
+        return '', ''
+
+    lines = cleaned.splitlines()
+    title = (lines[0] if lines else '').strip()
+    work = '\n'.join(lines[1:]).strip()
+    return title, work
+
+
+def _compose_text(title, work):
+    """Compose compatibility text from title + work."""
+    title = _safe_str(title)
+    work = _safe_str(work)
+
+    if title and work:
+        return f'{title}\n{work}'
+
+    return title or work
+
+
+def _normalize_todo(todo):
+    """Normalize todo shape and ensure required keys exist."""
+    source = todo if isinstance(todo, dict) else {}
+    normalized = dict(source)
+
+    legacy_title, legacy_work = _split_legacy_text(normalized.get('text'))
+
+    title = _safe_str(normalized.get('title')) or legacy_title
+    work = _safe_str(normalized.get('work')) or legacy_work
+
+    if not title and work:
+        title = work[:120]
+
+    if not title:
+        title = 'Untitled'
+
+    created_at = normalized.get('createdAt') or datetime.now().isoformat()
+    updated_at = normalized.get('updatedAt') or created_at
+
+    normalized.update({
+        'id': str(normalized.get('id') or int(time.time() * 1000)),
+        'title': title,
+        'work': work,
+        'text': _compose_text(title, work),
+        'completed': bool(normalized.get('completed', False)),
+        'pinned': bool(normalized.get('pinned', False)),
+        'createdAt': created_at,
+        'updatedAt': updated_at,
+    })
+
+    return normalized
+
+
+def _extract_payload(data, fallback_title='', fallback_work=''):
+    """Extract title/work from payload with legacy text fallback."""
+    title = _safe_str(data.get('title'))
+    work = _safe_str(data.get('work'))
+
+    legacy_title, legacy_work = _split_legacy_text(data.get('text'))
+
+    if not title and legacy_title:
+        title = legacy_title
+    if not work and legacy_work:
+        work = legacy_work
+
+    if not title:
+        title = _safe_str(fallback_title)
+    if not work:
+        work = _safe_str(fallback_work)
+
+    if not title and work:
+        title = work[:120]
+
+    return title, work
+
+
 def load_todos():
-    """Load todos from JSON file"""
-    if TODO_FILE.exists():
-        try:
-            with open(TODO_FILE, 'r') as f:
-                return json.load(f)
-        except Exception as e:
-            log.error(f"Error loading todos: {e}")
+    """Load todos from JSON file."""
+    if not TODO_FILE.exists():
+        return []
+
+    try:
+        with open(TODO_FILE, 'r', encoding='utf-8') as handle:
+            raw_data = json.load(handle)
+
+        if not isinstance(raw_data, list):
+            log.warning('Todos file is not a list; resetting to empty list')
             return []
-    return []
+
+        todos = [_normalize_todo(item) for item in raw_data]
+        todos.sort(key=lambda todo: todo.get('updatedAt') or todo.get('createdAt') or '', reverse=True)
+        return todos
+    except Exception as error:
+        log.error(f'Error loading todos: {error}')
+        return []
+
 
 def save_todos(todos):
-    """Save todos to JSON file"""
+    """Save todos to JSON file."""
     try:
         TODO_FILE.parent.mkdir(parents=True, exist_ok=True)
-        with open(TODO_FILE, 'w') as f:
-            json.dump(todos, f, indent=2)
+        with open(TODO_FILE, 'w', encoding='utf-8') as handle:
+            json.dump(todos, handle, indent=2, ensure_ascii=False)
         return True
-    except Exception as e:
-        log.error(f"Error saving todos: {e}")
+    except Exception as error:
+        log.error(f'Error saving todos: {error}')
         return False
+
 
 # ============================================================================
 # Route Handlers
 # ============================================================================
 
+
 @todos_bp.route('/api/todos', methods=['GET'])
 def get_todos():
-    """
-    Get all todos
-    
-    Returns:
-        JSON response with todos list
-    
-    Example:
-        GET /api/todos
-        Response: {
-            "success": true,
-            "todos": [
-                {
-                    "id": "1698765432000",
-                    "text": "Improve order execution speed",
-                    "completed": false,
-                    "createdAt": "2025-10-31T15:30:32",
-                    "updatedAt": "2025-10-31T15:30:32"
-                }
-            ]
-        }
-    """
+    """Get all todos."""
     try:
         todos = load_todos()
         return jsonify({'success': True, 'todos': todos}), 200
-    except Exception as e:
-        log.error(f"Error getting todos: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+    except Exception as error:
+        log.error(f'Error getting todos: {error}')
+        return jsonify({'success': False, 'error': str(error)}), 500
 
 
 @todos_bp.route('/api/todos', methods=['POST'])
 def create_todo():
-    """
-    Create a new todo
-    
-    Request Body:
-        {
-            "text": "Todo description"
-        }
-    
-    Returns:
-        JSON response with created todo
-    
-    Example:
-        POST /api/todos
-        Body: {"text": "Implement stop-loss"}
-        Response: {
-            "success": true,
-            "todo": {
-                "id": "1698765432000",
-                "text": "Implement stop-loss",
-                "completed": false,
-                "createdAt": "2025-10-31T15:30:32",
-                "updatedAt": "2025-10-31T15:30:32"
-            }
-        }
-    """
+    """Create a new todo."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
         if data is None:
-            log.error("request.get_json() returned None")
             return jsonify({'success': False, 'error': 'Invalid JSON or Content-Type'}), 400
-        
-        # Handle double-encoded JSON (when frontend sends string instead of object)
+
+        # Handle accidentally stringified JSON payloads.
         if isinstance(data, str):
-            log.warning("Received string instead of object, parsing...")
-            data = json.loads(data)
-        
-        text = data.get('text', '').strip()
-        log.info(f"Creating todo with text: '{text[:50]}'")
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                return jsonify({'success': False, 'error': 'Invalid JSON payload'}), 400
+
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'error': 'Payload must be a JSON object'}), 400
+
+        title, work = _extract_payload(data)
+        if not title and not work:
+            return jsonify({'success': False, 'error': 'Please provide a title and/or text'}), 400
+
+        now = datetime.now().isoformat()
+
+        new_todo = _normalize_todo({
+            'id': str(int(time.time() * 1000)),
+            'title': title,
+            'work': work,
+            'completed': bool(data.get('completed', False)),
+            'pinned': bool(data.get('pinned', False)),
+            'createdAt': now,
+            'updatedAt': now,
+        })
+
+        # Keep optional legacy metadata if clients still send it.
+        for key in ('priority', 'category'):
+            if key in data:
+                new_todo[key] = data.get(key)
 
         todos = load_todos()
-        log.info(f"Loaded {len(todos)} existing todos")
-
-        new_todo = {
-            'id': str(int(time.time() * 1000)),  # Unix timestamp in milliseconds
-            'text': text,
-            'completed': False,
-            'priority': data.get('priority', 'medium'),
-            'category': data.get('category', None),
-            'pinned': data.get('pinned', False),
-            'createdAt': datetime.now().isoformat(),
-            'updatedAt': datetime.now().isoformat()
-        }
         todos.append(new_todo)
-        log.info(f"Created new todo with ID: {new_todo['id']}")
-        
+
         if save_todos(todos):
-            log.info(f"Successfully saved {len(todos)} todos to disk")
             return jsonify({'success': True, 'todo': new_todo}), 201
-        else:
-            log.error("Failed to save todos to disk")
-            return jsonify({'success': False, 'error': 'Failed to save todo'}), 500
-            
-    except Exception as e:
-        log.error(f"Exception in create_todo: {str(e)}", exc_info=True)
-        return jsonify({'success': False, 'error': str(e)}), 500
+
+        return jsonify({'success': False, 'error': 'Failed to save todo'}), 500
+    except Exception as error:
+        log.error(f'Exception in create_todo: {error}', exc_info=True)
+        return jsonify({'success': False, 'error': str(error)}), 500
 
 
 @todos_bp.route('/api/todos/<todo_id>', methods=['PUT'])
 def update_todo(todo_id):
-    """
-    Update a todo (toggle completed or edit text)
-    
-    Request Body:
-        {
-            "completed": true,  # Optional: toggle completion
-            "text": "Updated text"  # Optional: update text
-        }
-    
-    Returns:
-        JSON response with all todos
-    
-    Example:
-        PUT /api/todos/1698765432000
-        Body: {"completed": true}
-        Response: {
-            "success": true,
-            "todos": [...]
-        }
-    """
+    """Update todo fields (title/work/text/completed and optional metadata)."""
     try:
-        data = request.get_json()
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({'success': False, 'error': 'Invalid JSON or Content-Type'}), 400
+
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except json.JSONDecodeError:
+                return jsonify({'success': False, 'error': 'Invalid JSON payload'}), 400
+
+        if not isinstance(data, dict):
+            return jsonify({'success': False, 'error': 'Payload must be a JSON object'}), 400
+
         todos = load_todos()
-        
         todo_found = False
-        for todo in todos:
-            if todo['id'] == todo_id:
-                todo_found = True
-                if 'completed' in data:
-                    todo['completed'] = data['completed']
-                if 'text' in data:
-                    todo['text'] = data['text'].strip() if data['text'] else ''
-                if 'priority' in data:
-                    todo['priority'] = data['priority']
-                if 'category' in data:
-                    todo['category'] = data['category']
-                if 'pinned' in data:
-                    todo['pinned'] = data['pinned']
-                todo['updatedAt'] = datetime.now().isoformat()
-                break
-        
+
+        for index, todo in enumerate(todos):
+            if str(todo.get('id')) != str(todo_id):
+                continue
+
+            todo_found = True
+            current = _normalize_todo(todo)
+
+            if 'completed' in data:
+                current['completed'] = bool(data.get('completed'))
+
+            if any(field in data for field in ('title', 'work', 'text')):
+                title, work = _extract_payload(
+                    data,
+                    fallback_title=current.get('title', ''),
+                    fallback_work=current.get('work', ''),
+                )
+                current['title'] = title or current.get('title') or 'Untitled'
+                current['work'] = work
+                current['text'] = _compose_text(current['title'], current['work'])
+
+            for key in ('priority', 'category', 'pinned'):
+                if key in data:
+                    current[key] = bool(data.get(key)) if key == 'pinned' else data.get(key)
+
+            current['updatedAt'] = datetime.now().isoformat()
+            todos[index] = _normalize_todo(current)
+            break
+
         if not todo_found:
             return jsonify({'success': False, 'error': 'Todo not found'}), 404
-        
+
         if save_todos(todos):
             return jsonify({'success': True, 'todos': todos}), 200
-        else:
-            return jsonify({'success': False, 'error': 'Failed to save todo'}), 500
-            
-    except Exception as e:
-        log.error(f"Error updating todo: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+
+        return jsonify({'success': False, 'error': 'Failed to save todo'}), 500
+    except Exception as error:
+        log.error(f'Error updating todo: {error}')
+        return jsonify({'success': False, 'error': str(error)}), 500
 
 
 @todos_bp.route('/api/todos/<todo_id>', methods=['DELETE'])
 def delete_todo(todo_id):
-    """
-    Delete a todo
-    
-    Returns:
-        JSON response with remaining todos
-    
-    Example:
-        DELETE /api/todos/1698765432000
-        Response: {
-            "success": true,
-            "todos": [...]
-        }
-    """
+    """Delete a todo by ID."""
     try:
         todos = load_todos()
         original_length = len(todos)
-        todos = [todo for todo in todos if todo['id'] != todo_id]
-        
+        todos = [todo for todo in todos if str(todo.get('id')) != str(todo_id)]
+
         if len(todos) == original_length:
             return jsonify({'success': False, 'error': 'Todo not found'}), 404
-        
+
         if save_todos(todos):
-            log.info(f"Deleted todo {todo_id}")
+            log.info(f'Deleted todo {todo_id}')
             return jsonify({'success': True, 'todos': todos}), 200
-        else:
-            return jsonify({'success': False, 'error': 'Failed to save todos'}), 500
-            
-    except Exception as e:
-        log.error(f"Error deleting todo: {e}")
-        return jsonify({'success': False, 'error': str(e)}), 500
+
+        return jsonify({'success': False, 'error': 'Failed to save todos'}), 500
+    except Exception as error:
+        log.error(f'Error deleting todo: {error}')
+        return jsonify({'success': False, 'error': str(error)}), 500

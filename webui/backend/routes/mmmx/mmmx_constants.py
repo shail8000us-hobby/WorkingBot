@@ -125,7 +125,11 @@ HEDGE_CAPACITY_THRESHOLD_LOTS = 50  # Tr5+ (>=50 lots deployed) triggers hedging
 SMART_EXECUTE_REPRICE_ATTEMPTS   = 4
 SHIELD_BUYBACK_REPRICE_ATTEMPTS  = 10
 SHIELD_SELL_REPRICE_ATTEMPTS     = 10
-FILL_TIMEOUT_SECS                = 30
+FILL_TIMEOUT_SECS                = 30    # used by ATM shield (urgent, fast reprice)
+# Tranche deployment fill timeout — 50 DTE monthly options are illiquid; allow
+# the limit order to sit at mid for 8.5 minutes per reprice attempt.
+# 4 attempts × 510 s = ~34 minutes total patience before market fallback.
+TRANCHE_FILL_TIMEOUT_SECS        = 510
 BEING_CLOSED_TTL_SECS            = 180
 
 # ── Naked position watchdog ────────────────────────────────────────────────────

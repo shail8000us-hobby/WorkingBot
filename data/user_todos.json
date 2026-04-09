@@ -1,242 +1,42 @@
 [
   {
-    "id": "1762843426217",
-    "text": "tail -f /Users/ssr/Projects/WorkingBot/bot/logs/bot.log",
+    "id": "1774075007655",
+    "text": "tasks/MMM_STRIKE_SHIFT_REDESIGN.md",
     "completed": false,
-    "createdAt": "2025-11-11T12:13:46.217318",
-    "updatedAt": "2025-11-11T12:13:46.217324"
-  },
-  {
-    "id": "1762864602542",
-    "text": "# Live bot logs pm2 logs gridbot-live",
-    "completed": false,
-    "createdAt": "2025-11-11T18:06:42.542587",
-    "updatedAt": "2025-11-11T18:06:42.542594"
-  },
-  {
-    "id": "1762864625980",
-    "text": "### Restart Bot (if needed) ```bash pm2 restart gridbot-live # Shadow mode continues running!",
-    "completed": false,
-    "createdAt": "2025-11-11T18:07:05.980429",
-    "updatedAt": "2025-11-11T18:07:05.980435"
-  },
-  {
-    "id": "1762978804048",
-    "text": "python3 -m bot.run\npkill -9 -f \"python3 -m bot.run\"\ntail -f /tmp/async_bot.log",
-    "completed": false,
-    "createdAt": "2025-11-13T01:50:04.048648",
-    "updatedAt": "2025-11-13T01:50:04.048654"
-  },
-  {
-    "id": "1762978807506",
-    "text": "# Check if bot is running\nps aux | grep \"python3 -m bot.run\" | grep -v grep",
-    "completed": false,
-    "createdAt": "2025-11-13T01:50:07.506285",
-    "updatedAt": "2025-11-13T01:50:07.506290"
-  },
-  {
-    "id": "1763023630317",
-    "text": "cd ~/Projects/WorkingBot",
-    "completed": false,
-    "createdAt": "2025-11-13T14:17:10.317164",
-    "updatedAt": "2025-11-13T14:17:10.317169"
-  },
-  {
-    "id": "1763030915293",
-    "text": "Start in live mode\n./pm2_async_bot.sh start live\n\n# Start in demo mode\n./pm2_async_bot.sh start demo\n\n# Check status\n./pm2_async_bot.sh status\n\n# View logs\n./pm2_async_bot.sh logs live\n\n# Open monitoring dashboard\n./pm2_async_bot.sh monit",
-    "completed": false,
-    "createdAt": "2025-11-13T16:18:35.293204",
-    "updatedAt": "2025-11-13T16:18:35.293210"
-  },
-  {
-    "id": "1763034692247",
-    "text": "# Stop (graceful - cancels orders)\npm2 stop gridbot-live\n\n# Restart\npm2 restart gridbot-live\n\n# Delete (stop + remove from list)\npm2 delete gridbot-live\n\n# List all processes\npm2 list\n\n# Describe specific process\npm2 describe gridbot-live",
-    "completed": false,
-    "createdAt": "2025-11-13T17:21:32.247919",
-    "updatedAt": "2025-11-13T17:21:32.247924"
-  },
-  {
-    "id": "1763034737597",
-    "text": "# Start in live mode\n./pm2_async_bot.sh start live\n\n# Start in demo mode\n./pm2_async_bot.sh start demo\n\n# Check status\n./pm2_async_bot.sh status\n\n# View logs\n./pm2_async_bot.sh logs live\n\n# Open monitoring dashboard\n./pm2_async_bot.sh monit\n```",
-    "completed": false,
-    "createdAt": "2025-11-13T17:22:17.597269",
-    "updatedAt": "2025-11-13T17:22:17.597279"
-  },
-  {
-    "id": "1763113177093",
-    "text": "python3 code_explainer.py <any_python_file.py>\n\nPerfect for someone with zero coding knowledge:\n\n\u2705 Simple instructions in GIFT_INSTRUCTIONS.md\n\u2705 Complete documentation in CODE_NARRATION_FEATURE.md\n\u2705 Works standalone (no bot required)\n\u2705 3 reading levels (simple/trader/tech)\n\u2705 Production-ready and tested",
-    "completed": false,
-    "createdAt": "2025-11-14T15:09:37.093464",
-    "updatedAt": "2025-11-14T15:09:37.093476"
-  },
-  {
-    "id": "1763113206846",
-    "text": "Explain any Python file\npython3 code_explainer.py bot/strategy/async_gridbot.py\n\n# Simple mode (for beginners)\npython3 code_explainer.py human_logger.py --mode simple\n\n# Save as markdown\npython3 code_explainer.py order_actor.py --output md\n\n# Batch explain directory\npython3 code_explainer.py bot/actors --dir\n\n# Compare complexity\npython3 code_explainer.py file1.py file2.py --compare",
-    "completed": false,
-    "createdAt": "2025-11-14T15:10:06.846965",
-    "updatedAt": "2025-11-14T15:10:06.846970"
-  },
-  {
-    "id": "1763127165309",
-    "text": "# Check Tailscale status\ntailscale status\n\n# View watchdog logs\ntail -f /opt/homebrew/var/log/tailscale_watchdog.log\n\n# Manually restart Tailscale\nlaunchctl kickstart -k gui/$(id -u)/com.tailscale.tailscaled\n\n# Check if services are running\nlaunchctl list | grep tailscale",
-    "completed": false,
-    "createdAt": "2025-11-14T19:02:45.309477",
-    "updatedAt": "2025-11-14T19:02:45.309483"
-  },
-  {
-    "id": "1763361997076",
-    "text": "tail -f bot/logs/guardian.log",
-    "completed": false,
-    "createdAt": "2025-11-17T12:16:37.076169",
-    "updatedAt": "2025-11-17T12:16:37.076174"
-  },
-  {
-    "id": "1763373110561",
-    "text": "Future work \nVolatility",
-    "completed": false,
-    "createdAt": "2025-11-17T15:21:50.561884",
-    "updatedAt": "2025-11-17T15:21:50.561889"
-  },
-  {
-    "id": "1763385368060",
-    "text": "python3 view_combined_logs.py",
-    "completed": false,
-    "createdAt": "2025-11-17T18:46:08.060302",
-    "updatedAt": "2025-11-17T18:46:08.060308"
-  },
-  {
-    "id": "1763640105207",
-    "text": "./watch_all_logs.sh\n# Watch all logs continuously (recommended)\n./watch_logs_filtered.sh\n\n# Watch only errors\n./watch_logs_filtered.sh error\n\n# Watch specific price\n./watch_logs_filtered.sh 92000\n\n# Watch orders\n./watch_logs_filtered.sh order",
-    "completed": false,
-    "createdAt": "2025-11-20T17:31:45.207662",
-    "updatedAt": "2025-11-20T17:31:45.207670"
-  },
-  {
-    "id": "1766047829739",
-    "text": "# Check status\n./check_guardian_status.sh\n\n# View monitoring log\ntail -f logs/guardian_monitor.log\n\n# View guardian activity\ntail -f logs/guardian_bot.log",
-    "completed": false,
-    "createdAt": "2025-12-18T14:20:29.739178",
-    "updatedAt": "2025-12-18T14:20:29.739183"
-  },
-  {
-    "id": "1767092122063",
-    "text": "# Start bot manually\npm2 start gridbot-live\n\n# Stop bot manually\npm2 stop gridbot-live\n\n# Restart bot manually (if needed)\npm2 restart gridbot-live\n\n# View logs\npm2 logs gridbot-live\n\n# Check status\npm2 list",
-    "completed": false,
-    "createdAt": "2025-12-30T16:25:22.063260",
-    "updatedAt": "2025-12-30T16:25:22.063266"
-  },
-  {
-    "id": "1767622706452",
-    "text": "# Check status anytime\n./check_webui_production.sh\n\n# Restart backend\nlaunchctl restart com.gridbot.webui\n\n# View logs\ntail -f logs/launchagent_webui.log\n\n# Rebuild frontend (after changes)\ncd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
-    "completed": false,
-    "createdAt": "2026-01-05T19:48:26.452688",
-    "updatedAt": "2026-03-06T11:06:34.391855"
-  },
-  {
-    "id": "1768813449353",
-    "text": "soundManager.setVolume(0.5)     // Adjust volume (0.0-1.0)\nsoundManager.setEnabled(false)  // Disable sounds\nsoundManager.playTradeFilled()  // Test sound",
-    "completed": false,
-    "createdAt": "2026-01-19T14:34:09.353297",
-    "updatedAt": "2026-01-19T14:34:09.353302"
-  },
-  {
-    "id": "1768828983567",
-    "text": "# Follow logs in real-time (Ctrl+C to stop)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"(Monitor loop|MAX LOSS|Found limit|Checking)\"\n\n# View recent position checks with PnL values\ntail -100 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"(PnL=|Limit=|Negative=)\"\n\n# Check for max loss breaches\ntail -200 ~/Projects/WorkingBot/logs/launchagent_webui_error.log | grep -E \"(BREACH|CLOSING|Triggered)\"\n\n# See all monitored symbols\ntail -50 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep \"DEBUG Limit:\"",
-    "completed": false,
-    "createdAt": "2026-01-19T18:53:03.567099",
-    "updatedAt": "2026-01-19T18:53:03.567117"
-  },
-  {
-    "id": "1769805048844",
-    "text": "# Real-time monitoring (updates every few seconds)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|\ud83d\udd04|\ud83d\udcca|\ud83c\udfaf|DEBUG Position|Matching symbols|MAX LOSS\"\n\n# Last 50 monitoring cycles\ntail -500 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|Limits found|Matching symbols\"\n\n# Check if monitoring is active\ncurl -s http://localhost:5555/api/health | python3 -m json.tool",
-    "completed": false,
-    "createdAt": "2026-01-31T02:00:48.844097",
-    "updatedAt": "2026-01-31T02:00:48.844104"
-  },
-  {
-    "id": "1769805059581",
-    "text": "# Real-time SSR logs (if SSR was running)\ntail -f ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"SSR|Stealth|monitoring_loop|\ud83c\udfce\ufe0f|\ud83d\udd04\"\n\n# Check all SSR activity in last hour\ngrep -i \"SSR\" ~/Projects/WorkingBot/logs/launchagent_webui.log | tail -50\n\n# Check if SSR threads exist\nps aux | grep python | grep -v grep",
-    "completed": false,
-    "createdAt": "2026-01-31T02:00:59.581404",
-    "updatedAt": "2026-01-31T02:00:59.581417"
-  },
-  {
-    "id": "1769805070416",
-    "text": "# Watch both systems simultaneously\nwatch -n 2 'echo \"=== MAX LOSS MONITORING ===\" && tail -100 ~/Projects/WorkingBot/logs/launchagent_webui.log | grep -E \"Monitor loop|Limits found\" | tail -5 && echo \"\" && echo \"=== SSR MONITORING ===\" && grep \"SSR\" ~/Projects/WorkingBot/logs/launchagent_webui.log | tail -5'",
-    "completed": false,
-    "createdAt": "2026-01-31T02:01:10.416596",
-    "updatedAt": "2026-01-31T02:01:10.416611"
-  },
-  {
-    "id": "1769805081307",
-    "text": "# One-liner to see current state\necho \"Backend Running:\" && lsof -i :5555 | grep LISTEN && echo \"Max Loss: ACTIVE\" && echo \"SSR Threads:\" && grep -c \"SSR THREAD\" ~/Projects/WorkingBot/logs/launchagent_webui.log || echo \"0\"",
-    "completed": false,
-    "createdAt": "2026-01-31T02:01:21.307590",
-    "updatedAt": "2026-01-31T02:01:21.307602"
-  },
-  {
-    "id": "1770275876020",
-    "text": "git add -A && git commit -m \"chore: save current state before take profit enhancement\" 05/02/2026 12:47PM",
-    "completed": false,
-    "createdAt": "2026-02-05T12:47:56.020211",
-    "updatedAt": "2026-02-05T12:47:56.020220"
-  },
-  {
-    "id": "1773290262026",
-    "text": "cd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
-    "completed": false,
-    "createdAt": "2026-03-12T10:07:42.026447",
-    "updatedAt": "2026-03-12T10:07:42.026455"
-  },
-  {
-    "id": "1773558940457",
-    "text": "kill -9 $(lsof -ti:5555); sleep 2; cd /Users/ssr/Projects/WorkingBot && .venv/bin/python3 webui/backend/app.py &",
-    "completed": false,
-    "createdAt": "2026-03-15T12:45:40.457384",
-    "updatedAt": "2026-03-15T12:45:40.457391"
+    "createdAt": "2026-03-21T12:06:47.655678",
+    "updatedAt": "2026-03-21T12:06:47.655686",
+    "title": "tasks/MMM_STRIKE_SHIFT_REDESIGN.md",
+    "work": "",
+    "pinned": false
   },
   {
     "id": "1774073579353",
     "text": "kill -9 $(lsof -ti:5555)  # launchd auto-restarts after ~30s (KeepAlive)",
     "completed": false,
     "createdAt": "2026-03-21T11:42:59.353525",
-    "updatedAt": "2026-03-21T11:42:59.353535"
+    "updatedAt": "2026-03-21T11:42:59.353535",
+    "title": "kill -9 $(lsof -ti:5555)  # launchd auto-restarts after ~30s (KeepAlive)",
+    "work": "",
+    "pinned": false
   },
   {
-    "id": "1774075007655",
-    "text": "tasks/MMM_STRIKE_SHIFT_REDESIGN.md",
+    "id": "1773558940457",
+    "text": "kill -9 $(lsof -ti:5555); sleep 2; cd /Users/ssr/Projects/WorkingBot && .venv/bin/python3 webui/backend/app.py &",
     "completed": false,
-    "createdAt": "2026-03-21T12:06:47.655678",
-    "updatedAt": "2026-03-21T12:06:47.655686"
+    "createdAt": "2026-03-15T12:45:40.457384",
+    "updatedAt": "2026-03-15T12:45:40.457391",
+    "title": "kill -9 $(lsof -ti:5555); sleep 2; cd /Users/ssr/Projects/WorkingBot && .venv/bin/python3 webui/backend/app.py &",
+    "work": "",
+    "pinned": false
   },
   {
-    "id": "1774077892257",
-    "text": "",
+    "id": "1773290262026",
+    "text": "cd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
     "completed": false,
-    "priority": "medium",
-    "category": null,
-    "pinned": false,
-    "createdAt": "2026-03-21T12:54:52.257379",
-    "updatedAt": "2026-03-21T12:54:52.257386"
-  },
-  {
-    "id": "1775106908245",
-    "text": "",
-    "completed": false,
-    "priority": "medium",
-    "category": null,
-    "pinned": false,
-    "createdAt": "2026-04-02T10:45:08.245029",
-    "updatedAt": "2026-04-02T10:45:08.245040"
-  },
-  {
-    "id": "1775231010780",
-    "text": "CLI test at 21:13:30",
-    "completed": false,
-    "priority": "medium",
-    "category": null,
-    "pinned": false,
-    "createdAt": "2026-04-03T21:13:30.780968",
-    "updatedAt": "2026-04-03T21:13:30.780979"
+    "createdAt": "2026-03-12T10:07:42.026447",
+    "updatedAt": "2026-03-12T10:07:42.026455",
+    "title": "cd webui/frontend && npm run build && launchctl restart com.gridbot.webui",
+    "work": "",
+    "pinned": false
   }
 ]

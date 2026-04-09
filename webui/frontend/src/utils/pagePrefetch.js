@@ -24,7 +24,6 @@ const pageImports = {
   options_chain: () => import('../pages/OptionsChainPage'),
   strategy_builder: () => import('../pages/StrategyBuilderPage'),
   mmm: () => import('../pages/MMMPage'),
-  guardian: () => import('../pages/GuardianPage'),
   ml_trading: () => import('../pages/MLTradingPage'),
   botmanagement: () => import('../pages/BotManagementPage'),
   emergency: () => import('../pages/EmergencyPage'),

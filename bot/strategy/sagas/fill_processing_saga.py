@@ -246,9 +246,17 @@ async def create_buy_fill_saga(
             nonlocal grid_result
             
             next_price = grid_calc.compute_next_level_down(fill_data["fill_price"])
-            
+
+            # Bounds check: compute_next_level_down is raw arithmetic with no OOB guard
+            if not grid_calc.is_within_bounds(next_price):
+                log.info(
+                    f"[SAGA] Next BUY ${next_price:,.0f} is below grid lower bound "
+                    f"${grid_calc.lower:,.0f} — at floor, no more BUY levels to place"
+                )
+                return {"status": "skipped", "reason": "at_grid_lower_bound"}
+
             log.info(f"[SAGA] Placing next grid order @ {next_price}")
-            
+
             # CRITICAL FIX (Dec 11, 2025): Check Guardian signal before placing order
             from bot.strategy.modules.event_store import EventType
             import time as time_module
@@ -640,7 +648,15 @@ async def create_sell_fill_saga(
             # CRITICAL FIX (Dec 18, 2025): Use fill_price directly for consistency
             tp_price = fill_data["fill_price"]  # Use fill price directly
             next_price = grid_calc.compute_next_level_down(tp_price)
-            
+
+            # Bounds check: compute_next_level_down is raw arithmetic with no OOB guard
+            if not grid_calc.is_within_bounds(next_price):
+                log.info(
+                    f"[SAGA] Next BUY ${next_price:,.0f} is below grid lower bound "
+                    f"${grid_calc.lower:,.0f} — at floor, no more BUY levels to place"
+                )
+                return {"status": "skipped", "reason": "at_grid_lower_bound"}
+
             log.info(f"[SAGA] TP filled @ {fill_data['fill_price']}, calculating new BUY @ {next_price} (TP - 1 step)")
             
             # ============================================================================
@@ -935,7 +951,15 @@ async def create_short_entry_saga(
             
             # SHORT mode: next SELL is UP from current entry
             next_price = grid_calc.compute_next_level_up(fill_data["fill_price"])
-            
+
+            # Bounds check: compute_next_level_up is raw arithmetic with no OOB guard
+            if not grid_calc.is_within_bounds(next_price):
+                log.info(
+                    f"[SHORT-SAGA] Next SELL ${next_price:,.0f} exceeds grid upper bound "
+                    f"${grid_calc.upper:,.0f} — at ceiling, no more SELL levels to place"
+                )
+                return {"status": "skipped", "reason": "at_grid_upper_bound"}
+
             log.info(f"[SHORT-SAGA] Placing next SELL order @ {next_price}")
 
             # Fetch current pending_sell ID so OrderActor can cancel it by known ID.
@@ -1153,7 +1177,15 @@ async def create_short_tp_saga(
             # This prevents placing order 2 steps away from TP
             tp_price = position_removed["tp_price"]
             next_price = grid_calc.compute_next_level_up(tp_price)
-            
+
+            # Bounds check: compute_next_level_up is raw arithmetic with no OOB guard
+            if not grid_calc.is_within_bounds(next_price):
+                log.info(
+                    f"[SHORT-SAGA] Next SELL ${next_price:,.0f} exceeds grid upper bound "
+                    f"${grid_calc.upper:,.0f} — at ceiling, no more SELL levels to place"
+                )
+                return {"status": "skipped", "reason": "at_grid_upper_bound"}
+
             log.info(f"[SHORT-SAGA] TP filled @ {fill_data['fill_price']}, placing new SELL @ {next_price} (TP + 1 step)")
 
             # Fetch current pending_sell ID so OrderActor can cancel it by known ID

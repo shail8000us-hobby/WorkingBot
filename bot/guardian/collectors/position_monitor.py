@@ -299,27 +299,34 @@ class PositionMonitor:
     
     def get_position(self):
         """
-        Get current position object (for compatibility with risk_decision_engine)
-        
+        Get current position object for the monitored symbol only.
+
+        Scoped to self.symbol so that options/other instruments managed by
+        other strategies (e.g. MMM CE/PE lots) don't inflate the size check
+        and trigger a false "Position limit exceeded" STOP signal.
+
         Returns:
-            Position object with size and value attributes
+            Position object with size and value attributes, or None if flat
         """
         try:
             positions = self.fetch_open_positions()
             if not positions:
                 return None
-            
-            # Calculate total position size
-            total_size = sum(float(pos.get('contracts', 0)) for pos in positions)
-            
-            # Create simple position object
+
+            # Only count contracts for the symbol this Guardian instance monitors
+            symbol_positions = [p for p in positions if p.get('symbol') == self.symbol]
+            if not symbol_positions:
+                return None
+
+            total_size = sum(float(pos.get('contracts', 0)) for pos in symbol_positions)
+
             class PositionData:
                 def __init__(self, size, value=0):
                     self.size = size
                     self.value = value
-            
+
             return PositionData(size=total_size, value=abs(total_size))
-            
+
         except Exception as e:
             logger.error(f"Error getting position: {e}")
             return None

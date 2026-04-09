@@ -43,6 +43,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from .mmmx_constants import (
     LOT_SIZE_BTC,
     SMART_EXECUTE_REPRICE_ATTEMPTS,
+    TRANCHE_FILL_TIMEOUT_SECS,
     SessionStatus,
     TrncType,
     TRANCHE_COUNT,
@@ -321,13 +322,14 @@ async def deploy_manual_tranche1(
         f"CE {ce_symbol}×{ce_lots} | PE {pe_symbol}×{pe_lots} | spot={spot}"
     )
 
-    # -- CE sell ─────────────────────────────────────────────────────────────────
+    # -- CE sell — patient execution for illiquid monthly options ───────────────
     ce_result = await executor.smart_execute(
         symbol=ce_symbol,
         side='sell',
         size=ce_lots,
         reduce_only=False,
         max_reprice_attempts=SMART_EXECUTE_REPRICE_ATTEMPTS,
+        fill_timeout_secs=TRANCHE_FILL_TIMEOUT_SECS,
         session_id=session_id,
         tranche_id=tranche_id,
         action='DEPLOY_CE_TR1',
@@ -339,13 +341,14 @@ async def deploy_manual_tranche1(
         )
         return {'success': False, 'reason': f"CE sell failed: {ce_result.reason}"}
 
-    # -- PE sell ─────────────────────────────────────────────────────────────────
+    # -- PE sell — patient execution for illiquid monthly options ────────────────
     pe_result = await executor.smart_execute(
         symbol=pe_symbol,
         side='sell',
         size=pe_lots,
         reduce_only=False,
         max_reprice_attempts=SMART_EXECUTE_REPRICE_ATTEMPTS,
+        fill_timeout_secs=TRANCHE_FILL_TIMEOUT_SECS,
         session_id=session_id,
         tranche_id=tranche_id,
         action='DEPLOY_PE_TR1',
@@ -820,13 +823,14 @@ async def execute_tranche_deploy(
             session['deployment_eligible_tranches'] = [tranche_id] + queue
             return None
 
-    # Step 5: CE sell
+    # Step 5: CE sell — patient execution for illiquid monthly options
     ce_result = await executor.smart_execute(
         symbol=strikes.ce_symbol,
         side='sell',
         size=lots,
         reduce_only=False,
         max_reprice_attempts=SMART_EXECUTE_REPRICE_ATTEMPTS,
+        fill_timeout_secs=TRANCHE_FILL_TIMEOUT_SECS,
         session_id=session_id,
         tranche_id=tranche_id,
         action=f'DEPLOY_CE_TR{tranche_id}',
@@ -847,6 +851,7 @@ async def execute_tranche_deploy(
         size=lots,
         reduce_only=False,
         max_reprice_attempts=SMART_EXECUTE_REPRICE_ATTEMPTS,
+        fill_timeout_secs=TRANCHE_FILL_TIMEOUT_SECS,
         session_id=session_id,
         tranche_id=tranche_id,
         action=f'DEPLOY_PE_TR{tranche_id}',

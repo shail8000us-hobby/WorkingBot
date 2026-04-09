@@ -6,9 +6,6 @@ import { Alert, Snackbar } from '@mui/material';
 // Week 2: Zustand store and data aggregator integration
 import { dataAggregator } from './services/dataAggregator';
 
-// Week 3: Feature flags and Guardian Dashboard
-import { useFeatureFlag } from './utils/featureFlags.ts';
-
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
 import { userPreferences } from './utils/storage.ts';
@@ -70,7 +67,6 @@ const MMMXPage = React.lazy(() => import('./pages/MMMXPage'));
 const ICPage = React.lazy(() => import('./pages/ICPage'));
 const SSDHPage = React.lazy(() => import('./pages/SSDHPage'));
 const PortfolioMarginPage = React.lazy(() => import('./pages/PortfolioMarginPage'));
-const GuardianPage = React.lazy(() => import('./pages/GuardianPage'));
 const MLTradingPage = React.lazy(() => import('./pages/MLTradingPage'));
 const BotManagementPage = React.lazy(() => import('./pages/BotManagementPage'));
 const EmergencyPage = React.lazy(() => import('./pages/EmergencyPage'));
@@ -249,13 +245,10 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []); // Empty deps = run only once on mount
 
-  // Week 3: Check guardian dashboard feature flag
-  const { enabled: guardianEnabled } = useFeatureFlag('guardian_dashboard');
-
   // Phase 2.3: Navigation sections extracted to config/navigationSections.js
   const sections = useMemo(
-    () => buildSections({ pendingOrders, guardianEnabled }),
-    [pendingOrders, guardianEnabled]
+    () => buildSections({ pendingOrders }),
+    [pendingOrders]
   );
 
   useEffect(() => {
@@ -378,7 +371,6 @@ function App() {
                   <Route path="/botmanagement" element={<BotManagementPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/emergency" element={<EmergencyPage isMobile={isMobile} socket={socket} />} />
                   <Route path="/intelligence" element={<IntelligencePage isMobile={isMobile} botIsRunning={botIsRunning} />} />
-                  <Route path="/guardian" element={<GuardianPage guardianEnabled={guardianEnabled} />} />
                   <Route path="/zero_dte" element={<ZeroDTEPage />} />
                   <Route path="/portfolio_margin" element={<PortfolioMarginPage />} />
                   <Route path="/patience" element={<PatiencePage />} />

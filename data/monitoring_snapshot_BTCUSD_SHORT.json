@@ -1,103 +1,40 @@
 {
-  "timestamp": 1775628303.0181918,
+  "timestamp": 1775749208.1821928,
   "mode": "SHORT",
   "symbol": "BTCUSD",
-  "uptime": 185373.675344944,
+  "uptime": 94515.54362988472,
   "state": {
     "open_tranches": [
       {
-        "position_id": "2ed10bf5-4a78-43b6-805e-bb8fbd21e6bf",
-        "entry_price": 68396.0,
-        "tp_price": 67896.0,
-        "size": 500,
-        "correlation_id": "fill-440ba8427e6a41198be327597cd92b29-1775558773382",
-        "timestamp": 1775558774.03162,
-        "entry_order_id": "2ed10bf5-4a78-43b6-805e-bb8fbd21e6bf"
-      },
-      {
-        "position_id": "b4bae4d3-fa57-433d-a0e7-f7af9cdb6223",
-        "entry_price": 68316.5,
-        "tp_price": 67816.5,
-        "size": 500,
-        "correlation_id": "fill-9149e36341fa4da0ab992748c4daa2f7-1775559075757",
-        "timestamp": 1775559076.3613682,
-        "entry_order_id": "b4bae4d3-fa57-433d-a0e7-f7af9cdb6223"
-      },
-      {
-        "position_id": "2b7c23c0-cab4-4f86-be96-4ce205bf8b4e",
-        "entry_price": 68200.5,
-        "tp_price": 67700.5,
-        "size": 500,
-        "correlation_id": "fill-1f6d366630ad4d13b9d316bd0dbd1593-1775559197372",
-        "timestamp": 1775559197.965496,
-        "entry_order_id": "2b7c23c0-cab4-4f86-be96-4ce205bf8b4e"
-      },
-      {
-        "position_id": "890673f0-d330-4d15-81d4-256049a005c4",
-        "entry_price": 69000.0,
-        "tp_price": 68500.0,
-        "size": 5,
-        "correlation_id": "fill-c186c32d913b49ee918e77810fa6c81e-1775591481078",
-        "timestamp": 1775591481.983701,
-        "entry_order_id": "890673f0-d330-4d15-81d4-256049a005c4"
-      },
-      {
-        "position_id": "d267f6b7-0921-4780-9c9d-718ce50790bb",
-        "entry_price": 69500.0,
-        "tp_price": 69000.0,
-        "size": 5,
-        "correlation_id": "fill-6bcf53a543b943e9b06f8c53413776eb-1775592416490",
-        "timestamp": 1775592417.8116539,
-        "entry_order_id": "d267f6b7-0921-4780-9c9d-718ce50790bb"
-      },
-      {
-        "position_id": "8d92b91b-43d6-4bfe-a0d3-f8ba97c216fb",
-        "entry_price": 70000.0,
-        "tp_price": 69500.0,
-        "size": 5,
-        "correlation_id": "fill-dbc9789b6bab458da5651f434af50258-1775598362269",
-        "timestamp": 1775598363.42303,
-        "entry_order_id": "8d92b91b-43d6-4bfe-a0d3-f8ba97c216fb"
-      },
-      {
-        "position_id": "3cc92941-8efc-4b3d-815d-ebc88d486c49",
-        "entry_price": 70500.0,
-        "tp_price": 70000.0,
-        "size": 5,
-        "correlation_id": "fill-988fe0950a694db2862f201562b2b350-1775599565590",
-        "timestamp": 1775599566.8552709,
-        "entry_order_id": "3cc92941-8efc-4b3d-815d-ebc88d486c49"
-      },
-      {
-        "position_id": "20d0e242-a4f6-4ca4-bd45-3cb82d102bde",
-        "entry_price": 71000.0,
-        "tp_price": 70500.0,
-        "size": 5,
-        "correlation_id": "fill-e1c2eb46e1714377a07825fbbe13d8e9-1775601354920",
-        "timestamp": 1775601358.494251,
-        "entry_order_id": "20d0e242-a4f6-4ca4-bd45-3cb82d102bde"
-      },
-      {
-        "position_id": "63ce5ab6-ad42-4b26-bb2b-26484a73984c",
+        "position_id": "40467054-a68d-4ab4-83cb-8202d7bff813",
         "entry_price": 71500.0,
         "tp_price": 71000.0,
         "size": 5,
-        "correlation_id": "fill-b074d7ca8db547039a00e02326ab179d-1775602750459",
-        "timestamp": 1775602751.628785,
-        "entry_order_id": "63ce5ab6-ad42-4b26-bb2b-26484a73984c"
+        "correlation_id": "fill-c9f385aa93c14ceb882e5f0454cee7d6-1775747756079",
+        "timestamp": 1775747756.924474,
+        "entry_order_id": "40467054-a68d-4ab4-83cb-8202d7bff813"
+      },
+      {
+        "position_id": "3c0826e2-1a97-4a41-b7a5-bddb41467ef7",
+        "entry_price": 72000.0,
+        "tp_price": 71500.0,
+        "size": 5,
+        "correlation_id": "fill-a1f69e29822e4b539d828d0de2df6db6-1775748882595",
+        "timestamp": 1775748883.395914,
+        "entry_order_id": "3c0826e2-1a97-4a41-b7a5-bddb41467ef7"
       }
     ],
     "pending_buy": null,
     "pending_sell": {
-      "order_id": 1263527279,
+      "order_id": 1266146947,
       "price": 72000.0,
       "size": 5,
-      "timestamp": 1775610325.2381282
+      "timestamp": 1775747762.024151
     },
     "last_buy_order_time": 0,
-    "last_sell_order_time": 1775610325.238131,
-    "total_positions_opened": 29,
-    "total_positions_closed": 19,
+    "last_sell_order_time": 1775747762.024153,
+    "total_positions_opened": 37,
+    "total_positions_closed": 34,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
       "total_recoveries": 0,
@@ -110,63 +47,44 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 9,
-      "total_opened": 29,
-      "total_closed": 19,
-      "avg_entry_price": 69601.44444444444,
-      "total_size": 1530,
-      "oldest_position_age": 69528.98629999161,
+      "open_count": 2,
+      "total_opened": 37,
+      "total_closed": 34,
+      "avg_entry_price": 71750.0,
+      "total_size": 10,
+      "oldest_position_age": 1451.2575759887695,
       "has_pending_buy": false,
       "has_pending_sell": true
     },
     "orders": {
-      "active_orders": 31,
-      "total_placed": 43,
-      "total_cancelled": 15,
-      "total_failures": 4,
-      "success_rate": 0.9148936170212766,
+      "active_orders": 12,
+      "total_placed": 16,
+      "total_cancelled": 4,
+      "total_failures": 0,
+      "success_rate": 1.0,
       "active_order_ids": [
-        1260306861,
-        1260634193,
-        1260668157,
-        1260668395,
-        1260729255,
-        1260729351,
-        1261323807,
-        1262383497,
-        1262392103,
-        1262402428,
-        1262408224,
-        1262408478,
-        1262408692,
-        1263259785,
-        1263259897,
-        1263280126,
-        1263280204,
-        1263319074,
-        1263333246,
-        1263342740,
-        1263342805,
-        1263354615,
-        1263354948,
-        1263377159,
-        1263377222,
-        1263401145,
-        1263401228,
-        1263426401,
-        1263426488,
-        1263438742,
-        1263527279
+        1264381859,
+        1264382803,
+        1264563425,
+        1264794509,
+        1265015355,
+        1265084824,
+        1265122558,
+        1265654085,
+        1265933858,
+        1266146689,
+        1266146947,
+        1266199901
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 32,
-      "total_completed": 21,
-      "total_failed": 7,
-      "total_compensated": 4,
-      "success_rate": 0.65625,
-      "compensation_rate": 0.125,
+      "total_started": 14,
+      "total_completed": 10,
+      "total_failed": 4,
+      "total_compensated": 0,
+      "success_rate": 0.7142857142857143,
+      "compensation_rate": 0.0,
       "active_saga_ids": []
     },
     "actors": {
@@ -175,10 +93,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 117887,
+        "processed_count": 60550,
         "error_count": 0,
-        "avg_processing_time_ms": 0.8572571258991957,
-        "max_processing_time_ms": 66.99408299755305,
+        "avg_processing_time_ms": 0.05091166705824435,
+        "max_processing_time_ms": 0.39058306720107794,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -186,16 +104,16 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 36478,
+        "processed_count": 18499,
         "error_count": 0,
-        "avg_processing_time_ms": 0.10013921069912612,
-        "max_processing_time_ms": 3.4077909658662975,
+        "avg_processing_time_ms": 39.34536166721955,
+        "max_processing_time_ms": 3930.2652090555057,
         "error_rate": 0.0
       }
     },
-    "fills_processed": 32,
-    "sagas_completed": 21,
-    "sagas_failed": 11
+    "fills_processed": 14,
+    "sagas_completed": 10,
+    "sagas_failed": 4
   },
   "grid_config": {
     "lower": 66000.0,
@@ -207,8 +125,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 71587.0,
-      "price_age_seconds": 2.1163928508758545,
+      "price": 71896.0,
+      "price_age_seconds": 1.713149070739746,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -218,7 +136,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 36886,
+        "total_updates": 18800,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,
@@ -228,106 +146,8 @@
     "recent_decisions": [
       {
         "type": "SELL",
-        "target_price": 69500.0,
-        "current_price": 69056.0,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775447722.8726761
-      },
-      {
-        "type": "SELL",
-        "target_price": 70000.0,
-        "current_price": 69685.5,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775469282.096425
-      },
-      {
-        "type": "SELL",
-        "target_price": 70000.0,
-        "current_price": 69521.5,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775494940.699709
-      },
-      {
-        "type": "SELL",
-        "target_price": 69000.0,
-        "current_price": 68781.5,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775557565.4316401
-      },
-      {
-        "type": "SELL",
-        "target_price": 69000.0,
-        "current_price": 68466.0,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775558524.9484851
-      },
-      {
-        "type": "SELL",
-        "target_price": 69000.0,
-        "current_price": 68223.0,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775559203.356765
-      },
-      {
-        "type": "SELL",
-        "target_price": 70000.0,
-        "current_price": 69513.0,
-        "price_age": null,
-        "grid_aligned": true,
-        "capacity_available": true,
-        "volatility_safe": true,
-        "approved": false,
-        "reasons": [
-          "Grid level placement (SHORT mode)"
-        ],
-        "timestamp": 1775597279.3205261
-      },
-      {
-        "type": "SELL",
         "target_price": 72000.0,
-        "current_price": 71499.0,
+        "current_price": 71970.5,
         "price_age": null,
         "grid_aligned": true,
         "capacity_available": true,
@@ -336,7 +156,21 @@
         "reasons": [
           "Grid level placement (SHORT mode)"
         ],
-        "timestamp": 1775610322.481458
+        "timestamp": 1775655205.758291
+      },
+      {
+        "type": "SELL",
+        "target_price": 71500.0,
+        "current_price": 71077.5,
+        "price_age": null,
+        "grid_aligned": true,
+        "capacity_available": true,
+        "volatility_safe": true,
+        "approved": false,
+        "reasons": [
+          "Grid level placement (SHORT mode)"
+        ],
+        "timestamp": 1775659513.9060469
       }
     ],
     "anomalies": []

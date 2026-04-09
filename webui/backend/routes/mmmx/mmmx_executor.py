@@ -53,6 +53,7 @@ from .mmmx_constants import (
     LOT_SIZE_BTC,
     SMART_EXECUTE_REPRICE_ATTEMPTS,
     FILL_TIMEOUT_SECS,
+    TRANCHE_FILL_TIMEOUT_SECS,
     BEING_CLOSED_TTL_SECS,
     FEE_RATE_MAKER,
     FEE_RATE_TAKER,
@@ -491,6 +492,7 @@ class MMMXExecutor:
         size: int,
         reduce_only: bool = False,
         max_reprice_attempts: int = None,
+        fill_timeout_secs: int = None,
         use_bid_entry: bool = False,
         session_id: str = None,
         tranche_id: Any = None,
@@ -506,6 +508,11 @@ class MMMXExecutor:
             size:                 Number of lots
             reduce_only:          Only reduce an existing position
             max_reprice_attempts: Override SMART_EXECUTE_REPRICE_ATTEMPTS
+            fill_timeout_secs:    Seconds to wait per reprice attempt (default:
+                                  FILL_TIMEOUT_SECS=30).  Pass
+                                  TRANCHE_FILL_TIMEOUT_SECS for illiquid
+                                  monthly options — allows the limit order to
+                                  remain at mid for ~8.5 min before repricing.
             use_bid_entry:        BUY orders start at best_bid (cheaper, maker)
             session_id:           For activity/audit logging
             tranche_id:           For audit trail
@@ -521,6 +528,11 @@ class MMMXExecutor:
             max_reprice_attempts
             if max_reprice_attempts is not None
             else SMART_EXECUTE_REPRICE_ATTEMPTS
+        )
+        _fill_timeout = (
+            fill_timeout_secs
+            if fill_timeout_secs is not None
+            else FILL_TIMEOUT_SECS
         )
         _aggressive_from = (_max // 2) + 1
         mode = 'limit'
@@ -760,7 +772,7 @@ class MMMXExecutor:
             attempts += 1
 
             filled, fill_data = await self._wait_for_fill(
-                order_id, product_id, FILL_TIMEOUT_SECS, rest,
+                order_id, product_id, _fill_timeout, rest,
             )
 
             if filled:

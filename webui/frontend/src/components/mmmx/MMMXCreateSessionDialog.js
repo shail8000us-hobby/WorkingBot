@@ -201,22 +201,85 @@ export function MMMXCreateSessionDialog({ open, onClose, onCreated }) {
   );
 }
 
-export function MMMXDeployTr1Dialog({ open, sessionId, targetExpiry, onClose, onDeployed }) {
-  const [form, setForm] = useState({
+// TRANCHE_COUNT is always 10 per spec
+const TRANCHE_COUNT = 10;
+
+// Compute mid-price from bid/ask, fallback to mark.
+function _mid(bid, ask, mark) {
+  if (bid > 0 && ask > 0) return parseFloat(((bid + ask) / 2).toFixed(4));
+  if (mark > 0) return parseFloat(mark);
+  return '';
+}
+
+export function MMMXDeployTr1Dialog({ open, sessionId, session, targetExpiry, onClose, onDeployed }) {
+  // lots_per_tranche = floor(total_budget_lots / 10), minimum 1
+  const lotsPerTranche = Math.max(1, Math.floor(
+    (session?.params?.total_budget_lots ?? 100) / TRANCHE_COUNT
+  ));
+
+  const blankForm = () => ({
     ce_symbol: '', ce_strike: '', pe_symbol: '', pe_strike: '',
-    lots: 10, ce_premium: '', pe_premium: '', ce_delta: '', pe_delta: '',
+    lots: lotsPerTranche,
+    ce_premium: '', pe_premium: '', ce_delta: '', pe_delta: '',
     spot: '', iv_rank: '',
   });
+
+  const [form, setForm] = useState(blankForm);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanMsg, setScanMsg] = useState('');
 
+  // On open: reset + auto-fetch strike data from exchange
   useEffect(() => {
-    if (open) {
-      setForm({ ce_symbol: '', ce_strike: '', pe_symbol: '', pe_strike: '',
-        lots: 10, ce_premium: '', pe_premium: '', ce_delta: '', pe_delta: '', spot: '', iv_rank: '' });
-      setError('');
-    }
+    if (!open) return;
+    const fresh = blankForm();
+    setForm(fresh);
+    setError('');
+    setScanMsg('');
+
+    if (!sessionId) return;
+    const otmPct = session?.params?.otm_distance_pct ?? 15;
+    setScanning(true);
+    setScanMsg('Fetching live strikes from exchange…');
+    mmmxService.scanStrikes(sessionId, otmPct)
+      .then(r => {
+        const data = r.data ?? r;
+        if (data?.ce && data?.pe) {
+          const ceBid  = data.ce.bid  ?? 0;
+          const ceAsk  = data.ce.ask  ?? 0;
+          const peBid  = data.pe.bid  ?? 0;
+          const peAsk  = data.pe.ask  ?? 0;
+          setForm(prev => ({
+            ...prev,
+            ce_symbol:  data.ce.symbol  ?? '',
+            ce_strike:  data.ce.strike  ?? '',
+            ce_delta:   data.ce.delta != null ? parseFloat(data.ce.delta.toFixed(4)) : '',
+            ce_premium: _mid(ceBid, ceAsk, data.ce.mark_price),
+            pe_symbol:  data.pe.symbol  ?? '',
+            pe_strike:  data.pe.strike  ?? '',
+            pe_delta:   data.pe.delta != null ? parseFloat(data.pe.delta.toFixed(4)) : '',
+            pe_premium: _mid(peBid, peAsk, data.pe.mark_price),
+            spot:       data.spot ? parseFloat(data.spot.toFixed(2)) : '',
+          }));
+          setScanMsg('');
+        } else if (data?.reason === 'no_expiry_set') {
+          setScanMsg('No expiry set — enter symbols manually.');
+        } else {
+          setScanMsg('Live chain unavailable — enter symbols manually.');
+        }
+      })
+      .catch(() => setScanMsg('Strike scan failed — enter symbols manually.'))
+      .finally(() => setScanning(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sessionId]);
+
+  // Recompute lots when session params change (e.g., dialog stays mounted)
+  useEffect(() => {
+    if (!open) return;
+    setForm(prev => ({ ...prev, lots: lotsPerTranche }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lotsPerTranche, open]);
 
   const set = (k, v) => setForm(p => ({ ...p, [k]: v }));
 
@@ -282,6 +345,15 @@ export function MMMXDeployTr1Dialog({ open, sessionId, targetExpiry, onClose, on
       <DialogContent>
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 1 }}>
 
+          {/* Scan status banner */}
+          {(scanning || scanMsg) && (
+            <Alert severity={scanning ? 'info' : scanMsg === '' ? 'success' : 'warning'}
+              icon={scanning ? <CircularProgress size={16} color="inherit" /> : undefined}
+              sx={{ py: 0.4 }}>
+              {scanning ? scanMsg || 'Fetching live strikes…' : scanMsg}
+            </Alert>
+          )}
+
           {/* CE side */}
           <Box sx={{ p: 1.5, border: '1px solid', borderColor: 'success.dark', borderRadius: 1 }}>
             <Typography variant="subtitle2" color="success.main" sx={{ mb: 1, fontWeight: 700 }}>
@@ -294,9 +366,10 @@ export function MMMXDeployTr1Dialog({ open, sessionId, targetExpiry, onClose, on
                 onChange={e => { set('ce_symbol', e.target.value); autoFillStrike(e.target.value, 'ce'); }} />
               <TextField size="small" type="number" label="CE Strike"
                 value={form.ce_strike} onChange={e => set('ce_strike', e.target.value)} />
-              <TextField size="small" type="number" label="CE Premium (USD)"
+              <TextField size="small" type="number" label="CE Premium / Mid (USD)"
+                helperText="Bid/ask mid — order will be at this price"
                 value={form.ce_premium} onChange={e => set('ce_premium', e.target.value)} />
-              <TextField size="small" type="number" label="CE Delta" inputProps={{ step: 0.01 }}
+              <TextField size="small" type="number" label="CE Delta" inputProps={{ step: 0.001 }}
                 value={form.ce_delta} onChange={e => set('ce_delta', e.target.value)} />
             </Box>
           </Box>
@@ -313,20 +386,22 @@ export function MMMXDeployTr1Dialog({ open, sessionId, targetExpiry, onClose, on
                 onChange={e => { set('pe_symbol', e.target.value); autoFillStrike(e.target.value, 'pe'); }} />
               <TextField size="small" type="number" label="PE Strike"
                 value={form.pe_strike} onChange={e => set('pe_strike', e.target.value)} />
-              <TextField size="small" type="number" label="PE Premium (USD)"
+              <TextField size="small" type="number" label="PE Premium / Mid (USD)"
+                helperText="Bid/ask mid — order will be at this price"
                 value={form.pe_premium} onChange={e => set('pe_premium', e.target.value)} />
-              <TextField size="small" type="number" label="PE Delta" inputProps={{ step: 0.01 }}
+              <TextField size="small" type="number" label="PE Delta" inputProps={{ step: 0.001 }}
                 value={form.pe_delta} onChange={e => set('pe_delta', e.target.value)} />
             </Box>
           </Box>
 
           {/* Common */}
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 1.5 }}>
-            <TextField size="small" type="number" label="Lots per Side"
+            <TextField size="small" type="number" label="Lots per Side (this tranche)"
+              helperText={`Budget ÷ 10 tranches = ${lotsPerTranche}`}
               value={form.lots} inputProps={{ min: 1 }}
               onChange={e => set('lots', e.target.value)} />
             <TextField size="small" type="number" label="Spot (USD)"
-              placeholder="optional"
+              placeholder="auto-filled"
               value={form.spot} onChange={e => set('spot', e.target.value)} />
             <TextField size="small" type="number" label="IV Rank (0-100)"
               placeholder="optional"
@@ -338,7 +413,7 @@ export function MMMXDeployTr1Dialog({ open, sessionId, targetExpiry, onClose, on
       </DialogContent>
       <DialogActions sx={{ px: 3, pb: 2 }}>
         <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button variant="contained" color="success" onClick={handleDeploy} disabled={busy}
+        <Button variant="contained" color="success" onClick={handleDeploy} disabled={busy || scanning}
           startIcon={busy ? <CircularProgress size={14} color="inherit" /> : <RocketLaunchIcon />}>
           {busy ? 'Deploying...' : 'Deploy Tranche 1'}
         </Button>

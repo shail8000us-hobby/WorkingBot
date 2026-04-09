@@ -628,6 +628,7 @@ export default function MMMXDashboard() {
       <MMMXDeployTr1Dialog
         open={!!deployFor}
         sessionId={deployFor}
+        session={session}
         targetExpiry={targetExpiry}
         onClose={() => setDeployFor(null)}
         onDeployed={handleDeployed}

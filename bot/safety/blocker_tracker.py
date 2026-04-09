@@ -625,7 +625,7 @@ class BlockerTracker:
                     out = subprocess.check_output(
                         [
                             'bash', '-lc',
-                            "ps aux | grep -E 'python(3)? +-m +bot\.guardian\.guardian_bot' | grep -v grep || true"
+                            r"ps aux | grep -E 'python(3)? +-m +bot\.guardian\.guardian_bot' | grep -v grep || true"
                         ]
                     ).decode().strip()
                     guardian_running = len(out) > 0

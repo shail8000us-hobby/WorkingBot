@@ -438,6 +438,15 @@ class MMMSafety:
             # Skip all past history to avoid false COOLDOWN on session restore/upgrade.
             last_checked_idx = len(algo_history)
             session['_whipsaw_last_checked_idx'] = last_checked_idx
+        elif last_checked_idx > len(algo_history):
+            # History was compacted/trimmed — stale index would make the guard permanently
+            # blind (len > stale_idx is always False until history regrows past the old count).
+            log.warning(
+                f"[whipsaw] adjustment_history shrank from idx {last_checked_idx} to "
+                f"len {len(algo_history)} — resetting index to avoid silent guard failure"
+            )
+            last_checked_idx = len(algo_history)
+            session['_whipsaw_last_checked_idx'] = last_checked_idx
         if len(algo_history) > last_checked_idx and len(algo_history) >= 2:
             window_cutoff = now - timedelta(minutes=window_mins)
 

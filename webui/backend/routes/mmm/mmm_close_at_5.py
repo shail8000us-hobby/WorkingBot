@@ -391,6 +391,14 @@ async def close_position(
         f"({symbol}), current ~{position.get('current_premium', 0):.2f}"
     )
 
+    # For close_at_5: cap reprice at the configured threshold so we never buy back
+    # above the threshold after a premium bounce during the fill-wait window.
+    _max_buy_price = None
+    if mechanism == 'close_at_5':
+        _threshold = session.get('params', {}).get('close_at_threshold', 5.0)
+        # Add a small buffer (1 tick = 0.5) to tolerate rounding; threshold itself is the hard cap
+        _max_buy_price = float(_threshold)
+
     try:
         result = await executor.smart_execute(
             symbol=symbol,
@@ -399,6 +407,7 @@ async def close_position(
             reduce_only=True,
             session_id=session.get('session_id', ''),
             use_bid_entry=(mechanism == 'close_at_5'),  # Bid-entry for close_at_5: cheaper maker fill
+            max_buy_price=_max_buy_price,               # Abort reprice if premium rises above threshold
         )
 
         if not result.get('success'):

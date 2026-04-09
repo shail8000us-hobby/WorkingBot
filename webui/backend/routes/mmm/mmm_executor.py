@@ -184,10 +184,16 @@ class MMMExecutor:
         max_reprice_attempts: int = None,  # Override default MAX_REPRICE_ATTEMPTS
         use_bid_entry: bool = False,       # Start BUY orders at best_bid (maker, cheaper)
         client_order_id: str = None,       # Optional override; auto-generated if None
+        max_buy_price: float = None,       # Hard price cap for BUY orders — abort reprice if exceeded
     ) -> Dict[str, Any]:
         """
         Place order at mid-price (or bid for buys when use_bid_entry=True),
         wait 60s for fill, reprice if needed.
+
+        max_buy_price: When set (side='buy'), the reprice loop will NOT amend/replace
+        the order at a price above this cap. Instead, the order is cancelled and
+        smart_execute returns failure. Used by close_at_threshold to prevent
+        buying back a position at a premium above the configured threshold.
 
         This is the main entry point for all MMM order execution.
 
@@ -271,6 +277,23 @@ class MMMExecutor:
                 mid_price = round(round(mid_price / tick) * tick, 2)
         else:
             mid_price = self._calculate_mid_price(quotes)
+
+        # max_buy_price cap: reject even the initial placement if premium has already
+        # bounced above the threshold between scan time and execution time.
+        if max_buy_price is not None and side.lower() == 'buy' and mid_price > max_buy_price:
+            log.warning(
+                f"⛔ Initial placement aborted: mid_price ${mid_price:.2f} > max_buy_price "
+                f"${max_buy_price:.2f} for {symbol}. Premium bounced above threshold before order placed."
+            )
+            _log_activity('order_cancelled',
+                f"Initial placement aborted — premium ${mid_price:.2f} > cap ${max_buy_price:.2f} (threshold guard)",
+                session_id=session_id, severity='warning',
+                details={'symbol': symbol, 'mid_price': mid_price, 'max_buy_price': max_buy_price})
+            return self._failure(
+                f'Initial placement aborted: premium ${mid_price:.2f} already above close_at_threshold cap ${max_buy_price:.2f}',
+                symbol, side, size,
+            )
+
         if mid_price <= 0:
             _log_activity('order_failed',
                 f"{side.upper()} {symbol}: Invalid mid-price (bid={quotes.get('best_bid', 0)}, ask={quotes.get('best_ask', 0)})",
@@ -522,6 +545,27 @@ class MMMExecutor:
             if new_mid <= 0:
                 log.warning("Invalid new mid-price, keeping current price")
                 continue
+
+            # max_buy_price cap: abort if market has moved above the allowed ceiling.
+            # This prevents close_at_threshold from buying back at a price > threshold
+            # after a premium bounce during the reprice window.
+            if max_buy_price is not None and side.lower() == 'buy' and new_mid > max_buy_price:
+                log.warning(
+                    f"⛔ Reprice aborted: new_mid ${new_mid:.2f} > max_buy_price ${max_buy_price:.2f} "
+                    f"for {symbol}. Cancelling order {order_id} — premium rose above threshold."
+                )
+                _log_activity('order_cancelled',
+                    f"Reprice cancelled — premium ${new_mid:.2f} > cap ${max_buy_price:.2f} (threshold guard)",
+                    session_id=session_id, severity='warning',
+                    details={'order_id': order_id, 'new_mid': new_mid, 'max_buy_price': max_buy_price})
+                await self._cancel_order(order_id, product_id, rest_client)
+                elapsed = time.time() - start_time
+                return self._failure(
+                    f'Reprice aborted: premium ${new_mid:.2f} rose above close_at_threshold cap ${max_buy_price:.2f}',
+                    symbol, side, size,
+                    order_id=order_id, attempts=attempts,
+                    total_time=round(elapsed, 2),
+                )
 
             # After halfway through attempts: switch to best_bid for sells (more aggressive)
             # This widens our chances of a fill when mid-price is not attracting buyers

@@ -8,8 +8,8 @@ const TodosPage = React.memo(function TodosPage() {
     <div className="grid gap-2">
       <CollapsibleCard
         id="todo-list"
-        title="📝 Improvement Todo List"
-        subtitle="Track your ideas and improvements for the trading bot"
+        title="📝 Simple To-do List"
+        subtitle="Add a title and describe the work to do in plain language"
         accent="amber"
         defaultOpen={true}
       >

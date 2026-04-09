@@ -64,7 +64,6 @@ export const prefetchForRoute = (routeName: string): void => {
     dashboard: ['monitoring', 'charts'],
     options: ['optionsChain', 'strategyBuilder'],
     config: ['configPanel', 'logsPanel'],
-    guardian: ['guardianDashboard', 'guardianPanel'],
   };
 
   const chunks = routePrefetchMap[routeName];

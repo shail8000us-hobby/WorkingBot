@@ -186,6 +186,14 @@ export default function MMMXStatusTab({
                       {data.symbol}
                     </Typography>
                   )}
+                  {(data.bid != null || data.ask != null) && (
+                    <Typography variant="caption" sx={{ display: 'block', fontFamily: 'monospace', color: '#aef' }}>
+                      Bid: ${data.bid != null ? fmt(data.bid) : '—'} · Ask: ${data.ask != null ? fmt(data.ask) : '—'}
+                      {data.bid > 0 && data.ask > 0 && (
+                        <> · Mid: <b>${fmt((data.bid + data.ask) / 2)}</b></>
+                      )}
+                    </Typography>
+                  )}
                   {data.mark_price != null && (
                     <Typography variant="caption" color="text.secondary">
                       Mark: ${fmt(data.mark_price)} · IV: {data.iv != null ? `${fmt(data.iv, 1)}%` : '—'} · Δ: {data.delta != null ? fmt(data.delta, 3) : '—'}

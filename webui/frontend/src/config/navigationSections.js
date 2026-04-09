@@ -6,7 +6,7 @@
  *
  * Usage:
  *   import { buildSections } from '../config/navigationSections';
- *   const sections = useMemo(() => buildSections({ pendingOrders, guardianEnabled }), [pendingOrders, guardianEnabled]);
+ *   const sections = useMemo(() => buildSections({ pendingOrders }), [pendingOrders]);
  */
 
 import {
@@ -38,10 +38,9 @@ import {
  *
  * @param {Object} opts
  * @param {number|null} opts.pendingOrders  - pending order count (badge)
- * @param {boolean}     opts.guardianEnabled - whether the Guardian dashboard feature flag is on
  * @returns {Array} sections list consumed by Sidebar and MobileNav
  */
-export function buildSections({ pendingOrders, guardianEnabled }) {
+export function buildSections({ pendingOrders }) {
   return [
     // ── Grid Bot ──────────────────────────────────────────────
     {
@@ -205,18 +204,6 @@ export function buildSections({ pendingOrders, guardianEnabled }) {
       description: 'Track improvements and ideas for the trading bot',
       group: 'System',
     },
-    // Week 3: Guardian Dashboard (feature flag controlled)
-    ...(guardianEnabled
-      ? [
-        {
-          id: 'guardian',
-          label: '🛡️ Guardian',
-          icon: ShieldCheck,
-          description: 'WebUI robustness monitor - circuit breakers, metrics, health',
-          group: 'System',
-        },
-      ]
-      : []),
     // ── Labs ─────────────────────────────────────────────────
     {
       id: 'experimental',

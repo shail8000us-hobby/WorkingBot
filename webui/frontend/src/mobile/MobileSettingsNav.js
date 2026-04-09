@@ -85,14 +85,6 @@ const MobileSettingsNav = () => {
                 route="/botmanagement"
             />
 
-            {/* Guardian */}
-            <SettingsItem
-                icon="🛡️"
-                title="Guardian Monitor"
-                description="Circuit breakers, health metrics, robustness tracking"
-                route="/guardian"
-            />
-
             {/* Options Settings */}
             <SettingsItem
                 icon="📈"
