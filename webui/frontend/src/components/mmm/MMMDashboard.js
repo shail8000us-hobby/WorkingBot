@@ -703,6 +703,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     desired_ce_premium: 100,
     desired_pe_premium: 100,
     initial_lots: 1,
+    straddle_roll_max_per_session: 3,
     expiry: '',
     adjustment_interval: 300,
     close_at_threshold: 5,
@@ -834,6 +835,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
           expiry: params.expiry,
           dte_category: 'SHORT_STRADDLE',
           initial_lots: params.initial_lots,
+          straddle_roll_max_per_session: params.straddle_roll_max_per_session,
           desired_ce_premium: params.desired_ce_premium,
           desired_pe_premium: params.desired_pe_premium,
         };
@@ -1099,6 +1101,20 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               inputProps={{ min: 1 }}
             />
           </Grid>
+          {dtePreset === 'SHORT_STRADDLE' && (
+            <Grid item xs={4}>
+              <TextField
+                label="Max Rolls / Session"
+                type="number"
+                value={params.straddle_roll_max_per_session}
+                onChange={(e) => handleParamChange('straddle_roll_max_per_session', parseInt(e.target.value, 10) || 1)}
+                fullWidth
+                size="small"
+                inputProps={{ min: 1, max: 20 }}
+                helperText="Required — no default"
+              />
+            </Grid>
+          )}
           <Grid item xs={4}>
             <FormControl fullWidth size="small">
               <InputLabel>Expiry</InputLabel>
