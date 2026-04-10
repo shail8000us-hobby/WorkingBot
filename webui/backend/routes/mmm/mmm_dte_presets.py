@@ -126,7 +126,8 @@ DTE_PRESETS = {
 STRADDLE_WITH_ADJUSTMENT_CATEGORY = 'STRADDLE_WITH_ADJUSTMENT'
 
 # Backward-compat alias — existing sessions in DB have '_preset_source': 'SHORT_STRADDLE'
-SHORT_STRADDLE_CATEGORY = STRADDLE_WITH_ADJUSTMENT_CATEGORY
+# MUST remain the literal string 'SHORT_STRADDLE', NOT an alias to STRADDLE_WITH_ADJUSTMENT_CATEGORY
+SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'
 
 
 def build_straddle_adjustment_preset(hours_to_expiry: float) -> dict:
