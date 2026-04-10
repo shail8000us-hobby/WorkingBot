@@ -1105,8 +1105,8 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         {/* Core parameters */}
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>Core Parameters</Typography>
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          {dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? (
-            /* STRADDLE_WITH_ADJUSTMENT: ATM strike is auto-selected — premium fields are not applicable */
+          {(dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') ? (
+            /* ATM straddle presets: strike is auto-selected — premium fields are not applicable */
             <Grid item xs={8}>
               <Box sx={{
                 p: 1.5,
@@ -1162,7 +1162,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               inputProps={{ min: 1 }}
             />
           </Grid>
-          {dtePreset === 'STRADDLE_WITH_ADJUSTMENT' && (
+          {(dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') && (
             <Grid item xs={4}>
               <TextField
                 label="Max Rolls / Session"

@@ -148,13 +148,19 @@ def get_dte_presets():
     try:
         from .mmm_dte_presets import (list_presets, DTE_PRESETS,
                                        STRADDLE_WITH_ADJUSTMENT_CATEGORY,
-                                       build_straddle_adjustment_preset)
+                                       build_straddle_adjustment_preset,
+                                       STRADDLE_ROLL_CATEGORY,
+                                       build_straddle_roll_preset)
         # Include dynamic preset with example values (5h) for UI display
         preset_details = {k: v for k, v in DTE_PRESETS.items()}
         try:
             preset_details[STRADDLE_WITH_ADJUSTMENT_CATEGORY] = build_straddle_adjustment_preset(5.0)
         except ValueError:
             pass  # Should never fail at 5h, but be safe
+        try:
+            preset_details[STRADDLE_ROLL_CATEGORY] = build_straddle_roll_preset(24.0)
+        except ValueError:
+            pass  # Representative 24h values for UI display
         return jsonify({
             'success': True,
             'presets': list_presets(),
