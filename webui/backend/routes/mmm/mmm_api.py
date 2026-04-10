@@ -369,6 +369,32 @@ def create_session_endpoint():
                     ),
                 }), 400
 
+        # ── STRADDLE_ROLL validation: require operator-explicit params ──────────
+        if session.get('params', {}).get('_preset_source') == 'STRADDLE_ROLL':
+            _raw_params = data.get('params') or {}
+            _missing = []
+            if 'initial_lots' not in _raw_params:
+                _missing.append('initial_lots')
+            if 'straddle_roll_max_per_session' not in _raw_params:
+                _missing.append('straddle_roll_max_per_session (set to 0 for no-roll/hard-stop-only mode)')
+            if 'max_loss_amount' not in _raw_params:
+                _missing.append('max_loss_amount')
+            if _missing:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f"STRADDLE_ROLL requires explicit: {', '.join(_missing)}. "
+                        f"These are not preset-defaulted — you must decide your risk parameters."
+                    ),
+                }), 400
+            # Lock max_lots_per_side to initial_lots — CE:PE ratio must stay 1:1
+            _initial_lots = _raw_params.get('initial_lots', 1)
+            session['params']['max_lots_per_side'] = _initial_lots
+            log.info(
+                f"[STRADDLE_ROLL] max_lots_per_side locked to initial_lots={_initial_lots} "
+                f"(CE:PE 1:1 invariant)"
+            )
+
         # For import mode, initialize sides immediately
         if mode == 'import':
             import_data = data.get('import_data', {})

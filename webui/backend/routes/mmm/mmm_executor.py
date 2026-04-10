@@ -1403,6 +1403,58 @@ class MMMExecutor:
         log.error(f"All {POST_ONLY_RETRIES} post-only attempts exhausted for {symbol}")
         return {'error': f'Post-only rejected {POST_ONLY_RETRIES} times — price keeps crossing book'}
 
+    async def place_market_order_immediate(
+        self,
+        symbol: str,
+        side: str,
+        size: int,
+        reduce_only: bool = True,
+        rest_client=None,
+    ) -> dict:
+        """
+        Place a market order that fills immediately at any available price.
+
+        Used ONLY for hard stop closes in STRADDLE_ROLL sessions where speed
+        is the only metric that matters. Never use for normal roll execution
+        (use the smart execution path with limit orders instead).
+
+        No retries — if it fails, the caller logs CRITICAL and continues
+        closing remaining positions. A partial close is better than no close.
+
+        Args:
+            symbol:      Options contract symbol (e.g. 'BTC-240426-71000-C')
+            side:        'buy' (to close a short) or 'sell' (to open short)
+            size:        Number of lots
+            reduce_only: True for closing existing short positions (default)
+            rest_client: Optional pre-created REST client (for test injection)
+
+        Returns:
+            Result dict from exchange, or {'error': str} on failure.
+        """
+        rest = rest_client or self._create_rest_client()
+        try:
+            log.warning(
+                f"🚨 MARKET ORDER: {side} {size} {symbol} "
+                f"(reduce_only={reduce_only}) — hard stop close"
+            )
+            response = await rest.place_order_by_symbol(
+                symbol=symbol,
+                side=side,
+                size=int(size),
+                order_type="market_order",
+                reduce_only=reduce_only,
+            )
+            result = response.get('result', response)
+            order_id = str(result.get('id', ''))
+            if order_id:
+                log.warning(f"✅ Market order filled: {order_id} | {side} {size} {symbol}")
+            else:
+                log.error(f"🚨 Market order placement returned no order ID: {response}")
+            return result
+        except Exception as e:
+            log.error(f"🚨 Market order failed: {side} {size} {symbol} — {e}", exc_info=True)
+            return {'error': str(e)}
+
     async def _amend_order(
         self, order_id: str, product_id: int, new_price: float,
         rest_client=None,

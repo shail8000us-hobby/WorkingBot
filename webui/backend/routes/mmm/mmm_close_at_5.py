@@ -229,6 +229,7 @@ async def close_position(
     hedge_guard: bool = True,
     mechanism: str = 'close_at_5',
     side: str = None,
+    order_type: str = 'limit',
 ) -> Dict[str, Any]:
     """
     §11: Buy back a single position at market/ask price.
@@ -246,6 +247,8 @@ async def close_position(
                Values: 'close_at_5' | 'harvest' | 'recycler' | 'atm_shield'
                    | 'wind_down' | 'both_sides_close' | 'emergency'
         side: Explicit side ('ce'/'pe'). Falls back to position['side'].
+        order_type: 'limit' (default — smart execution with retries) or
+                    'market' (immediate fill, no retries — hard stop only).
 
     Returns:
         {success, realized_pnl, close_premium, lots_closed}
@@ -400,6 +403,42 @@ async def close_position(
         _max_buy_price = float(_threshold)
 
     try:
+        # ── MARKET ORDER PATH (hard stop only) ────────────────────────────────
+        # Used by STRADDLE_ROLL hard stop where immediate fill at any price is
+        # required. Bypasses smart execution, guardian, and observer checks.
+        # All other callers use order_type='limit' (the default).
+        if order_type == 'market':
+            mkt_result = await executor.place_market_order_immediate(
+                symbol=symbol,
+                side='buy',
+                size=lots,
+                reduce_only=True,
+            )
+            order_id = str(mkt_result.get('id', ''))
+            if not order_id:
+                if pos_id:
+                    for pos in side_state.get('positions', []):
+                        if pos.get('id') == pos_id:
+                            pos.pop('_being_closed', None)
+                            break
+                return {'success': False, 'error': f"Market order returned no ID: {mkt_result}"}
+            # Best-effort P&L estimate — fill price may not be in response
+            fill_price = float(mkt_result.get('average_fill_price', 0) or
+                               mkt_result.get('fill_price', 0) or entry_prem)
+            realized_pnl = float(
+                (_D(entry_prem) - _D(fill_price)) * _D(lots) * _LOT
+            )
+            _remove_closed_position(session, side, position, pos_type)
+            return {
+                'success': True,
+                'realized_pnl': realized_pnl,
+                'close_premium': fill_price,
+                'lots_closed': lots,
+                'order_id': order_id,
+                'order_type': 'market',
+            }
+        # ── END MARKET ORDER PATH ─────────────────────────────────────────────
+
         result = await executor.smart_execute(
             symbol=symbol,
             side='buy',

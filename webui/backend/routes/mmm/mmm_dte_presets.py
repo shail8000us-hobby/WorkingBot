@@ -129,6 +129,9 @@ STRADDLE_WITH_ADJUSTMENT_CATEGORY = 'STRADDLE_WITH_ADJUSTMENT'
 # MUST remain the literal string 'SHORT_STRADDLE', NOT an alias to STRADDLE_WITH_ADJUSTMENT_CATEGORY
 SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'
 
+# Pure straddle roll — no adjustment engine, market orders on hard stop
+STRADDLE_ROLL_CATEGORY = 'STRADDLE_ROLL'
+
 
 def build_straddle_adjustment_preset(hours_to_expiry: float) -> dict:
     """
@@ -330,6 +333,95 @@ def list_presets() -> List[Dict]:
     return result
 
 
+def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
+    """
+    Pure straddle roll preset.
+
+    Sells ATM straddle (equal CE + PE lots), monitors spot price, and rolls
+    the entire position when spot moves by the collected premium in points.
+    No adjustments are made between rolls — the MMM adjustment engine is
+    effectively disabled via min_trigger_move=9999.
+
+    Key differences from STRADDLE_WITH_ADJUSTMENT:
+    - min_trigger_move: 9999  →  adjustment engine never fires
+    - max_lots_per_side: locked to initial_lots (set in mmm_api.py)
+    - straddle_roll_hard_stop_market_order: True  →  hard stop fills immediately
+    - CE:PE ratio is always 1:1
+
+    Required operator params (HTTP 400 if absent at session creation):
+    - initial_lots
+    - straddle_roll_max_per_session  (0 = no rolls, pure hard-stop-only mode)
+    - max_loss_amount
+
+    Args:
+        hours_to_expiry: Hours until options expiry (≥ 1.0)
+
+    Returns:
+        Preset params dict (user params override these in apply_preset)
+    """
+    H = float(hours_to_expiry)
+    if H < 1.0:
+        raise ValueError(
+            f"STRADDLE_ROLL requires ≥ 1h to expiry (got {H:.1f}h). "
+            f"Gamma risk is too extreme below 1 hour."
+        )
+    if H > 24:
+        log.warning(
+            f"[STRADDLE_ROLL] Long session: {H:.1f}h. "
+            f"All scaled params are at max clamp above 12h — settings identical to a 12h session."
+        )
+
+    return {
+        '_preset_source':                       STRADDLE_ROLL_CATEGORY,
+        'dte_category':                         STRADDLE_ROLL_CATEGORY,
+        'adaptive_preset':                      'straddle',
+
+        # ── Lot control ──────────────────────────────────────────────────────
+        # initial_lots: REQUIRED — operator must provide explicitly.
+        # max_lots_per_side: locked to initial_lots by mmm_api.py after validation.
+        'max_total_exposure':                   20,
+
+        # ── Heartbeat ────────────────────────────────────────────────────────
+        'adjustment_interval':                  120,
+
+        # ── MMM adjustment engine: effectively disabled ───────────────────────
+        # 9999 pts trigger means no real BTC move will ever reach the threshold.
+        # The adjustment engine code is untouched — it evaluates the condition
+        # and returns immediately every heartbeat. Zero code changes to the engine.
+        'min_trigger_move':                     9999,
+
+        # ── Roll mechanism ───────────────────────────────────────────────────
+        'straddle_roll_enabled':                True,
+        # straddle_roll_max_per_session: REQUIRED — operator must set explicitly.
+        'straddle_roll_cooldown_mins':          15,
+        'straddle_roll_emergency_mult':         2.0,    # bypass cooldown at 2× trigger_pts
+        'straddle_roll_min_time_to_expiry':     90,     # don't roll inside 90 min window
+        'straddle_roll_min_credit_pct':         0.30,   # new straddle must collect ≥ 30% of original
+        'straddle_roll_max_spread_pct':         15.0,   # abort roll if bid-ask spread > 15%
+        'straddle_roll_iv_spike_mult':          2.0,    # IV spike: logs warning, does NOT block roll
+        'straddle_roll_loss_abort_mult':        3.0,    # belt-and-suspenders (hard stop fires earlier)
+        'straddle_roll_hard_stop_market_order': True,   # hard stop must fill immediately
+
+        # max_loss_amount: REQUIRED — operator must set explicitly.
+
+        # ── Price guard (real-time 5s monitoring) ────────────────────────────
+        'price_guard_enabled':                  True,
+        'price_guard_interval_secs':            5,
+        'price_guard_buffer_pts':               50,     # fire force-HB when 50 pts from trigger
+        'price_guard_cooldown_secs':            30,
+
+        # ── Disabled features ─────────────────────────────────────────────────
+        # All of these must stay False — they would interfere with the pure roll.
+        'wind_down_enabled':                    False,
+        'harvest_enabled':                      False,
+        'atm_shield_enabled':                   False,
+        'perp_hedge_enabled':                   False,
+        'scale_enabled':                        False,
+        'reverse_enabled':                      False,
+        'recycler_enabled':                     False,
+    }
+
+
 def apply_preset(params: Dict, dte_category: str) -> Dict:
     """
     Apply a DTE preset to session params.
@@ -371,6 +463,31 @@ def apply_preset(params: Dict, dte_category: str) -> Dict:
         merged['dte_category'] = preset['dte_category']
         # Preserve the original preset selection for UI display
         merged['_preset_source'] = STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        return merged
+
+    if dte_category == STRADDLE_ROLL_CATEGORY:
+        # Pure straddle roll preset — no adjustment engine, market orders on hard stop.
+        expiry_str = params.get('expiry', '')
+        if not expiry_str:
+            log.warning("STRADDLE_ROLL preset requires 'expiry' param")
+            return params
+        hours = compute_total_dte_hours(
+            expiry_str,
+            params.get('expiry_hour_utc', 12),
+            params.get('expiry_minute_utc', 0),
+        )
+        try:
+            preset = build_straddle_roll_preset(hours)
+        except ValueError as e:
+            log.error(f"STRADDLE_ROLL preset rejected: {e}")
+            return params
+
+        merged = {}
+        merged.update(preset)
+        merged.update(params)
+        # dte_category stays as STRADDLE_ROLL (not remapped to 0DTE)
+        merged['dte_category'] = STRADDLE_ROLL_CATEGORY
+        merged['_preset_source'] = STRADDLE_ROLL_CATEGORY
         return merged
 
     preset = get_preset(dte_category)

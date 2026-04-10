@@ -84,7 +84,7 @@ from .mmm_perp_hedge import (
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key, _D, _LOT
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
-from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY
 from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE, ACTION_PAUSE
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
@@ -524,9 +524,11 @@ class MMMMonitor:
         self._start_close_watcher()
         self._start_price_ticker()
 
-        # Price Guard: start real-time spot monitor for STRADDLE_WITH_ADJUSTMENT sessions only
+        # Price Guard: start real-time spot monitor for straddle sessions.
+        # STRADDLE_ROLL reuses the same price guard coroutine — it reads
+        # _straddle_roll_trigger_pts which both presets populate identically.
         if self.session.get('params', {}).get('_preset_source') in (
-            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY
         ):
             self._start_price_guard()
 
@@ -2775,6 +2777,20 @@ class MMMMonitor:
                     _skip_to_pnl = True
             except Exception as _roll_err:
                 log.error(f"[{sid}] Straddle Roll error: {_roll_err}", exc_info=True)
+        elif (params.get('_preset_source') == STRADDLE_ROLL_CATEGORY
+                and not self._paused):
+            # Pure straddle roll — no adjustment engine between rolls.
+            # This branch is mutually exclusive with the STRADDLE_WITH_ADJUSTMENT block above:
+            # a session has exactly one _preset_source value.
+            try:
+                from .mmm_straddle_roll_pure import execute_pure_straddle_roll
+                _pure_roll_fired = await execute_pure_straddle_roll(
+                    self, session, sid, minutes_to_expiry
+                )
+                if _pure_roll_fired:
+                    _skip_to_pnl = True
+            except Exception as _pure_roll_err:
+                log.error(f"[{sid}] Pure Straddle Roll error: {_pure_roll_err}", exc_info=True)
         # ────────────────────────────────────────────────────────────────────
 
         # Step 5.5: ATM Shield — proactive close & retreat
@@ -6330,7 +6346,7 @@ class MMMMonitor:
         preset = params.get('adaptive_preset', 'strangle')
         # Straddle mode: use ATM strike (computed once — doesn't change between retries)
         is_straddle = (
-            dte_cat in ('STRADDLE_WITH_ADJUSTMENT', 'SHORT_STRADDLE')
+            dte_cat in ('STRADDLE_WITH_ADJUSTMENT', 'SHORT_STRADDLE', 'STRADDLE_ROLL')
             or preset == 'straddle'
             or (session.get('ce', {}).get('original_strike', 0) > 0
                 and session.get('ce', {}).get('original_strike', 0)

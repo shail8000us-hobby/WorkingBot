@@ -369,7 +369,15 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
               {session.session_id}
             </Typography>
             {/* Preset badge — shown for all presets */}
-            {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
+            {session.params?._preset_source === 'STRADDLE_ROLL' ? (
+              <Chip
+                label="Straddle Roll"
+                size="small"
+                color="success"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+              />
+            ) : (session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
               session.params?._preset_source === 'SHORT_STRADDLE') ? (
               <Chip
                 label="Straddle+Adj"
@@ -855,6 +863,16 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
           desired_ce_premium: params.desired_ce_premium,
           desired_pe_premium: params.desired_pe_premium,
         };
+      } else if (dtePreset === 'STRADDLE_ROLL') {
+        // STRADDLE_ROLL: backend builds all params from the preset server-side.
+        // Three fields required: initial_lots, straddle_roll_max_per_session, max_loss_amount.
+        sessionParams = {
+          expiry: params.expiry,
+          dte_category: 'STRADDLE_ROLL',
+          initial_lots: params.initial_lots,
+          straddle_roll_max_per_session: params.straddle_roll_max_per_session,
+          max_loss_amount: params.max_loss_amount,
+        };
       } else {
         sessionParams = { ...params };
         if (dtePreset) {
@@ -942,6 +960,8 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                       ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
                       : name === 'STRADDLE_WITH_ADJUSTMENT'
                       ? 'Short Straddle — with Adjustment'
+                      : name === 'STRADDLE_ROLL'
+                      ? 'Short Straddle — Pure Roll'
                       : name}
                     {dtePresets[name]?.max_loss_amount && (
                       <Typography
@@ -1011,6 +1031,31 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
                   {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
                   {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                </Typography>
+              </>
+            ) : dtePreset === 'STRADDLE_ROLL' ? (
+              <>
+                <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
+                  🎯 Short Straddle — Pure Roll
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 1 }}>
+                  Sell ATM straddle (equal CE + PE). No adjustments between rolls.
+                  Rolls entire position to new ATM when spot moves ≥ collected premium in points.
+                  Hard stop uses market orders for immediate fill.
+                </Typography>
+                <Typography variant="caption" color="text.secondary">
+                  CE:PE always 1:1
+                  {' • '}Adjustment engine disabled (min_trigger_move=9999)
+                  {' • '}Cooldown 15min between rolls
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  🔄 Roll fires when |spot − ATM| ≥ CE premium + PE premium pts
+                  {' • '}⚡ Price Guard: 5s real-time spot monitor
+                  {' • '}Hard stop: market orders (taker fill)
+                </Typography>
+                <Typography variant="caption" color="error.main" sx={{ display: 'block', mt: 0.5 }}>
+                  ⚠️ Required: initial_lots, max_rolls/session, max_loss_amount — not preset-defaulted.
+                  ⏱ Params computed at session creation from time-to-expiry.
                 </Typography>
               </>
             ) : dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? (

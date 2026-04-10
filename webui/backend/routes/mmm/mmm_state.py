@@ -660,6 +660,7 @@ DEFAULT_PARAMS = {
     'price_guard_buffer_pts': 50,
     'price_guard_cooldown_secs': 30,
     'straddle_roll_max_spread_pct': 15.0,  # reject roll if avg bid-ask spread > this %
+    'straddle_roll_hard_stop_market_order': False,  # True only for STRADDLE_ROLL — hard stop uses market orders
 
     # Auto-Reconciliation — periodic drift check between bot state and exchange
     # Runs every N heartbeats; emits SAFETY_ALERT on mismatch (does not self-heal).
@@ -813,6 +814,7 @@ HOT_RELOAD_PARAMS = {
     'price_guard_enabled', 'price_guard_interval_secs',
     'price_guard_buffer_pts', 'price_guard_cooldown_secs',
     'straddle_roll_max_spread_pct',
+    'straddle_roll_hard_stop_market_order',
     # Reverse Mode
     'reverse_enabled', 'reverse_capacity_pct', 'reverse_num_slots',
     'reverse_slot_size_override', 'reverse_max_adjustments',
