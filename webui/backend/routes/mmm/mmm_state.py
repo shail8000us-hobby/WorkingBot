@@ -853,7 +853,7 @@ def create_session(
     dte_category = merged_params.get('dte_category', '')
     if dte_category:
         from .mmm_dte_presets import (apply_preset, STRADDLE_WITH_ADJUSTMENT_CATEGORY,
-                                       SHORT_STRADDLE_CATEGORY)
+                                       SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY)
         user_params = params or {}
         if dte_category in (STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY):
             # Dynamic preset: must read expiry from raw user params BEFORE the
@@ -874,6 +874,24 @@ def create_session(
             merged_params.update(user_params)   # user overrides preset
             merged_params['dte_category'] = '0DTE'
             merged_params['_preset_source'] = STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        elif dte_category == STRADDLE_ROLL_CATEGORY:
+            # Pure straddle roll preset — same layering pattern as STRADDLE_WITH_ADJUSTMENT.
+            # Must read expiry from raw user params before DEFAULT_PARAMS reset.
+            from .mmm_dte_presets import compute_total_dte_hours, build_straddle_roll_preset
+            _expiry = user_params.get('expiry', '')
+            if not _expiry:
+                raise ValueError("STRADDLE_ROLL preset requires 'expiry' param")
+            _hours = compute_total_dte_hours(
+                _expiry,
+                user_params.get('expiry_hour_utc', 12),
+                user_params.get('expiry_minute_utc', 0),
+            )
+            _preset = build_straddle_roll_preset(_hours)
+            merged_params = {**DEFAULT_PARAMS}
+            merged_params.update(_preset)       # preset overrides DEFAULT_PARAMS
+            merged_params.update(user_params)   # user overrides preset
+            merged_params['dte_category'] = STRADDLE_ROLL_CATEGORY
+            merged_params['_preset_source'] = STRADDLE_ROLL_CATEGORY
         else:
             merged_params = {**DEFAULT_PARAMS}
             merged_params = apply_preset(merged_params, dte_category)
