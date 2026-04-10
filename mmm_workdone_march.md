@@ -2870,3 +2870,44 @@ formally documented.
 
 ### Zero logic changes
 No trading logic was modified. All changes are renames, comment updates, and backward-compat handling.
+
+---
+
+## 2026-04-10 — STRADDLE_ROLL pure straddle roll implementation + alias fix + UI fixes
+
+### Critical bug fix: SHORT_STRADDLE_CATEGORY alias was broken
+- `SHORT_STRADDLE_CATEGORY = STRADDLE_WITH_ADJUSTMENT_CATEGORY` caused the alias to evaluate to `'STRADDLE_WITH_ADJUSTMENT'` instead of `'SHORT_STRADDLE'`
+- All 4 backward-compat tuple checks in mmm_monitor.py were effectively `in ('STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_WITH_ADJUSTMENT')` — old DB sessions silently skipped
+- Fixed: `SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'` (literal string, must stay literal)
+- Gate 2 in mmm_straddle_adjustment.py also fixed to check the tuple instead of just the new name
+
+### UI fixes
+- MMMDashboard.js lines 928, 1003: "Short Straddle — with Roll" → "Short Straddle — with Adjustment"
+- Added preset badge to active session cards: STRADDLE_WITH_ADJUSTMENT/SHORT_STRADDLE → purple "Straddle+Adj" chip; badge priority chain added (preset source checked first, then dte_category)
+
+### New: STRADDLE_ROLL pure straddle roll preset (commit a4f0a1628)
+
+Pure roll strategy: sell ATM straddle, monitor, roll when spot moves ≥ collected premium. No adjustments between rolls. Hard stop uses market orders.
+
+**New files:**
+- `mmm_straddle_roll_pure.py` — complete roll logic: 11-gate check, 4-leg roll execution (limit orders), market-order hard stop, post-roll state reset, Telegram on roll/exhaustion/hard-stop
+- `tasks/STRADDLE_ROLL_PURE_IMPL.md` — full implementation plan
+
+**Modified files (surgical, backward-compat):**
+- `mmm_dte_presets.py` — added `STRADDLE_ROLL_CATEGORY = 'STRADDLE_ROLL'` + `build_straddle_roll_preset()` + apply_preset branch
+- `mmm_state.py` — added `straddle_roll_hard_stop_market_order: False` to DEFAULT_PARAMS and HOT_RELOAD_ALLOWED
+- `mmm_executor.py` — added `place_market_order_immediate()` method (new, does not touch existing methods)
+- `mmm_close_at_5.py` — added `order_type: str = 'limit'` default param; all 15+ existing callers unchanged; market path added for hard stop only
+- `mmm_api.py` — added STRADDLE_ROLL validation block (3 required fields: initial_lots, straddle_roll_max_per_session, max_loss_amount); locks max_lots_per_side = initial_lots at creation
+- `mmm_monitor.py` — 4 surgical cuts: (1) import STRADDLE_ROLL_CATEGORY, (2) price guard tuple extended, (3) elif dispatch block after STRADDLE_WITH_ADJUSTMENT block, (4) is_straddle tuple extended
+- `MMMDashboard.js` — green "Straddle Roll" badge, "Short Straddle — Pure Roll" dropdown label, info panel with strategy description and required fields warning
+
+**Isolation guarantee:**
+- STRADDLE_WITH_ADJUSTMENT and strangle sessions: zero changes to their code paths
+- Monitor elif is mutually exclusive (one _preset_source per session)
+- MMM adj engine disabled via min_trigger_move=9999 (no code changes to adj engine)
+- Tests 14 and 15 in sealed test suite will formally prove bidirectional isolation
+
+**Pending (not yet done):**
+- `tests/test_sealed_straddle_roll_pure.py` — 18 sealed tests not yet written
+- Paper test session to verify end-to-end behavior before real capital
