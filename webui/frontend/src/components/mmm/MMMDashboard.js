@@ -925,7 +925,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                     {name === 'SHORT_WINDOW'
                       ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
                       : name === 'STRADDLE_WITH_ADJUSTMENT'
-                      ? 'Short Straddle — with Roll'
+                      ? 'Short Straddle — with Adjustment'
                       : name}
                     {dtePresets[name]?.max_loss_amount && (
                       <Typography
@@ -1000,7 +1000,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
             ) : dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? (
               <>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-                  🎯 Short Straddle — with Roll System
+                  🎯 Short Straddle — with Adjustment
                 </Typography>
                 <Typography variant="body2" sx={{ mb: 1 }}>
                   Pure ATM straddle optimized for daily BTC options. All 52 parameters
