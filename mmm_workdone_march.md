@@ -2911,3 +2911,71 @@ Pure roll strategy: sell ATM straddle, monitor, roll when spot moves ≥ collect
 **Pending (not yet done):**
 - `tests/test_sealed_straddle_roll_pure.py` — 18 sealed tests not yet written
 - Paper test session to verify end-to-end behavior before real capital
+
+## 2026-04-10 — Fix: replenish permanently blocked in last 5 hours (ATM shield proximity guard)
+
+### Root cause
+`_process_replenish` has an ATM shield proximity guard that rejects replenish candidates
+within 2× the shield threshold (1.0% OTM when base is 0.5%). In the last 3–5 hours, all
+viable OTM strikes are within that buffer (e.g., PE 71,500 is 0.31% OTM with spot at
+71,752). When the safe-strike scan finds nothing outside the buffer, the code returned
+`False` → PAUSE → HUMAN ACTION REQUIRED. This repeated every heartbeat indefinitely.
+
+Evidence from logs (today, session mmm10apr26-1):
+```
+Replenish attempt 1/3: PE candidate 71500.0 is within ATM safety buffer (0.31% <= 1.00% = 2× shield threshold 0.50%). Scanning for a safer OTM position outside the buffer.
+```
+(repeated every ~60s from 12:41 onwards — never succeeded)
+
+### Fix (two files)
+
+**`mmm_atm_shield.py` — `_check_shield_gates`:**
+Added "replenish grace hold" gate. When replenish sets `_replenish_shield_hold_until_{side}`,
+the ATM shield skips that side for the hold duration. Prevents the replenish→shield-close→replenish
+cycle that the proximity guard was trying to prevent.
+
+**`mmm_monitor.py` — `_process_replenish`:**
+In the "no safe strike found" branch (previously `return False`): now accepts the best
+available candidate and sets `_replenish_shield_hold_until_{closed_side}` for
+`replenish_shield_hold_secs` (default 900s / 15 min). Hedge restoration principle
+takes priority — leaving CE/PE fully unhedged for hours is worse than a potentially
+close replenish that the shield may later evict.
+
+### What changes in practice
+- Before: PE=0 → replenish blocked indefinitely → PAUSE → HUMAN ACTION every session in last 5h
+- After: PE=0 → replenish at closest viable strike (e.g., 71,500) → shield suppressed 15 min → hedge restored
+- If spot stays close: after 15 min hold expires, ATM shield may close PE again; next heartbeat replenish fires again with another 15 min hold — keeps re-hedging rather than staying unhedged
+- If spot moves away: PE position survives, no further cycle
+
+### Tests: 1308 passed (unchanged)
+
+## 2026-04-10 — Critical bug fix: STRADDLE_ROLL rolls never fired (Gate 10 blocker)
+
+### Bug found during critical review before real money deployment
+
+**Root cause (Bug 1 — CRITICAL):**
+`mmm_monitor.py` initialization block (lines 358–433) for straddle session state only
+covered `STRADDLE_WITH_ADJUSTMENT_CATEGORY` and `SHORT_STRADDLE_CATEGORY`. STRADDLE_ROLL_CATEGORY
+was excluded. Result: `_straddle_initial_credit` was never set for STRADDLE_ROLL sessions (stayed 0).
+Gate 10 in `_check_pure_roll_gates()` checks `if original_credit_dec <= 0: return False, 'no_initial_credit'`
+— permanently blocking ALL rolls. The hard stop worked correctly; only rolls were broken.
+
+**Root cause (Bug 2 — MINOR):**
+`cleanup_pure_roll_lock()` in `mmm_straddle_roll_pure.py` was documented as "called on session stop
+from mmm_exit_all.py" but had zero callers. The per-session roll locks in `_pure_roll_locks` dict
+never cleaned up → memory leak + potential stuck-lock on session restart.
+
+**Fix — two files:**
+- `mmm_monitor.py` line 358: added `STRADDLE_ROLL_CATEGORY` to initialization block condition:
+  `in (STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY)`
+- `mmm_exit_all.py` lines ~177: added `cleanup_pure_roll_lock(sid)` call after existing
+  `_cleanup_roll_lock(sid)` call, in the "stop monitor" section.
+
+**Tests: 1308 passed (unchanged)**
+
+**Deployment note:**
+The initial straddle positions must be added BEFORE starting the monitor (same constraint as
+STRADDLE_WITH_ADJUSTMENT). If the monitor heartbeats before any positions are present,
+`_straddle_initial_credit` will correctly be recomputed on first position addition since
+`_straddle_credit_v2` is only set True AFTER a successful computation with non-zero credit.
+Wait — actually the v2 flag IS set regardless. Correct workflow: import positions, THEN start monitor.

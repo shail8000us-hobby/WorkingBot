@@ -181,6 +181,13 @@ async def run_exit_all(monitor) -> None:
     except Exception:
         pass
 
+    # Clean up pure straddle roll lock (STRADDLE_ROLL preset)
+    try:
+        from .mmm_straddle_roll_pure import cleanup_pure_roll_lock
+        cleanup_pure_roll_lock(sid)
+    except Exception:
+        pass
+
     # Stop the monitor — this does the primary full session save (includes
     # updated realized_pnl from close_position() calls + unrealized=0.0 above).
     monitor.stop(reason)

@@ -353,10 +353,13 @@ class MMMMonitor:
             analytics['total_combined_lots_traded'] = analytics['initial_ce_lots'] + analytics['initial_pe_lots']
 
         # ── Straddle Roll: session-level state ──────────────────────────────
-        # Initialised once per session start for STRADDLE_WITH_ADJUSTMENT presets.
-        # These keys are consumed by mmm_straddle_adjustment.execute_straddle_roll().
+        # Initialised once per session start for all straddle presets, including
+        # STRADDLE_ROLL. Keys are consumed by mmm_straddle_adjustment and
+        # mmm_straddle_roll_pure. _straddle_initial_credit MUST be initialised here
+        # for Gate 10 in _check_pure_roll_gates() to allow rolls to execute.
         if self.session.get('params', {}).get('_preset_source') in (
-            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY,
+            STRADDLE_ROLL_CATEGORY
         ):
             # Re-run if key missing OR if it was computed with the old buggy logic
             # (original_lots key doesn't exist on position dicts → was always 0).
