@@ -368,10 +368,10 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
               {session.session_id}
             </Typography>
-            {/* Preset badge — shown for all presets */}
+            {/* Strategy type badge — always shown so session type is immediately clear */}
             {session.params?._preset_source === 'STRADDLE_ROLL' ? (
               <Chip
-                label="Straddle Roll"
+                label="ROLL"
                 size="small"
                 color="success"
                 variant="outlined"
@@ -380,21 +380,34 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             ) : (session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
               session.params?._preset_source === 'SHORT_STRADDLE') ? (
               <Chip
-                label="Straddle+Adj"
+                label="STRADDLE"
                 size="small"
                 color="secondary"
                 variant="outlined"
                 sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
               />
-            ) : session.dte_category === 'SHORT_WINDOW' ? (
+            ) : (
               <Chip
-                label={`${session.session_window_hours || 5}h`}
+                label="STRANGLE"
+                size="small"
+                color="default"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, borderColor: 'rgba(255,255,255,0.3)', color: 'text.secondary' }}
+              />
+            )}
+            {/* DTE category badge — shown when non-standard */}
+            {session.dte_category === 'SHORT_WINDOW' ? (
+              <Chip
+                label={`${session.params?.session_window_hours || 5}h`}
                 size="small"
                 color="warning"
                 variant="outlined"
                 sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
               />
-            ) : session.dte_category && session.dte_category !== '0DTE' ? (
+            ) : session.dte_category && session.dte_category !== '0DTE'
+              && session.params?._preset_source !== 'STRADDLE_WITH_ADJUSTMENT'
+              && session.params?._preset_source !== 'SHORT_STRADDLE'
+              && session.params?._preset_source !== 'STRADDLE_ROLL' ? (
               <Chip
                 label={session.dte_category}
                 size="small"
