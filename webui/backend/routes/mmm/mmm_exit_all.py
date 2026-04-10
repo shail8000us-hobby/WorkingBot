@@ -176,7 +176,7 @@ async def run_exit_all(monitor) -> None:
 
     # Clean up straddle roll lock before stopping (same pattern as M-03 handle_stale_monitor)
     try:
-        from .mmm_straddle_roll import _cleanup_roll_lock
+        from .mmm_straddle_adjustment import _cleanup_roll_lock
         _cleanup_roll_lock(sid)
     except Exception:
         pass

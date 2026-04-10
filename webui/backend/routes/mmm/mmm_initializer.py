@@ -335,7 +335,7 @@ class MMMInitializer:
         """
         Find the ATM strike and return both CE and PE at that same strike.
 
-        Used by SHORT_STRADDLE preset — caller does not specify desired premiums.
+        Used by STRADDLE_WITH_ADJUSTMENT preset — caller does not specify desired premiums.
         The ATM strike is whichever chain strike is closest to current spot.
 
         Returns:

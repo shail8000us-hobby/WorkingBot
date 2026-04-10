@@ -302,7 +302,7 @@ class MMMGuardian:
 
         # Release roll lock so the successor monitor is not blocked on straddle rolls
         try:
-            from .mmm_straddle_roll import _cleanup_roll_lock
+            from .mmm_straddle_adjustment import _cleanup_roll_lock
             _cleanup_roll_lock(sid)
         except Exception as e:
             log.warning(f"[{sid}] G5 roll lock cleanup failed: {e}")

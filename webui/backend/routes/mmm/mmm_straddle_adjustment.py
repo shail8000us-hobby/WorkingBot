@@ -1,5 +1,10 @@
 """
-MMM Straddle Roll — Full ATM Reset for SHORT_STRADDLE sessions
+MMM Straddle With Adjustment — ATM straddle with MMM adjustment engine enabled
+
+This module handles the roll mechanism for STRADDLE_WITH_ADJUSTMENT sessions.
+Unlike a pure straddle roll, this preset runs the full MMM adjustment engine
+alongside the roll: adjustments are allowed on individual legs when the engine
+determines a hedge is needed, resulting in asymmetric CE/PE positions over time.
 
 When BTC moves far enough from the current ATM strike, this module:
 1. Buys back BOTH legs (ITM first, then OTM) sequentially
@@ -10,9 +15,10 @@ Two public functions:
 - check_straddle_roll_gates(): 12 sync gates, returns (bool, str, dict)
 - execute_straddle_roll(): async entry point from mmm_monitor.py Step 5.4
 
-Reference: tasks/MMM_STRADDLE_ROLL_PLAN.md Rev 3.3 FINAL
+Reference: docs/STRADDLE_WITH_ADJUSTMENT.md
 
 Created: 2026-03-20
+Renamed from mmm_straddle_roll.py: 2026-04-10
 """
 
 import logging
@@ -23,7 +29,7 @@ from typing import Dict, Tuple, Any
 
 from .mmm_constants import LOT_SIZE_BTC
 from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
-from .mmm_dte_presets import SHORT_STRADDLE_CATEGORY
+from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY
 from .mmm_close_at_5 import close_position
 from .mmm_engine import get_engine
 from .mmm_wind_down import is_wind_down_active
@@ -31,7 +37,7 @@ from .mmm_margin_guardian import TIER_RED, TIER_CRITICAL
 from .mmm_activity import log_activity
 from webui.backend.sealed import sealed
 
-log = logging.getLogger('mmm_straddle_roll')
+log = logging.getLogger('mmm_straddle_adjustment')
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -136,7 +142,7 @@ def check_straddle_roll_gates(
         return False, 'session_not_running', {}
 
     # ── Gate 2 — Correct preset ───────────────────────────────────────────────
-    if params.get('_preset_source') != SHORT_STRADDLE_CATEGORY:
+    if params.get('_preset_source') != STRADDLE_WITH_ADJUSTMENT_CATEGORY:
         return False, 'wrong_preset', {}
 
     # ── Gate 2.5 — Leg symmetry ───────────────────────────────────────────────

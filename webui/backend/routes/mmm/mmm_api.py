@@ -146,11 +146,13 @@ def get_dte_presets():
         {success: true, presets: [...]}
     """
     try:
-        from .mmm_dte_presets import list_presets, DTE_PRESETS, SHORT_STRADDLE_CATEGORY, build_short_straddle_preset
+        from .mmm_dte_presets import (list_presets, DTE_PRESETS,
+                                       STRADDLE_WITH_ADJUSTMENT_CATEGORY,
+                                       build_straddle_adjustment_preset)
         # Include dynamic preset with example values (5h) for UI display
         preset_details = {k: v for k, v in DTE_PRESETS.items()}
         try:
-            preset_details[SHORT_STRADDLE_CATEGORY] = build_short_straddle_preset(5.0)
+            preset_details[STRADDLE_WITH_ADJUSTMENT_CATEGORY] = build_straddle_adjustment_preset(5.0)
         except ValueError:
             pass  # Should never fail at 5h, but be safe
         return jsonify({
@@ -349,8 +351,10 @@ def create_session_endpoint():
         # Create session state
         session = create_session(mode=mode, params=validated)
 
-        # ── SHORT_STRADDLE validation: require operator-explicit params ─────
-        if session.get('params', {}).get('_preset_source') == 'SHORT_STRADDLE':
+        # ── STRADDLE_WITH_ADJUSTMENT validation: require operator-explicit params ─
+        if session.get('params', {}).get('_preset_source') in (
+            'STRADDLE_WITH_ADJUSTMENT', 'SHORT_STRADDLE'
+        ):
             _missing = []
             if 'initial_lots' not in (data.get('params') or {}):
                 _missing.append('initial_lots')
@@ -360,7 +364,7 @@ def create_session_endpoint():
                 return jsonify({
                     'success': False,
                     'error': (
-                        f"SHORT_STRADDLE requires explicit: {', '.join(_missing)}. "
+                        f"STRADDLE_WITH_ADJUSTMENT requires explicit: {', '.join(_missing)}. "
                         f"These are intentionally not preset-defaulted for safety."
                     ),
                 }), 400
@@ -2607,7 +2611,7 @@ def preview_strikes():
 @mmm_bp.route('/preview_atm_straddle', methods=['POST'])
 def preview_atm_straddle():
     """
-    Find the ATM strike for a SHORT_STRADDLE session.
+    Find the ATM strike for a STRADDLE_WITH_ADJUSTMENT session.
     Returns the same strike for both CE and PE.
 
     Body: { expiry: str, underlying: str (optional) }

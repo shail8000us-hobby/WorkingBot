@@ -654,7 +654,7 @@ DEFAULT_PARAMS = {
     'straddle_roll_price_max_age_secs': 5,   # Gate 9 freshness check (was hardcoded)
     '_straddle_roll_trigger_pts':       0,   # computed at session startup
 
-    # Price Guard (SHORT_STRADDLE real-time monitoring)
+    # Price Guard (STRADDLE_WITH_ADJUSTMENT real-time monitoring)
     'price_guard_enabled': True,
     'price_guard_interval_secs': 5,
     'price_guard_buffer_pts': 50,
@@ -850,27 +850,28 @@ def create_session(
     # Multi-Expiry: Apply DTE preset if specified
     dte_category = merged_params.get('dte_category', '')
     if dte_category:
-        from .mmm_dte_presets import apply_preset, SHORT_STRADDLE_CATEGORY
+        from .mmm_dte_presets import (apply_preset, STRADDLE_WITH_ADJUSTMENT_CATEGORY,
+                                       SHORT_STRADDLE_CATEGORY)
         user_params = params or {}
-        if dte_category == SHORT_STRADDLE_CATEGORY:
+        if dte_category in (STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY):
             # Dynamic preset: must read expiry from raw user params BEFORE the
             # DEFAULT_PARAMS reset, because DEFAULT_PARAMS has expiry=''.
             # Build preset first, then layer: DEFAULT_PARAMS < preset < user_params.
-            from .mmm_dte_presets import compute_total_dte_hours, build_short_straddle_preset
+            from .mmm_dte_presets import compute_total_dte_hours, build_straddle_adjustment_preset
             _expiry = user_params.get('expiry', '')
             if not _expiry:
-                raise ValueError("SHORT_STRADDLE preset requires 'expiry' param")
+                raise ValueError("STRADDLE_WITH_ADJUSTMENT preset requires 'expiry' param")
             _hours = compute_total_dte_hours(
                 _expiry,
                 user_params.get('expiry_hour_utc', 12),
                 user_params.get('expiry_minute_utc', 0),
             )
-            _preset = build_short_straddle_preset(_hours)
+            _preset = build_straddle_adjustment_preset(_hours)
             merged_params = {**DEFAULT_PARAMS}
             merged_params.update(_preset)       # preset overrides DEFAULT_PARAMS
             merged_params.update(user_params)   # user overrides preset
             merged_params['dte_category'] = '0DTE'
-            merged_params['_preset_source'] = SHORT_STRADDLE_CATEGORY
+            merged_params['_preset_source'] = STRADDLE_WITH_ADJUSTMENT_CATEGORY
         else:
             merged_params = {**DEFAULT_PARAMS}
             merged_params = apply_preset(merged_params, dte_category)

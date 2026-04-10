@@ -1,10 +1,10 @@
 """
-Sealed contract tests for Short Straddle Roll — Rev 3.0 fixes
+Sealed contract tests for Straddle With Adjustment — Rev 3.0 fixes
 
 SEALED — v3.0.0 — 2026-04-09
 Do not modify without UNSEAL command in AI_SEAL.md
 
-Covers the Rev 3.0 changes to mmm_straddle_roll.py, mmm_monitor.py,
+Covers the Rev 3.0 changes to mmm_straddle_adjustment.py, mmm_monitor.py,
 mmm_dte_presets.py, and mmm_api.py:
 
   P0 fix: Gate 8 now uses premium-points trigger (CE+PE entry premiums) not pct.
@@ -13,8 +13,8 @@ mmm_dte_presets.py, and mmm_api.py:
   Robustness: same-strike guard, spread check, 20-key state reset, Telegram alerts.
 
 Functions covered:
-  check_straddle_roll_gates()  — mmm_straddle_roll.py
-  build_short_straddle_preset() — mmm_dte_presets.py
+  check_straddle_roll_gates()      — mmm_straddle_adjustment.py
+  build_straddle_adjustment_preset() — mmm_dte_presets.py
 
 Contracts:
 
@@ -35,10 +35,10 @@ Contracts:
   R6-1: raising max_per_session above roll_count auto-clears _straddle_roll_blocked
 
   [Preset simplification]
-  RP-1: wind_down_enabled is False in SHORT_STRADDLE preset
-  RP-2: harvest_enabled is False in SHORT_STRADDLE preset
-  RP-3: build_short_straddle_preset(24.0) does not raise (24h allowed)
-  RP-4: build_short_straddle_preset(0.5) raises ValueError (< 1h blocked)
+  RP-1: wind_down_enabled is False in STRADDLE_WITH_ADJUSTMENT preset
+  RP-2: harvest_enabled is False in STRADDLE_WITH_ADJUSTMENT preset
+  RP-3: build_straddle_adjustment_preset(24.0) does not raise (24h allowed)
+  RP-4: build_straddle_adjustment_preset(0.5) raises ValueError (< 1h blocked)
   RP-5: straddle_roll_max_per_session NOT in preset (operator must provide)
 
   [Hard stop path verification]
@@ -58,8 +58,8 @@ Contracts:
   RR-3: _straddle_initial_credit NOT changed after successful roll
 
   [Session creation validation]
-  RV-1: SHORT_STRADDLE session creation rejects missing initial_lots (HTTP 400)
-  RV-2: SHORT_STRADDLE session creation rejects missing straddle_roll_max_per_session (HTTP 400)
+  RV-1: STRADDLE_WITH_ADJUSTMENT session creation rejects missing initial_lots (HTTP 400)
+  RV-2: STRADDLE_WITH_ADJUSTMENT session creation rejects missing straddle_roll_max_per_session (HTTP 400)
 """
 
 import pytest
@@ -69,7 +69,7 @@ from unittest.mock import MagicMock, patch, AsyncMock
 
 pytestmark = pytest.mark.sealed
 
-from webui.backend.routes.mmm.mmm_straddle_roll import check_straddle_roll_gates
+from webui.backend.routes.mmm.mmm_straddle_adjustment import check_straddle_roll_gates
 
 
 # =============================================================================
@@ -95,14 +95,14 @@ def _make_session(
     roll_count=0, roll_max=3, roll_trigger_pts=400.0,
     initial_credit=0.400, last_roll_at=None,
 ):
-    """Build a minimal SHORT_STRADDLE session for gate testing."""
+    """Build a minimal STRADDLE_WITH_ADJUSTMENT session for gate testing."""
     ce_pos = _make_position(lots=ce_lots, entry_premium=ce_premium, strike=ce_strike)
     pe_pos = _make_position(lots=pe_lots, entry_premium=pe_premium, strike=pe_strike)
     return {
         'session_id': 'test-sr-001',
         'strategy_status': 'RUNNING',
         'params': {
-            '_preset_source': 'SHORT_STRADDLE',
+            '_preset_source': 'STRADDLE_WITH_ADJUSTMENT',
             'straddle_roll_enabled': True,
             'straddle_roll_max_per_session': roll_max,
             'straddle_roll_cooldown_mins': 0,       # no cooldown for tests
@@ -276,38 +276,38 @@ def test_r6_1_hot_reload_clears_blocked_flag():
 # =============================================================================
 
 def test_rp_1_wind_down_disabled_in_preset():
-    """build_short_straddle_preset sets wind_down_enabled=False."""
-    from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-    result = build_short_straddle_preset(5.0)
+    """build_straddle_adjustment_preset sets wind_down_enabled=False."""
+    from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+    result = build_straddle_adjustment_preset(5.0)
     assert result['wind_down_enabled'] is False
 
 
 def test_rp_2_harvest_disabled_in_preset():
-    """build_short_straddle_preset sets harvest_enabled=False."""
-    from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-    result = build_short_straddle_preset(5.0)
+    """build_straddle_adjustment_preset sets harvest_enabled=False."""
+    from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+    result = build_straddle_adjustment_preset(5.0)
     assert result['harvest_enabled'] is False
 
 
 def test_rp_3_session_duration_above_12h_allowed():
-    """build_short_straddle_preset(24.0) does not raise — 24h sessions allowed."""
-    from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-    result = build_short_straddle_preset(24.0)
+    """build_straddle_adjustment_preset(24.0) does not raise — 24h sessions allowed."""
+    from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+    result = build_straddle_adjustment_preset(24.0)
     assert isinstance(result, dict)
     assert 'straddle_roll_enabled' in result
 
 
 def test_rp_4_session_duration_below_1h_blocked():
-    """build_short_straddle_preset(0.5) raises ValueError — < 1h not allowed."""
-    from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
+    """build_straddle_adjustment_preset(0.5) raises ValueError — < 1h not allowed."""
+    from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
     with pytest.raises(ValueError, match='1h'):
-        build_short_straddle_preset(0.5)
+        build_straddle_adjustment_preset(0.5)
 
 
 def test_rp_5_max_rolls_not_in_preset():
     """straddle_roll_max_per_session is NOT set by preset — operator must provide it."""
-    from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-    result = build_short_straddle_preset(5.0)
+    from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+    result = build_straddle_adjustment_preset(5.0)
     assert 'straddle_roll_max_per_session' not in result
 
 
@@ -359,7 +359,7 @@ def test_rsg_1_same_strike_guard_blocks_roll_to_identical_strike():
 
 
 async def _run_inner(monitor, session):
-    from webui.backend.routes.mmm.mmm_straddle_roll import _execute_straddle_roll_inner
+    from webui.backend.routes.mmm.mmm_straddle_adjustment import _execute_straddle_roll_inner
     return await _execute_straddle_roll_inner(monitor, session, 'test-sr-001', 200.0)
 
 
@@ -414,7 +414,7 @@ def test_rsp_2_spread_gate_allows_tight_market():
     monitor.initializer.preview_atm_straddle.return_value = _mock_preview(
         86000, ce_bid=195.0, ce_ask=205.0, pe_bid=195.0, pe_ask=205.0,
     )
-    with patch('webui.backend.routes.mmm.mmm_straddle_roll.close_position',
+    with patch('webui.backend.routes.mmm.mmm_straddle_adjustment.close_position',
                new_callable=AsyncMock, return_value=True):
         try:
             asyncio.run(_run_inner(monitor, session))
@@ -433,7 +433,7 @@ def test_rsp_3_spread_gate_skips_when_no_bid_ask_in_preview():
     monitor = _make_monitor()
     # Preview without bid/ask — only mid_price → spread gate condition is False → skip
     monitor.initializer.preview_atm_straddle.return_value = _mock_preview(86000)
-    with patch('webui.backend.routes.mmm.mmm_straddle_roll.close_position',
+    with patch('webui.backend.routes.mmm.mmm_straddle_adjustment.close_position',
                new_callable=AsyncMock, return_value=True):
         try:
             asyncio.run(_run_inner(monitor, session))
@@ -466,9 +466,9 @@ def _run_inner_with_close_patched(session):
     session['params'].setdefault('initial_lots', 5)
 
     close_ret = {'success': True, 'lots_closed': 5}
-    with patch('webui.backend.routes.mmm.mmm_straddle_roll.close_position',
+    with patch('webui.backend.routes.mmm.mmm_straddle_adjustment.close_position',
                new_callable=AsyncMock, return_value=close_ret), \
-         patch('webui.backend.routes.mmm.mmm_straddle_roll.get_engine',
+         patch('webui.backend.routes.mmm.mmm_straddle_adjustment.get_engine',
                return_value=mock_engine):
         try:
             asyncio.run(_run_inner(monitor, session))
@@ -512,20 +512,20 @@ def test_rr_3_initial_credit_preserved_after_roll():
 # =============================================================================
 
 def test_rv_1_session_creation_rejects_missing_initial_lots():
-    """POST /session with SHORT_STRADDLE and no initial_lots returns HTTP 400."""
+    """POST /session with STRADDLE_WITH_ADJUSTMENT and no initial_lots returns HTTP 400."""
     # Structural test: verify the validation block exists in mmm_api.py
     import inspect
     import webui.backend.routes.mmm.mmm_api as mod
     source = inspect.getsource(mod)
     assert 'initial_lots' in source
-    assert 'SHORT_STRADDLE' in source
+    assert 'STRADDLE_WITH_ADJUSTMENT' in source
     # The validation must check for missing initial_lots and return 400
     assert "'initial_lots'" in source or '"initial_lots"' in source
     assert '400' in source
 
 
 def test_rv_2_session_creation_rejects_missing_max_rolls():
-    """POST /session with SHORT_STRADDLE and no straddle_roll_max_per_session returns HTTP 400."""
+    """POST /session with STRADDLE_WITH_ADJUSTMENT and no straddle_roll_max_per_session returns HTTP 400."""
     import inspect
     import webui.backend.routes.mmm.mmm_api as mod
     source = inspect.getsource(mod)

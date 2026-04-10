@@ -2791,3 +2791,82 @@ bid_cache = {}                         # never gets active_pe entry
 - CHANGE 4-B (roll badge): `|| 3` replaced with `?? '?'` — shows `?` when operator hasn't set max_rolls (not possible after API validation, but defensive). Tooltip now shows `Next trigger: ±N pts` from `_straddle_roll_trigger_pts` session key.
 - CHANGE 4-C (price guard chip): New `⚡ Guard` chip shown when session is RUNNING + SHORT_STRADDLE + price_guard not disabled. Green color, monospace, tooltip explains 5s monitoring.
 - Frontend build: clean, all bundles within budget.
+
+---
+
+## 2026-04-09 — Mobile MMM stability fixes (provider, WS cleanup, emergency actions)
+
+- `webui/frontend/src/App.js`
+  - Reworked mobile MMM routing to use a **single shared `MMMProvider` layout** (`MobileMMMLayout` + nested routes) for `/dashboard`, `/mmm`, `/control`, `/config`, `/risk`, `/monitoring`.
+  - This prevents provider unmount/remount churn when switching mobile tabs, preserving in-memory MMM state (sessions, connection state, timestamps) and reducing duplicate polling/subscriptions.
+  - Wired previously unused mobile pages (`MobileConfig`, `MobileRisk`, `MobileMonitoring`) into actual mobile routes; `MobileRisk` now receives live session data via a `useMMM` route bridge.
+
+- `webui/frontend/src/components/mmm/hooks/useMMMWebSocket.js`
+  - Fixed listener leak by registering listeners through a tracked `addListener(...)` helper that stores the **exact subscribed function references**.
+  - Cleanup now removes those same wrapped handlers, fixing the `safeHandler(...)` / `off(originalHandler)` mismatch that caused duplicate listeners after remounts.
+
+- `webui/frontend/src/components/mmm/mmmService.js`
+  - Added centralized API methods:
+    - `emergencyCloseAllPositions(reason, sessionIds, dryRun)`
+    - `emergencyKillAllBots(reason)`
+  - Keeps emergency operations on the shared API layer instead of ad-hoc `fetch` calls.
+
+- `webui/frontend/src/mobile/MobileControl.js`
+  - Replaced direct `fetch` calls with `mmmService` methods.
+  - Added explicit success validation (`assertSuccess`) so non-success API responses surface to operators instead of silently closing dialogs.
+  - Removed invalid hardcoded endpoint usage (`/api/mmm/sessions/.../emergency-close-all`) in favor of maintained backend APIs.
+
+- Validation:
+  - Editor diagnostics: no errors in changed files.
+  - Frontend production build completed successfully (existing repo-wide lint warnings remain unrelated).
+
+## 2026-04-10 — Forensic audit: mmm10apr26-2 / mmm10apr26-3 (no code changes)
+
+- Re-read `tasks/STRADDLE_ROLL_FIX_PLAN.md` Rev 3.0 and mapped each relevant expectation (trigger model, roll path, price guard, hard-stop execution, simplification scope) against current runtime behavior.
+- Re-verified SQLite evidence from `webui/backend/data/mmm_sessions.db`:
+  - Both sessions are `_preset_source='SHORT_STRADDLE'` with `straddle_roll_enabled=true`, `straddle_roll_max_per_session=3`, `_straddle_roll_trigger_pts > 0`.
+  - Both sessions have `_straddle_roll_count=0` and zero roll events in `session_event_log`.
+  - Both sessions executed one `ADJUSTMENT` sell (`adj_type='standard'`, `mechanism='algo'`, `aggressor_side='ce'`) in `position_audit_log`.
+- Quantified adjustment-time displacement vs roll trigger distance:
+  - `mmm10apr26-2`: move ≈ 922.69 pts vs trigger 1168.99 pts (−246.30)
+  - `mmm10apr26-3`: move ≈ 748.35 pts vs trigger 977.59 pts (−229.24)
+  This confirms roll Gate 8 distance was not met at those adjustment timestamps.
+- Code-path confirmation (no edits): in `mmm_monitor.py` Step 5.4 calls straddle roll, but if roll does not execute, Step 6 can still route into normal `_process_adjustment()`; therefore standard adjustments can legitimately occur before roll threshold is reached.
+- Outcome: completed investigation/reporting only; no trading logic changes made in this session.
+
+## 2026-04-10 — SHORT_STRADDLE → STRADDLE_WITH_ADJUSTMENT rename + pure straddle roll plan
+
+### What changed and why
+
+**Strategic decision**: Two test sessions (mmm10apr26-2, mmm10apr26-3) ran with SHORT_STRADDLE
+preset and were profitable despite (because of) the MMM adjustment engine running alongside the
+roll mechanism. The accidental hybrid strategy is worth keeping. It has been renamed and
+formally documented.
+
+### File renames (git mv — history preserved)
+- `mmm_straddle_roll.py` → `mmm_straddle_adjustment.py`
+- `tests/test_sealed_straddle_roll_rev3.py` → `tests/test_sealed_straddle_adjustment.py`
+
+### Preset rename
+- Constant: `SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'` → `STRADDLE_WITH_ADJUSTMENT_CATEGORY = 'STRADDLE_WITH_ADJUSTMENT'`
+- `build_short_straddle_preset()` → `build_straddle_adjustment_preset()`
+- Backward-compat alias: `SHORT_STRADDLE_CATEGORY = STRADDLE_WITH_ADJUSTMENT_CATEGORY` (old DB sessions still load correctly)
+- `apply_preset()` accepts both `'STRADDLE_WITH_ADJUSTMENT'` and legacy `'SHORT_STRADDLE'`
+
+### Files updated (references only — no logic changes)
+- `mmm_dte_presets.py` — constant + function rename, apply_preset backward compat
+- `mmm_straddle_adjustment.py` — module docstring, import, Gate 2 check, logger name
+- `mmm_monitor.py` — import, all SHORT_STRADDLE_CATEGORY checks, straddle init block, price guard, Step 5.4 roll call, is_straddle check
+- `mmm_api.py` — preset endpoint import, validation block
+- `mmm_state.py` — create_session import and conditional
+- `mmm_config.py`, `mmm_initializer.py` — comment updates
+- `mmm_exit_all.py`, `mmm_guardian.py` — import paths
+- `MMMDashboard.js`, `MMMSettingsDialog.js`, `MMMConfigPanel.js` — all string refs; JS variable `SHORT_STRADDLE_LOCKED_GROUPS` → `STRADDLE_LOCKED_GROUPS`
+- `tests/test_sealed_straddle_adjustment.py`, `tests/test_sealed_mmm_dte_presets.py` — function names + string refs
+
+### New documentation
+- `docs/STRADDLE_WITH_ADJUSTMENT.md` — full strategy description: how adjustments work, roll gates, trigger logic, price guard, preset params, known behaviors from first live test
+- `tasks/STRADDLE_ROLL_FIX_PLAN.md` updated to Rev 4.0 — sections 1–9 archived as STRADDLE_WITH_ADJUSTMENT, section 10 added with plan for STRADDLE_ROLL (pure, new files)
+
+### Zero logic changes
+No trading logic was modified. All changes are renames, comment updates, and backward-compat handling.

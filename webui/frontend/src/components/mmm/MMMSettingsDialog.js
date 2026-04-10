@@ -654,11 +654,11 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
   const operatorLocked = new Set(sessionData?._adaptive_operator_overrides || []);
 
-  // SHORT_STRADDLE: only 5 groups are relevant — all others locked.
+  // STRADDLE_WITH_ADJUSTMENT: only 5 groups are relevant — all others locked.
   // Locked = 40% opacity, not clickable, 🔒 badge. Settings still exist in backend
   // but operator cannot accidentally hot-reload them and break the roll mechanism.
-  const isShortStraddle = sessionData?.params?._preset_source === 'SHORT_STRADDLE';
-  const SHORT_STRADDLE_LOCKED_GROUPS = new Set([
+  const isShortStraddle = sessionData?.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT';
+  const STRADDLE_LOCKED_GROUPS = new Set([
     // ── Preset-disabled (would fight roll mechanism if re-enabled) ──
     'windDown',           // wind_down_enabled=False — closes OTM leg, breaks straddle structure
     'positionLifecycle',  // harvest_enabled=False — partial closes break CE/PE symmetry
@@ -1499,7 +1499,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       ? group.params.length
                       : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
                     const isActive = activeSection === key;
-                    const isLocked = isShortStraddle && SHORT_STRADDLE_LOCKED_GROUPS.has(key);
+                    const isLocked = isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key);
                     return (
                       <Box
                         key={key}
@@ -1668,7 +1668,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       const count = group.params
                         ? group.params.length
                         : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
-                      const isLocked = isShortStraddle && SHORT_STRADDLE_LOCKED_GROUPS.has(key);
+                      const isLocked = isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key);
 
                       // Category divider row
                       if (cat !== lastCat) {

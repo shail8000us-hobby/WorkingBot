@@ -362,7 +362,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
     }
   }, [selectedExpiry, desiredCePremium, desiredPePremium]);
 
-  // ----- ATM Straddle Preview (SHORT_STRADDLE preset only) -----
+  // ----- ATM Straddle Preview (STRADDLE_WITH_ADJUSTMENT preset only) -----
   const handlePreviewAtmStraddle = useCallback(async () => {
     if (!selectedExpiry) {
       setError('Please select an expiry date');

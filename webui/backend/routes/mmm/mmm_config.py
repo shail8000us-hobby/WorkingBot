@@ -421,7 +421,7 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
         )
 
     # M-6 note: max_loss_amount floor is enforced by PARAM_RULES min=1.
-    # No additional check here — $3 is valid for conservative 1-lot presets (e.g. SHORT_STRADDLE).
+    # No additional check here — $3 is valid for conservative 1-lot presets (e.g. STRADDLE_WITH_ADJUSTMENT).
 
     # IMP-2: Trend tier ordering: tier1 < tier2 < tier3 < tier4
     tier_keys = ['trend_tier1_pct', 'trend_tier2_pct', 'trend_tier3_pct', 'trend_tier4_pct']

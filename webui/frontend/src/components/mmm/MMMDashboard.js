@@ -826,14 +826,14 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       // For adopt mode, create as 'fresh' on backend — adoption happens in ConfigPanel
       const backendMode = mode === 'adopt' ? 'fresh' : mode;
       let sessionParams;
-      if (dtePreset === 'SHORT_STRADDLE') {
-        // SHORT_STRADDLE: backend builds all 52 params from the preset server-side.
+      if (dtePreset === 'STRADDLE_WITH_ADJUSTMENT') {
+        // STRADDLE_WITH_ADJUSTMENT: backend builds all params from the preset server-side.
         // Only send what the user explicitly controls — preset-driven values
         // (max_loss_amount, adjustment_interval, etc.) must not be sent so they
         // don't trip backend validation guards calibrated for other presets.
         sessionParams = {
           expiry: params.expiry,
-          dte_category: 'SHORT_STRADDLE',
+          dte_category: 'STRADDLE_WITH_ADJUSTMENT',
           initial_lots: params.initial_lots,
           straddle_roll_max_per_session: params.straddle_roll_max_per_session,
           desired_ce_premium: params.desired_ce_premium,
@@ -924,7 +924,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   <MenuItem key={name} value={name}>
                     {name === 'SHORT_WINDOW'
                       ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
-                      : name === 'SHORT_STRADDLE'
+                      : name === 'STRADDLE_WITH_ADJUSTMENT'
                       ? 'Short Straddle — with Roll'
                       : name}
                     {dtePresets[name]?.max_loss_amount && (
@@ -997,7 +997,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
                 </Typography>
               </>
-            ) : dtePreset === 'SHORT_STRADDLE' ? (
+            ) : dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? (
               <>
                 <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
                   🎯 Short Straddle — with Roll System
@@ -1044,8 +1044,8 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         {/* Core parameters */}
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>Core Parameters</Typography>
         <Grid container spacing={2} sx={{ mb: 3 }}>
-          {dtePreset === 'SHORT_STRADDLE' ? (
-            /* SHORT_STRADDLE: ATM strike is auto-selected — premium fields are not applicable */
+          {dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? (
+            /* STRADDLE_WITH_ADJUSTMENT: ATM strike is auto-selected — premium fields are not applicable */
             <Grid item xs={8}>
               <Box sx={{
                 p: 1.5,
@@ -1101,7 +1101,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               inputProps={{ min: 1 }}
             />
           </Grid>
-          {dtePreset === 'SHORT_STRADDLE' && (
+          {dtePreset === 'STRADDLE_WITH_ADJUSTMENT' && (
             <Grid item xs={4}>
               <TextField
                 label="Max Rolls / Session"
@@ -1144,7 +1144,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               fullWidth
               size="small"
               inputProps={{ min: 10, step: 30 }}
-              disabled={dtePreset === 'SHORT_STRADDLE'}
+              disabled={dtePreset === 'STRADDLE_WITH_ADJUSTMENT'}
             />
           </Grid>
           <Grid item xs={4}>
@@ -1155,7 +1155,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               onChange={(e) => handleParamChange('max_loss_amount', parseFloat(e.target.value) || 0)}
               fullWidth
               size="small"
-              inputProps={{ min: dtePreset === 'SHORT_STRADDLE' ? 1 : 100, step: dtePreset === 'SHORT_STRADDLE' ? 1 : 1000 }}
+              inputProps={{ min: dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? 1 : 100, step: dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? 1 : 1000 }}
             />
           </Grid>
         </Grid>
@@ -2418,8 +2418,8 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                   sx={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'text.secondary' }}
                 />
               )}
-              {/* Straddle Roll badge — only for SHORT_STRADDLE sessions */}
-              {(session.params?._preset_source === 'SHORT_STRADDLE' || session.params?.dte_category === 'SHORT_STRADDLE') &&
+              {/* Straddle Roll badge — only for STRADDLE_WITH_ADJUSTMENT sessions */}
+              {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' || session.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT') &&
                 session._straddle_roll_count != null && (
                 <Tooltip title={
                   <span>
@@ -2445,7 +2445,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                 </Tooltip>
               )}
               {/* Price Guard indicator — shows when real-time 5s spot monitor is active */}
-              {(session.params?._preset_source === 'SHORT_STRADDLE' || session.params?.dte_category === 'SHORT_STRADDLE') &&
+              {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' || session.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT') &&
                 session.params?.price_guard_enabled !== false &&
                 status === 'RUNNING' && (
                 <Tooltip title="⚡ Price Guard active — spot monitored every 5s, heartbeat forced when approaching roll trigger">
@@ -4143,8 +4143,8 @@ const MMMDashboard = () => {
                   sessionStatus={fullSession.strategy_status || fullSession.status}
                   sessionExpiry={fullSession.params?.expiry || ''}
                   isStraddle={
-                    fullSession.params?._preset_source === 'SHORT_STRADDLE' ||
-                    fullSession.params?.dte_category === 'SHORT_STRADDLE'
+                    fullSession.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
+                    fullSession.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT'
                   }
                   initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {

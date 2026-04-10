@@ -123,10 +123,13 @@ DTE_PRESETS = {
 }
 
 # Dynamic preset identifier — not in DTE_PRESETS because it's a factory function
-SHORT_STRADDLE_CATEGORY = 'SHORT_STRADDLE'
+STRADDLE_WITH_ADJUSTMENT_CATEGORY = 'STRADDLE_WITH_ADJUSTMENT'
+
+# Backward-compat alias — existing sessions in DB have '_preset_source': 'SHORT_STRADDLE'
+SHORT_STRADDLE_CATEGORY = STRADDLE_WITH_ADJUSTMENT_CATEGORY
 
 
-def build_short_straddle_preset(hours_to_expiry: float) -> dict:
+def build_straddle_adjustment_preset(hours_to_expiry: float) -> dict:
     """
     Dynamic short straddle preset — computes time-proportional parameters.
 
@@ -137,7 +140,7 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
     Scaled params (11): proportional to H with clamp(min, max).
     Regime tiers (4): widen for longer sessions.
 
-    See docs/SHORT_STRADDLE_5H_PRESET.md for full design rationale.
+    See docs/STRADDLE_WITH_ADJUSTMENT.md for full design rationale.
 
     Args:
         hours_to_expiry: Hours until expiry (2.0 to 12.0)
@@ -166,11 +169,11 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
 
     return {
         # ── Identity / UI ──
-        'preset_name': f'Short Straddle – {H:.0f}H Sprint',
+        'preset_name': f'Straddle With Adjustment – {H:.0f}H',
         'description': (
-            f'ATM short straddle, {H:.0f}h window. '
-            f'Dynamic params auto-scaled from time-to-expiry. '
-            f'Conservative lot sizing, no adjustments, max_loss hard stop.'
+            f'ATM straddle, {H:.0f}h window. '
+            f'MMM adjustment engine active alongside roll mechanism. '
+            f'Dynamic params auto-scaled from time-to-expiry. max_loss hard stop.'
         ),
 
         # ── DTE / Session ──
@@ -208,7 +211,11 @@ def build_short_straddle_preset(hours_to_expiry: float) -> dict:
 
         # ── P&L Guardrails (fixed) ──
         'max_loss_amount': 3000.0,
-        'trailing_stop_pct': 0.25,
+        'trailing_stop_pct': 0,  # Disabled — straddle uses max_loss as hard stop.
+        # Trailing stop fires when P&L drops below (peak × pct). On a fresh straddle
+        # the peak is a few cents of theta, so any non-zero pct creates an instant
+        # tripwire that blocks the roll. Roll bypasses stop_adjustments (see
+        # mmm_monitor.py Step 5.4), but 0 is still the correct default to avoid noise.
 
         # ── Reversal / Whipsaw (scaled window, fixed thresholds) ──
         'cooldown_on_reversal': True,
@@ -305,14 +312,14 @@ def list_presets() -> List[Dict]:
             entry['session_window_hours'] = preset['session_window_hours']
         result.append(entry)
 
-    # Include dynamic preset with example values (5h) — NEW STRADDLE ROLL
+    # Include dynamic preset with example values (5h) — STRADDLE WITH ADJUSTMENT
     result.append({
-        'name': SHORT_STRADDLE_CATEGORY,
+        'name': STRADDLE_WITH_ADJUSTMENT_CATEGORY,
         'dynamic': True,
-        'description': 'Short Straddle with Roll — auto-scaled (2–12h) + straddle roll system',
+        'description': 'ATM Straddle + MMM Adjustments — auto-scaled (1–24h) + roll mechanism',
         'adjustment_interval': 120,
-        'min_trigger_move': 8.0,
-        'max_loss_amount': 3000,  # Updated to reflect actual max loss amount
+        'min_trigger_move': 50.0,
+        'max_loss_amount': 3000,
         'max_lots_per_side': 5,
         'straddle_roll_enabled': True,
         'straddle_roll_max_per_session': 3,
@@ -327,21 +334,22 @@ def apply_preset(params: Dict, dte_category: str) -> Dict:
     Apply a DTE preset to session params.
     Preset values are applied as defaults — explicit user params override.
 
-    For SHORT_STRADDLE: dynamically builds params from hours_to_expiry.
+    For STRADDLE_WITH_ADJUSTMENT: dynamically builds params from hours_to_expiry.
     For static presets: merges the static dict.
 
     Args:
         params: User-provided params (may be partial)
-        dte_category: e.g. '0DTE', '5DTE', 'SHORT_STRADDLE'
+        dte_category: e.g. '0DTE', '5DTE', 'STRADDLE_WITH_ADJUSTMENT'
 
     Returns:
         Merged params with preset values as base layer
     """
-    if dte_category == SHORT_STRADDLE_CATEGORY:
+    if dte_category in (STRADDLE_WITH_ADJUSTMENT_CATEGORY, 'SHORT_STRADDLE'):
         # Dynamic preset: compute hours from expiry, then build scaled params
+        # Note: 'SHORT_STRADDLE' is the legacy name — accept for backward compat.
         expiry_str = params.get('expiry', '')
         if not expiry_str:
-            log.warning("SHORT_STRADDLE preset requires 'expiry' param")
+            log.warning("STRADDLE_WITH_ADJUSTMENT preset requires 'expiry' param")
             return params
         hours = compute_total_dte_hours(
             expiry_str,
@@ -349,19 +357,19 @@ def apply_preset(params: Dict, dte_category: str) -> Dict:
             params.get('expiry_minute_utc', 0),
         )
         try:
-            preset = build_short_straddle_preset(hours)
+            preset = build_straddle_adjustment_preset(hours)
         except ValueError as e:
-            log.error(f"SHORT_STRADDLE preset rejected: {e}")
+            log.error(f"STRADDLE_WITH_ADJUSTMENT preset rejected: {e}")
             return params
 
         merged = {}
         merged.update(preset)
         merged.update(params)
-        # Restore computed dte_category (user sent 'SHORT_STRADDLE' but
+        # Restore computed dte_category (user sent 'STRADDLE_WITH_ADJUSTMENT' but
         # routing needs '0DTE' from the preset)
         merged['dte_category'] = preset['dte_category']
         # Preserve the original preset selection for UI display
-        merged['_preset_source'] = SHORT_STRADDLE_CATEGORY
+        merged['_preset_source'] = STRADDLE_WITH_ADJUSTMENT_CATEGORY
         return merged
 
     preset = get_preset(dte_category)

@@ -1,16 +1,45 @@
-# Straddle Roll Fix Plan — Rev 3.0
+# Straddle Roll Fix Plan — Rev 4.0
 **Created: 2026-04-09**
 **Rev 1.0 → 2.0: Quant audit (12 issues found and addressed)**
 **Rev 2.0 → 3.0: Architecture overhaul — real-time price guard, market orders on hard stop,
                   wind-down disabled, duration cap removed, hot-reloadable roll limit**
+**Rev 3.0 → 4.0: Strategic split — Rev 3.0 code kept as STRADDLE_WITH_ADJUSTMENT;
+                  this document now plans the REAL pure straddle roll in new files**
 **Author: Claude Code + physicsssr**
-**Status: PLANNING — no code written yet**
+**Status: Rev 3.0 code SHIPPED as STRADDLE_WITH_ADJUSTMENT. Rev 4.0 (pure roll) = PLANNING**
 
 ---
 
-## 0. Executive Summary
+## STATUS UPDATE — 2026-04-10
 
-The Short Straddle with Roll is being simplified to its essential form: **sell ATM straddle → monitor in real-time → roll when market moves by collected premium → hard stop if loss exceeds limit → close at expiry.**
+### What happened with Rev 3.0
+
+Rev 3.0 was implemented and tested on two live sessions (`mmm10apr26-2` and `mmm10apr26-3`).
+Analysis revealed that the MMM adjustment engine was never disabled — sessions ran as
+**ATM straddles with MMM strangle-style adjustment logic active on both legs**, not as
+pure straddles.
+
+**Observed behaviour:**
+- Started: 1 CE + 1 PE at ATM strike
+- Session -2 after adjustments: 1 CE, 5 PE (hit position cap)
+- Session -3 after adjustments: 1 CE, 3 PE
+- Both sessions were profitable despite asymmetric positions
+
+**Decision:** The accidental hybrid strategy works well and is worth keeping.
+It has been renamed and documented as **STRADDLE_WITH_ADJUSTMENT**:
+- `mmm_straddle_roll.py` → renamed to `mmm_straddle_adjustment.py`
+- Preset string `'SHORT_STRADDLE'` → `'STRADDLE_WITH_ADJUSTMENT'`
+- Full documentation: `docs/STRADDLE_WITH_ADJUSTMENT.md`
+
+**This document now plans the REAL pure straddle roll** — a separate implementation
+in new files that will do exactly what was originally specified: sell ATM straddle,
+monitor, roll when market moves by collected premium, nothing else.
+
+---
+
+## 0. Executive Summary (Rev 4.0 — Pure Straddle Roll)
+
+The pure Straddle Roll is the essential form: **sell ATM straddle → monitor in real-time → roll when market moves by collected premium → hard stop if loss exceeds limit → close at expiry.**
 
 Nothing else. No wind-down. No harvest. No regime-gated adjustments. No 12-hour cap.
 
@@ -611,15 +640,119 @@ Testing:
 
 ---
 
-## 9. Pre-Trade Checklist (After All Phases Complete)
+## 9. Pre-Trade Checklist (STRADDLE_WITH_ADJUSTMENT — already shipped)
 
-- [ ] Dashboard shows `±N pts` trigger, not `trigger %`
-- [ ] Price guard badge visible on session card
-- [ ] Create 1-lot test session → verify `initial_lots` validation fires if absent
-- [ ] Verify `straddle_roll_max_per_session` validation fires if absent
-- [ ] Paper session: observe roll fires within 10 seconds of trigger crossing
-- [ ] Paper session: verify post-roll trigger updates to new_CE + new_PE
-- [ ] Simulate crash: verify hard stop fires market order (check executor logs)
-- [ ] Verify 24h session creation works without error
-- [ ] All 1312+ sealed tests pass
-- [ ] Git diff confirms zero changes to strangle-serving files
+- [x] Dashboard shows `±N pts` trigger, not `trigger %`
+- [x] Price guard active (5s polling)
+- [x] `initial_lots` validation fires if absent
+- [x] `straddle_roll_max_per_session` validation fires if absent
+- [x] Wind-down disabled
+- [x] Harvest disabled
+- [x] 24h sessions allowed
+
+---
+
+## 10. Rev 4.0 Plan — Pure Straddle Roll (New Files, New Preset)
+
+### 10.1 What "Pure" Means
+
+No adjustment engine. Between rolls, the heartbeat checks for roll trigger and max_loss only.
+CE and PE lots are always equal. The roll is the only risk-management action.
+
+Decision tree:
+```
+Every 5s — Price Guard (same as STRADDLE_WITH_ADJUSTMENT)
+
+Every 120s (or immediately if Price Guard fires):
+  STEP 1 — HARD STOP: loss ≥ max_loss? → market order close all, STOP
+  STEP 2 — EXPIRY: < 10 min → close all limit, STOP
+           < 90 min → skip roll, hold
+  STEP 3 — ROLL: spot_move ≥ trigger_pts? → roll, update trigger
+  OTHERWISE → nothing
+```
+
+### 10.2 New Files to Create
+
+| File | Purpose |
+|------|---------|
+| `mmm_straddle_roll_pure.py` | New roll logic — no adjustment engine, market orders on stop |
+| `tests/test_sealed_straddle_roll_pure.py` | Sealed tests for pure roll |
+
+**No existing files modified.** Strangle is untouched. STRADDLE_WITH_ADJUSTMENT is untouched.
+
+### 10.3 New Preset: `STRADDLE_ROLL`
+
+Add to `mmm_dte_presets.py`:
+```python
+STRADDLE_ROLL_CATEGORY = 'STRADDLE_ROLL'
+
+def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
+    ...
+    # Key differences from STRADDLE_WITH_ADJUSTMENT:
+    # - min_trigger_move: 9999  (effectively disables all MMM adjustments)
+    # - straddle_roll_hard_stop_market_order: True
+    # - max_lots_per_side: same as initial_lots (cannot grow)
+    # - No asymmetry logic, no reversal logic, no regime gates
+```
+
+### 10.4 Key Differences from STRADDLE_WITH_ADJUSTMENT
+
+| Aspect | STRADDLE_WITH_ADJUSTMENT | STRADDLE_ROLL (new) |
+|--------|--------------------------|----------------------|
+| Adjustment engine | Active | Disabled (`min_trigger_move: 9999`) |
+| CE:PE lot ratio | Can diverge | Always 1:1 |
+| Hard stop order type | Limit | **Market order** |
+| Between-roll action | Adjustments allowed | Nothing |
+| Trigger_pts basis | Blended avg (all adj lots) | Pure CE fill + PE fill |
+| File | `mmm_straddle_adjustment.py` | `mmm_straddle_roll_pure.py` |
+| Preset constant | `STRADDLE_WITH_ADJUSTMENT` | `STRADDLE_ROLL` |
+
+### 10.5 What the Pure Roll Adds (Not in STRADDLE_WITH_ADJUSTMENT)
+
+**FIX-3 (Safety): Hard Stop Uses Market Orders**
+
+The hard stop in STRADDLE_WITH_ADJUSTMENT still uses limit orders (inherited from original code).
+For the pure straddle roll, a hard stop during a fast crash MUST fill immediately.
+
+Add `order_type: str = 'limit'` parameter to `close_position()`:
+- Hard stop path: `close_position(..., order_type='market')`
+- Normal roll close: limit (unchanged)
+- In `mmm_executor.py`: pass `'order_type': 'market_order'` vs `'limit_order'` in the API payload
+
+This is **intentionally NOT backported** to STRADDLE_WITH_ADJUSTMENT because:
+1. STRADDLE_WITH_ADJUSTMENT already had live sessions
+2. Limit orders are fine for that strategy's slower exit scenarios
+3. Pure roll needs market orders because it has no adjustment buffer
+
+### 10.6 Implementation Order
+
+```
+Phase 1 — New preset + disabled-adjustment heartbeat path
+  - Add STRADDLE_ROLL_CATEGORY to mmm_dte_presets.py
+  - Add build_straddle_roll_preset() (min_trigger_move: 9999)
+  - In mmm_monitor.py: add condition to SKIP adjustment engine for STRADDLE_ROLL
+  - Create mmm_straddle_roll_pure.py (copy of mmm_straddle_adjustment.py, stripped down)
+
+Phase 2 — Market order hard stop
+  - Add order_type param to close_position()
+  - Add market_order support to mmm_executor.py
+  - Wire hard stop call site to use market order
+
+Phase 3 — Session validation + sealed tests
+  - Add STRADDLE_ROLL to session creation validation
+  - Write test_sealed_straddle_roll_pure.py
+  - Verify 1312 baseline still holds
+
+Phase 4 — UI
+  - Add STRADDLE_ROLL option to session create dialog
+  - Separate badge/UI from STRADDLE_WITH_ADJUSTMENT
+```
+
+### 10.7 Pre-Trade Checklist (STRADDLE_ROLL — before first real trade)
+
+- [ ] Paper session: CE = PE lots throughout entire session (no adjustment divergence)
+- [ ] Paper session: roll fires within 10s of trigger crossing (price guard working)
+- [ ] Paper session: post-roll trigger = new_CE_fill + new_PE_fill (not blended avg)
+- [ ] Simulate crash: hard stop fires market order (check executor logs for `market_order`)
+- [ ] Verify `STRADDLE_WITH_ADJUSTMENT` sessions unaffected (strangle isolation check)
+- [ ] All sealed tests pass (new baseline ≥ 1312 + new tests)

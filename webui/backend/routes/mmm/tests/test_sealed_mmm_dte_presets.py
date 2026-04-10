@@ -5,7 +5,7 @@ SEALED — v1.0.0 — March 21, 2026
 Do not modify without UNSEAL command in AI_SEAL.md
 
 BUG FIXED at seal time:
-  build_short_straddle_preset: max_loss_amount was 3.0 (USD) — clearly wrong
+  build_straddle_adjustment_preset: max_loss_amount was 3.0 (USD) — clearly wrong
   given 0DTE max_loss_amount=5000 and 5DTE=15000. Fixed to 3000.0.
   list_presets() already showed 3000 (with comment "Updated to reflect actual max
   loss amount"), confirming 3.0 was a typo.
@@ -16,7 +16,7 @@ Functions covered:
   check_aggregate_pnl(active_sessions, global_max_loss) -> Dict
   check_chain_liquidity(chain, min_liquidity_lots, min_strikes_per_side) -> Dict
   apply_preset(params, dte_category) -> Dict
-  build_short_straddle_preset(hours_to_expiry) -> Dict
+  build_straddle_adjustment_preset(hours_to_expiry) -> Dict
 
 File: webui/backend/routes/mmm/mmm_dte_presets.py
 
@@ -51,11 +51,11 @@ C-CCL-5: bid_size below minimum → doesn't count
 C-AP-1: known static preset merges, dte_category stored
 C-AP-2: user params override preset values
 C-AP-3: unknown preset → returns params unchanged
-C-AP-4: SHORT_STRADDLE without expiry → returns params unchanged
-C-AP-5: SHORT_STRADDLE valid → dte_category='0DTE', _preset_source='SHORT_STRADDLE'
-C-AP-6: SHORT_STRADDLE hours<1 → ValueError caught, returns params unchanged
+C-AP-4: STRADDLE_WITH_ADJUSTMENT without expiry → returns params unchanged
+C-AP-5: STRADDLE_WITH_ADJUSTMENT valid → dte_category='0DTE', _preset_source='STRADDLE_WITH_ADJUSTMENT'
+C-AP-6: STRADDLE_WITH_ADJUSTMENT hours<1 → ValueError caught, returns params unchanged
 
---- build_short_straddle_preset contracts ---
+--- build_straddle_adjustment_preset contracts ---
 C-BSS-1: H < 1 → raises ValueError
 C-BSS-2: H > 24 → does not raise (warning only)
 C-BSS-3: H = 5.0 → returns complete dict
@@ -309,7 +309,7 @@ class TestApplyPreset:
     def test_c_ap_4_short_straddle_no_expiry_returns_unchanged(self):
         from webui.backend.routes.mmm.mmm_dte_presets import apply_preset
         params = {'initial_lots': 1}  # no expiry
-        result = apply_preset(params, 'SHORT_STRADDLE')
+        result = apply_preset(params, 'STRADDLE_WITH_ADJUSTMENT')
         assert result == params  # returned unchanged
 
     @pytest.mark.sealed
@@ -319,11 +319,11 @@ class TestApplyPreset:
         # Mock compute_total_dte_hours to return controlled 5.0
         with patch('webui.backend.routes.mmm.mmm_dte_presets.compute_total_dte_hours',
                    return_value=5.0):
-            result = apply_preset(params, 'SHORT_STRADDLE')
-        # dte_category comes from preset (not 'SHORT_STRADDLE')
+            result = apply_preset(params, 'STRADDLE_WITH_ADJUSTMENT')
+        # dte_category comes from preset (not 'STRADDLE_WITH_ADJUSTMENT')
         assert result['dte_category'] == '0DTE'
         # Source tracked for UI
-        assert result['_preset_source'] == 'SHORT_STRADDLE'
+        assert result['_preset_source'] == 'STRADDLE_WITH_ADJUSTMENT'
         # User params preserved
         assert result['initial_lots'] == 1
 
@@ -331,38 +331,38 @@ class TestApplyPreset:
     def test_c_ap_6_short_straddle_hours_below_2_returns_unchanged(self):
         from webui.backend.routes.mmm.mmm_dte_presets import apply_preset
         params = {'expiry': '21032026', 'initial_lots': 1}
-        # Hours < 1 → build_short_straddle_preset raises ValueError → caught, params returned
+        # Hours < 1 → build_straddle_adjustment_preset raises ValueError → caught, params returned
         with patch('webui.backend.routes.mmm.mmm_dte_presets.compute_total_dte_hours',
                    return_value=0.5):
-            result = apply_preset(params, 'SHORT_STRADDLE')
+            result = apply_preset(params, 'STRADDLE_WITH_ADJUSTMENT')
         assert '_preset_source' not in result
         assert result.get('initial_lots') == 1
 
 
 # =============================================================================
-# build_short_straddle_preset
+# build_straddle_adjustment_preset
 # =============================================================================
 
 class TestBuildShortStraddlePreset:
 
     @pytest.mark.sealed
     def test_c_bss_1_below_1h_raises(self):
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
         with pytest.raises(ValueError, match='1h'):
-            build_short_straddle_preset(0.9)
+            build_straddle_adjustment_preset(0.9)
 
     @pytest.mark.sealed
     def test_c_bss_2_above_24h_does_not_raise(self):
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
         # H > 24 now produces a warning, not an error
-        result = build_short_straddle_preset(25.0)
+        result = build_straddle_adjustment_preset(25.0)
         assert isinstance(result, dict)
         assert 'dte_category' in result
 
     @pytest.mark.sealed
     def test_c_bss_3_valid_h5_returns_complete_dict(self):
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        result = build_short_straddle_preset(5.0)
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+        result = build_straddle_adjustment_preset(5.0)
         assert isinstance(result, dict)
         # Key sections present
         for key in ('dte_category', 'max_loss_amount', 'adjustment_interval',
@@ -373,23 +373,23 @@ class TestBuildShortStraddlePreset:
     @pytest.mark.sealed
     def test_c_bss_4_max_loss_amount_3000(self):
         """BUG FIX: was 3.0 (USD), should be 3000.0."""
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        result = build_short_straddle_preset(5.0)
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+        result = build_straddle_adjustment_preset(5.0)
         assert result['max_loss_amount'] == 3000.0, (
             f"max_loss_amount={result['max_loss_amount']!r} — should be 3000.0 (bug fix: was 3.0)"
         )
 
     @pytest.mark.sealed
     def test_c_bss_5_dte_category_is_0dte(self):
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        result = build_short_straddle_preset(5.0)
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+        result = build_straddle_adjustment_preset(5.0)
         assert result['dte_category'] == '0DTE'
 
     @pytest.mark.sealed
     def test_c_bss_6_scaled_params_within_clamp_bounds_for_h5(self):
         """H=5.0 → check that clamped/scaled params are within expected ranges."""
-        from webui.backend.routes.mmm.mmm_dte_presets import build_short_straddle_preset
-        result = build_short_straddle_preset(5.0)
+        from webui.backend.routes.mmm.mmm_dte_presets import build_straddle_adjustment_preset
+        result = build_straddle_adjustment_preset(5.0)
         # max_adjustments: clamp(round(5*4)=20, 10, 50) = 20
         assert result['max_adjustments'] == 20
         # wind_down_enabled is False (disabled — fights roll mechanism)

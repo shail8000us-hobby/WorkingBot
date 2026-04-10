@@ -84,7 +84,7 @@ from .mmm_perp_hedge import (
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key, _D, _LOT
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
-from .mmm_dte_presets import SHORT_STRADDLE_CATEGORY
+from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
 from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE, ACTION_PAUSE
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
@@ -247,7 +247,7 @@ class MMMMonitor:
 
         # CRITICAL FIX C-3: Detect half-rolled sessions on startup
         half_roll_state = self.session.get('_straddle_half_roll_state')
-        from .mmm_straddle_roll import HALF_ROLL_NONE
+        from .mmm_straddle_adjustment import HALF_ROLL_NONE
         if half_roll_state and half_roll_state != HALF_ROLL_NONE:
             log.critical(
                 f"[{self.session_id}] HALF-ROLL DETECTED on startup: {half_roll_state} — "
@@ -353,9 +353,11 @@ class MMMMonitor:
             analytics['total_combined_lots_traded'] = analytics['initial_ce_lots'] + analytics['initial_pe_lots']
 
         # ── Straddle Roll: session-level state ──────────────────────────────
-        # Initialised once per session start for SHORT_STRADDLE presets.
-        # These keys are consumed by mmm_straddle_roll.execute_straddle_roll().
-        if self.session.get('params', {}).get('_preset_source') == SHORT_STRADDLE_CATEGORY:
+        # Initialised once per session start for STRADDLE_WITH_ADJUSTMENT presets.
+        # These keys are consumed by mmm_straddle_adjustment.execute_straddle_roll().
+        if self.session.get('params', {}).get('_preset_source') in (
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+        ):
             # Re-run if key missing OR if it was computed with the old buggy logic
             # (original_lots key doesn't exist on position dicts → was always 0).
             # _straddle_credit_v2 flag marks sessions already fixed.
@@ -394,7 +396,7 @@ class MMMMonitor:
             # ── Compute premium-based roll trigger (CHANGE 1-A) ────────────────
             # Roll fires when spot has moved ≥ (CE_entry_premium + PE_entry_premium) points.
             # This is the financial breakeven of a short straddle seller.
-            # Stored per-roll: updated in mmm_straddle_roll.py after each successful roll.
+            # Stored per-roll: updated in mmm_straddle_adjustment.py after each successful roll.
             if '_straddle_roll_trigger_pts' not in self.session or self.session.get('_straddle_roll_trigger_pts', 0) <= 0:
                 _ce_active = [p for p in (self.session.get('ce') or {}).get('positions', [])
                               if p.get('status') == 'active' and p.get('lots', 0) > 0]
@@ -522,8 +524,10 @@ class MMMMonitor:
         self._start_close_watcher()
         self._start_price_ticker()
 
-        # Price Guard: start real-time spot monitor for SHORT_STRADDLE sessions only
-        if self.session.get('params', {}).get('_preset_source') == SHORT_STRADDLE_CATEGORY:
+        # Price Guard: start real-time spot monitor for STRADDLE_WITH_ADJUSTMENT sessions only
+        if self.session.get('params', {}).get('_preset_source') in (
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+        ):
             self._start_price_guard()
 
         # M-3 fix: emit correct restored status, not always 'RUNNING'
@@ -581,7 +585,7 @@ class MMMMonitor:
 
         # CRITICAL FIX C-1: Cleanup roll lock when session stops
         try:
-            from .mmm_straddle_roll import _cleanup_roll_lock
+            from .mmm_straddle_adjustment import _cleanup_roll_lock
             _cleanup_roll_lock(self.session_id)
         except Exception:
             pass
@@ -859,14 +863,14 @@ class MMMMonitor:
             self._stop_event.wait(timeout=min(0.5, max(0, remaining)))
 
     # =========================================================================
-    # Price Guard — Real-time spot monitoring for SHORT_STRADDLE sessions
+    # Price Guard — Real-time spot monitoring for STRADDLE_WITH_ADJUSTMENT sessions
     # =========================================================================
 
     def _start_price_guard(self):
         """Start a background thread that polls spot price and forces heartbeat
         when price approaches the roll trigger distance.
 
-        Only started for SHORT_STRADDLE sessions (called from start()).
+        Only started for STRADDLE_WITH_ADJUSTMENT sessions (called from start()).
         Uses the same threading pattern as _start_price_ticker / _start_close_watcher.
         """
         try:
@@ -2751,13 +2755,19 @@ class MMMMonitor:
             log.error(f"[{sid}] Adaptive engine error: {_adapt_err}", exc_info=True)
 
         # ── Step 5.4: Straddle Roll ─────────────────────────────────────────
-        # Full ATM reset for SHORT_STRADDLE sessions. Only fires when _preset_source
-        # is SHORT_STRADDLE and straddle_roll_enabled is True.
-        if (not _skip_to_pnl
-                and params.get('straddle_roll_enabled', False)
-                and params.get('_preset_source') == SHORT_STRADDLE_CATEGORY):
+        # Full ATM reset for STRADDLE_WITH_ADJUSTMENT sessions. Only fires when
+        # _preset_source is STRADDLE_WITH_ADJUSTMENT and straddle_roll_enabled is True.
+        # NOTE: _skip_to_pnl is intentionally NOT checked here (same pattern as
+        # ATM Shield). The roll is the primary risk-management action — a trailing
+        # stop or guardrail block (stop_adjustments) must NOT prevent the roll.
+        # Only a paused/stopped session suppresses the roll.
+        if (params.get('straddle_roll_enabled', False)
+                and params.get('_preset_source') in (
+                    STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+                )
+                and not self._paused):
             try:
-                from .mmm_straddle_roll import execute_straddle_roll
+                from .mmm_straddle_adjustment import execute_straddle_roll
                 _straddle_roll_fired = await execute_straddle_roll(
                     self, session, sid, minutes_to_expiry
                 )
@@ -6320,7 +6330,7 @@ class MMMMonitor:
         preset = params.get('adaptive_preset', 'strangle')
         # Straddle mode: use ATM strike (computed once — doesn't change between retries)
         is_straddle = (
-            dte_cat == 'SHORT_STRADDLE'
+            dte_cat in ('STRADDLE_WITH_ADJUSTMENT', 'SHORT_STRADDLE')
             or preset == 'straddle'
             or (session.get('ce', {}).get('original_strike', 0) > 0
                 and session.get('ce', {}).get('original_strike', 0)
