@@ -132,6 +132,16 @@ def _check_shield_gates(
     if session.get(f'_proactive_shifted_{side}'):
         return False, 'proactive shift already ran'
 
+    # Replenish grace hold — when replenish was forced to use a within-buffer
+    # strike (no safe OTM alternative found), it sets this flag to prevent an
+    # immediate ATM-shield-close → replenish → close cycle.  The hold is per-side
+    # so each leg can be independently protected.
+    _hold_key = f'_replenish_shield_hold_until_{side}'
+    _hold_until = session.get(_hold_key, 0)
+    if _hold_until and time.time() < _hold_until:
+        _hold_remaining = int(_hold_until - time.time())
+        return False, f'replenish_grace_hold ({_hold_remaining}s remaining)'
+
     return True, 'ok'
 
 

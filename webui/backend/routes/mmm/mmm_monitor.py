@@ -6542,27 +6542,40 @@ class MMMMonitor:
                         )
                         strike_info = _safe_strike_info
                     else:
+                        # No safe strike found outside the ATM buffer.
+                        # Hedge restoration takes priority over cycle prevention:
+                        # leaving CE/PE fully unhedged for hours is worse than the
+                        # risk of an ATM-shield fire on the replenished position.
+                        # Accept the best available candidate and suppress the ATM
+                        # shield for this side for `replenish_shield_hold_secs`
+                        # (default 15 min) so the position has time to survive or
+                        # expire before the shield can evict it again.
+                        _hold_secs = params.get('replenish_shield_hold_secs', 900)
+                        _hold_key = f'_replenish_shield_hold_until_{closed_side}'
+                        session[_hold_key] = time.time() + _hold_secs
                         log.warning(
                             f"[{sid}] Replenish: no safe {closed_side.upper()} strike "
                             f"at >= {_safe_pct:.2f}% OTM (spot ${spot_price:.0f}). "
-                            f"Blocking replenish — PAUSE to prevent replenish→shield cycle."
+                            f"Accepting closest candidate {_cand_strike} "
+                            f"({_cand_dist_pct:.2f}% OTM) — hedge restoration priority. "
+                            f"ATM shield suppressed for {_hold_secs}s on {closed_side.upper()} "
+                            f"to prevent replenish→shield cycle."
                         )
                         log_activity(
-                            'replenish_blocked',
-                            f'\u26D4 Replenish {closed_side.upper()} blocked: '
-                            f'no safe strike at \u2265{_safe_pct:.2f}% OTM '
-                            f'(shield buffer, spot ${spot_price:.0f}). '
-                            f'Closest candidate {_cand_strike} is only {_cand_dist_pct:.2f}% '
-                            f'OTM — too close to ATM shield threshold {_eff_prox_pct:.2f}%.',
+                            'replenish_grace_hold',
+                            f'\u26A0\uFE0F Replenish {closed_side.upper()}: no safe OTM strike '
+                            f'(\u2265{_safe_pct:.2f}% OTM, spot ${spot_price:.0f}). '
+                            f'Accepting {_cand_strike} ({_cand_dist_pct:.2f}% OTM) — '
+                            f'ATM shield suppressed {_hold_secs}s (hedge restoration).',
                             sid, 'warning',
                             {'closed_side': closed_side,
-                             'rejected_strike': _cand_strike,
+                             'accepted_strike': _cand_strike,
                              'dist_pct': round(_cand_dist_pct, 3),
                              'safe_pct': round(_safe_pct, 3),
-                             'shield_pct': round(_eff_prox_pct, 3),
+                             'shield_hold_secs': _hold_secs,
                              'spot': spot_price},
                         )
-                        return False  # PAUSE takes over; retries when spot moves away
+                        # strike_info already holds the best candidate — continue
 
             # Step 3c: Premium check — hard stop, NOT retriable (market condition)
             strike = strike_info['strike']
