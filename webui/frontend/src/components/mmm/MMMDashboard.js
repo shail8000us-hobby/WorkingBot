@@ -368,54 +368,27 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
               {session.session_id}
             </Typography>
-            {/* Strategy type badge — always shown so session type is immediately clear */}
-            {session.params?._preset_source === 'STRADDLE_ROLL' ? (
-              <Chip
-                label="ROLL"
-                size="small"
-                color="success"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
-              />
-            ) : (session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
-              session.params?._preset_source === 'SHORT_STRADDLE') ? (
-              <Chip
-                label="STRADDLE"
-                size="small"
-                color="secondary"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
-              />
-            ) : (
-              <Chip
-                label="STRANGLE"
-                size="small"
-                color="default"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, borderColor: 'rgba(255,255,255,0.3)', color: 'text.secondary' }}
-              />
-            )}
-            {/* DTE category badge — shown when non-standard */}
-            {session.dte_category === 'SHORT_WINDOW' ? (
-              <Chip
-                label={`${session.params?.session_window_hours || 5}h`}
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
-              />
-            ) : session.dte_category && session.dte_category !== '0DTE'
-              && session.params?._preset_source !== 'STRADDLE_WITH_ADJUSTMENT'
-              && session.params?._preset_source !== 'SHORT_STRADDLE'
-              && session.params?._preset_source !== 'STRADDLE_ROLL' ? (
-              <Chip
-                label={session.dte_category}
-                size="small"
-                color="info"
-                variant="outlined"
-                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
-              />
-            ) : null}
+            {/* Strategy type badge — single badge, always visible, unambiguous */}
+            {(() => {
+              const src = session.params?._preset_source;
+              const dte = session.params?.dte_category || session.dte_category;
+              if (src === 'STRADDLE_ROLL') {
+                return <Chip label="Straddle Roll" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              }
+              if (src === 'STRADDLE_WITH_ADJUSTMENT' || src === 'SHORT_STRADDLE') {
+                return <Chip label="Short Straddle Adj" size="small" color="secondary" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              }
+              // Strangle — append DTE category so type is fully clear
+              if (dte === 'SHORT_WINDOW') {
+                const h = session.params?.session_window_hours || 5;
+                return <Chip label={`Short Strangle ${h}h`} size="small" color="warning" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              }
+              if (dte === '5DTE') {
+                return <Chip label="Short Strangle 5DTE" size="small" color="info" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              }
+              // 0DTE and everything else → Short Strangle 0DTE
+              return <Chip label="Short Strangle 0DTE" size="small" color="default" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, borderColor: 'rgba(255,255,255,0.3)', color: 'text.secondary' }} />;
+            })()}
             {/* Health Grade Badge */}
             {session._health_grade && (
               <Tooltip title={`Health: ${session._health_grade}`}>
@@ -4222,7 +4195,8 @@ const MMMDashboard = () => {
                   sessionExpiry={fullSession.params?.expiry || ''}
                   isStraddle={
                     fullSession.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
-                    fullSession.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT'
+                    fullSession.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT' ||
+                    fullSession.params?._preset_source === 'STRADDLE_ROLL'
                   }
                   initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {
