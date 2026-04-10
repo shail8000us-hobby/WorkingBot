@@ -368,17 +368,33 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             <Typography variant="subtitle2" sx={{ fontFamily: 'monospace' }}>
               {session.session_id}
             </Typography>
-            {session.dte_category && session.dte_category !== '0DTE' && (
+            {/* Preset badge — shown for all presets */}
+            {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
+              session.params?._preset_source === 'SHORT_STRADDLE') ? (
               <Chip
-                label={session.dte_category === 'SHORT_WINDOW'
-                  ? `${session.session_window_hours || 5}h`
-                  : session.dte_category}
+                label="Straddle+Adj"
                 size="small"
-                color={session.dte_category === 'SHORT_WINDOW' ? 'warning' : 'info'}
+                color="secondary"
                 variant="outlined"
                 sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
               />
-            )}
+            ) : session.dte_category === 'SHORT_WINDOW' ? (
+              <Chip
+                label={`${session.session_window_hours || 5}h`}
+                size="small"
+                color="warning"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+              />
+            ) : session.dte_category && session.dte_category !== '0DTE' ? (
+              <Chip
+                label={session.dte_category}
+                size="small"
+                color="info"
+                variant="outlined"
+                sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }}
+              />
+            ) : null}
             {/* Health Grade Badge */}
             {session._health_grade && (
               <Tooltip title={`Health: ${session._health_grade}`}>
