@@ -34,37 +34,60 @@ const MobileControl = ({ socket }) => {
         setStep(1);
     };
 
+    const assertSuccess = (result, fallbackMessage) => {
+        if (!result?.success) {
+            throw new Error(result?.error || result?.message || fallbackMessage);
+        }
+    };
+
     const handleAction = async () => {
-        if (modalMode === 'pause' || modalMode === 'resume') {
-            if (session?.status === 'RUNNING') await mmmService.pauseSession(sessionId);
-            else await mmmService.resumeSession(sessionId);
-            closeModal();
-        } else if (modalMode === 'stop') {
-            if (step === 1) {
-                setStep(2);
-            } else {
-                await mmmService.stopSession(sessionId);
+        try {
+            if (modalMode === 'pause' || modalMode === 'resume') {
+                if (!sessionId) {
+                    throw new Error('No active session selected');
+                }
+                const result = session?.status === 'RUNNING'
+                    ? await mmmService.pauseSession(sessionId)
+                    : await mmmService.resumeSession(sessionId);
+                assertSuccess(result, 'Failed to update session state');
                 closeModal();
-            }
-        } else if (modalMode === 'closeall') {
-            if (step === 1) {
-                setStep(2);
-            } else {
-                // Close all positions via emergency close endpoint
-                try {
-                    await fetch(`/api/mmm/sessions/${sessionId}/emergency-close-all`, { method: 'POST' });
+            } else if (modalMode === 'stop') {
+                if (step === 1) {
+                    setStep(2);
+                } else {
+                    if (!sessionId) {
+                        throw new Error('No active session selected');
+                    }
+                    const result = await mmmService.stopSession(sessionId);
+                    assertSuccess(result, 'Failed to stop session');
                     closeModal();
-                } catch (err) {
-                    alert(`Failed to close all positions: ${err.message}`);
+                }
+            } else if (modalMode === 'closeall') {
+                if (step === 1) {
+                    setStep(2);
+                } else {
+                    if (!sessionId) {
+                        throw new Error('No active session selected');
+                    }
+                    const result = await mmmService.emergencyCloseAllPositions(
+                        'mobile_close_all_positions',
+                        [sessionId],
+                        false,
+                    );
+                    assertSuccess(result, 'Failed to close all positions');
+                    closeModal();
+                }
+            } else if (modalMode === 'emergency') {
+                if (step === 1) {
+                    setStep(2);
+                } else {
+                    const result = await mmmService.emergencyKillAllBots('mobile_emergency_override');
+                    assertSuccess(result, 'Failed to kill all bots');
+                    closeModal();
                 }
             }
-        } else if (modalMode === 'emergency') {
-            if (step === 1) {
-                setStep(2);
-            } else {
-                await fetch('/api/emergency/kill-all', { method: 'POST' });
-                closeModal();
-            }
+        } catch (err) {
+            alert(`Action failed: ${err.message}`);
         }
     };
 

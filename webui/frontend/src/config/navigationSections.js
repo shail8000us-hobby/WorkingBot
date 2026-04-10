@@ -15,10 +15,8 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   Zap,
-  BookOpen,
   RadioTower,
   Terminal,
-  Code,
   BarChart3,
   Brain,
   Database,
@@ -191,13 +189,6 @@ export function buildSections({ pendingOrders }) {
       group: 'System',
     },
     {
-      id: 'intelligence',
-      label: 'Intelligence',
-      icon: BookOpen,
-      description: 'AI insights, documentation, market intel',
-      group: 'System',
-    },
-    {
       id: 'todos',
       label: 'Todo List',
       icon: ListChecks,
@@ -205,13 +196,6 @@ export function buildSections({ pendingOrders }) {
       group: 'System',
     },
     // ── Labs ─────────────────────────────────────────────────
-    {
-      id: 'experimental',
-      label: '🧪 Experimental',
-      icon: Code,
-      description: 'Experimental features - Auto-Delta Hedging, Kelly Criterion, research tools',
-      group: 'Labs',
-    },
     {
       id: 'advanced_features',
       label: '🚀 Advanced',

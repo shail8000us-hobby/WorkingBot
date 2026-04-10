@@ -43,8 +43,6 @@ export const POLLING_CONFIG: PollingConfigType = {
       '/api/guardian/status',
       '/api/reconciliation',
       '/api/errors',
-      '/api/market/news',
-      '/api/institutional-ai',
     ],
   },
 

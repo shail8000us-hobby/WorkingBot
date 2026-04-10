@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, Suspense, startTransition } from 'react';
-import { useLocation, useNavigate, Routes, Route, Navigate } from 'react-router-dom';
+import { useLocation, useNavigate, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Alert, Snackbar } from '@mui/material';
 // framer-motion AnimatePresence removed: replaced with CSS for instant panel switches
 
@@ -26,7 +26,7 @@ import { useSocketConnection } from './hooks/useSocketConnection';
 import { useConfigManager } from './hooks/useConfigManager';
 import { useTradingData } from './hooks/useTradingData';
 import MMMErrorBoundary from './components/mmm/MMMErrorBoundary';
-import { MMMProvider } from './components/mmm/MMMContext';
+import { MMMProvider, useMMM } from './components/mmm/MMMContext';
 import { AutoloopProvider } from './context/AutoloopContext';
 import AutoloopStatusBar from './components/positionAdjustment/AutoloopStatusBar';
 import IdleIndicator from './components/IdleIndicator';
@@ -54,12 +54,10 @@ const OptionsPage = React.lazy(() => import('./pages/OptionsPage'));
 const SSRAlgoPage = React.lazy(() => import('./pages/SSRAlgoPage'));
 const TradingViewPage = React.lazy(() => import('./pages/TradingViewPage'));
 const ZeroDTEPage = React.lazy(() => import('./pages/ZeroDTEPage'));
-const ExperimentalPage = React.lazy(() => import('./pages/ExperimentalPage'));
 const AdvancedFeaturesPage = React.lazy(() => import('./pages/AdvancedFeaturesPage'));
 const MVStraddlePage = React.lazy(() => import('./pages/MVStraddlePage'));
 const RSIPage = React.lazy(() => import('./pages/RSIPage'));
 const RiskPage = React.lazy(() => import('./pages/RiskPage'));
-const IntelligencePage = React.lazy(() => import('./pages/IntelligencePage'));
 const OptionsChainPage = React.lazy(() => import('./pages/OptionsChainPage'));
 const StrategyBuilderPage = React.lazy(() => import('./pages/StrategyBuilderPage'));
 const MMMPage = React.lazy(() => import('./pages/MMMPage'));
@@ -86,6 +84,27 @@ const MobileSettingsNav = React.lazy(() => import('./mobile/MobileSettingsNav'))
 const MobileConfig = React.lazy(() => import('./mobile/MobileConfig'));
 const MobileRisk = React.lazy(() => import('./mobile/MobileRisk'));
 const MobileMonitoring = React.lazy(() => import('./mobile/MobileMonitoring'));
+
+const MobileMMMLayout = React.memo(function MobileMMMLayout({ socket }) {
+  return (
+    <MMMErrorBoundary>
+      <MMMProvider socket={socket}>
+        <Outlet />
+      </MMMProvider>
+    </MMMErrorBoundary>
+  );
+});
+
+const MobileRiskRoute = React.memo(function MobileRiskRoute({ botStatus, config }) {
+  const { activeSessions } = useMMM();
+  return (
+    <MobileRisk
+      botStatus={botStatus}
+      config={config}
+      session={activeSessions?.[0] || null}
+    />
+  );
+});
 
 
 function App() {
@@ -351,33 +370,95 @@ function App() {
                 <Routes>
                   <Route path="/" element={<Navigate to={`/${userPreferences.selectedSection || 'dashboard'}`} replace />} />
                   <Route path="/todos" element={<TodosPage />} />
-                  <Route path="/dashboard" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileDashboard socket={socket} /></MMMProvider></MMMErrorBoundary> : <DashboardPage socket={socket} latencyStats={latencyStats} connectionQuality={connectionQuality} botIsRunning={botIsRunning} isMobile={isMobile} botStatus={botStatus} config={config} />} />
                   <Route path="/options" element={<OptionsPage />} />
                   <Route path="/options_chain" element={<OptionsChainPage navParams={navParams} />} />
                   <Route path="/strategy_builder" element={<StrategyBuilderPage onNavigateToTab={handleNavigateToTab} />} />
                   <Route path="/mv_straddle" element={<MVStraddlePage />} />
-                  <Route path="/mmm" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileDashboard socket={socket} /></MMMProvider></MMMErrorBoundary> : <MMMPage socket={socket} />} />
                   <Route path="/mmmx" element={<MMMXPage socket={socket} />} />
                   <Route path="/ic" element={<ICPage socket={socket} />} />
                   <Route path="/ssr_algo" element={<SSRAlgoPage />} />
                   <Route path="/ssdh" element={<SSDHPage />} />
-                  <Route path="/risk" element={<RiskPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/tradingview" element={<TradingViewPage />} />
                   <Route path="/rsi" element={<RSIPage isMobile={isMobile} />} />
-                  <Route path="/config" element={<ConfigPage config={config} configMeta={configMeta} busy={busy} loading={loading} isMobile={isMobile} featureFlags={featureFlags} handleConfigUpdate={handleConfigUpdate} handleClearCache={handleClearCache} />} />
-                  <Route path="/control" element={isMobile ? <MMMErrorBoundary><MMMProvider socket={socket}><MobileControl socket={socket} /></MMMProvider></MMMErrorBoundary> : <Navigate to="/dashboard" replace />} />
                   <Route path="/settings_mobile" element={isMobile ? <MobileSettingsNav /> : <Navigate to="/config" replace />} />
                   <Route path="/ml_trading" element={<MLTradingPage isMobile={isMobile} />} />
                   <Route path="/botmanagement" element={<BotManagementPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/emergency" element={<EmergencyPage isMobile={isMobile} socket={socket} />} />
-                  <Route path="/intelligence" element={<IntelligencePage isMobile={isMobile} botIsRunning={botIsRunning} />} />
                   <Route path="/zero_dte" element={<ZeroDTEPage />} />
                   <Route path="/portfolio_margin" element={<PortfolioMarginPage />} />
                   <Route path="/patience" element={<PatiencePage />} />
                   <Route path="/oi" element={<OIPage />} />
-                  <Route path="/experimental" element={<ExperimentalPage />} />
                   <Route path="/advanced_features" element={<AdvancedFeaturesPage />} />
-                  <Route path="/monitoring" element={<MonitoringPage isMobile={isMobile} botIsRunning={botIsRunning} botStatus={botStatus} config={config} />} />
+
+                  {isMobile ? (
+                    <>
+                      <Route element={<MobileMMMLayout socket={socket} />}>
+                        <Route path="/dashboard" element={<MobileDashboard socket={socket} />} />
+                        <Route path="/mmm" element={<MobileDashboard socket={socket} />} />
+                        <Route path="/control" element={<MobileControl socket={socket} />} />
+                        <Route
+                          path="/config"
+                          element={(
+                            <MobileConfig
+                              config={config}
+                              isMobile={isMobile}
+                              handleConfigUpdate={handleConfigUpdate}
+                              busy={busy}
+                            />
+                          )}
+                        />
+                        <Route path="/risk" element={<MobileRiskRoute botStatus={botStatus} config={config} />} />
+                        <Route path="/monitoring" element={<MobileMonitoring botStatus={botStatus} />} />
+                      </Route>
+                    </>
+                  ) : (
+                    <>
+                      <Route
+                        path="/dashboard"
+                        element={(
+                          <DashboardPage
+                            socket={socket}
+                            latencyStats={latencyStats}
+                            connectionQuality={connectionQuality}
+                            botIsRunning={botIsRunning}
+                            isMobile={isMobile}
+                            botStatus={botStatus}
+                            config={config}
+                          />
+                        )}
+                      />
+                      <Route path="/mmm" element={<MMMPage socket={socket} />} />
+                      <Route path="/control" element={<Navigate to="/dashboard" replace />} />
+                      <Route path="/risk" element={<RiskPage isMobile={isMobile} botIsRunning={botIsRunning} />} />
+                      <Route
+                        path="/config"
+                        element={(
+                          <ConfigPage
+                            config={config}
+                            configMeta={configMeta}
+                            busy={busy}
+                            loading={loading}
+                            isMobile={isMobile}
+                            featureFlags={featureFlags}
+                            handleConfigUpdate={handleConfigUpdate}
+                            handleClearCache={handleClearCache}
+                          />
+                        )}
+                      />
+                      <Route
+                        path="/monitoring"
+                        element={(
+                          <MonitoringPage
+                            isMobile={isMobile}
+                            botIsRunning={botIsRunning}
+                            botStatus={botStatus}
+                            config={config}
+                          />
+                        )}
+                      />
+                    </>
+                  )}
+
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </Routes>
               </Suspense>

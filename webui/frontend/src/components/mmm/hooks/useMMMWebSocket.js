@@ -86,6 +86,13 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     if (!sharedSocket) return;
 
     const socket = sharedSocket;
+    const listeners = [];
+
+    const addListener = (eventName, handler, wrapSafe = true) => {
+      const finalHandler = wrapSafe ? safeHandler(handler, eventName) : handler;
+      listeners.push([eventName, finalHandler]);
+      socket.on(eventName, finalHandler);
+    };
 
     // Fix F3.5: Safe handler wrapper to prevent unhandled exceptions from breaking state updates
     const safeHandler = (handler, eventName) => (data) => {
@@ -103,8 +110,8 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     // Set initial state
     setConnected(socket.connected);
 
-    socket.on('connect', onConnect);
-    socket.on('disconnect', onDisconnect);
+    addListener('connect', onConnect, false);
+    addListener('disconnect', onDisconnect, false);
 
     // Heartbeat (every 5 minutes — full data including triggers, PnL, etc.)
     const onHeartbeat = (data) => {
@@ -116,7 +123,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setHeartbeat(data);
       }
     };
-    socket.on('mmm_heartbeat', safeHandler(onHeartbeat, 'mmm_heartbeat'));
+    addListener('mmm_heartbeat', onHeartbeat);
 
     // Price ticks (every 5 seconds — lightweight, prices only)
     const onPriceTick = (data) => {
@@ -135,7 +142,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         });
       }
     };
-    socket.on('mmm_price_tick', safeHandler(onPriceTick, 'mmm_price_tick'));
+    addListener('mmm_price_tick', onPriceTick);
 
     // Adjustments
     const onAdjustment = (data) => {
@@ -143,7 +150,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setAdjustments((prev) => [...prev.slice(-99), data]);
       }
     };
-    socket.on('mmm_adjustment', safeHandler(onAdjustment, 'mmm_adjustment'));
+    addListener('mmm_adjustment', onAdjustment);
 
     // Reversals
     const onReversal = (data) => {
@@ -151,7 +158,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setReversals((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_reversal', safeHandler(onReversal, 'mmm_reversal'));
+    addListener('mmm_reversal', onReversal);
 
     // Strike shifts
     const onShift = (data) => {
@@ -159,7 +166,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setShifts((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_shift', safeHandler(onShift, 'mmm_shift'));
+    addListener('mmm_shift', onShift);
 
     // Close-at-5
     const onCloseAt5 = (data) => {
@@ -167,7 +174,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setCloseEvents((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_close_at_5', safeHandler(onCloseAt5, 'mmm_close_at_5'));
+    addListener('mmm_close_at_5', onCloseAt5);
 
     // Both-sides alert
     const onBothSides = (data) => {
@@ -175,7 +182,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setBothSidesAlert(data);
       }
     };
-    socket.on('mmm_both_sides', safeHandler(onBothSides, 'mmm_both_sides'));
+    addListener('mmm_both_sides', onBothSides);
 
     // Safety events
     const onSafety = (data) => {
@@ -183,7 +190,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setSafetyEvents((prev) => [...prev.slice(-99), data]);
       }
     };
-    socket.on('mmm_safety', safeHandler(onSafety, 'mmm_safety'));
+    addListener('mmm_safety', onSafety);
 
     // P&L updates
     const onPnl = (data) => {
@@ -191,7 +198,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPnl(data);
       }
     };
-    socket.on('mmm_pnl_update', safeHandler(onPnl, 'mmm_pnl_update'));
+    addListener('mmm_pnl_update', onPnl);
 
     // Status changes
     const onStatus = (data) => {
@@ -199,11 +206,11 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setStatus(data);
       }
     };
-    socket.on('mmm_status_change', safeHandler(onStatus, 'mmm_status_change'));
+    addListener('mmm_status_change', onStatus);
 
     // Params changed (handled by useMMMParams hook, but keep listener)
     const onParams = () => { };
-    socket.on('mmm_params_changed', safeHandler(onParams, 'mmm_params_changed'));
+    addListener('mmm_params_changed', onParams);
 
     // Walkthrough entries (real-time algo calculation walk-through)
     const onWalkthrough = (data) => {
@@ -211,7 +218,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setWalkthroughEntries((prev) => [...prev.slice(-199), data.entry]);
       }
     };
-    socket.on('mmm_walkthrough', safeHandler(onWalkthrough, 'mmm_walkthrough'));
+    addListener('mmm_walkthrough', onWalkthrough);
 
     // Regime controls
     const onRegime = (data) => {
@@ -219,7 +226,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setRegimeData(data);
       }
     };
-    socket.on('mmm_regime', safeHandler(onRegime, 'mmm_regime'));
+    addListener('mmm_regime', onRegime);
 
     // Perp hedge executions
     const onPerpExecution = (data) => {
@@ -227,7 +234,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPerpHedgeEvents((prev) => [...prev.slice(-49), data]);
       }
     };
-    socket.on('mmm_perp_hedge_execution', safeHandler(onPerpExecution, 'mmm_perp_hedge_execution'));
+    addListener('mmm_perp_hedge_execution', onPerpExecution);
 
     // Perp hedge flip (long↔short direction change)
     const onPerpFlip = (data) => {
@@ -235,7 +242,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         setPerpHedgeFlip(data);
       }
     };
-    socket.on('mmm_perp_hedge_flip', safeHandler(onPerpFlip, 'mmm_perp_hedge_flip'));
+    addListener('mmm_perp_hedge_flip', onPerpFlip);
 
     // Perp hedge update (periodic state sync)
     const onPerpUpdate = (data) => {
@@ -247,7 +254,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         });
       }
     };
-    socket.on('mmm_perp_hedge_update', safeHandler(onPerpUpdate, 'mmm_perp_hedge_update'));
+    addListener('mmm_perp_hedge_update', onPerpUpdate);
 
     // Live bid/ask from Delta WS l1_orderbook via the existing options ticker pipeline.
     // Same event as the options panel — no backend changes needed.
@@ -264,29 +271,13 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
         },
       }));
     };
-    socket.on('options_ticker_update', onOptionsTicker);
+    addListener('options_ticker_update', onOptionsTicker, false);
 
     return () => {
-      socket.off('options_ticker_update', onOptionsTicker);
       // Remove only OUR listeners — don't disconnect the shared socket
-      socket.off('connect', onConnect);
-      socket.off('disconnect', onDisconnect);
-      socket.off('mmm_heartbeat', onHeartbeat);
-      socket.off('mmm_price_tick', onPriceTick);
-      socket.off('mmm_adjustment', onAdjustment);
-      socket.off('mmm_reversal', onReversal);
-      socket.off('mmm_shift', onShift);
-      socket.off('mmm_close_at_5', onCloseAt5);
-      socket.off('mmm_both_sides', onBothSides);
-      socket.off('mmm_safety', onSafety);
-      socket.off('mmm_pnl_update', onPnl);
-      socket.off('mmm_status_change', onStatus);
-      socket.off('mmm_params_changed', onParams);
-      socket.off('mmm_walkthrough', onWalkthrough);
-      socket.off('mmm_regime', onRegime);
-      socket.off('mmm_perp_hedge_execution', onPerpExecution);
-      socket.off('mmm_perp_hedge_flip', onPerpFlip);
-      socket.off('mmm_perp_hedge_update', onPerpUpdate);
+      for (const [eventName, handler] of listeners) {
+        socket.off(eventName, handler);
+      }
       // Fix F3.11: Clear ref to prevent memory retention on unmount
       latestPremiumMap.current = {};
     };

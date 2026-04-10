@@ -28,7 +28,6 @@ from .capital import capital_bp
 from .recon import recon_bp
 from .robustness import robustness_bp
 from .emergency import emergency_bp
-from .ai import ai_bp
 from .liquidation import liquidation_bp
 from .strategy import strategy_bp
 from .dynamic_brain import dynamic_brain_bp
@@ -58,7 +57,6 @@ __all__ = [
     'recon_bp',
     'robustness_bp',
     'emergency_bp',
-    'ai_bp',
     'liquidation_bp',
     'strategy_bp',
     'dynamic_brain_bp',

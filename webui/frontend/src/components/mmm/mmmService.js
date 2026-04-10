@@ -628,6 +628,36 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Emergency close all positions (optionally scoped to selected sessions).
+   * WARNING: This uses emergency market close behavior on backend.
+   *
+   * @param {string} reason
+   * @param {string[]|null} [sessionIds=null]
+   * @param {boolean} [dryRun=false]
+   */
+  async emergencyCloseAllPositions(reason, sessionIds = null, dryRun = false) {
+    const payload = {
+      reason,
+      dry_run: dryRun,
+    };
+    if (Array.isArray(sessionIds) && sessionIds.length > 0) {
+      payload.session_ids = sessionIds;
+    }
+
+    const { data } = await api.post(`${BASE_URL}/emergency/close-all-positions`, payload);
+    return data;
+  },
+
+  /**
+   * Emergency hard kill for all bot processes.
+   * @param {string} [reason]
+   */
+  async emergencyKillAllBots(reason = 'mobile_emergency_kill_all') {
+    const { data } = await api.post('/api/emergency/kill-all', { reason });
+    return data;
+  },
+
   // =========================================================================
   // Background Activities
   // =========================================================================

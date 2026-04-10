@@ -82,7 +82,7 @@ try:
         pm2_bp, orders_bp, pnl_bp, positions_bp,
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
-        robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+        robustness_bp, emergency_bp, liquidation_bp, strategy_bp,
         dynamic_brain_bp, grid_mode_bp, unified_safety_bp, resolved_state_bp
     )
     from .routes.prediction_api import prediction_bp
@@ -114,7 +114,7 @@ except ImportError:
         pm2_bp, orders_bp, pnl_bp, positions_bp,
         # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
         bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
-        robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+        robustness_bp, emergency_bp, liquidation_bp, strategy_bp,
         dynamic_brain_bp, grid_mode_bp, unified_safety_bp, resolved_state_bp
     )
     from routes.prediction_api import prediction_bp
@@ -217,7 +217,7 @@ blueprints = [
     pm2_bp, orders_bp, pnl_bp, positions_bp,
     # config_bp,  # NOV 15: DISABLED - Migrated to yaml_config_bp
     bot_control_bp, todos_bp, risk_bp, capital_bp, recon_bp,
-    robustness_bp, emergency_bp, ai_bp, liquidation_bp, strategy_bp,
+    robustness_bp, emergency_bp, liquidation_bp, strategy_bp,
     dynamic_brain_bp, prediction_bp, grid_mode_bp, monitoring_bp,
     unified_safety_bp,  # DEC 27: Unified Risk & Safety Dashboard
     market_bp,  # JAN 2026: Market data API (spot price)
@@ -380,24 +380,6 @@ try:
 except Exception as e:
     print(f"⚠️ Could not register portfolio_margin blueprint: {e}")
     log.warning(f"Portfolio margin routes not available: {e}")
-
-# Register Kelly Criterion Position Sizer (JAN 2026: Institutional position sizing)
-try:
-    from webui.backend.routes.kelly import kelly_bp
-    app.register_blueprint(kelly_bp)
-    print(f"✅ Registered Kelly Criterion blueprint (institutional position sizing)")
-except Exception as e:
-    print(f"⚠️ Could not register Kelly blueprint: {e}")
-    log.warning(f"Kelly routes not available: {e}")
-
-# Register Experimental Features (JAN 2026: Auto-Delta Hedging, experimental algos)
-try:
-    from webui.backend.routes.experimental import experimental_bp
-    app.register_blueprint(experimental_bp)
-    print(f"✅ Registered Experimental blueprint (auto-delta hedging, Greeks)")
-except Exception as e:
-    print(f"⚠️ Could not register Experimental blueprint: {e}")
-    log.warning(f"Experimental routes not available: {e}")
 
 # Register Delta Data blueprint (JAN 2026: Advanced data collection - INDEPENDENT MODULE)
 try:

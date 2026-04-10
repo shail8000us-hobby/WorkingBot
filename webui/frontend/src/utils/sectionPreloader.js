@@ -23,10 +23,8 @@ const sectionImports = {
   ssr_algo: [() => import('../components/ssrAlgo')],
   ml_trading: [() => import('../components/options/MLInsightsPanel')],
   botmanagement: [() => import('../components/BotManagement/BotManagementDashboard'), () => import('../components/PM2Panel')],
-  intelligence: [() => import('../components/AIAdvisorWidget')],
   todos: [() => import('../components/TodoListPanel')],
   zero_dte: [() => import('../components/zero_dte/ZeroDTEDashboard')],
-  experimental: [() => import('../components/ExperimentalPanel')],
   advanced_features: [() => import('../components/AdvancedFeaturesPanel')],
 };
 

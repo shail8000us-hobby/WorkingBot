@@ -101,14 +101,6 @@ const MobileSettingsNav = () => {
                 route="/advanced_features"
             />
 
-            {/* Experimental */}
-            <SettingsItem
-                icon="🧪"
-                title="Experimental"
-                description="Beta features, Kelly Criterion, auto-delta hedging"
-                route="/experimental"
-            />
-
             {/* About Section */}
             <div className="mobile-card" style={{ marginTop: 24, background: '#1a1a2e', border: '1px solid #333' }}>
                 <div style={{ fontSize: '12px', color: '#777', textAlign: 'center' }}>
