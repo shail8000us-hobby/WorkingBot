@@ -751,12 +751,16 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
     setDtePreset(presetName);
     if (presetName && dtePresets[presetName]) {
       const preset = dtePresets[presetName];
+      // For STRADDLE_ROLL: max_loss_amount and straddle_roll_max_per_session are required
+      // user inputs with no preset default — clear them so the user is forced to enter values.
+      const isRoll = presetName === 'STRADDLE_ROLL';
       setParams(prev => ({
         ...prev,
         adjustment_interval: preset.adjustment_interval ?? prev.adjustment_interval,
         close_at_threshold: preset.close_at_threshold ?? prev.close_at_threshold,
         max_lots_per_side: preset.max_lots_per_side ?? prev.max_lots_per_side,
-        max_loss_amount: preset.max_loss_amount ?? prev.max_loss_amount,
+        max_loss_amount: isRoll ? '' : (preset.max_loss_amount ?? prev.max_loss_amount),
+        straddle_roll_max_per_session: isRoll ? '' : (preset.straddle_roll_max_per_session ?? prev.straddle_roll_max_per_session),
         min_trigger_move: preset.min_trigger_move ?? prev.min_trigger_move,
         session_window_hours: preset.session_window_hours ?? 0,
       }));
@@ -1205,7 +1209,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               fullWidth
               size="small"
               inputProps={{ min: 10, step: 30 }}
-              disabled={dtePreset === 'STRADDLE_WITH_ADJUSTMENT'}
+              disabled={dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL'}
             />
           </Grid>
           <Grid item xs={4}>
@@ -1216,7 +1220,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
               onChange={(e) => handleParamChange('max_loss_amount', parseFloat(e.target.value) || 0)}
               fullWidth
               size="small"
-              inputProps={{ min: dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? 1 : 100, step: dtePreset === 'STRADDLE_WITH_ADJUSTMENT' ? 1 : 1000 }}
+              inputProps={{ min: 1, step: (dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') ? 1 : 1000 }}
             />
           </Grid>
         </Grid>
