@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 _DB_PATH = Path(__file__).parent.parent / "data" / "iv_history.db"
 _RECORD_INTERVAL = 300      # record at most once per 5 minutes per symbol
 _MAX_DAYS = 400             # keep up to 400 days of history
-_MIN_DAYS_REQUIRED = 5      # minimum days needed to return useful IVR/IVP
+_MIN_DAYS_REQUIRED = 2      # minimum days needed to return useful IVR/IVP
 
 _db_lock = threading.Lock()
 _last_record: Dict[str, float] = {}  # symbol -> last record timestamp

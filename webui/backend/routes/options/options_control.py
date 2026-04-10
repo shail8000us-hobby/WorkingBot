@@ -397,7 +397,12 @@ def get_options_positions():
                             'mark_vol': float(raw_ticker.get('mark_vol') or 0),
                             'raw': raw_ticker,
                         }
-                        enriched.append(enrich_position_data(pos, ticker))
+                        ep = enrich_position_data(pos, ticker)
+                        # Inject mark_vol as 'iv' so iv_history_db can record it
+                        mark_vol = float(raw_ticker.get('mark_vol') or 0)
+                        if mark_vol > 0:
+                            ep['iv'] = mark_vol
+                        enriched.append(ep)
                     else:
                         log.debug(f"No bulk ticker found for {symbol}, using raw position")
                         enriched.append(pos)
