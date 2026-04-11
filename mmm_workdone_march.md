@@ -3033,3 +3033,31 @@ Wait — actually the v2 flag IS set regardless. Correct workflow: import positi
 - Added `_skip_to_pnl = True` after the STRADDLE_ROLL `elif` block (Step 5.4) — ensures the strangle trigger/adjustment engine never runs for STRADDLE_ROLL sessions, not even on "nothing to do" heartbeats. Previously the engine ran when `execute_pure_straddle_roll()` returned False (no roll, no hard stop), which could have triggered unintended strangle adjustments.
 
 **Tests:** 1311 passed (all sealed tests green; 1311 vs 1312 baseline delta is pre-existing, not this session).
+
+## 2026-04-11 — Socket.IO polling-only, MMM preset source exposure, AI design docs
+
+**Issue 1 — Socket.IO WebSocket errors in browser console:**
+- Root cause: Flask-SocketIO in threading mode (current deployment) has compatibility issues with WebSocket transport on some browser/proxy setups. Chrome logs: "invalid frame header", "HTTP 400". Polling transport is stable.
+- Fix: Changed transports from `['websocket', 'polling']` to `['polling']` only across 3 frontend hooks:
+  - `useMarketPrices.js`: Market price real-time updates
+  - `OIPanel.js`: Open Interest stream
+  - `ssdh_service.js`: SSDH strategy comms
+- Added comment: "Backend runs in Flask-SocketIO threading mode. Polling transport is stable; websocket-first attempts produce errors."
+- No functional change (polling latency still ~500ms, acceptable for this use case).
+
+**Issue 2 — `_preset_source` missing from live session summaries:**
+- Root cause: `list_session_summaries()` in `mmm_storage.py` used SQL `json_extract()` to fetch field subset, but `params._preset_source` was not in the select list, so UI never saw it for live cards.
+- Fix:
+  - `mmm_storage.py`: Added `json_extract(params_json, '$._preset_source') AS _preset_source` to SQL. Updated summary dict payload to include it.
+  - `mmm_state.py`: Updated `_row_to_summary_fallback()` to also extract `_preset_source` + `dte_category`.
+  - Added regression test: `test_mmm_summary_preset_source.py` — verifies both SQL path and fallback path expose these fields.
+- UI badge now shows correct strategy type (`Short Straddle Roll`) for active sessions.
+
+**Documentation — Three new AI/ML design docs:**
+- `ML_FOR_MMM_DETAILED_GUIDE.md`: 1834 lines. Comprehensive 10-use-case ML integration roadmap for MMM. Use cases: price/IV prediction (LSTM), IV forecasting (GRU), optimal strike selection (Dense), anomaly detection (Autoencoder), loss prediction (Dense), adjustment RL agent, regime classification (LSTM), close-at-5 prediction, session P&L forecast (Transformer), margin prediction (LSTM). Includes data pipeline, training strategy, safety fallbacks.
+- `MMM_AI_Context_PureStraddle_Roll.md`: 266 lines. Single source of truth for STRADDLE_ROLL strategy. Decision tree, file map, key invariants, session creation rules, UI panel, relation to STRADDLE_WITH_ADJUSTMENT.
+- `NEURAL_ENGINE_FOR_MMM.md`: 821 lines. Conceptual design for full learned policy (PPO-trained RL). Three-layer architecture (state encoder → policy network → constraint enforcer). Training pipeline phases. Hybrid approach (augment vs replace). Pros/cons vs hardcoded logic.
+
+**Commits:**
+- 25 files changed, 138,794 insertions(+), 136,999 deletions (mostly doc)
+- Refs: `cc31fabe8..40ae8efae` (SSR branch, pushed to GitHub)
