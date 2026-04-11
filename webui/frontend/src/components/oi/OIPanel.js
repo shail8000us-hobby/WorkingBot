@@ -194,7 +194,9 @@ export default function OIPanel() {
           : window.location.origin;
 
         socket = io(`${baseUrl}/oi`, {
-          transports: ['websocket', 'polling'],
+          transports: ['polling'],
+          upgrade: false,
+          rememberUpgrade: false,
           reconnection: true,
           reconnectionDelay: 2000,
           reconnectionAttempts: Infinity,

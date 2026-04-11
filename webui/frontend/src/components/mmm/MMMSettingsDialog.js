@@ -124,6 +124,7 @@ const SECTION_CATEGORY = {
   positionLifecycle: 'core',
   balanceControl:    'core',
   breakevenEngine:   'core',
+  straddleRoll:      'core',   // STRADDLE_ROLL-specific params
   perpHedge:         'execution',
   adaptive:          'execution',
   favorableScaleUp:  'execution',
@@ -363,6 +364,25 @@ const PARAM_GROUPS = {
       {
         header: 'DTE Safety Limits',
         params: ['breakeven_dte_pnl_clamp_pct', 'breakeven_critical_lot_ceiling'],
+      },
+    ],
+  },
+  straddleRoll: {
+    title: '🔄 Straddle Roll Settings',
+    color: '#06b6d4',
+    blurb: 'Pure straddle roll controls: max rolls per session, roll cooldown, real-time price guard, and emergency bypass multiplier. All settings are hot-reloadable.',
+    sections: [
+      {
+        header: 'Roll Limits',
+        params: ['straddle_roll_max_per_session', 'straddle_roll_cooldown_mins', 'straddle_roll_emergency_mult'],
+      },
+      {
+        header: 'Spread & Trigger',
+        params: ['straddle_roll_max_spread_pct', 'straddle_roll_trigger_pct'],
+      },
+      {
+        header: 'Real-Time Price Guard',
+        params: ['price_guard_enabled', 'price_guard_interval_secs', 'price_guard_buffer_pts', 'price_guard_cooldown_secs'],
       },
     ],
   },
@@ -612,6 +632,16 @@ const PARAM_TOOLTIPS = {
   gamma_danger_distance_pct: 'Distance (% of spot) from nearest gamma boundary that triggers Danger zone. At 1.5% with BTC at $87k, Danger fires when spot is within ~$1,305 of a kink. Must be less than Warning threshold. Default 1.5%.',
   gamma_detect_epsilon: 'Minimum absolute P&L second-difference (USD) to classify a point as a gamma boundary. Too low = noise triggers false kinks. Too high = misses real boundaries. At 0.3, a kink must cause a $0.30+ curvature change per step. Range: 0.01–50.0. Default 0.3.',
   gamma_severity_multiplier_enabled: 'Phase 9 gate — enables lot multiplier modulation from gamma severity scores. When ON, gamma boundary proximity boosts hedge lots directionally (toward the threatened side). The combined multiplier ceiling (max_combined_lot_multiplier) still applies. REQUIRES SESSION RESTART when toggled. Off by default until Phase 9 validation is complete.',
+  // Straddle Roll
+  straddle_roll_max_per_session: 'Maximum rolls allowed per session. After this many rolls, the session holds at its current position until expiry or hard stop. Set 0 = no rolls (pure theta decay — hard stop is the only exit). Hot-reloadable: raise mid-session via settings to add more rolls.',
+  straddle_roll_cooldown_mins: 'Minimum minutes between consecutive rolls. Prevents a fast trending move from triggering multiple rolls before the new straddle premium is established. Default 15.',
+  straddle_roll_emergency_mult: 'Emergency bypass multiplier. If spot has moved N× the trigger distance from ATM, the cooldown is bypassed regardless. Example: 2.0 = bypass if spot has moved 2× collected premium from ATM. Protects against severe moves when cooldown would normally block. Default 2.0.',
+  straddle_roll_max_spread_pct: 'Maximum allowed bid-ask spread (%) on the new ATM strike before re-entry is blocked. Wide spreads mean the exchange is illiquid — rolling into poor spreads wastes premium. Example: 15 = block if CE or PE spread exceeds 15%. Default 15.0.',
+  straddle_roll_trigger_pct: 'Fallback trigger as % of spot. Only used when _straddle_roll_trigger_pts cannot be computed (no entry_premium on positions). In normal operation the premium-points trigger is used instead. Default 1.0% of spot.',
+  price_guard_enabled: 'Enable real-time price guard. Checks every price_guard_interval_secs seconds via WebSocket (no API calls) and fires a force-heartbeat when spot approaches the roll trigger or estimated loss approaches max_loss. Zero API cost. Dramatically reduces reaction time from 120s → 5–10s.',
+  price_guard_interval_secs: 'How often (seconds) the price guard polls the WebSocket price. Lower = faster detection but more CPU. Default 5. Minimum effective value is ~2s (WebSocket update frequency).',
+  price_guard_buffer_pts: 'Force a heartbeat when spot is within this many points of the roll trigger (before actually crossing it). Gives the heartbeat time to warm up. Example: 50 pts = pre-alert 50 pts before trigger fires. Default 50.',
+  price_guard_cooldown_secs: 'Minimum seconds between consecutive force-heartbeats from the price guard. Prevents spam during fast trending moves. After one force-HB fires, the guard waits this long before firing again. Default 30.',
 };
 
 // =============================================================================
@@ -658,6 +688,9 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   // Locked = 40% opacity, not clickable, 🔒 badge. Settings still exist in backend
   // but operator cannot accidentally hot-reload them and break the roll mechanism.
   const isShortStraddle = sessionData?.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT';
+  // STRADDLE_ROLL (pure): only core + expiry + straddleRoll groups are relevant.
+  const isStraddleRoll = sessionData?.params?._preset_source === 'STRADDLE_ROLL';
+
   const STRADDLE_LOCKED_GROUPS = new Set([
     // ── Preset-disabled (would fight roll mechanism if re-enabled) ──
     'windDown',           // wind_down_enabled=False — closes OTM leg, breaks straddle structure
@@ -682,6 +715,34 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     // ── Monitoring tools calibrated for strangle shape ──
     'marginGuardian',     // defaults are correct; operator has no reason to change margin tiers
     'gammaDetector',      // P&L curvature tool calibrated for strangle strikes, not symmetric straddle
+  ]);
+
+  // STRADDLE_ROLL pure: stricter lock set. Only core, expiry, straddleRoll are active.
+  // Everything else is either disabled in the preset or incompatible with the pure roll logic.
+  const STRADDLE_ROLL_LOCKED_GROUPS = new Set([
+    // ── Preset-disabled ──
+    'windDown',           // wind_down_enabled=False in preset
+    'positionLifecycle',  // harvest_enabled=False; recycling breaks symmetric straddle structure
+    'balanceControl',     // CE/PE rebalancing is strangle-only
+    'favorableScaleUp',   // scale_enabled=False in preset
+    'reverseMode',        // incompatible with pure roll strategy
+    'perpHedge',          // perp_hedge_enabled=False in preset
+    // ── Strangle-specific / N/A ──
+    'triggers',           // leg shift params — pure straddle rolls both legs atomically
+    'safety',             // whipsaw/ITM guard calibrated for strangle; straddle expects ATM on every roll
+    'regimeControls',     // straddle rolls on premium-points, not regime direction
+    'consecutiveDir',     // no directional selling in pure straddle
+    'autoReplenish',      // re-opens one leg only = naked; straddle rolls both together
+    'adaptiveTuning',     // adaptive_mode locked to 'preset'
+    'adaptive',           // adaptive heartbeat interval not used in pure straddle
+    // ── Conflicts with roll mechanism ──
+    'atmShield',          // retreats to OTM; pure straddle ROLLS instead — direct conflict
+    'lotVelocity',        // velocity cap can block 4-leg roll execution
+    // ── Monitoring tools not relevant to symmetric straddle ──
+    'marginGuardian',     // defaults correct for straddle; no operator action needed
+    'gammaDetector',      // calibrated for strangle P&L shape, not symmetric straddle
+    'breakevenEngine',    // strangle-specific zone logic; straddle breakeven = ±total_premium
+    'closeAt5Watcher',    // straddle exits via auto_close_mins expiry guard, not close-at-5
   ]);
 
   // Pinned / Favorites — persisted to backend so they survive builds and cache clears
@@ -1495,11 +1556,14 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     </Box>
                   )}
                   {Object.entries(PARAM_GROUPS).map(([key, group]) => {
+                    // straddleRoll group is only shown for STRADDLE_ROLL sessions
+                    if (key === 'straddleRoll' && !isStraddleRoll) return null;
+
                     const count = group.params
                       ? group.params.length
                       : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
                     const isActive = activeSection === key;
-                    const isLocked = isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key);
+                    const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
                     return (
                       <Box
                         key={key}
@@ -1653,6 +1717,17 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     </Typography>
                   </Box>
                 )}
+                {isStraddleRoll && (
+                  <Box sx={{
+                    display: 'flex', alignItems: 'center', gap: 1.5,
+                    background: 'rgba(6,182,212,0.07)', border: '1px solid rgba(6,182,212,0.35)',
+                    borderRadius: '8px', p: '10px 14px', mb: 2,
+                  }}>
+                    <Typography sx={{ fontSize: '0.80rem', color: '#67e8f9', lineHeight: 1.4 }}>
+                      🔄 <strong>Pure Straddle Roll</strong> — Only <strong>Core Parameters</strong>, <strong>Close-at-Expiry</strong>, and <strong>Straddle Roll Settings</strong> apply. All other panels are 🔒 locked — they are disabled in the preset and will not execute regardless of value.
+                    </Typography>
+                  </Box>
+                )}
 
                 <Grid container spacing={1.5}>
                   {(() => {
@@ -1663,12 +1738,15 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     let lastCat = null;
                     const elements = [];
                     sorted.forEach(([key, group]) => {
+                      // straddleRoll group is only shown for STRADDLE_ROLL sessions
+                      if (key === 'straddleRoll' && !isStraddleRoll) return;
+
                       const cat = SECTION_CATEGORY[key] || 'advanced';
                       const meta = CATEGORY_META[cat];
                       const count = group.params
                         ? group.params.length
                         : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
-                      const isLocked = isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key);
+                      const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
 
                       // Category divider row
                       if (cat !== lastCat) {

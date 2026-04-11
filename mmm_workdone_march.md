@@ -2979,3 +2979,57 @@ STRADDLE_WITH_ADJUSTMENT). If the monitor heartbeats before any positions are pr
 `_straddle_initial_credit` will correctly be recomputed on first position addition since
 `_straddle_credit_v2` is only set True AFTER a successful computation with non-zero credit.
 Wait — actually the v2 flag IS set regardless. Correct workflow: import positions, THEN start monitor.
+
+## 2026-04-10 — MMM session badge preset-name correctness (list + live card)
+- Fixed preset identity propagation so SessionCard badges show the actual started strategy variant instead of ambiguous/default labels.
+  - `webui/backend/routes/mmm/mmm_state.py`: `get_session_summary()` now includes top-level `_preset_source` from `params`.
+  - `webui/backend/routes/mmm/mmm_storage.py`: `list_session_summaries()` SQL path now extracts `params._preset_source`; summary payload now carries `_preset_source`. Fallback summary now also carries `dte_category` and `_preset_source`.
+  - `webui/frontend/src/components/mmm/MMMDashboard.js`: badge mapper now checks both top-level and nested preset metadata (`session._preset_source || session.params?._preset_source`) and uses explicit labels:
+    - `Short Strangle 0DTE`
+    - `Short Strangle 5DTE`
+    - `Short Straddle Adjustment`
+    - `Short Straddle Roll`
+  - Added regression tests in `webui/backend/routes/mmm/tests/test_mmm_summary_preset_source.py` to lock in `_preset_source` + `dte_category` presence for state summary, SQL summary path, and fallback summary path.
+
+## 2026-04-10 — MMM SessionCard badge fallback fix for STRADDLE_ROLL live summaries
+- Fixed remaining live-card mislabel where STRADDLE_ROLL sessions could still render as `Short Strangle 0DTE` when `_preset_source` was missing but `dte_category` was present.
+  - `webui/frontend/src/components/mmm/MMMDashboard.js`: SessionCard strategy badge resolver now normalizes both `_preset_source` and `dte_category` to uppercase and accepts either field for mapping:
+    - `STRADDLE_ROLL` → `Short Straddle Roll`
+    - `STRADDLE_WITH_ADJUSTMENT` / `SHORT_STRADDLE` → `Short Straddle Adjustment`
+  - Why: live/legacy summary shapes are not always identical; relying on `_preset_source` alone left a gap for roll sessions.
+  - Expected outcome: sessions started as Short Straddle Roll display `Short Straddle Roll` consistently on list cards.
+
+## 2026-04-11 — Session creation speed fix + badge build deployed
+
+**Issue 1 — Slow session creation:**
+- Root cause: `create_session_endpoint` in `mmm_api.py` used `MMMInitializer()` (a fresh instance) for the liquidity gate check. Each fresh instance creates a new `OptionsChainService` with an empty cache, so every session creation triggered a cold HTTP call to the exchange API (even if the chain was fetched seconds earlier by the Config Panel or DTE presets endpoint).
+- Fix (`mmm_api.py` line ~345): Replaced `MMMInitializer()` with `get_initializer()` (the already-imported module-level singleton). The singleton shares the same `OptionsChainService` and its 10-second chain cache with all other endpoints, so the liquidity check is served from cache when chain data is warm.
+
+**Issue 2 — Wrong badge name (Short Strangle 0 DTE instead of Short Straddle Roll):**
+- Root cause: The source-code badge fix from 2026-04-10 (commits `4281ebdf4` and `cc31fabe8`) was never compiled into the frontend bundle. The browser was running the stale pre-fix build. `grep "Short Straddle Roll" build/static/js/*.js` returned no matches before this session.
+- Fix: Ran `npm run build` in `webui/frontend/`. Build succeeded (all bundle size checks pass). Confirmed `Short Straddle Roll` string is now present in the new chunk `1072.fb359f1c.chunk.js`.
+
+**Files changed:**
+- `webui/backend/routes/mmm/mmm_api.py` — 3 lines (liquidity gate `MMMInitializer()` → `get_initializer()`)
+- `webui/frontend/build/` — rebuilt (badge fix now live)
+
+## 2026-04-11 — STRADDLE_ROLL settings panel isolation
+
+**Problem:** Opening Strategy Settings for a `STRADDLE_ROLL` session showed all MMM strangle settings (28+ groups). None were locked or greyed out, so operators could accidentally hot-reload params that have no effect or actively conflict with the pure roll mechanism.
+
+**Fix — Frontend (`webui/frontend/src/components/mmm/MMMSettingsDialog.js`):**
+- Added `isStraddleRoll` detection: `sessionData?.params?._preset_source === 'STRADDLE_ROLL'`
+- Added `STRADDLE_ROLL_LOCKED_GROUPS` Set — locks all groups except `core` and `expiry`:
+  - Preset-disabled: `windDown`, `positionLifecycle`, `balanceControl`, `favorableScaleUp`, `reverseMode`, `perpHedge`
+  - Strangle-specific N/A: `triggers`, `safety`, `regimeControls`, `consecutiveDir`, `autoReplenish`, `adaptiveTuning`, `adaptive`
+  - Conflicts with roll: `atmShield`, `lotVelocity`
+  - Not calibrated for straddle: `marginGuardian`, `gammaDetector`, `breakevenEngine`, `closeAt5Watcher`
+- Added new `straddleRoll` param group (only visible for STRADDLE_ROLL sessions): Roll Limits, Spread & Trigger, Real-Time Price Guard sections. Covers `straddle_roll_max_per_session`, `straddle_roll_cooldown_mins`, `straddle_roll_emergency_mult`, `straddle_roll_max_spread_pct`, `straddle_roll_trigger_pct`, `price_guard_enabled/interval/buffer/cooldown`.
+- Added tooltips for all 9 straddle-roll-specific params.
+- Added cyan banner in navigator: "🔄 Pure Straddle Roll — Only Core Parameters, Close-at-Expiry, and Straddle Roll Settings apply."
+- Existing STRADDLE_WITH_ADJUSTMENT locking unchanged.
+
+**Fix — Backend (`webui/backend/routes/mmm/mmm_monitor.py`):**
+- Added `_skip_to_pnl = True` after the STRADDLE_ROLL `elif` block (Step 5.4) — ensures the strangle trigger/adjustment engine never runs for STRADDLE_ROLL sessions, not even on "nothing to do" heartbeats. Previously the engine ran when `execute_pure_straddle_roll()` returned False (no roll, no hard stop), which could have triggered unintended strangle adjustments.
+
+**Tests:** 1311 passed (all sealed tests green; 1311 vs 1312 baseline delta is pre-existing, not this session).

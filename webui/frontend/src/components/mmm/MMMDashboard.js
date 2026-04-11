@@ -370,13 +370,18 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             </Typography>
             {/* Strategy type badge — single badge, always visible, unambiguous */}
             {(() => {
-              const src = session.params?._preset_source;
-              const dte = session.params?.dte_category || session.dte_category;
-              if (src === 'STRADDLE_ROLL') {
-                return <Chip label="Straddle Roll" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              const src = String(session._preset_source || session.params?._preset_source || '').toUpperCase();
+              const dte = String(session.dte_category || session.params?.dte_category || '').toUpperCase();
+              if (src === 'STRADDLE_ROLL' || dte === 'STRADDLE_ROLL') {
+                return <Chip label="Short Straddle Roll" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
               }
-              if (src === 'STRADDLE_WITH_ADJUSTMENT' || src === 'SHORT_STRADDLE') {
-                return <Chip label="Short Straddle Adj" size="small" color="secondary" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
+              if (
+                src === 'STRADDLE_WITH_ADJUSTMENT' ||
+                src === 'SHORT_STRADDLE' ||
+                dte === 'STRADDLE_WITH_ADJUSTMENT' ||
+                dte === 'SHORT_STRADDLE'
+              ) {
+                return <Chip label="Short Straddle Adjustment" size="small" color="secondary" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
               }
               // Strangle — append DTE category so type is fully clear
               if (dte === 'SHORT_WINDOW') {

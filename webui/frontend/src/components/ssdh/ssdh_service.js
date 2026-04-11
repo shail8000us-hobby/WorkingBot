@@ -23,7 +23,9 @@ const wsListeners = {};
 function getSocket() {
   if (!_socket) {
     _socket = io('/ssdh', {
-      transports: ['websocket', 'polling'],
+      transports: ['polling'],
+      upgrade: false,
+      rememberUpgrade: false,
       autoConnect: true,
     });
 

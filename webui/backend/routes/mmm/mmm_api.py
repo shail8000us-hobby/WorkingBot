@@ -338,11 +338,14 @@ def create_session_endpoint():
                 }), 400
 
         # Liquidity gate: check chain has enough liquid strikes (fresh mode only)
+        # Uses the singleton initializer (get_initializer) so the chain data
+        # is served from the shared cache — avoids a cold HTTP call on every
+        # session creation.  MMMInitializer() was incorrectly creating a new
+        # instance here, bypassing the singleton's 10-second chain cache.
         if mode == 'fresh' and expiry_str:
             try:
-                from .mmm_initializer import MMMInitializer
                 from .mmm_dte_presets import check_chain_liquidity
-                initializer = MMMInitializer()
+                initializer = get_initializer()
                 chain_result = initializer.get_full_chain(expiry_str)
                 if chain_result.get('success') and chain_result.get('chain'):
                     liq = check_chain_liquidity(chain_result['chain'])

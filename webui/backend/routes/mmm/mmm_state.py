@@ -1324,6 +1324,7 @@ def get_session_summary(session: Dict) -> Dict:
         'expiry': session.get('params', {}).get('expiry', ''),   # DDMMYYYY
         'expiry_time': session.get('expiry_time'),                # ISO UTC string
         'dte_category': session.get('params', {}).get('dte_category', ''),
+        '_preset_source': session.get('params', {}).get('_preset_source', ''),
         'session_deadline_utc': session.get('session_deadline_utc'),
         'session_window_hours': session.get('params', {}).get('session_window_hours', 0),
 

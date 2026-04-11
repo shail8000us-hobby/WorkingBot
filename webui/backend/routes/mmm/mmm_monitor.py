@@ -2794,6 +2794,12 @@ class MMMMonitor:
                     _skip_to_pnl = True
             except Exception as _pure_roll_err:
                 log.error(f"[{sid}] Pure Straddle Roll error: {_pure_roll_err}", exc_info=True)
+            # STRADDLE_ROLL strategy only: always skip MMM trigger evaluation.
+            # The strategy decision tree is fully handled inside execute_pure_straddle_roll
+            # (hard stop → expiry guard → roll trigger). The strangle trigger/adjustment
+            # engine is never relevant for a symmetric straddle. Force skip here so that
+            # on "nothing to do" beats the strangle logic never runs by accident.
+            _skip_to_pnl = True
         # ────────────────────────────────────────────────────────────────────
 
         # Step 5.5: ATM Shield — proactive close & retreat

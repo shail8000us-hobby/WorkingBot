@@ -55,12 +55,15 @@ export const useMarketPrices = () => {
   };
 
   useEffect(() => {
-    // Initialize Socket.IO connection — WebSocket first, polling fallback
+    // Initialize Socket.IO connection
+    // NOTE: Backend runs in Flask-SocketIO threading mode on this stack.
+    // Polling transport is stable; websocket-first attempts produce noisy
+    // browser console errors (invalid frame header / HTTP 400) on some setups.
     const socket = io({
       path: '/socket.io',
-      transports: ['websocket', 'polling'],
-      upgrade: true,
-      rememberUpgrade: true,
+      transports: ['polling'],
+      upgrade: false,
+      rememberUpgrade: false,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
