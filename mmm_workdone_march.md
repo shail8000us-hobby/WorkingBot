@@ -3517,3 +3517,17 @@ External audit report was reviewed. Not all claims were genuine — audited the 
    - The guard at line ~6522 fired regardless of dangerous mode: `if strike_info and params.get('atm_shield_enabled', False)`.
    - When dangerous mode is on the ATM shield cannot fire, so the guard's entire purpose (preventing replenish→shield→close cycles) is moot — but it still ran, found 72400 @ $12 as the "safe" alternative, overwrote the viable 71800 @ $125 candidate, and Step 3c rejected it ($12 < $30 min_premium) → replenish returned False → OCS pause continued indefinitely.
    - **Fix**: added `and not params.get('dangerous_mode', False)` to the guard condition. In dangerous mode the proximity guard is fully skipped; replenish picks 71800 @ $125 and proceeds normally.
+
+## 2026-04-12 — Commit + Push: Phases 5-6 Final Integration
+
+- Committed comprehensive MMM Strategy Separation work (Phases 1-6 complete end-to-end)
+- All pending frontend + backend changes staged, committed, and pushed to SSR branch (merge target BTEH)
+- Files committed:
+  - Frontend strategy UX: MMMDashboard (strategy shortcuts + KPI bar + filter chips), MobileControl (fleet control), MobileDashboard (activity feed + fleet overview)
+  - Mobile CSS: New grid layouts for KPI, actions, session strips, and activity items
+  - Backend dispatch: mmm_strategy_dispatch.py (central routing + validators)
+  - Backend tests: 3 new test files (dispatch routing, strategy validation, identity immutability)
+  - Documentation: MMM_STRATEGY_SEPARATION_PLAN.md (comprehensive audit-friendly spec of all 6 phases)
+- Regression evidence: Full MMM backend suite 1315 passed, focused suites all green
+- Invariants: All CLAUDE.md mandatory guards (stale monitor 3-layer, reverse mode isolation) preserved
+- Git hash: 8eee875da (SSR tracked, ready for merge review)
