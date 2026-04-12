@@ -9,18 +9,42 @@ Integration: called from mmm_monitor.py ONE-SIDE CLOSE GUARD section.
 If replenishment is ineligible or fails, the existing PAUSE behavior
 activates as fallback.
 
-HEDGE RESTORATION PRINCIPLE (2026-04-02):
+HEDGE RESTORATION PRINCIPLE (2026-04-02, updated 2026-04-12):
   Replenish is a defensive hedge-restoration action, not an offensive
-  sell.  Gates that block speculative adjustment sells (regime action,
-  wind-down triggers) do NOT apply to replenish.  The system must ALWAYS
-  be able to restore the hedge when one side reaches 0 lots — no regime
-  or wind-down state may prevent this.  After a successful replenish the
-  caller resets regime/trend state to give the new leg a clean start.
+  sell.  Hedging always takes priority over rate-limiting.
+
+  Gates that DO NOT apply to replenish:
+    - Gate 3  (wind-down active): replenish overrides wind-down.
+    - Gate 4  (wind-down flags): same.
+    - Gate 6  (regime BLOCK_ALL_SELLS): regime blocks speculative sells,
+              not hedge restoration.
+    - Gate 7  (max replenish count): no per-session cap on hedge restores.
+    - Gate 8  (cooldown): no cooldown between replenishes — an unhedged
+              position cannot wait for a timer to expire.
+    - Gate 9  (near expiry): if one side is exposed even near expiry, the
+              hedge must be restored — the alternative (staying unhedged
+              through expiry) is always worse.
+    - Gate 11 (lot velocity): velocity limits protect against speculative
+              over-selling; they must not block hedge restoration.
+
+  Gates that survive (hard financial constraints only):
+    - Gate 1  (replenish_enabled): master switch — user has explicitly
+              disabled replenish.
+    - Gate 2  (session STOPPED): user has explicitly stopped the session
+              and will handle it manually.  PAUSED is always allowed —
+              an unhedged position while paused is more dangerous than
+              the pause intent.
+    - Gate 5  (margin block / wind-down): adding positions when margin
+              is critical can trigger liquidation, which is worse than
+              being temporarily unhedged.
+    - Gate 10 (open side has no active lots): nothing to hedge.
+
+  OCS emergency (ocs_emergency=True): additionally bypasses Gate 1 and
+  allows STOPPED sessions.  Used when closed_side.total_lots==0 and the
+  position is actively unhedged.
 """
 
 import logging
-import time
-from datetime import datetime, timedelta, timezone
 from typing import Dict, Tuple
 
 log = logging.getLogger(__name__)
@@ -34,128 +58,63 @@ def check_replenish_eligibility(
     session: Dict,
     closed_side: str,
     open_side: str,
+    ocs_emergency: bool = False,
 ) -> Tuple[bool, str]:
     """
-    Evaluate all safety gates before attempting a replenish sell.
+    Evaluate safety gates before attempting a replenish sell.
+
+    Args:
+        ocs_emergency: True when the closed side is completely empty
+            (total_lots=0) while the open side still has active lots.
+            Additionally bypasses Gate 1 (master switch) so that the hedge
+            is restored even if replenish_enabled=False.  STOPPED is still
+            respected — the user chose to stop the session.
 
     Returns:
-        (eligible, reason) — reason explains the gate that blocked,
-        or 'eligible' if all gates pass.
-
-    INTENTIONALLY OMITTED GATES (hedge-restoration principle):
-      - Gate 3 (wind-down active): replenish overrides wind-down — if one
-        side is empty, we must restore the hedge regardless of wind-down
-        intent.  The caller resets wind-down state after success.
-      - Gate 4 (wind-down triggered flags): same reason as Gate 3.
-      - Gate 6 (regime BLOCK_ALL_SELLS): replenish is defensive, not
-        offensive.  The regime blocks speculative adjustment sells; it must
-        not block hedge restoration.  The caller resets regime state after
-        a successful replenish.
+        (eligible, reason) — reason names the blocking gate, or 'eligible'.
     """
     params = session.get('params', {})
 
-    # Gate 1: master switch
-    if not params.get('replenish_enabled', False):
-        return False, 'replenish_enabled=False'
+    # OCS EMERGENCY: additionally bypass master switch.
+    # All other surviving gates (margin, open-side-empty) apply normally.
+    if not ocs_emergency:
+        # Gate 1: master switch
+        if not params.get('replenish_enabled', False):
+            return False, 'replenish_enabled=False'
 
-    # Gate 2: session must be RUNNING (or PAUSED during active OCS hedge recovery).
-    # None is whitelisted for legacy sessions that predate the explicit status field.
-    # PAUSED is allowed when _replenish_ocs_active=True: the OCS guard set this flag
-    # because one side is unhedged and we must restore the hedge regardless of pause
-    # state — holding an unhedged position while paused is more dangerous than the
-    # pause intent.  The flag is cleared once replenish succeeds or the side regains lots.
+    # Gate 2: STOPPED blocks (user will handle manually).
+    # PAUSED always allows — an unhedged position while paused is more
+    # dangerous than the pause intent.  None / RUNNING / ACTIVE: allowed.
     status = session.get('strategy_status', session.get('status', 'RUNNING'))
-    if status not in ('RUNNING', 'ACTIVE', None):
-        _ocs_recovery = session.get('_replenish_ocs_active', False)
-        if not (status == 'PAUSED' and _ocs_recovery):
-            return False, f"session status={status}"
+    if status == 'STOPPED':
+        return False, 'session status=STOPPED'
 
-    # Gate 3 (wind-down active): REMOVED — see docstring.
-    # Gate 4 (wind-down triggered flags): REMOVED — see docstring.
-
-    # Gate 5: margin must not block sells — kept because margin is a hard
-    # financial constraint; adding positions when margin is critical can
-    # trigger liquidation which is worse than being temporarily unhedged.
+    # Gate 3 (wind-down active): REMOVED — hedge restoration overrides.
+    # Gate 4 (wind-down flags):   REMOVED — same.
+    # Gate 5: margin — hard financial constraint.  Adding lots when margin
+    # is critical can trigger liquidation, worse than being unhedged.
     if session.get('_margin_block_sells'):
         return False, 'margin_block_sells'
     if session.get('_margin_wind_down'):
         return False, 'margin_wind_down'
 
-    # Gate 6 (regime BLOCK_ALL_SELLS): REMOVED — see docstring.
-
-    # Gate 7: replenishment count cap
-    max_count = params.get('replenish_max_per_session', 10)
-    current_count = session.get('_replenish_count', 0)
-    if current_count >= max_count:
-        return False, f'max_count_reached ({current_count}/{max_count})'
-
-    # Gate 8: cooldown
-    cooldown_sec = params.get('replenish_cooldown_sec', 300)
-    last_at = session.get('_last_replenish_at', 0)
-    now = time.time()
-    elapsed = now - last_at
-    if last_at > 0 and elapsed < cooldown_sec:
-        return False, f'cooldown ({elapsed:.0f}s < {cooldown_sec}s)'
-
-    # Gate 9: not too close to expiry.
-    # ImportError is separated from parse errors: a missing/broken import is a hard
-    # block (replenish on an expiring contract is worse than skipping the replenish),
-    # while a parse failure is a soft skip (expiry string may be in an unexpected format).
-    expiry_str = params.get('expiry', '')
-    stop_adj_mins = params.get('stop_adjustment_mins', 15)
-    if expiry_str:
-        try:
-            from .mmm_initializer import expiry_to_utc_datetime
-        except ImportError as _import_err:
-            log.error(f"[replenish] Gate 9: cannot import expiry_to_utc_datetime "
-                      f"({_import_err}) — blocking replenish as safety fallback")
-            return False, 'gate9_import_error'
-        try:
-            expiry_iso = expiry_to_utc_datetime(expiry_str, params)
-            expiry_dt = datetime.fromisoformat(expiry_iso)
-            if expiry_dt.tzinfo is None:
-                expiry_dt = expiry_dt.replace(tzinfo=timezone.utc)
-            minutes_remaining = (expiry_dt - datetime.now(timezone.utc)).total_seconds() / 60.0
-            if minutes_remaining < stop_adj_mins:
-                return False, f'near_expiry ({minutes_remaining:.0f}m < {stop_adj_mins}m)'
-        except Exception as _gate9_err:
-            log.warning(f"[replenish] Gate 9 expiry parse failed ({expiry_str!r}): "
-                        f"{_gate9_err} — near-expiry guard skipped")
-
-    # Gate 10: open side must have active lots (not just frozen/winding-down lots).
-    # total_lots = active + frozen; if open side is all frozen (mid-close), replenishing
-    # the closed side creates a dangling leg once the frozen side fully closes.
+    # Gate 6  (regime BLOCK_ALL_SELLS): REMOVED — hedge restoration overrides.
+    # Gate 7  (max replenish count):    REMOVED — no cap on hedge restores.
+    # Gate 8  (cooldown):               REMOVED — unhedged cannot wait for timer.
+    # Gate 9  (near expiry):            REMOVED — staying unhedged near expiry
+    #                                             is always worse.
+    # Gate 10: open side must have active lots.  total_lots = active + frozen;
+    # if open side is all frozen (mid-close), replenishing creates a dangling
+    # leg once the frozen side fully closes.
     open_active = session.get(open_side, {}).get('active_lots', 0)
     if open_active <= 0:
         return False, 'open_side_has_no_lots'
 
-    # Gate 11: lot velocity — block if the rolling window for the CLOSED SIDE
-    # is already at/over limit.
-    # NOTE: Only same-side lots count. A CE strike_shift must not block PE replenish
-    # — replenish is defensive (hedge restoration) and each side has its own velocity
-    # budget.  Cross-side velocity is not a replenish concern.
-    if params.get('lot_velocity_enabled', True):
-        _vel_limit = params.get('lot_velocity_limit', 10)
-        _vel_window = params.get('lot_velocity_window_mins', 30)
-        _cutoff = datetime.now(timezone.utc) - timedelta(minutes=_vel_window)
-        _lots_in_window = 0
-        for _adj in session.get('adjustment_history', []):
-            if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
-                continue
-            # Only count same-side lots — opposite-side velocity is irrelevant
-            if _adj.get('side', '') != closed_side:
-                continue
-            try:
-                _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
-                if _ts.tzinfo is None:
-                    _ts = _ts.replace(tzinfo=timezone.utc)
-                if _ts >= _cutoff:
-                    _lots_in_window += _adj.get('lots_sold', 0)
-            except (ValueError, TypeError):
-                continue
-        if _lots_in_window >= _vel_limit:
-            return False, f'lot_velocity_limit ({_lots_in_window}/{_vel_limit} lots in window on {closed_side.upper()} side)'
+    # Gate 11 (lot velocity): REMOVED — hedging is more important than
+    #                                    respecting velocity limits.
 
+    if ocs_emergency:
+        return True, 'eligible:ocs_emergency'
     return True, 'eligible'
 
 

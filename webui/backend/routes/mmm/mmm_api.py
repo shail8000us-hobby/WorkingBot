@@ -18,6 +18,7 @@ import asyncio
 import threading
 import json
 import time
+from typing import Optional
 from flask import Blueprint, request, jsonify, make_response
 from datetime import datetime, timezone
 
@@ -2617,37 +2618,121 @@ def get_activities():
     Get recent background activity log entries.
 
     Query params:
-        limit: int (default 50, max 200)
+        limit: int (default 50, max 500)
+        cursor: str (optional pagination cursor)
         session_id: str (optional filter)
-        severity: str (optional filter: info|success|warning|error|progress)
+        severity: str (optional filter; comma-separated supported)
+        min_severity: str (optional threshold)
+        category: str (optional filter; comma-separated supported)
+        type: str (optional filter; comma-separated supported)
+        since: ISO datetime (optional)
+        until: ISO datetime (optional)
+        search: str (optional text search in message/type/session)
+        order: asc|desc (default desc)
 
     Returns:
-        { success, activities: [...], count: int }
+        { success, activities: [...], count, total, has_more, next_cursor }
     """
     try:
         from .mmm_activity import get_activity_log
 
-        limit = min(int(request.args.get('limit', 50)), 200)
+        def _csv_param(name: str):
+            raw = request.args.get(name)
+            if not raw:
+                return None
+            values = [v.strip() for v in raw.split(',') if v.strip()]
+            return values or None
+
+        limit = min(int(request.args.get('limit', 50)), 500)
+        cursor = request.args.get('cursor')
         session_id = request.args.get('session_id')
-        severity = request.args.get('severity')
-        category = request.args.get('category')
+        severities = _csv_param('severity')
+        categories = _csv_param('category')
+        activity_types = _csv_param('type')
+        since = request.args.get('since')
+        until = request.args.get('until')
+        search = request.args.get('search')
+        min_severity = request.args.get('min_severity')
+        order = request.args.get('order', 'desc')
 
         activity_log = get_activity_log()
-        activities = activity_log.get_recent(
+        result = activity_log.query(
             limit=limit,
+            cursor=cursor,
             session_id=session_id,
-            severity=severity,
-            category=category,
+            severities=severities,
+            categories=categories,
+            types=activity_types,
+            since=since,
+            until=until,
+            search=search,
+            min_severity=min_severity,
+            order=order,
         )
 
         return jsonify({
             'success': True,
-            'activities': activities,
-            'count': len(activities),
+            'activities': result.get('items', []),
+            'count': result.get('count', 0),
+            'total': result.get('total', 0),
+            'has_more': result.get('has_more', False),
+            'next_cursor': result.get('next_cursor'),
         })
 
     except Exception as e:
         log.exception("Failed to get activities")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/activities/stats', methods=['GET'])
+def get_activities_stats():
+    """Get aggregate statistics for the activity log."""
+    try:
+        from .mmm_activity import get_activity_log
+
+        session_id = request.args.get('session_id')
+        since = request.args.get('since')
+        until = request.args.get('until')
+
+        stats = get_activity_log().get_stats(
+            session_id=session_id,
+            since=since,
+            until=until,
+        )
+        return jsonify({'success': True, 'stats': stats})
+    except Exception as e:
+        log.exception("Failed to get activity stats")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@mmm_bp.route('/activities/critical', methods=['GET'])
+def get_critical_activities():
+    """Get warning/error/critical activity feed for rapid risk visibility."""
+    try:
+        from .mmm_activity import get_activity_log
+
+        limit = min(int(request.args.get('limit', 50)), 500)
+        cursor = request.args.get('cursor')
+        session_id = request.args.get('session_id')
+        since = request.args.get('since')
+
+        result = get_activity_log().get_critical_feed(
+            limit=limit,
+            session_id=session_id,
+            since=since,
+            cursor=cursor,
+        )
+
+        return jsonify({
+            'success': True,
+            'activities': result.get('items', []),
+            'count': result.get('count', 0),
+            'total': result.get('total', 0),
+            'has_more': result.get('has_more', False),
+            'next_cursor': result.get('next_cursor'),
+        })
+    except Exception as e:
+        log.exception("Failed to get critical activities")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -7430,9 +7515,14 @@ def get_audit_trail():
     
     Query parameters:
         session_id: Filter by session ID (optional)
-        severity: Filter by severity level: info, warning, error, critical (optional)
-        type: Filter by activity type (optional)
+        severity: Filter by severity levels (optional, comma-separated)
+        min_severity: Filter by minimum severity threshold (optional)
+        category: Filter by category (optional, comma-separated)
+        type: Filter by activity type(s) (optional, comma-separated)
         since: ISO timestamp to filter events after (optional)
+        until: ISO timestamp to filter events before (optional)
+        search: Search text in message/type/session (optional)
+        cursor: Pagination cursor (optional)
         limit: Max number of results (default 100, max 500)
     
     Returns:
@@ -7442,48 +7532,59 @@ def get_audit_trail():
         from .mmm_activity import get_activity_log
         
         activity_log = get_activity_log()
-        
+
+        def _csv_param(name: str):
+            raw = request.args.get(name)
+            if not raw:
+                return None
+            values = [v.strip() for v in raw.split(',') if v.strip()]
+            return values or None
+
         # Parse query params
         session_id = request.args.get('session_id')
-        severity = request.args.get('severity')
-        activity_type = request.args.get('type')
+        severities = _csv_param('severity')
+        categories = _csv_param('category')
+        activity_types = _csv_param('type')
+        min_severity = request.args.get('min_severity')
         since = request.args.get('since')
+        until = request.args.get('until')
+        search = request.args.get('search')
+        cursor = request.args.get('cursor')
+        order = request.args.get('order', 'desc')
         limit = min(int(request.args.get('limit', 100)), 500)
-        
-        # Use get_recent which supports session_id and severity filtering
-        activities = activity_log.get_recent(
+
+        result = activity_log.query(
             limit=limit,
+            cursor=cursor,
             session_id=session_id,
-            severity=severity,
+            severities=severities,
+            categories=categories,
+            types=activity_types,
+            min_severity=min_severity,
+            since=since,
+            until=until,
+            search=search,
+            order=order,
         )
-        
-        # Apply additional filters not supported by get_recent
-        filtered = activities
-        
-        if activity_type:
-            types = activity_type.split(',')
-            filtered = [a for a in filtered if a.get('type') in types]
-        
-        if since:
-            try:
-                since_dt = datetime.fromisoformat(since.replace('Z', '+00:00'))
-                filtered = [a for a in filtered if datetime.fromisoformat(
-                    a.get('timestamp', '').replace('Z', '+00:00')
-                ) >= since_dt]
-            except (ValueError, TypeError):
-                pass
-        
-        # Already sorted newest first by get_recent
-        
+
         return jsonify({
             'success': True,
-            'count': len(filtered),
-            'activities': filtered,
+            'count': result.get('count', 0),
+            'total': result.get('total', 0),
+            'activities': result.get('items', []),
+            'has_more': result.get('has_more', False),
+            'next_cursor': result.get('next_cursor'),
             'filters_applied': {
                 'session_id': session_id,
-                'severity': severity,
-                'type': activity_type,
+                'severity': severities,
+                'min_severity': min_severity,
+                'category': categories,
+                'type': activity_types,
                 'since': since,
+                'until': until,
+                'search': search,
+                'cursor': cursor,
+                'order': order,
                 'limit': limit,
             },
         })
@@ -7515,8 +7616,31 @@ def export_audit_trail():
         session_id = request.args.get('session_id')
         include_sessions = request.args.get('include_sessions', 'false').lower() == 'true'
         
-        # Get all activities (up to 500 which is MAX_ACTIVITIES)
-        activities = activity_log.get_recent(limit=500, session_id=session_id)
+        severities = request.args.get('severity')
+        types = request.args.get('type')
+        categories = request.args.get('category')
+        since = request.args.get('since')
+        until = request.args.get('until')
+        search = request.args.get('search')
+
+        def _csv(raw: Optional[str]):
+            if not raw:
+                return None
+            values = [v.strip() for v in raw.split(',') if v.strip()]
+            return values or None
+
+        query_result = activity_log.query(
+            limit=500,
+            session_id=session_id,
+            severities=_csv(severities),
+            categories=_csv(categories),
+            types=_csv(types),
+            since=since,
+            until=until,
+            search=search,
+            order='desc',
+        )
+        activities = query_result.get('items', [])
         
         export_data = {
             'export_timestamp': datetime.now(timezone.utc).isoformat(),
@@ -7524,6 +7648,15 @@ def export_audit_trail():
             'version': '1.0',
             'activity_count': len(activities),
             'activities': activities,
+            'filters_applied': {
+                'session_id': session_id,
+                'severity': _csv(severities),
+                'category': _csv(categories),
+                'type': _csv(types),
+                'since': since,
+                'until': until,
+                'search': search,
+            },
         }
         
         # Include watchdog status

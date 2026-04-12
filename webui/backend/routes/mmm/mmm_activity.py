@@ -14,19 +14,49 @@ import json
 import os
 import logging
 import threading
+import shutil
+from collections import Counter, deque
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
-from collections import deque
 
 log = logging.getLogger('mmm_activity')
 
 # Persist file
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data')
 ACTIVITY_FILE = os.path.join(DATA_DIR, 'mmm_activity_log.json')
+ACTIVITY_BACKUP_FILE = f'{ACTIVITY_FILE}.bak'
 
 # Maximum activities to keep in memory and on disk
 # Fix #16: Increased from 200 to 500 for better post-crash debugging
 MAX_ACTIVITIES = 500
+
+
+def _titleize_activity_type(activity_type: str) -> str:
+    """Convert snake_case activity keys to readable labels."""
+    if not activity_type:
+        return 'Unknown'
+    return activity_type.replace('_', ' ').strip().title()
+
+
+def _parse_iso_ts(ts: Any) -> Optional[datetime]:
+    """Best-effort timestamp parser for ISO strings (UTC-normalized)."""
+    if ts is None:
+        return None
+    if isinstance(ts, datetime):
+        dt = ts
+    else:
+        raw = str(ts).strip()
+        if not raw:
+            return None
+        if raw.endswith('Z'):
+            raw = raw[:-1] + '+00:00'
+        try:
+            dt = datetime.fromisoformat(raw)
+        except (ValueError, TypeError):
+            return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 # Activity types
 ACTIVITY_TYPES = {
@@ -37,42 +67,91 @@ ACTIVITY_TYPES = {
     'order_fill_check': 'Checking Fill Status',
     'order_filled': 'Order Filled',
     'order_repricing': 'Repricing Order',
+    'order_repricing_aggressive': 'Aggressive Repricing',
     'order_amended': 'Order Amended',
     'order_cancelled': 'Order Cancelled',
     'order_failed': 'Order Failed',
     'order_retrying': 'Retrying Order',
+    'pending_fill_recorded': 'Pending Fill Recorded',
+    'pending_order_resolved': 'Pending Order Resolved',
+    'pending_order_active': 'Pending Order Active',
 
     # Entry
     'entry_starting': 'Starting Entry',
     'entry_complete': 'Entry Complete',
     'entry_failed': 'Entry Failed',
+    'entry_rolled_back': 'Entry Rolled Back',
     'entry_rollback': 'Rolling Back Entry',
     'entry_rollback_ok': 'Rollback Complete',
     'entry_rollback_failed': 'Rollback Failed',
+    'partial_entry': 'Partial Entry',
+    'partial_entry_retry': 'Partial Entry Retry',
+    'partial_entry_retry_failed': 'Partial Entry Retry Failed',
 
     # Session lifecycle
     'session_created': 'Session Created',
     'session_initialized': 'Session Initialized',
     'session_starting': 'Session Starting',
     'session_started': 'Session Started',
+    'session_adopted': 'Session Adopted',
     'session_paused': 'Session Paused',
     'session_resumed': 'Session Resumed',
     'session_stopped': 'Session Stopped',
+    'force_heartbeat': 'Force Heartbeat',
+    'watchdog': 'Watchdog Alert',
 
     # Adjustments
     'adjustment_triggered': 'Adjustment Triggered',
     'adjustment_complete': 'Adjustment Complete',
     'adjustment_skipped': 'Adjustment Skipped',
+    'reversal_skip': 'Reversal Skip',
+    'reversal_skip_force_through': 'Reversal Force Through',
     'strike_shift': 'Strike Shift',
+    'shift_no_strike': 'Shift No Strike',
+    'shift_aborted': 'Shift Aborted',
+    'shift_candidate_stale': 'Shift Candidate Stale',
+    'shift_fallback_below_floor': 'Shift Fallback Blocked',
+    'shift_sell_failed_unfreeze': 'Shift Sell Failed (Unfrozen)',
     'shift_post_fill_error': 'Shift Post-Fill Error',
+    'proactive_shift': 'Proactive Shift',
+    'proactive_shift_lot_fallback': 'Proactive Shift Lot Fallback',
+    'delta_neutral_match': 'Delta-Neutral Match',
+    'cap_auto_shift': 'Cap Auto Shift',
+    'delta_rescue': 'Delta Rescue',
     'trigger_cleared_by_close_at_5': 'Trigger Cleared',
+    'cooldown_blocking': 'Cooldown Blocking',
+    'itm_guard_blocked': 'ITM Guard Blocked',
+    'itm_guard_bypassed': 'ITM Guard Bypassed',
+    'gamma_projection_blocked': 'Gamma Projection Blocked',
+    'consecutive_dir_blocked': 'Consecutive Direction Blocked',
+    'consecutive_dir_auto_resume': 'Consecutive Direction Auto Resume',
+    'replenish_grace_hold': 'Replenish Grace Hold',
 
     # Safety
     'safety_warning': 'Safety Warning',
+    'safety': 'Safety Alert',
     'safety_block': 'Safety Block',
+    'guardian_violation': 'Guardian Violation',
+    'guardian_auto_heal': 'Guardian Auto-Heal',
+    'strategy_validation': 'Strategy Validation',
     'trigger_stale': 'Stale Trigger',
     'max_loss_breach': 'Max Loss Breach',
+    'hard_stop': 'Hard Stop',
+    'expiry_close': 'Expiry Close',
     'adjustments_stopped': 'Adjustments Stopped',
+    'asymmetry_side_block': 'Asymmetry Side Block',
+    'asymmetry_side_blocked': 'Asymmetry Side Blocked',
+    'dangerous_mode_bypass': 'Dangerous Mode Bypass',
+    'exchange_position_warning': 'Exchange Position Warning',
+    'reconciliation_warning': 'Reconciliation Warning',
+    'reconciliation_autocorrect': 'Reconciliation Auto-Correct',
+    'margin_tier_change': 'Margin Tier Change',
+    'margin_red': 'Margin RED',
+    'margin_critical': 'Margin CRITICAL',
+    'ocs_auto_resume': 'One-Side-Close Auto Resume',
+    'both_sides_closed_awake': 'Both Sides Closed (Awake Hours)',
+    'regime_pause': 'Regime Pause',
+    'regime_auto_resume': 'Regime Auto Resume',
 
     # Close-at-5
     'close_at_5': 'Position Closed',
@@ -96,6 +175,7 @@ ACTIVITY_TYPES = {
     'perp_hedge': 'Perp Hedge',
 
     # Emergency
+    'emergency': 'Emergency',
     'emergency_order': 'Emergency Order',
     'emergency_placing': 'Emergency Placing',
     'emergency_filled': 'Emergency Filled',
@@ -155,6 +235,16 @@ ACTIVITY_TYPES = {
 
     # Hot reload
     'hot_reload': 'Hot Reload',
+    'set_active_strike': 'Set Active Strike',
+    'manual_close_strike': 'Manual Close Strike',
+    'manual_adjust_lots': 'Manual Adjust Lots',
+    'manual_reduce': 'Manual Reduce',
+    'manual_inject': 'Manual Inject',
+    'pin_trigger': 'Pin Trigger',
+    'unpin_trigger': 'Unpin Trigger',
+    'auto_atm_promote': 'Auto ATM Promote',
+    'auto_close_all': 'Auto Close All',
+    'auto_close_failures': 'Auto Close Failures',
 
     # Global Graceful Exit
     'session_exit_all_initiated': 'Exit All Initiated',
@@ -170,7 +260,17 @@ ACTIVITY_TYPES = {
     # General
     'info': 'Info',
     'warning': 'Warning',
+    'critical': 'Critical',
     'error': 'Error',
+}
+
+# Backward-compat aliases from old/log-noisy names to canonical types.
+ACTIVITY_TYPE_ALIASES = {
+    'session_pause': 'session_paused',
+    'session_stop': 'session_stopped',
+    'session_start': 'session_started',
+    'safety_event': 'safety_warning',
+    'max_loss': 'max_loss_breach',
 }
 
 # Activity categories for frontend filtering
@@ -179,9 +279,20 @@ ACTIVITY_CATEGORIES = {
                'order_filled', 'order_repricing', 'order_amended', 'order_cancelled',
                'order_failed', 'order_retrying', 'entry_starting', 'entry_complete',
                'entry_failed', 'entry_rollback', 'entry_rollback_ok', 'entry_rollback_failed',
+                'entry_rolled_back', 'partial_entry', 'partial_entry_retry', 'partial_entry_retry_failed',
+                'order_repricing_aggressive', 'pending_fill_recorded', 'pending_order_resolved',
+                'pending_order_active',
                'emergency_order', 'emergency_placing', 'emergency_filled', 'emergency_error'},
     'adjustments': {'adjustment_triggered', 'adjustment_complete', 'adjustment_skipped',
                     'strike_shift', 'shift_post_fill_error',
+                    'shift_no_strike', 'shift_aborted', 'shift_candidate_stale',
+                    'shift_fallback_below_floor', 'shift_sell_failed_unfreeze',
+                    'proactive_shift', 'proactive_shift_lot_fallback',
+                    'delta_neutral_match', 'cap_auto_shift',
+                    'reversal_skip', 'reversal_skip_force_through',
+                    'cooldown_blocking', 'itm_guard_blocked', 'itm_guard_bypassed',
+                    'gamma_projection_blocked', 'consecutive_dir_blocked',
+                    'consecutive_dir_auto_resume', 'replenish_grace_hold', 'delta_rescue',
                     'trigger_cleared_by_close_at_5',
                     'close_at_5', 'wind_down', 'atm_wind_down', 'atm_auto_close',
                     'margin_wind_down', 'margin_block_sells', 'perp_hedge',
@@ -193,19 +304,30 @@ ACTIVITY_CATEGORIES = {
                     'replenish_blocked',
                     'straddle_roll', 'straddle_roll_blocked',
                     'reverse_entry', 'reverse_closed', 'reverse_status',
+                    'manual_adjust_lots', 'manual_close_strike', 'manual_inject',
+                    'manual_reduce', 'set_active_strike', 'pin_trigger', 'unpin_trigger',
+                    'auto_atm_promote',
                     'fill_sync_confirmed', 'fill_sync_partial'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
-               'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
+                'safety', 'guardian_violation', 'guardian_auto_heal', 'strategy_validation',
+                'hard_stop', 'expiry_close', 'adjustments_stopped',
+                'dangerous_mode_bypass', 'asymmetry_side_block', 'asymmetry_side_blocked',
+                'exchange_position_warning', 'reconciliation_warning', 'reconciliation_autocorrect',
+                'margin_tier_change', 'margin_red', 'margin_critical',
+                'regime_control', 'regime_block', 'regime_emergency', 'regime_pause',
+                'regime_auto_resume', 'ocs_auto_resume', 'both_sides_closed_awake',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',
-               'whipsaw_guard',
+                'whipsaw_guard', 'atm_shield', 'ghost_close_recovered',
                'breakeven_zone_change', 'breakeven_band_contracting', 'breakeven_narrow_band',
                'gamma_zone_change', 'gamma_danger_detected',
                'reverse_disabled'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
-               'session_paused', 'session_resumed', 'session_stopped', 'hot_reload',
+                'session_adopted', 'session_paused', 'session_resumed', 'session_stopped',
+                'hot_reload', 'watchdog', 'force_heartbeat', 'emergency',
+                'auto_close_all', 'auto_close_failures',
                'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
                'param_adapted',
-               'info', 'warning', 'error'},
+               'info', 'warning', 'critical', 'error'},
 }
 
 # Severity levels
@@ -213,7 +335,17 @@ SEVERITY_INFO = 'info'
 SEVERITY_SUCCESS = 'success'
 SEVERITY_WARNING = 'warning'
 SEVERITY_ERROR = 'error'
+SEVERITY_CRITICAL = 'critical'
 SEVERITY_PROGRESS = 'progress'  # For ongoing actions (placing, waiting)
+
+SEVERITY_PRIORITY = {
+    SEVERITY_PROGRESS: 0,
+    SEVERITY_INFO: 1,
+    SEVERITY_SUCCESS: 2,
+    SEVERITY_WARNING: 3,
+    SEVERITY_ERROR: 4,
+    SEVERITY_CRITICAL: 5,
+}
 
 # Reverse Mode activity type constants (importable by mmm_reverse.py)
 ACTIVITY_REVERSE_ENTRY = 'reverse_entry'
@@ -252,25 +384,65 @@ class MMMActivityLog:
         # Maps (type, session_id, message_prefix) → last_logged_timestamp
         self._dedup_cache: Dict[tuple, datetime] = {}
         self._DEDUP_INTERVAL_SECS = 30  # Suppress identical events within this window
+        self._suppressed_dedup_count = 0
+
+    def _load_file(self, path: str) -> List[Dict[str, Any]]:
+        """Load activities payload from a file path."""
+        with open(path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            items = data.get('activities', [])
+        elif isinstance(data, list):
+            items = data
+        else:
+            items = []
+        if not isinstance(items, list):
+            return []
+        return [i for i in items if isinstance(i, dict)]
 
     def _load_from_disk(self):
         """Load persisted activities on startup."""
+        if not os.path.exists(ACTIVITY_FILE):
+            return
         try:
-            if os.path.exists(ACTIVITY_FILE):
-                with open(ACTIVITY_FILE, 'r') as f:
-                    data = json.load(f)
-                    for item in data.get('activities', []):
-                        self._activities.append(item)
-                log.info(f"Loaded {len(self._activities)} activities from disk")
+            items = self._load_file(ACTIVITY_FILE)
+            for item in items:
+                self._activities.append(item)
+            log.info(f"Loaded {len(self._activities)} activities from disk")
+            return
         except Exception as e:
             log.warning(f"Could not load activity log: {e}")
 
+        # Recovery path: malformed main file, attempt backup.
+        if os.path.exists(ACTIVITY_BACKUP_FILE):
+            try:
+                items = self._load_file(ACTIVITY_BACKUP_FILE)
+                for item in items:
+                    self._activities.append(item)
+                log.warning(
+                    f"Recovered {len(self._activities)} activities from backup after primary log corruption"
+                )
+                return
+            except Exception as be:
+                log.warning(f"Could not recover activity log from backup: {be}")
+
+        # Final fallback: quarantine corrupt file and continue with empty log.
+        try:
+            ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
+            corrupt_path = f"{ACTIVITY_FILE}.corrupt.{ts}"
+            os.replace(ACTIVITY_FILE, corrupt_path)
+            log.error(f"Quarantined corrupt activity file at {corrupt_path}")
+        except Exception as qe:
+            log.warning(f"Could not quarantine corrupt activity log: {qe}")
+
     # M-7 fix: activity types that must always persist regardless of throttle
     _ALWAYS_PERSIST_TYPES = frozenset({
-        'safety_event', 'auto_close', 'max_loss', 'emergency',
+        'safety_event', 'safety', 'auto_close', 'auto_close_all', 'max_loss',
+        'max_loss_breach', 'emergency', 'guardian_violation', 'guardian_auto_heal',
         'session_stop', 'session_stopped', 'session_pause', 'session_paused',
+        'hard_stop', 'watchdog', 'margin_critical',
         'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
-        'watchdog', 'error',
+        'error', 'critical',
     })
 
     def _should_persist(self, activity: Dict) -> bool:
@@ -280,13 +452,49 @@ class MMMActivityLog:
         types, always write to disk so post-crash debugging has full context.
         """
         # Always persist critical/error/warning severity
-        if activity.get('severity') in ('critical', 'error', 'warning'):
+        if activity.get('severity') in (SEVERITY_CRITICAL, SEVERITY_ERROR, SEVERITY_WARNING):
             return True
         # Always persist important lifecycle types
         if activity.get('type') in self._ALWAYS_PERSIST_TYPES:
             return True
         # For all other events: apply the 1-in-2 throttle
         return self._counter % 2 == 0
+
+    def _normalize_activity_type(self, activity_type: str) -> str:
+        raw = str(activity_type or '').strip()
+        if not raw:
+            return 'info'
+        return ACTIVITY_TYPE_ALIASES.get(raw, raw)
+
+    def _normalize_severity(self, severity: str) -> str:
+        sev = str(severity or '').strip().lower()
+        if sev in SEVERITY_PRIORITY:
+            return sev
+        return SEVERITY_INFO
+
+    def _infer_category(self, activity_type: str) -> str:
+        for cat, types in ACTIVITY_CATEGORIES.items():
+            if activity_type in types:
+                return cat
+
+        # Prefix/keyword fallback for forward-compatibility when new types are introduced.
+        if activity_type.startswith('order_') or activity_type.startswith('pending_'):
+            return 'orders'
+        if (
+            activity_type.startswith('replenish_')
+            or activity_type.startswith('shift_')
+            or activity_type.startswith('adjustment_')
+            or activity_type.startswith('manual_')
+            or activity_type.startswith('reversal_')
+            or activity_type.startswith('scale_')
+        ):
+            return 'adjustments'
+        if any(k in activity_type for k in (
+            'safety', 'guardian', 'margin', 'regime', 'watchdog', 'reconciliation',
+            'max_loss', 'hard_stop', 'stale', 'asymmetry', 'dangerous',
+        )):
+            return 'safety'
+        return 'system'
 
     def _save_to_disk(self, activity: Dict = None):
         """Persist activities to disk (throttled — every 2nd write).
@@ -311,15 +519,21 @@ class MMMActivityLog:
                 prefix='mmm_activity_',
             )
             with self._lock:
+                payload = {
+                    'activities': list(self._activities),
+                    'updated_at': datetime.now(timezone.utc).isoformat(),
+                }
                 with os.fdopen(fd, 'w') as f:
-                    json.dump({
-                        'activities': list(self._activities),
-                        'updated_at': datetime.now(timezone.utc).isoformat(),
-                    }, f, indent=2, default=str)
+                    json.dump(payload, f, indent=2, default=str)
                     f.flush()
                     os.fsync(f.fileno())
+                if os.path.exists(ACTIVITY_FILE):
+                    try:
+                        shutil.copy2(ACTIVITY_FILE, ACTIVITY_BACKUP_FILE)
+                    except Exception as be:
+                        log.debug(f"Could not refresh activity log backup: {be}")
                 # Atomic rename — survives crash between write and rename
-                os.rename(tmp_file, ACTIVITY_FILE)
+                os.replace(tmp_file, ACTIVITY_FILE)
         except Exception as e:
             log.warning(f"Could not save activity log: {e}")
             # Clean up temp file if rename failed
@@ -350,18 +564,26 @@ class MMMActivityLog:
         Returns:
             The activity dict that was added, or None if deduplicated
         """
+        activity_type = self._normalize_activity_type(activity_type)
+        severity = self._normalize_severity(severity)
+        msg = message if isinstance(message, str) else str(message)
+        msg = msg.strip() or ACTIVITY_TYPES.get(activity_type, _titleize_activity_type(activity_type))
+        if not isinstance(details, dict):
+            details = {'raw': details}
+
         # Recommendation #6: Deduplicate spammy events
         # Only dedup types that fire every heartbeat; never dedup critical events
         _DEDUP_TYPES = {
             'info', 'warning', 'safety_warning', 'trigger_stale',
             'wind_down', 'regime_control',
         }
-        if activity_type in _DEDUP_TYPES:
+        if activity_type in _DEDUP_TYPES and severity not in (SEVERITY_ERROR, SEVERITY_CRITICAL):
             # Use first 80 chars of message as dedup key (ignores changing numbers)
-            dedup_key = (activity_type, session_id or '', message[:80])
+            dedup_key = (activity_type, session_id or '', msg[:80])
             now = datetime.now(timezone.utc)
             last = self._dedup_cache.get(dedup_key)
             if last and (now - last).total_seconds() < self._DEDUP_INTERVAL_SECS:
+                self._suppressed_dedup_count += 1
                 return None  # Suppress duplicate
             self._dedup_cache[dedup_key] = now
 
@@ -373,28 +595,27 @@ class MMMActivityLog:
                     if (cutoff - v).total_seconds() < self._DEDUP_INTERVAL_SECS * 10
                 }
 
-        # Determine category for frontend filtering
-        category = 'system'
-        for cat, types in ACTIVITY_CATEGORIES.items():
-            if activity_type in types:
-                category = cat
-                break
+        category = self._infer_category(activity_type)
+        now = datetime.now(timezone.utc)
 
         # Audit fix: monotonic _id_counter guarantees uniqueness (collision with same-second + same-index is fixed)
-        self._id_counter += 1
+        with self._lock:
+            self._id_counter += 1
+            activity_id = f"act_{now.strftime('%Y%m%d_%H%M%S')}_{self._id_counter:06d}"
         activity = {
-            'id': f"act_{datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')}_{self._id_counter:06d}",
-            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'id': activity_id,
+            'timestamp': now.isoformat(),
             'type': activity_type,
-            'type_label': ACTIVITY_TYPES.get(activity_type, activity_type),
+            'type_label': ACTIVITY_TYPES.get(activity_type, _titleize_activity_type(activity_type)),
             'category': category,
-            'message': message,
+            'message': msg,
             'session_id': session_id,
             'severity': severity,
             'details': details or {},
         }
 
-        self._activities.append(activity)
+        with self._lock:
+            self._activities.append(activity)
         self._save_to_disk(activity)  # M-7 fix: pass activity for critical bypass
 
         # Also emit via WebSocket for real-time updates
@@ -427,18 +648,163 @@ class MMMActivityLog:
         Returns:
             List of activity dicts
         """
+        result = self.query(
+            limit=limit,
+            session_id=session_id,
+            severities=[severity] if severity else None,
+            categories=[category] if category else None,
+            order='desc',
+        )
+        return result.get('items', [])
+
+    def query(
+        self,
+        limit: int = 50,
+        session_id: str = None,
+        severities: Optional[List[str]] = None,
+        categories: Optional[List[str]] = None,
+        types: Optional[List[str]] = None,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+        search: Optional[str] = None,
+        cursor: Optional[str] = None,
+        min_severity: Optional[str] = None,
+        order: str = 'desc',
+    ) -> Dict[str, Any]:
+        """Advanced activity query with cursor pagination and full filters."""
+        _limit = max(1, min(int(limit or 50), MAX_ACTIVITIES))
         with self._lock:
             items = list(self._activities)
-        items.reverse()  # Newest first
 
-        if session_id:
-            items = [a for a in items if a.get('session_id') == session_id]
-        if severity:
-            items = [a for a in items if a.get('severity') == severity]
-        if category:
-            items = [a for a in items if a.get('category') == category]
+        sev_set = {self._normalize_severity(s) for s in (severities or []) if s}
+        cat_set = {str(c).strip().lower() for c in (categories or []) if c}
+        type_set = {self._normalize_activity_type(t) for t in (types or []) if t}
+        since_dt = _parse_iso_ts(since)
+        until_dt = _parse_iso_ts(until)
+        search_l = str(search or '').strip().lower()
+        min_sev = self._normalize_severity(min_severity) if min_severity else None
+        min_rank = SEVERITY_PRIORITY.get(min_sev, -1) if min_sev else -1
 
-        return items[:limit]
+        filtered = []
+        for a in items:
+            if session_id and a.get('session_id') != session_id:
+                continue
+
+            a_type = self._normalize_activity_type(a.get('type', ''))
+            if type_set and a_type not in type_set:
+                continue
+
+            a_cat = str(a.get('category', '')).strip().lower()
+            if cat_set and a_cat not in cat_set:
+                continue
+
+            a_sev = self._normalize_severity(a.get('severity', ''))
+            if sev_set and a_sev not in sev_set:
+                continue
+            if min_rank >= 0 and SEVERITY_PRIORITY.get(a_sev, 0) < min_rank:
+                continue
+
+            a_dt = _parse_iso_ts(a.get('timestamp'))
+            if since_dt and (a_dt is None or a_dt < since_dt):
+                continue
+            if until_dt and (a_dt is None or a_dt > until_dt):
+                continue
+
+            if search_l:
+                blob = ' '.join([
+                    str(a.get('message', '')),
+                    str(a.get('type', '')),
+                    str(a.get('type_label', '')),
+                    str(a.get('session_id', '')),
+                ]).lower()
+                if search_l not in blob:
+                    continue
+
+            filtered.append(a)
+
+        reverse = str(order or 'desc').lower() != 'asc'
+        filtered.sort(
+            key=lambda a: (
+                _parse_iso_ts(a.get('timestamp')) or datetime.fromtimestamp(0, tz=timezone.utc),
+                str(a.get('id', '')),
+            ),
+            reverse=reverse,
+        )
+
+        start = 0
+        if cursor:
+            for idx, item in enumerate(filtered):
+                if item.get('id') == cursor:
+                    start = idx + 1
+                    break
+
+        page = filtered[start:start + _limit]
+        has_more = (start + _limit) < len(filtered)
+        next_cursor = page[-1].get('id') if has_more and page else None
+
+        return {
+            'items': page,
+            'count': len(page),
+            'total': len(filtered),
+            'has_more': has_more,
+            'next_cursor': next_cursor,
+        }
+
+    def get_stats(
+        self,
+        session_id: Optional[str] = None,
+        since: Optional[str] = None,
+        until: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Aggregate activity metrics for dashboards and diagnostics."""
+        dataset = self.query(
+            limit=MAX_ACTIVITIES,
+            session_id=session_id,
+            since=since,
+            until=until,
+            order='desc',
+        ).get('items', [])
+
+        by_severity = Counter(self._normalize_severity(a.get('severity')) for a in dataset)
+        by_category = Counter(str(a.get('category', 'system')) for a in dataset)
+        by_type = Counter(self._normalize_activity_type(a.get('type')) for a in dataset)
+        by_session = Counter(str(a.get('session_id') or 'unknown') for a in dataset)
+
+        ts_values = [_parse_iso_ts(a.get('timestamp')) for a in dataset]
+        ts_values = [t for t in ts_values if t is not None]
+        oldest_ts = min(ts_values).isoformat() if ts_values else None
+        newest_ts = max(ts_values).isoformat() if ts_values else None
+
+        return {
+            'total': len(dataset),
+            'critical_count': by_severity.get(SEVERITY_CRITICAL, 0),
+            'error_count': by_severity.get(SEVERITY_ERROR, 0),
+            'warning_count': by_severity.get(SEVERITY_WARNING, 0),
+            'suppressed_dedup_count': self._suppressed_dedup_count,
+            'by_severity': dict(by_severity),
+            'by_category': dict(by_category),
+            'top_types': by_type.most_common(15),
+            'top_sessions': by_session.most_common(10),
+            'oldest_timestamp': oldest_ts,
+            'latest_timestamp': newest_ts,
+        }
+
+    def get_critical_feed(
+        self,
+        limit: int = 50,
+        session_id: Optional[str] = None,
+        since: Optional[str] = None,
+        cursor: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Return warning/error/critical events prioritized for risk visibility."""
+        return self.query(
+            limit=limit,
+            session_id=session_id,
+            severities=[SEVERITY_WARNING, SEVERITY_ERROR, SEVERITY_CRITICAL],
+            since=since,
+            cursor=cursor,
+            order='desc',
+        )
 
     def clear(self, session_id: str = None):
         """Clear activities, optionally for a specific session only."""
@@ -450,6 +816,7 @@ class MMMActivityLog:
                     self._activities.append(a)
             else:
                 self._activities.clear()
+                self._dedup_cache.clear()
         self._save_to_disk()
 
     def resolve_progress(self, session_id: str = None):

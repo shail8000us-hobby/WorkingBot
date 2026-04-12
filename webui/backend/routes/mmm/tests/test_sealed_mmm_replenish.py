@@ -2,13 +2,24 @@
 Sealed contract tests for mmm_replenish — Auto-Replenish Leg.
 
 Functions sealed:
-  - check_replenish_eligibility(session, closed_side, open_side) → (bool, str)
+  - check_replenish_eligibility(session, closed_side, open_side,
+                                 ocs_emergency=False) → (bool, str)
   - determine_replenish_lots(session, closed_side, open_side) → int
 
 These are pure decision functions with no I/O.  The monitor's
 _process_replenish() method (async, I/O) is not sealed here.
 
-29 contracts total.
+Surviving gates (all others removed — hedge restoration principle):
+  G1   replenish_enabled=False   (bypassed in OCS emergency)
+  G2   STOPPED only              (PAUSED always allowed)
+  G5   margin_block / wind_down
+  G10  open side has no active lots
+
+Removed gates (rate-limiting; hedging takes priority):
+  G7   max replenish count — no cap on hedge restores
+  G8   cooldown             — unhedged cannot wait for a timer
+  G9   near expiry          — staying unhedged near expiry is always worse
+  G11  lot velocity         — velocity limits must not block hedge restoration
 """
 
 import time
@@ -25,8 +36,9 @@ from webui.backend.routes.mmm.mmm_replenish import (
 # ─── Fixtures ─────────────────────────────────────────────────────────────────
 
 def _far_future_expiry():
-    """Return an expiry string far in the future so near-expiry gate never fires."""
-    return '20301231'
+    """Return an expiry string far in the future so near-expiry gate never fires.
+    Format: DDMMYYYY (bot convention, e.g. 31122030 = 31 Dec 2030)."""
+    return '31122030'
 
 
 def _base_session(
@@ -104,32 +116,31 @@ class TestCheckReplenishEligibility:
         assert 'replenish_enabled' in reason
 
     @pytest.mark.sealed
-    def test_blocked_when_paused(self):
-        """Gate 2: session status PAUSED (no OCS recovery flag) → blocked."""
+    def test_eligible_when_paused(self):
+        """Gate 2: PAUSED is always allowed — an unhedged position while paused
+        is more dangerous than the pause intent.  No _replenish_ocs_active flag
+        required."""
         s = _base_session(strategy_status='PAUSED')
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'status' in reason
+        assert ok is True, f"PAUSED must always allow replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
-    def test_eligible_when_paused_and_ocs_recovery_active(self):
-        """Gate 2 OCS exception: PAUSED + _replenish_ocs_active=True → eligible.
-        The OCS watchdog sets this flag so it can retry replenish even after a
-        PAUSE was issued.  Stopping an unhedged session is worse than pausing it."""
-        s = _base_session(strategy_status='PAUSED')
-        s['_replenish_ocs_active'] = True
+    def test_blocked_when_stopped(self):
+        """Gate 2: STOPPED blocks — user will handle manually."""
+        s = _base_session(strategy_status='STOPPED')
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is True, f"PAUSED+OCS recovery must be eligible; got reason={reason!r}"
+        assert ok is False
+        assert 'STOPPED' in reason
 
     @pytest.mark.sealed
     def test_blocked_when_stopped_even_with_ocs_recovery(self):
-        """Gate 2: STOPPED is always blocked — OCS recovery does not override STOPPED.
-        STOPPED means the monitor has halted; there is no heartbeat to run replenish."""
+        """Gate 2: STOPPED is always blocked — even _replenish_ocs_active=True
+        does not override it.  The monitor has halted; there is no heartbeat."""
         s = _base_session(strategy_status='STOPPED')
         s['_replenish_ocs_active'] = True
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
         assert ok is False
-        assert 'status' in reason
+        assert 'STOPPED' in reason
 
     @pytest.mark.sealed
     def test_blocked_when_stopped(self):
@@ -194,38 +205,22 @@ class TestCheckReplenishEligibility:
         assert ok is True, f"BLOCK_ALL_SELLS must not block replenish; got reason={reason!r}"
 
     @pytest.mark.sealed
-    def test_blocked_when_max_count_reached(self):
-        """Gate 7: replenish count >= max → blocked."""
+    def test_eligible_when_max_count_exceeded(self):
+        """G7 REMOVED: no cap on hedge restores.  Even at 1000 replenishes,
+        an empty side must be replenished."""
         s = _base_session(max_per_session=3)
-        s['_replenish_count'] = 3
+        s['_replenish_count'] = 1000
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'max_count' in reason
+        assert ok is True, f"Max count must not block replenish; got: {reason!r}"
 
     @pytest.mark.sealed
-    def test_blocked_when_cooldown_not_elapsed(self):
-        """Gate 8: cooldown not yet expired → blocked."""
+    def test_eligible_during_active_cooldown(self):
+        """G8 REMOVED: no cooldown on replenish.  An unhedged position cannot
+        wait for a timer to expire."""
         s = _base_session(cooldown_sec=300)
-        s['_last_replenish_at'] = time.time() - 100  # only 100s ago
+        s['_last_replenish_at'] = time.time() - 5  # 5s into a 300s cooldown
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'cooldown' in reason
-
-    @pytest.mark.sealed
-    def test_eligible_when_cooldown_exactly_expired(self):
-        """Gate 8 boundary: cooldown exactly expired → eligible."""
-        s = _base_session(cooldown_sec=300)
-        s['_last_replenish_at'] = time.time() - 301
-        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is True
-
-    @pytest.mark.sealed
-    def test_eligible_when_never_replenished(self):
-        """Gate 8: _last_replenish_at=0 (never) → no cooldown."""
-        s = _base_session()
-        s['_last_replenish_at'] = 0
-        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is True
+        assert ok is True, f"Cooldown must not block replenish; got: {reason!r}"
 
     @pytest.mark.sealed
     def test_blocked_when_open_side_empty(self):
@@ -238,56 +233,20 @@ class TestCheckReplenishEligibility:
         assert 'open_side_has_no_lots' in reason
 
     @pytest.mark.sealed
-    def test_blocked_when_same_side_velocity_exceeded(self):
-        """Gate 11: replenish blocked when SAME-SIDE lots in velocity window >= limit."""
+    def test_eligible_when_lot_velocity_exceeded(self):
+        """G11 REMOVED: velocity limits must not block hedge restoration.
+        Even if 1000 lots were sold this minute, an empty side must still
+        be replenished."""
         s = _base_session()
         s['params']['lot_velocity_enabled'] = True
-        s['params']['lot_velocity_limit'] = 50
+        s['params']['lot_velocity_limit'] = 10
         s['params']['lot_velocity_window_mins'] = 30
-        # CE had 60 lots sold in the last 10 min (same side as replenish target)
-        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
+        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         s['adjustment_history'] = [
-            {'aggressor': 'PE', 'lots_sold': 60, 'side': 'ce', 'timestamp': ts_recent},
+            {'aggressor': 'SHIFT', 'lots_sold': 1000, 'side': 'CE', 'timestamp': ts_recent},
         ]
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is False
-        assert 'lot_velocity_limit' in reason
-        assert '60/50' in reason
-
-    @pytest.mark.sealed
-    def test_cross_side_velocity_does_not_block_replenish(self):
-        """Gate 11: CE strike_shift must NOT block PE replenish (cross-side velocity is irrelevant).
-        This is the exact scenario from the 2026-04-06 live incident where 228 CE lots
-        blocked PE replenish despite PE-side velocity being 0/200."""
-        s = _base_session()
-        s['params']['lot_velocity_enabled'] = True
-        s['params']['lot_velocity_limit'] = 200
-        s['params']['lot_velocity_window_mins'] = 30
-        # CE sold 228 lots 5 min ago (cross-side — should not count against PE replenish)
-        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-        s['adjustment_history'] = [
-            {'aggressor': 'PE', 'lots_sold': 228, 'side': 'ce', 'timestamp': ts_recent},
-        ]
-        # Replenishing PE (closed) while CE (open) has lots — swap sides
-        s['ce'] = {'active_lots': 228, 'total_lots': 228, 'positions': []}
-        s['pe'] = {'active_lots': 0, 'total_lots': 0, 'positions': []}
-        # Replenishing PE: ce side has velocity over limit, pe side has 0 — must pass
-        ok, reason = check_replenish_eligibility(s, 'pe', 'ce')
-        assert ok is True, f"Cross-side velocity blocked PE replenish: {reason}"
-
-    @pytest.mark.sealed
-    def test_eligible_when_same_side_velocity_under_limit(self):
-        """Gate 11: replenish eligible when same-side lots < limit."""
-        s = _base_session()
-        s['params']['lot_velocity_enabled'] = True
-        s['params']['lot_velocity_limit'] = 50
-        s['params']['lot_velocity_window_mins'] = 30
-        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat()
-        s['adjustment_history'] = [
-            {'aggressor': 'CE', 'lots_sold': 30, 'side': 'ce', 'timestamp': ts_recent},
-        ]
-        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
-        assert ok is True, f"Unexpected block: {reason}"
+        assert ok is True, f"Lot velocity must not block replenish; got: {reason!r}"
 
 
 # ─── determine_replenish_lots ─────────────────────────────────────────────────
@@ -362,3 +321,129 @@ class TestDetermineReplenishLots:
         s = _base_session(lot_mode='match_active', open_active_lots=5, open_total_lots=20)
         lots = determine_replenish_lots(s, 'ce', 'pe')
         assert lots == 5
+
+
+# ─── Bug fixes added 2026-04-12 ───────────────────────────────────────────────
+
+class TestAuditFixes20260412:
+    """
+    Regression contracts for design decisions made in the 2026-04-12 replenish session.
+
+    G7/G8/G9/G11 have been REMOVED from the eligibility check (hedge restoration
+    principle — hedging always beats rate-limiting).  These tests document the
+    current contracts: those gates must never block replenish.
+    """
+
+    # G11 REMOVED: Gate 11 (velocity) no longer exists in replenish path
+    @pytest.mark.sealed
+    def test_velocity_never_blocks_replenish(self):
+        """G11 REMOVED: Even with massive same-side velocity, replenish is allowed.
+        _process_replenish writes history with uppercase 'CE'/'PE' — velocity
+        entries are present but must not block (gate is gone)."""
+        s = _base_session()
+        s['params']['lot_velocity_enabled'] = True
+        s['params']['lot_velocity_limit'] = 1      # strictest possible
+        s['params']['lot_velocity_window_mins'] = 30
+        ts_recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+        s['adjustment_history'] = [
+            {'aggressor': 'REPLENISH', 'lots_sold': 9999, 'side': 'CE', 'timestamp': ts_recent},
+        ]
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"Velocity must not block replenish; got: {reason!r}"
+
+    # G7/G8 REMOVED: max-count and cooldown no longer gate replenish
+    @pytest.mark.sealed
+    def test_max_count_and_cooldown_never_block_replenish(self):
+        """G7+G8 REMOVED: max count exhausted AND active cooldown — still eligible."""
+        s = _base_session(max_per_session=1, cooldown_sec=3600)
+        s['_replenish_count'] = 9999
+        s['_last_replenish_at'] = time.time() - 1   # 1s ago in a 1hr cooldown
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"Max count + cooldown must not block replenish; got: {reason!r}"
+
+    # G9 REMOVED: near-expiry no longer gates replenish
+    @pytest.mark.sealed
+    def test_near_expiry_never_blocks_replenish(self):
+        """G9 REMOVED: even 1 minute to expiry, replenish must proceed.
+        Staying unhedged through expiry is always worse than near-expiry sell."""
+        s = _base_session()
+        # Expiry 1 minute from now — far inside the old stop_adjustment_mins=15 gate
+        near_expiry = datetime.now(timezone.utc) + timedelta(minutes=1)
+        s['params']['expiry'] = near_expiry.strftime('%d%m%Y')
+        s['params']['stop_adjustment_mins'] = 15
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"Near-expiry must not block replenish; got: {reason!r}"
+
+    @pytest.mark.sealed
+    def test_malformed_expiry_never_blocks_replenish(self):
+        """G9 REMOVED: even a completely unparseable expiry string must not block.
+        Gate 9 existed to prevent near-expiry sells — since the gate is removed,
+        a parse error has no meaning for eligibility."""
+        s = _base_session()
+        s['params']['expiry'] = 'NOTANEXPIRY'
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe')
+        assert ok is True, f"Malformed expiry must not block replenish; got: {reason!r}"
+
+
+class TestOCSEmergencyBypass20260412:
+    """
+    OCS Emergency bypass — ocs_emergency=True additionally bypasses Gate 1
+    (master switch) so hedge is restored even if replenish_enabled=False.
+
+    Since G7/G8/G9/G11 are removed from the normal path, the only meaningful
+    difference between normal and OCS emergency is the G1 bypass.
+    STOPPED is still respected in both paths.
+    """
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_bypasses_master_switch(self):
+        """OCS emergency must proceed even when replenish_enabled=False."""
+        s = _base_session(replenish_enabled=False)
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is True, f"OCS emergency must bypass master switch; got: {reason!r}"
+        assert 'ocs_emergency' in reason
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_still_blocked_by_stopped(self):
+        """OCS emergency must NOT proceed when session is STOPPED.
+        User has explicitly stopped the session and will handle manually."""
+        s = _base_session(strategy_status='STOPPED')
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is False, "STOPPED must block even in OCS emergency"
+        assert 'STOPPED' in reason
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_still_blocked_by_margin_block(self):
+        """OCS emergency must NOT proceed when margin_block_sells is set.
+        Margin liquidation risk is worse than being temporarily unhedged."""
+        s = _base_session()
+        s['_margin_block_sells'] = True
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is False, "Margin block must survive OCS emergency"
+        assert 'margin' in reason
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_still_blocked_by_margin_wind_down(self):
+        """OCS emergency must NOT proceed when margin_wind_down is set."""
+        s = _base_session()
+        s['_margin_wind_down'] = True
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is False, "Margin wind-down must survive OCS emergency"
+        assert 'margin' in reason
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_still_blocked_when_open_side_empty(self):
+        """OCS emergency must NOT proceed when open side has 0 active lots.
+        Nothing to hedge — replenishing creates an exposed short position."""
+        s = _base_session(open_active_lots=0)
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is False, "Empty open side must block even in OCS emergency"
+        assert 'open_side_has_no_lots' in reason
+
+    @pytest.mark.sealed
+    def test_non_ocs_emergency_still_blocked_by_master_switch(self):
+        """Regression: without ocs_emergency, master switch must still block."""
+        s = _base_session(replenish_enabled=False)
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=False)
+        assert ok is False, "Normal path must still respect master switch"
+        assert 'replenish_enabled' in reason

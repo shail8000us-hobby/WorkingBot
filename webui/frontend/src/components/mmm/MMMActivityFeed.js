@@ -54,6 +54,7 @@ const SEVERITY_CONFIG = {
   success: { color: '#4caf50', bg: 'rgba(76,175,80,0.10)', Icon: SuccessIcon },
   warning: { color: '#ff9800', bg: 'rgba(255,152,0,0.10)', Icon: WarningIcon },
   error: { color: '#f44336', bg: 'rgba(244,67,54,0.10)', Icon: ErrorIcon },
+  critical: { color: '#ff1744', bg: 'rgba(255,23,68,0.16)', Icon: ErrorIcon },
   progress: { color: '#9c27b0', bg: 'rgba(156,39,176,0.08)', Icon: ProgressIcon },
 };
 
@@ -561,6 +562,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null, strat
     };
   }, [activities, sessionId, activeFilter, strategyContextEnabled, strategyContext]);
 
+  const criticalCount = activities.filter((a) => a.severity === 'critical').length;
   const errorCount = activities.filter((a) => a.severity === 'error').length;
   const warningCount = activities.filter((a) => a.severity === 'warning').length;
 
@@ -599,6 +601,12 @@ export default function MMMActivityFeed({ sessionId = null, socket = null, strat
             <Chip size="small" icon={<WarningIcon sx={{ fontSize: '12px !important' }} />}
               label={warningCount}
               sx={{ height: 18, fontSize: '0.72rem', bgcolor: 'rgba(255,152,0,0.15)', color: '#ffcc80' }}
+            />
+          )}
+          {criticalCount > 0 && (
+            <Chip size="small" icon={<ErrorIcon sx={{ fontSize: '12px !important' }} />}
+              label={criticalCount}
+              sx={{ height: 18, fontSize: '0.72rem', bgcolor: 'rgba(255,23,68,0.18)', color: '#ff8a80' }}
             />
           )}
           {errorCount > 0 && (

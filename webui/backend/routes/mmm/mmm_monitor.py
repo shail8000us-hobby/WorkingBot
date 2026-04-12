@@ -2049,11 +2049,29 @@ class MMMMonitor:
             #   (b) partial fill pending (_replenish_ocs_active + lots_remaining > 0) — top-up trigger
             _os_lots = session.get(_os, {}).get('total_lots', 0)
             _fully_closed = check_side_fully_closed(session, _cs) and _os_lots > 0
+            _cs_active = session.get(_cs, {}).get('active_lots', 0)
+            _os_active = session.get(_os, {}).get('active_lots', 0)
+            _remaining_needed = session.get(_lots_remaining_key, 0)
             _partial_pending = (
                 session.get('_replenish_ocs_active', False)
-                and session.get(_lots_remaining_key, 0) > 0
+                and _remaining_needed > 0
                 and _os_lots > 0
+                # STALE STATE GUARD: if the closed side already has >= open side's
+                # active lots, operator/manual action covered the remainder.
+                # Without this check a stale _remaining > 0 fires an extra sell
+                # even when the hedge is fully restored.
+                and _cs_active < _os_active
             )
+            # Clean up stale partial state when manual action made top-up unnecessary
+            if (not _partial_pending and _remaining_needed > 0
+                    and session.get('_replenish_ocs_active')
+                    and _cs_active >= _os_active):
+                session.pop(_lots_remaining_key, None)
+                session.pop('_replenish_ocs_active', None)
+                log.info(f"[{sid}] Stale partial replenish state cleared: "
+                         f"{_cs.upper()} active_lots={_cs_active} >= "
+                         f"{_os.upper()} active_lots={_os_active} "
+                         f"(manual action covered remainder)")
 
             if _fully_closed or _partial_pending:
 
@@ -6321,53 +6339,64 @@ class MMMMonitor:
 
         from .mmm_replenish import check_replenish_eligibility, determine_replenish_lots
 
+        # OCS emergency: closed side is completely empty → unhedged position.
+        # All rate-limiting gates are bypassed; only margin and open-side-empty
+        # gates survive.  See check_replenish_eligibility(ocs_emergency=True).
+        _cs_total = session.get(closed_side, {}).get('total_lots', 0)
+        _os_active = session.get(open_side, {}).get('active_lots', 0)
+        _ocs_emergency = (_cs_total == 0 and _os_active > 0)
+
         # Step 1: Eligibility
-        eligible, reason = check_replenish_eligibility(session, closed_side, open_side)
+        eligible, reason = check_replenish_eligibility(
+            session, closed_side, open_side, ocs_emergency=_ocs_emergency)
         if not eligible:
             log.info(f"[{sid}] Replenish blocked: {reason}")
             log_activity('replenish_blocked',
                         f'\u26D4 Replenish {closed_side.upper()} blocked: {reason}',
                         sid, 'info',
                         {'closed_side': closed_side, 'open_side': open_side,
-                         'reason': reason})
+                         'reason': reason, 'ocs_emergency': _ocs_emergency})
             return False
 
         log_activity('replenish_triggered',
-                    f'\U0001F504 Replenish {closed_side.upper()} triggered — '
+                    f'\U0001F504 Replenish {closed_side.upper()} triggered'
+                    f'{" [OCS EMERGENCY]" if _ocs_emergency else ""} — '
                     f'{open_side.upper()} has {session.get(open_side, {}).get("total_lots", 0)} lots',
                     sid, 'info',
                     {'closed_side': closed_side, 'open_side': open_side})
 
         # Step 2: Determine lots
         lots = determine_replenish_lots(session, closed_side, open_side)
+        # Gate 11 (lot velocity cap) REMOVED: hedging takes priority over
+        # velocity limits.  The lot count is determined solely by lot mode
+        # (match_active / initial) clamped to max_lots_per_side.
 
-        # Cap lots to velocity headroom — Gate 11 confirmed window < limit,
-        # but the single sell may still exceed the remaining capacity.
-        # Only count same-side lots — cross-side velocity is irrelevant for replenish.
-        if params.get('lot_velocity_enabled', True):
-            from datetime import timedelta
-            _vel_limit = params.get('lot_velocity_limit', 10)
-            _vel_window = params.get('lot_velocity_window_mins', 30)
-            _cutoff = datetime.now(timezone.utc) - timedelta(minutes=_vel_window)
-            _lots_in_window = 0
-            for _adj in session.get('adjustment_history', []):
-                if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
-                    continue
-                if _adj.get('side', '') != closed_side:
-                    continue
-                try:
-                    _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
-                    if _ts.tzinfo is None:
-                        _ts = _ts.replace(tzinfo=timezone.utc)
-                    if _ts >= _cutoff:
-                        _lots_in_window += _adj.get('lots_sold', 0)
-                except (ValueError, TypeError):
-                    continue
-            _headroom = _vel_limit - _lots_in_window
-            if lots > _headroom:
-                log.info(f"[{sid}] Replenish: capping lots {lots} → {_headroom} "
-                         f"(velocity headroom: {_lots_in_window}/{_vel_limit} in window)")
-                lots = max(1, _headroom)
+        # Step 2.5: Pending-order guard — check if a prior replenish order is still
+        # open on the exchange before placing a new one.  The normal adjustment path
+        # has this guard (_process_adjustment, check_and_resolve_pending); replenish
+        # previously did not, making it higher-risk for duplicate orders under API
+        # uncertainty or after a watchdog restart mid-execution.
+        # If the prior order was filled but not recorded, record it now and return
+        # True (hedge restored).  If still open, skip to avoid accumulation.
+        try:
+            _pg_rest = self._create_heartbeat_rest_client()
+            _pg_result = await check_and_resolve_pending(
+                session_id=sid,
+                side=closed_side,
+                session=session,
+                rest_client=_pg_rest,
+                record_fill_fn=self._record_fill_from_pending,
+            )
+            if _pg_result == 'filled':
+                log.info(f"[{sid}] Replenish: prior {closed_side.upper()} order was filled "
+                         f"(recorded from exchange) — skipping new order this heartbeat")
+                return True
+            elif _pg_result == 'open':
+                log.warning(f"[{sid}] Replenish: prior {closed_side.upper()} order still open "
+                            f"on exchange — skipping to prevent duplicate")
+                return False
+        except Exception as _pg_err:
+            log.warning(f"[{sid}] Replenish: pending-order check failed ({_pg_err}) — proceeding")
 
         # Step 3–5: Find strike + execute — with retry on transient failures.
         #
@@ -6636,10 +6665,14 @@ class MMMMonitor:
                         )
                         # strike_info already holds the best candidate — continue
 
-            # Step 3c: Premium check — hard stop, NOT retriable (market condition)
+            # Step 3c: Premium check — hard stop, NOT retriable (market condition).
+            # Bypassed in OCS emergency: staying unhedged is worse than selling
+            # at a low-premium strike.  The position provides hedge value even
+            # at low premium; zero premium only occurs at expiry (contract
+            # worthless) which Gate 9 would normally catch.
             strike = strike_info['strike']
             premium = strike_info.get('premium', 0)
-            if premium < min_premium:
+            if premium < min_premium and not _ocs_emergency:
                 log.info(f"[{sid}] Replenish: premium ${premium:.2f} < min ${min_premium:.2f}")
                 log_activity('replenish_blocked',
                             f'\u26D4 Replenish {closed_side.upper()} blocked: '
@@ -6648,6 +6681,9 @@ class MMMMonitor:
                             {'closed_side': closed_side, 'premium': premium,
                              'min_premium': min_premium, 'strike': strike})
                 return False  # Market condition — do not retry
+            if premium < min_premium and _ocs_emergency:
+                log.warning(f"[{sid}] Replenish [OCS EMERGENCY]: premium ${premium:.2f} < "
+                            f"min ${min_premium:.2f} — bypassing floor to restore hedge")
 
             # Step 4: Build symbol
             option_type = 'call' if closed_side == 'ce' else 'put'
@@ -6902,11 +6938,18 @@ class MMMMonitor:
             session['_consecutive_same_dir_count'] = 0
             session['_consecutive_same_dir_side'] = ''
             session.pop('_consecutive_dir_blocked_at', None)
-            # One-side-close guard flags — hedge is restored, clear both sides
+            # One-side-close guard flags — hedge is restored, clear both sides.
+            # PARTIAL FILL GUARD: do NOT clear _replenish_ocs_active or
+            # _replenish_lots_remaining when a partial fill just occurred.
+            # Those flags were set moments ago (lines above) so the OCS watchdog
+            # can top up on the next heartbeat.  Without this guard the regime
+            # reset immediately erases the partial state, the top-up never fires,
+            # and the hedge remains silently incomplete.
             session.pop('_one_side_closed_ce', None)
             session.pop('_one_side_closed_pe', None)
-            session.pop('_replenish_ocs_active', None)
-            session.pop(f'_replenish_lots_remaining_{closed_side}', None)
+            if not _partial_fill:
+                session.pop('_replenish_ocs_active', None)
+                session.pop(f'_replenish_lots_remaining_{closed_side}', None)
             session.pop('_awaiting_user_action', None)
             session.pop('_awaiting_user_action_reason', None)
             session.pop('_awaiting_user_action_details', None)

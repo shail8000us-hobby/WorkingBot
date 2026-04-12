@@ -666,11 +666,34 @@ const mmmService = {
    * Get recent background activity log
    * @param {number} [limit=50] - Max entries
    * @param {string} [sessionId] - Filter by session
+   * @param {Object} [filters] - Additional query filters
    */
-  async getActivities(limit = 50, sessionId = null) {
-    const params = { limit };
+  async getActivities(limit = 50, sessionId = null, filters = {}) {
+    const params = { limit, ...(filters || {}) };
     if (sessionId) params.session_id = sessionId;
     const { data } = await api.get(`${BASE_URL}/activities`, { params });
+    return data;
+  },
+
+  /**
+   * Get aggregated activity stats for dashboards.
+   * @param {Object} [params]
+   */
+  async getActivityStats(params = {}) {
+    const { data } = await api.get(`${BASE_URL}/activities/stats`, { params });
+    return data;
+  },
+
+  /**
+   * Get warning/error/critical activity feed.
+   * @param {number} [limit=50]
+   * @param {string|null} [sessionId=null]
+   * @param {Object} [filters]
+   */
+  async getCriticalActivities(limit = 50, sessionId = null, filters = {}) {
+    const params = { limit, ...(filters || {}) };
+    if (sessionId) params.session_id = sessionId;
+    const { data } = await api.get(`${BASE_URL}/activities/critical`, { params });
     return data;
   },
 
