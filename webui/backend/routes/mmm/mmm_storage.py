@@ -21,6 +21,8 @@ import threading
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
+from .mmm_state import derive_strategy_type
+
 log = logging.getLogger('mmm_storage')
 
 # Paths
@@ -40,6 +42,7 @@ class MMMStorage:
       mmm_sessions (
           session_id   TEXT PRIMARY KEY,
           status       TEXT NOT NULL DEFAULT 'IDLE',
+          strategy_type TEXT NOT NULL DEFAULT '0DTE',
           params_json  TEXT NOT NULL DEFAULT '{}',
           data_json    TEXT NOT NULL,
           created_at   TEXT NOT NULL,
@@ -56,33 +59,46 @@ class MMMStorage:
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
         self._init_db()
         self._migrate_from_json()
+        self._backfill_strategy_type_column()
 
     # =========================================================================
     # Database Setup
     # =========================================================================
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get a new connection with WAL mode for concurrent reads."""
+        """Get a new connection. WAL mode is set once in _init_db(); busy_timeout per-connection."""
         conn = sqlite3.connect(self.db_path, timeout=10)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def _init_db(self):
-        """Create tables if they don't exist."""
-        conn = self._get_conn()
+        """Create tables and apply schema migrations if they don't exist."""
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
         try:
+            # WAL mode is DB-level — set once here, not on every connection open.
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS mmm_sessions (
                     session_id   TEXT PRIMARY KEY,
                     status       TEXT NOT NULL DEFAULT 'IDLE',
+                    strategy_type TEXT NOT NULL DEFAULT '0DTE',
                     params_json  TEXT NOT NULL DEFAULT '{}',
                     data_json    TEXT NOT NULL,
                     created_at   TEXT NOT NULL,
                     updated_at   TEXT NOT NULL
                 )
             ''')
+            self._ensure_strategy_type_column(conn)
+            # Indexes for active-session queries and time-based audit lookups.
+            conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_mmm_sessions_status ON mmm_sessions(status)'
+            )
+            conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_mmm_sessions_updated_at ON mmm_sessions(updated_at)'
+            )
             conn.commit()
             log.info(f"MMM SQLite storage ready: {self.db_path}")
         except Exception as e:
@@ -90,6 +106,8 @@ class MMMStorage:
             raise
         finally:
             conn.close()
+        # Persist any pending retroactive fixes (FillSync double-booking correction).
+        self._apply_retroactive_fixes_on_startup()
 
     def _migrate_from_json(self):
         """
@@ -125,16 +143,22 @@ class MMMStorage:
 
                     params = session.get('params', {})
                     status = session.get('strategy_status', 'IDLE')
+                    strategy_type = self._derive_strategy_type_legacy_aware(
+                        session.get('strategy_type'),
+                        params,
+                    )
+                    session['strategy_type'] = strategy_type
                     created = session.get('created_at', datetime.now(timezone.utc).isoformat())
                     updated = session.get('updated_at', datetime.now(timezone.utc).isoformat())
 
                     conn.execute('''
                         INSERT INTO mmm_sessions
-                            (session_id, status, params_json, data_json, created_at, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
+                            (session_id, status, strategy_type, params_json, data_json, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
                     ''', (
                         session_id,
                         status,
+                        strategy_type,
                         json.dumps(params, default=str),
                         json.dumps(session, default=str),
                         created,
@@ -154,19 +178,261 @@ class MMMStorage:
             log.error(f"JSON to SQLite migration failed (JSON untouched): {e}")
             # Don't rename — migration can be retried on next restart
 
+    def _apply_retroactive_fixes_on_startup(self):
+        """
+        One-time startup pass: persist the FillSync double-booking correction for
+        any sessions where it was applied in-memory but never written back to the DB.
+
+        Without this, every call to _row_to_session() re-applies the correction and
+        changes realized_pnl, which then fails the v2 checksum (because the stored
+        checksum was calculated against the uncorrected value) — producing a false
+        [CORRUPTION RISK] alarm on every single read until the engine happens to call
+        save_session().
+
+        After this runs, data_json has _fillsync_double_booking_corrected=True and
+        checksums match the corrected state. Subsequent _row_to_session() calls see
+        the flag and short-circuit the correction immediately.
+
+        Safe to run on every startup: skips sessions that are already patched.
+        """
+        conn = sqlite3.connect(self.db_path, timeout=10)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout=5000")
+        try:
+            rows = conn.execute(
+                'SELECT session_id, data_json, params_json FROM mmm_sessions'
+            ).fetchall()
+            patched = 0
+            for row in rows:
+                sid = row['session_id']
+                try:
+                    session = json.loads(row['data_json'])
+                    if session.get('_fillsync_double_booking_corrected'):
+                        continue  # Already patched — skip
+                    # Apply authoritative params so checksum covers current params
+                    session['params'] = json.loads(row['params_json'])
+                    session['strategy_type'] = self._derive_strategy_type_legacy_aware(
+                        session.get('strategy_type'),
+                        session.get('params', {}),
+                    )
+                    # Apply the correction (idempotent; sets flag on session dict)
+                    self._correct_fillsync_double_booking(session)
+                    # Ensure flag is set even if no double-booking was found
+                    session['_fillsync_double_booking_corrected'] = True
+                    # Recalculate checksums against the now-correct state
+                    session['_checksum'] = self._calculate_checksum(session)
+                    session['_checksum_v2'] = self._calculate_checksum_v2(session)
+                    now = datetime.now(timezone.utc).isoformat()
+                    session['updated_at'] = now
+                    conn.execute(
+                        'UPDATE mmm_sessions SET data_json=?, params_json=?, updated_at=? '
+                        'WHERE session_id=?',
+                        (
+                            json.dumps(session, default=str),
+                            json.dumps(session.get('params', {}), default=str),
+                            now,
+                            sid,
+                        )
+                    )
+                    patched += 1
+                except Exception as e:
+                    log.error(f"[startup] Failed to patch session {sid}: {e}")
+            if patched:
+                conn.commit()
+                log.info(
+                    f"[startup] FillSync double-booking fix persisted for {patched} session(s)"
+                )
+        except Exception as e:
+            log.error(f"[startup] Retroactive fix scan failed: {e}")
+        finally:
+            conn.close()
+
+    def _ensure_strategy_type_column(self, conn: sqlite3.Connection) -> None:
+        """Schema migration: ensure canonical strategy_type column exists."""
+        cols = {
+            row['name']
+            for row in conn.execute('PRAGMA table_info(mmm_sessions)').fetchall()
+        }
+        if 'strategy_type' not in cols:
+            conn.execute(
+                "ALTER TABLE mmm_sessions "
+                "ADD COLUMN strategy_type TEXT NOT NULL DEFAULT '0DTE'"
+            )
+            log.info("[schema] Added mmm_sessions.strategy_type column")
+
+    @staticmethod
+    def _safe_json_dict(raw: Any) -> Dict[str, Any]:
+        """Best-effort JSON decode that always returns a dict."""
+        if isinstance(raw, dict):
+            return raw
+        if not raw:
+            return {}
+        try:
+            decoded = json.loads(raw) if isinstance(raw, str) else raw
+            return decoded if isinstance(decoded, dict) else {}
+        except Exception:
+            return {}
+
+    @staticmethod
+    def _parse_iso_timestamp(raw: Any) -> Optional[datetime]:
+        """Best-effort ISO timestamp parse for stale-write arbitration."""
+        if not raw:
+            return None
+        try:
+            txt = str(raw).replace('Z', '+00:00')
+            dt = datetime.fromisoformat(txt)
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt
+        except Exception:
+            return None
+
+    def _derive_strategy_type_strict(self, strategy_type: Any, params: Dict[str, Any]) -> str:
+        """Derive strategy_type honoring explicit strategy_type when present."""
+        probe = dict(params or {})
+        if strategy_type is not None:
+            probe['strategy_type'] = strategy_type
+        return derive_strategy_type(probe, fallback='0DTE')
+
+    def _derive_strategy_type_legacy_aware(self, strategy_type: Any, params: Dict[str, Any]) -> str:
+        """
+        Derive strategy_type while handling migration default traps.
+
+        If stored strategy_type is default 0DTE but legacy markers indicate
+        another strategy, trust legacy markers (likely pre-migration row).
+        """
+        p = dict(params or {})
+        legacy_only = derive_strategy_type(
+            {
+                '_preset_source': p.get('_preset_source'),
+                'dte_category': p.get('dte_category'),
+            },
+            fallback='0DTE',
+        )
+
+        if strategy_type is None or str(strategy_type).strip() == '':
+            return legacy_only
+
+        strategy_upper = str(strategy_type).strip().upper()
+        if strategy_upper == '0DTE' and legacy_only != '0DTE':
+            return legacy_only
+
+        return self._derive_strategy_type_strict(strategy_type, p)
+
+    def _backfill_strategy_type_column(self) -> None:
+        """Populate/repair strategy_type values for pre-migration sessions."""
+        conn = self._get_conn()
+        updated = 0
+        try:
+            rows = conn.execute(
+                'SELECT session_id, strategy_type, params_json, data_json FROM mmm_sessions'
+            ).fetchall()
+            for row in rows:
+                params = self._safe_json_dict(row['params_json'])
+                data = self._safe_json_dict(row['data_json'])
+                data_params = data.get('params', {}) if isinstance(data.get('params'), dict) else {}
+                merged_params = dict(data_params)
+                merged_params.update(params)
+
+                explicit_in_data = data.get('strategy_type') if isinstance(data, dict) else None
+                if explicit_in_data is not None:
+                    inferred = self._derive_strategy_type_strict(explicit_in_data, merged_params)
+                else:
+                    inferred = self._derive_strategy_type_legacy_aware(
+                        row['strategy_type'],
+                        merged_params,
+                    )
+
+                current = row['strategy_type'] or ''
+                if inferred != current:
+                    conn.execute(
+                        'UPDATE mmm_sessions SET strategy_type=? WHERE session_id=?',
+                        (inferred, row['session_id']),
+                    )
+                    updated += 1
+
+            if updated:
+                conn.commit()
+                log.info(f"[schema] Backfilled strategy_type for {updated} MMM session(s)")
+        except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            log.error(f"[schema] strategy_type backfill failed: {e}")
+        finally:
+            conn.close()
+
     # =========================================================================
     # Internal Helpers
     # =========================================================================
 
+    def _validate_checksum_raw(self, session: Dict) -> bool:
+        """
+        Validate checksum against raw stored data — BEFORE any mutations.
+
+        Must be called on the dict as loaded from data_json, before params_json
+        override, premium backfill, or FillSync correction are applied. Those
+        mutations change realized_pnl and params, which are covered by the v2
+        checksum, so validating after them always produces false positives for
+        sessions that need the FillSync fix or had a params hot-reload.
+
+        Returns True if valid (or if no checksum is stored — legacy session).
+        """
+        session_id = session.get('session_id', '?')
+        stored_v2 = session.get('_checksum_v2')
+        if stored_v2:
+            calc = self._calculate_checksum_v2(session)
+            if calc != stored_v2:
+                log.warning(
+                    f"Session {session_id} v2 checksum mismatch (raw): "
+                    f"stored={stored_v2}, calc={calc}. "
+                    "Possible corruption or manual DB edit."
+                )
+                return False
+            return True
+        stored_v1 = session.get('_checksum')
+        if not stored_v1:
+            return True  # No checksum stored — legacy session, considered valid
+        calc = self._calculate_checksum(session)
+        if calc != stored_v1:
+            log.warning(
+                f"Session {session_id} v1 checksum mismatch (raw): "
+                f"stored={stored_v1}, calc={calc}."
+            )
+            return False
+        return True
+
     def _row_to_session(self, row) -> Dict:
-        """Convert a DB row back to the expected session dict."""
+        """
+        Convert a DB row back to the expected session dict.
+
+        Checksum validation runs FIRST against the raw stored data (before any
+        mutations) so it compares against the exact state that was checksummed at
+        save time. Mutations applied afterwards (params override, premium backfill,
+        FillSync correction) legitimately change fields covered by the checksum —
+        validating after them would produce false-positive [CORRUPTION RISK] alarms.
+        """
         session = json.loads(row['data_json'])
-        # Authoritative params always come from params_json column
+        # Validate against raw state — BEFORE any mutations
+        if not self._validate_checksum_raw(session):
+            session['_checksum_warning'] = True
+            log.critical(
+                f"[CORRUPTION RISK] Session {session.get('session_id', '?')} checksum "
+                f"mismatch on raw DB data — possible corruption or manual edit. "
+                f"Monitor will emit safety alert on next heartbeat."
+            )
+        else:
+            session.pop('_checksum_warning', None)
+        # Apply authoritative overrides (may mutate params and realized_pnl)
         session['params'] = json.loads(row['params_json'])
-        # Backfill side premiums if missing — ensures restart doesn't reset to 0
         self._backfill_session_side_premiums(session)
-        # One-time: correct FillSync double-booking (BUG-1 retroactive fix)
         self._correct_fillsync_double_booking(session)
+        stored_strategy = row['strategy_type'] if 'strategy_type' in row.keys() else None
+        session['strategy_type'] = self._derive_strategy_type_legacy_aware(
+            stored_strategy,
+            session.get('params', {}),
+        )
         return session
 
     def _backfill_session_side_premiums(self, session: Dict) -> None:
@@ -345,6 +611,13 @@ class MMMStorage:
         """
         Save or update a session (full replacement of data_json).
 
+        Uses BEGIN IMMEDIATE to serialize concurrent writes — prevents a
+        save_session() from interleaving with an in-progress update_session().
+
+        Checksums are computed on a shallow copy so the caller's dict is only
+        mutated (updated_at, _checksum, _checksum_v2) after a confirmed DB write,
+        not before.
+
         Args:
             session: Complete session dictionary (must have 'session_id')
 
@@ -356,44 +629,111 @@ class MMMStorage:
             raise ValueError("Session must have a session_id")
 
         now = datetime.now(timezone.utc).isoformat()
-        session['updated_at'] = now
-        
-        # Calculate and store checksums for corruption detection.
-        # v2 covers canonical fields only (no derived views, no empty containers).
-        # v1 kept for backward compatibility with older monitoring tools.
-        session['_checksum'] = self._calculate_checksum(session)
-        session['_checksum_v2'] = self._calculate_checksum_v2(session)
 
-        status = session.get('strategy_status', 'IDLE')
-        params = session.get('params', {})
-        created = session.get('created_at', now)
+        # Compute checksums on a copy — don't mutate the caller's dict until
+        # after the DB write succeeds (prevents stale checksum fields on the
+        # in-memory session if the write fails).
+        s = dict(session)
+        s['updated_at'] = now
+
+        status = s.get('strategy_status', 'IDLE')
+        params = s.get('params', {})
+        created = s.get('created_at', now)
+        strategy_type = self._derive_strategy_type_strict(
+            s.get('strategy_type'),
+            params,
+        )
 
         conn = self._get_conn()
         try:
+            # BEGIN IMMEDIATE acquires a write lock upfront, serializing this save
+            # against any concurrent update_session() calls (which also use BEGIN
+            # IMMEDIATE). Without this, a save_session() UPSERT could overwrite
+            # changes just committed by update_session() (lost update race).
+            conn.execute('BEGIN IMMEDIATE')
+
+            # Hot-reload param preservation: read the current params_json from DB
+            # INSIDE this transaction so any update_session() hot-reload changes that
+            # landed between when the monitor last loaded the session and now are not
+            # overwritten.  For new sessions (no row yet) fall back to session's own
+            # params.  Note: the _save_session caller in mmm_monitor.py also attempts
+            # this merge, but that read is outside the transaction and subject to a
+            # race.  This inner read is the authoritative, race-free version.
+            existing_row = conn.execute(
+                'SELECT params_json, updated_at FROM mmm_sessions WHERE session_id = ?',
+                (session_id,)
+            ).fetchone()
+            if existing_row:
+                existing_params = self._safe_json_dict(existing_row['params_json'])
+                existing_updated = self._parse_iso_timestamp(existing_row['updated_at'])
+                caller_updated = self._parse_iso_timestamp(session.get('updated_at'))
+
+                # Preserve DB params only if DB row is strictly newer than caller snapshot.
+                # This keeps hot-reload race protection while still allowing intentional
+                # param changes through save_session on up-to-date caller objects.
+                if (
+                    existing_updated
+                    and caller_updated
+                    and existing_updated > caller_updated
+                ):
+                    final_params = existing_params
+                    log.debug(
+                        f"[{session_id}] save_session using newer DB params_json "
+                        f"(caller_updated={session.get('updated_at')}, db_updated={existing_row['updated_at']})"
+                    )
+                else:
+                    final_params = params
+            else:
+                final_params = params
+            # Keep data_json consistent with the authoritative params
+            s['params'] = final_params
+            strategy_type = self._derive_strategy_type_strict(
+                s.get('strategy_type'),
+                final_params,
+            )
+            s['strategy_type'] = strategy_type
+
+            # v2 covers canonical fields only (no derived views, no empty containers).
+            # v1 kept for backward compatibility with older monitoring tools.
+            s['_checksum'] = self._calculate_checksum(s)
+            s['_checksum_v2'] = self._calculate_checksum_v2(s)
+
             conn.execute('''
                 INSERT INTO mmm_sessions
-                    (session_id, status, params_json, data_json, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (session_id, status, strategy_type, params_json, data_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(session_id) DO UPDATE SET
                     status      = excluded.status,
+                    strategy_type = excluded.strategy_type,
                     params_json = excluded.params_json,
                     data_json   = excluded.data_json,
                     updated_at  = excluded.updated_at
             ''', (
                 session_id,
                 status,
-                json.dumps(params, default=str),
-                json.dumps(session, default=str),
+                strategy_type,
+                json.dumps(final_params, default=str),
+                json.dumps(s, default=str),
                 created,
                 now,
             ))
             conn.commit()
             log.debug(f"Saved MMM session {session_id} (status: {status})")
         except Exception as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
             log.error(f"Failed to save session {session_id}: {e}")
             raise
         finally:
             conn.close()
+
+        # Only mutate caller's dict after a confirmed write.
+        session['updated_at'] = now
+        session['_checksum'] = s['_checksum']
+        session['_checksum_v2'] = s['_checksum_v2']
+        session['strategy_type'] = strategy_type
 
         return session_id
 
@@ -416,21 +756,10 @@ class MMMStorage:
             if not row:
                 return None
             session = self._row_to_session(row)
-            # Audit fix: checksum mismatch now marks the session with a warning flag
-            # so callers (monitor startup, API) can emit a WebSocket safety alert.
-            # We still return the session for backward compatibility — a mismatch
-            # could be a legitimate manual DB edit or a format change, not always
-            # corruption. The _checksum_warning flag lets the monitor decide the
-            # right action (pause, alert, or continue).
-            if not self._validate_checksum(session):
-                session['_checksum_warning'] = True
-                log.critical(
-                    f"[CORRUPTION RISK] Session {session_id} checksum mismatch — "
-                    f"data may have been corrupted. Session loaded with warning flag. "
-                    f"Monitor will emit safety alert on next heartbeat."
-                )
-            else:
-                session.pop('_checksum_warning', None)
+            # _checksum_warning is already set/cleared by _row_to_session() based on
+            # the raw DB state (pre-mutation). No second validation needed here —
+            # re-validating post-mutation would produce false positives for every
+            # FillSync-affected session and every hot-reloaded session.
             return session
         except Exception as e:
             log.error(f"Failed to get session {session_id}: {e}")
@@ -453,7 +782,7 @@ class MMMStorage:
         try:
             if active_only:
                 rows = conn.execute(
-                    "SELECT * FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP') "
+                    "SELECT * FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING') "
                     "ORDER BY created_at DESC"
                 ).fetchall()
             else:
@@ -522,6 +851,32 @@ class MMMStorage:
                     return None
 
                 session = self._row_to_session(row)
+                active_statuses = {
+                    'RUNNING',
+                    'PAUSED',
+                    'BOTH_SIDES_UP',
+                    'STARTING',
+                    'PARTIAL_ENTRY',
+                    'EXITING',
+                }
+                current_strategy = self._derive_strategy_type_strict(
+                    session.get('strategy_type'),
+                    session.get('params', {}),
+                )
+                requested_strategy = updates.get('strategy_type')
+                if requested_strategy is not None:
+                    requested_strategy = self._derive_strategy_type_strict(
+                        requested_strategy,
+                        session.get('params', {}),
+                    )
+                    if (
+                        session.get('strategy_status', 'IDLE') in active_statuses
+                        and requested_strategy != current_strategy
+                    ):
+                        raise ValueError(
+                            "strategy_type is immutable while session is active; "
+                            "create a new session for a different strategy"
+                        )
 
                 # Deep merge for nested dicts (ce, pe, params)
                 for key, value in updates.items():
@@ -529,6 +884,9 @@ class MMMStorage:
                         session[key].update(value)
                     else:
                         session[key] = value
+
+                # Canonical strategy identity is immutable post-creation.
+                session['strategy_type'] = requested_strategy or current_strategy
 
                 now = datetime.now(timezone.utc).isoformat()
                 session['updated_at'] = now
@@ -541,16 +899,23 @@ class MMMStorage:
 
                 status = session.get('strategy_status', 'IDLE')
                 params = session.get('params', {})
+                strategy_type = self._derive_strategy_type_strict(
+                    session.get('strategy_type'),
+                    params,
+                )
+                session['strategy_type'] = strategy_type
 
                 conn.execute('''
                     UPDATE mmm_sessions SET
                         status      = ?,
+                        strategy_type = ?,
                         params_json = ?,
                         data_json   = ?,
                         updated_at  = ?
                     WHERE session_id = ?
                 ''', (
                     status,
+                    strategy_type,
                     json.dumps(params, default=str),
                     json.dumps(session, default=str),
                     now,
@@ -594,13 +959,14 @@ class MMMStorage:
         conn = self._get_conn()
         try:
             where = (
-                "WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP')"
+                "WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING')"
                 if active_only else ""
             )
             rows = conn.execute(f'''
                 SELECT
                     session_id,
                     status,
+                    strategy_type,
                     created_at,
                     json_extract(data_json, '$.mode')                     AS mode,
                     json_extract(data_json, '$.entry_time')               AS entry_time,
@@ -661,10 +1027,18 @@ class MMMStorage:
                 realized = r['realized_pnl'] or 0
                 unrealized = r['unrealized_pnl'] or 0
                 fees = r['total_fees'] or 0
+                strategy_type = self._derive_strategy_type_legacy_aware(
+                    r['strategy_type'],
+                    {
+                        'dte_category': r['dte_category'],
+                        '_preset_source': r['_preset_source'],
+                    },
+                )
                 summaries.append({
                     'session_id': r['session_id'],
                     'status': r['status'] or 'IDLE',
                     'mode': r['mode'] or 'fresh',
+                    'strategy_type': strategy_type,
                     'created_at': r['created_at'],
                     'entry_time': r['entry_time'],
                     'ce_strike': r['ce_active_strike'] or 0,
@@ -742,7 +1116,11 @@ class MMMStorage:
         except (IndexError, KeyError):
             fill = 0
         try:
-            lots = r['lots'] or r['ce_original_lots'] or 0
+            # Fallback to the side-specific original_lots — ce_original_lots for CE,
+            # pe_original_lots for PE. Using ce_original_lots for both sides was a bug:
+            # it produced wrong PE premiums whenever lots was NULL and ce/pe lot counts differ.
+            side_lots_key = f'{side}_original_lots'
+            lots = r['lots'] or r[side_lots_key] or 0
         except (IndexError, KeyError):
             lots = 0
         prem = fill * lots * LOT
@@ -764,20 +1142,31 @@ class MMMStorage:
         return round(max(stored, prem), 6)
 
     def _row_to_summary_fallback(self, session: Dict) -> Dict:
-        """Fallback: extract summary from fully deserialized session."""
+        """
+        Fallback: extract summary from fully deserialized session.
+
+        Must stay in sync with the json_extract primary path in list_session_summaries().
+        When adding a field to the primary path, add the equivalent here.
+        """
         ce = session.get('ce', {})
         pe = session.get('pe', {})
         realized = session.get('realized_pnl', 0)
         unrealized = session.get('unrealized_pnl', 0)
         fees = session.get('total_fees', 0)
-        # BUG-C4 fix: include perp + reverse P&L in net_pnl
         perp = session.get('perp_hedge', {})
         perp_pnl = (perp.get('realized_pnl', 0) or 0) + (perp.get('unrealized_pnl', 0) or 0)
         reverse_pnl = float(session.get('_reverse', {}).get('net_pnl', 0) or 0)
+        # _breakeven_result and _gamma_result are nested dicts written by the health modules
+        be = session.get('_breakeven_result') or {}
+        gamma_result = session.get('_gamma_result') or {}
         return {
             'session_id': session.get('session_id'),
             'status': session.get('strategy_status', 'IDLE'),
             'mode': session.get('mode', 'fresh'),
+            'strategy_type': self._derive_strategy_type_legacy_aware(
+                session.get('strategy_type'),
+                session.get('params', {}),
+            ),
             'created_at': session.get('created_at'),
             'entry_time': session.get('entry_time'),
             'ce_strike': ce.get('active_strike', 0),
@@ -796,6 +1185,9 @@ class MMMStorage:
             'shift_count': session.get('shift_count', 0),
             'close_at_5_count': session.get('close_at_5_count', 0),
             'total_premium_collected': session.get('total_premium_collected', 0),
+            # _backfill_session_side_premiums() has already run on sessions from list_sessions()
+            'ce_premium_collected': session.get('ce_premium_collected', 0),
+            'pe_premium_collected': session.get('pe_premium_collected', 0),
             'realized_pnl': realized,
             'unrealized_pnl': unrealized,
             'total_fees': fees,
@@ -811,6 +1203,14 @@ class MMMStorage:
             '_health_grade': session.get('_health_grade', ''),
             '_gamma_regime': session.get('_gamma_regime', 'NORMAL'),
             '_paused_reason': session.get('_paused_reason', ''),
+            '_regime_action': session.get('_regime_action', 'NORMAL'),
+            '_trend_tier': session.get('_trend_tier') if session.get('_trend_tier') is not None else 0,
+            '_be_nearest_pct': be.get('nearest_distance_pct'),
+            '_be_enabled': bool(be.get('enabled', False)),
+            '_gamma_nearest_pct': gamma_result.get('nearest_distance_pct'),
+            '_gamma_enabled': bool(gamma_result.get('enabled', False)),
+            '_gamma_zone': gamma_result.get('gamma_zone', 'SAFE') or 'SAFE',
+            '_data_confidence': session.get('_data_confidence'),
         }
 
     def get_session_count(self) -> int:

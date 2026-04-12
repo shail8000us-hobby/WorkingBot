@@ -32,6 +32,7 @@ from typing import Dict, Tuple, Any
 from .mmm_constants import LOT_SIZE_BTC
 from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
 from .mmm_dte_presets import STRADDLE_ROLL_CATEGORY
+from .mmm_state import derive_strategy_type
 from .mmm_close_at_5 import close_position
 from .mmm_engine import get_engine
 from .mmm_margin_guardian import TIER_RED, TIER_CRITICAL
@@ -197,8 +198,9 @@ def _check_pure_roll_gates(
     if status not in (None, 'RUNNING', 'ACTIVE'):
         return False, 'session_not_running', {}
 
-    # ── Gate 2 — Correct preset ───────────────────────────────────────────────
-    if params.get('_preset_source') != STRADDLE_ROLL_CATEGORY:
+    # ── Gate 2 — Correct strategy identity ───────────────────────────────────
+    strategy_type = session.get('strategy_type') or derive_strategy_type(params)
+    if strategy_type != STRADDLE_ROLL_CATEGORY:
         return False, 'wrong_preset', {}
 
     # ── Gate 2.5 — Both legs have active positions ────────────────────────────
@@ -389,6 +391,21 @@ async def _execute_4_leg_roll(
     executor = monitor.executor
     initializer = monitor.initializer
     engine = get_engine()
+
+    # ── Lot count sanity: use actual active position lots, not params.initial_lots ──
+    # params.initial_lots may be stale (e.g. set to 1 at creation but session was
+    # initialized with a different lot size). Always roll the same number of lots
+    # that are currently active so the straddle stays symmetric.
+    _active_ce_lots = sum(
+        p.get('lots', 0) for p in session.get('ce', {}).get('positions', [])
+        if p.get('status') == 'active' and p.get('lots', 0) > 0
+    )
+    if _active_ce_lots > 0 and _active_ce_lots != roll_lots:
+        log.info(
+            f"[{sid}] [STRADDLE_ROLL] lot count corrected: "
+            f"params.initial_lots={roll_lots} → active CE lots={_active_ce_lots}"
+        )
+        roll_lots = _active_ce_lots
 
     # ── Gate 9 — ATM preview (freshness + same-strike + min credit + spread) ──
     expiry = params.get('expiry', '')

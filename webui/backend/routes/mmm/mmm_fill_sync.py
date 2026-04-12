@@ -26,6 +26,12 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, Optional
 
+# M-7: module-level imports — if any of these fail the error surfaces immediately
+# rather than being swallowed inside _process_close_fill()
+from .mmm_state import recompute_side_lots
+from .mmm_activity import log_activity
+from .mmm_pnl_core import confirm_fill as _pnl_confirm, record_close as _pnl_record
+
 log = logging.getLogger(__name__)
 
 LOT_SIZE_BTC = 0.001
@@ -100,7 +106,11 @@ class FillSyncer:
                 cursor_us = now_us - _FIRST_SYNC_LOOKBACK_SEC * 1_000_000
 
         if now_us <= cursor_us:
-            return 0  # Clock skew / nothing to fetch
+            log.warning(
+                f"[{sid}] FillSync: clock skew — now_us={now_us} <= cursor_us={cursor_us}, "
+                f"skipping sync. (NTP correction or system clock issue)"
+            )
+            return 0
 
         # ── Fetch fills from exchange — H-7: paginate up to 3 pages ────────
         _PAGE_SIZE = 100
@@ -250,9 +260,6 @@ class FillSyncer:
 
         Returns number of positions updated.
         """
-        from .mmm_state import recompute_side_lots
-        from .mmm_activity import log_activity
-
         if not order_id:
             return 0
 
@@ -316,7 +323,6 @@ class FillSyncer:
 
         # Try to confirm an existing estimate in the ledger first.
         # If no estimate exists (e.g. external fill), record a new confirmed entry.
-        from .mmm_pnl_core import confirm_fill as _pnl_confirm, record_close as _pnl_record
         _close_oid = pos.get('close_order_id', '') or ''
         _confirmed = _pnl_confirm(
             session=session,
@@ -351,55 +357,75 @@ class FillSyncer:
         comm_correction = commission - estimated_comm_booked
         # ── END P&L via ledger ───────────────────────────────────────
 
-        # ── Update position ─────────────────────────────────────────
-        if status != 'closed':
-            pos['status'] = 'closed'
-            pos['closed_at'] = now_iso
-            if not pos.get('close_reason'):
-                pos['close_reason'] = f'fill_sync:{fill_type or "buyback"}'
-
+        # ── Update position — sub-fill-aware ───────────────────────
+        # A single close order may produce multiple exchange fill events
+        # (same order_id, different fill_id) when the order book is fragmented.
+        # Track cumulative lots filled so we only mark the position closed once
+        # ALL lots are confirmed — not on the first (possibly partial) sub-fill.
+        cumulative_filled = float(pos.get('_cumulative_lots_filled', 0)) + lots_closed
+        pos['_cumulative_lots_filled'] = cumulative_filled
         pos['close_fill_price'] = round(fill_price, 6)
-        pos['close_fill_id'] = fill_id
-        pos['_fill_confirmed'] = True
-        # Record final booked amounts for audit trail
-        pos['_actual_pnl_booked'] = round(actual_pnl, 8)
-        pos['_pnl_correction_applied'] = round(pnl_correction, 8)
+        pos['close_fill_id'] = fill_id  # most recent sub-fill for audit trail
+
+        is_final_fill = cumulative_filled >= float(pos_lots)
+
+        if is_final_fill:
+            # All lots confirmed across all sub-fills — mark fully closed.
+            if status != 'closed':
+                pos['status'] = 'closed'
+                pos['closed_at'] = now_iso
+                if not pos.get('close_reason'):
+                    pos['close_reason'] = f'fill_sync:{fill_type or "buyback"}'
+            pos['_fill_confirmed'] = True
+            pos['_actual_pnl_booked'] = round(actual_pnl, 8)
+            pos['_pnl_correction_applied'] = round(pnl_correction, 8)
+        else:
+            # Partial sub-fill — reduce remaining lots and stay active so the
+            # next sub-fill can be matched via the same order_id / _fill_confirmed=False.
+            remaining = pos_lots - int(cumulative_filled)
+            pos['lots'] = remaining
+            log.info(
+                f"[{sid}] FillSync partial sub-fill: {matched_side_key.upper()} "
+                f"@ {pos_strike:.0f} — {int(lots_closed)} lots this sub-fill, "
+                f"cumulative {int(cumulative_filled)}/{pos_lots}, {remaining} remaining"
+            )
 
         recompute_side_lots(matched_side)
 
-        log_level = 'info'
-        correction_note = ''
-        if abs(pnl_correction) > 0.0001:
-            correction_note = (f', correction from estimate: '
-                               f'{pnl_correction:+.6f} USD')
-            log_level = 'warning'
+        if is_final_fill:
+            log_level = 'info'
+            correction_note = ''
+            if abs(pnl_correction) > 0.0001:
+                correction_note = (f', correction from estimate: '
+                                   f'{pnl_correction:+.6f} USD')
+                log_level = 'warning'
 
-        log.log(
-            logging.INFO if log_level == 'info' else logging.WARNING,
-            f"[{sid}] FillSync ✅ {matched_side_key.upper()} {pos_lots} lots "
-            f"@ {pos_strike:.0f} confirmed closed at {fill_price:.4f} "
-            f"(P&L: {actual_pnl:+.6f} USD{correction_note}) "
-            f"[order_id={order_id}]"
-        )
-        log_activity(
-            'fill_sync_confirmed',
-            f'✅ Fill confirmed: {matched_side_key.upper()} {pos_lots} lots '
-            f'@ {pos_strike:.0f} closed at {fill_price:.4f} '
-            f'(P&L: {actual_pnl:+.4f} USD{correction_note})',
-            sid, log_level,
-            {
-                'side': matched_side_key,
-                'strike': pos_strike,
-                'lots': pos_lots,
-                'fill_price': round(fill_price, 6),
-                'fill_id': fill_id,
-                'order_id': order_id,
-                'pos_type': pos_type,
-                'actual_pnl': round(actual_pnl, 8),
-                'pnl_correction': round(pnl_correction, 8),
-                'commission_correction': round(comm_correction, 8),
-            }
-        )
+            log.log(
+                logging.INFO if log_level == 'info' else logging.WARNING,
+                f"[{sid}] FillSync ✅ {matched_side_key.upper()} {pos_lots} lots "
+                f"@ {pos_strike:.0f} confirmed closed at {fill_price:.4f} "
+                f"(P&L: {actual_pnl:+.6f} USD{correction_note}) "
+                f"[order_id={order_id}]"
+            )
+            log_activity(
+                'fill_sync_confirmed',
+                f'✅ Fill confirmed: {matched_side_key.upper()} {pos_lots} lots '
+                f'@ {pos_strike:.0f} closed at {fill_price:.4f} '
+                f'(P&L: {actual_pnl:+.4f} USD{correction_note})',
+                sid, log_level,
+                {
+                    'side': matched_side_key,
+                    'strike': pos_strike,
+                    'lots': pos_lots,
+                    'fill_price': round(fill_price, 6),
+                    'fill_id': fill_id,
+                    'order_id': order_id,
+                    'pos_type': pos_type,
+                    'actual_pnl': round(actual_pnl, 8),
+                    'pnl_correction': round(pnl_correction, 8),
+                    'commission_correction': round(comm_correction, 8),
+                }
+            )
         return 1
 
     # ------------------------------------------------------------------
@@ -469,6 +495,10 @@ def _parse_ts_us(ts_raw) -> int:
         return v
     try:
         dt = datetime.fromisoformat(str(ts_raw).replace('Z', '+00:00'))
+        # Defensive: if string had no tz suffix, fromisoformat returns naive datetime.
+        # .timestamp() would then interpret it as local time — wrong on IST/non-UTC servers.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
         return int(dt.timestamp() * 1_000_000)
     except Exception:
         return 0

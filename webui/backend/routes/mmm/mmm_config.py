@@ -257,6 +257,25 @@ PARAM_RULES = {
     'adaptive_dry_run':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
     'atm_shield_partial_pct':            {'type': float, 'min': 0.1,  'max': 1.0,   'hot': True},
     'atm_shield_defer_resell_beats':     {'type': int,   'min': 0,    'max': 5,     'hot': True},
+    # Straddle Roll + Price Guard
+    'straddle_roll_enabled':             {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'straddle_roll_trigger_pct':         {'type': float, 'min': 0.1,  'max': 20.0,  'hot': True},
+    'straddle_roll_max_per_session':     {'type': int,   'min': 0,    'max': 1000,  'hot': True},
+    'straddle_roll_cooldown_mins':       {'type': int,   'min': 0,    'max': 1440,  'hot': True},
+    'straddle_roll_emergency_mult':      {'type': float, 'min': 1.0,  'max': 20.0,  'hot': True},
+    'straddle_roll_min_time_to_expiry':  {'type': int,   'min': 0,    'max': 1440,  'hot': True},
+    'straddle_roll_min_credit_pct':      {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'straddle_roll_slippage_factor':     {'type': float, 'min': 0.0,  'max': 0.5,   'hot': True},
+    'straddle_roll_loss_abort_mult':     {'type': float, 'min': 0.1,  'max': 20.0,  'hot': True},
+    'straddle_roll_lot_scale':           {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
+    'straddle_roll_iv_spike_mult':       {'type': float, 'min': 0.5,  'max': 20.0,  'hot': True},
+    'straddle_roll_price_max_age_secs':  {'type': int,   'min': 1,    'max': 300,   'hot': True},
+    'straddle_roll_max_spread_pct':      {'type': float, 'min': 0.0,  'max': 100.0, 'hot': True},
+    'price_guard_enabled':               {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'price_guard_interval_secs':         {'type': int,   'min': 1,    'max': 300,   'hot': True},
+    'price_guard_buffer_pts':            {'type': float, 'min': 0.0,  'max': 10000.0, 'hot': True},
+    'price_guard_cooldown_secs':         {'type': int,   'min': 0,    'max': 3600,  'hot': True},
+    'straddle_roll_hard_stop_market_order': {'type': bool, 'min': None, 'max': None, 'hot': True},
     # ── Reverse Mode ──
     'reverse_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
     'reverse_capacity_pct':              {'type': float, 'min': 0,    'max': 100,   'hot': True},
@@ -272,6 +291,163 @@ PARAM_RULES = {
     'reverse_close_at_threshold':        {'type': float, 'min': 0,    'max': 1000,  'hot': True},
     'reverse_unhedged_emergency_loss':   {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
 }
+
+
+# Strategy-specific parameter namespaces (Phase 2)
+#
+# Purpose:
+# - Prevent cross-strategy config drift where params are patched for a strategy
+#   that never uses them at runtime.
+# - Keep runtime behavior predictable and strategy-local.
+#
+# Notes:
+# - STRADDLE_WITH_ADJUSTMENT intentionally shares most straddle_roll_* params.
+# - STRADDLE_ROLL (pure) forbids adjustment-engine-only params.
+# - 0DTE/5DTE/SHORT_WINDOW forbid straddle-roll control surface.
+
+_STRADDLE_ROLL_PARAMS_SHARED = {
+    'straddle_roll_enabled',
+    'straddle_roll_trigger_pct',
+    'straddle_roll_max_per_session',
+    'straddle_roll_cooldown_mins',
+    'straddle_roll_emergency_mult',
+    'straddle_roll_min_time_to_expiry',
+    'straddle_roll_min_credit_pct',
+    'straddle_roll_slippage_factor',
+    'straddle_roll_loss_abort_mult',
+    'straddle_roll_lot_scale',
+    'straddle_roll_iv_spike_mult',
+    'straddle_roll_price_max_age_secs',
+    'price_guard_enabled',
+    'price_guard_interval_secs',
+    'price_guard_buffer_pts',
+    'price_guard_cooldown_secs',
+    'straddle_roll_max_spread_pct',
+}
+
+_STRADDLE_ROLL_PURE_ONLY_PARAMS = {
+    # Pure-roll hard-stop execution mode; not used by adjustment strategies.
+    'straddle_roll_hard_stop_market_order',
+}
+
+_ADJUSTMENT_ENGINE_ONLY_PARAMS = {
+    'min_trigger_move',
+    'min_trigger_dollar',
+    'min_frozen_trigger_dollar',
+    'shift_threshold',
+    'shift_target_premium',
+    'shift_threshold_pct',
+    'shift_match_opposite_lots',
+    'pre_sell_shift_enabled',
+    'proactive_shift_enabled',
+    'shift_premium_tolerance',
+    'shift_fallback_enabled',
+    'shift_fallback_min_premium',
+    'whipsaw_limit',
+    'whipsaw_window_mins',
+    'whipsaw_spot_move_pct',
+    'whipsaw_caution_score',
+    'whipsaw_restrict_score',
+    'whipsaw_cooldown_score',
+    'harvest_enabled',
+    'harvest_profit_pct',
+    'harvest_min_age_mins',
+    'harvest_pressure_threshold',
+    'harvest_max_per_beat',
+    'recycle_enabled',
+    'recycle_premium_ceiling',
+    'recycle_min_premium_ratio',
+    'recycle_max_pct',
+    'recycle_free_lot_buffer',
+    'recycle_min_lot_gain',
+    'recycle_cooldown_sec',
+    'recycle_protect_original',
+    'atm_shield_enabled',
+    'atm_shield_proximity_pct',
+    'atm_shield_target_otm_pct',
+    'atm_shield_loss_split_aggressor',
+    'atm_shield_max_per_session',
+    'atm_shield_cooldown_mins',
+    'atm_shield_partial_pct',
+    'atm_shield_defer_resell_beats',
+    'replenish_enabled',
+    'replenish_lot_mode',
+    'replenish_max_per_session',
+    'replenish_cooldown_sec',
+    'replenish_min_premium',
+    'replenish_retry_max',
+    'replenish_retry_delay_sec',
+    'replenish_max_reprice_attempts',
+    'breakeven_control_enabled',
+    'breakeven_warning_pct',
+    'breakeven_danger_pct',
+    'breakeven_critical_pct',
+    'breakeven_aggression_max',
+    'breakeven_scan_range_pct',
+    'breakeven_narrow_band_threshold',
+    'breakeven_dte_threshold_mult',
+    'breakeven_dte_aggression_damp',
+    'breakeven_dte_vol_regime_damp',
+    'breakeven_dte_pnl_clamp_pct',
+    'breakeven_tv_credit_factor',
+    'breakeven_high_risk_mode',
+    'breakeven_critical_lot_ceiling',
+    'gamma_detector_enabled',
+    'gamma_step_pct',
+    'gamma_scan_steps',
+    'gamma_warning_distance_pct',
+    'gamma_danger_distance_pct',
+    'gamma_detect_epsilon',
+    'gamma_severity_multiplier_enabled',
+    'gamma_severity_max_multiplier',
+    'gamma_severity_proportional',
+    'gamma_severity_warning_mult',
+    'gamma_severity_shift_distance_mult',
+}
+
+STRATEGY_PARAM_NAMESPACES = {
+    '0DTE': {
+        'forbidden': _STRADDLE_ROLL_PARAMS_SHARED | _STRADDLE_ROLL_PURE_ONLY_PARAMS,
+    },
+    '5DTE': {
+        'forbidden': _STRADDLE_ROLL_PARAMS_SHARED | _STRADDLE_ROLL_PURE_ONLY_PARAMS,
+    },
+    'SHORT_WINDOW': {
+        'forbidden': _STRADDLE_ROLL_PARAMS_SHARED | _STRADDLE_ROLL_PURE_ONLY_PARAMS,
+    },
+    'STRADDLE_WITH_ADJUSTMENT': {
+        # This strategy shares straddle_roll_* controls, but not pure-roll hard-stop mode.
+        'forbidden': set(_STRADDLE_ROLL_PURE_ONLY_PARAMS),
+    },
+    'STRADDLE_ROLL': {
+        # Pure roll never runs adjustment engine.
+        'forbidden': set(_ADJUSTMENT_ENGINE_ONLY_PARAMS),
+    },
+}
+
+
+def _normalize_strategy_namespace_key(strategy_type: str) -> str:
+    """Normalize strategy identity to namespace keys used in this module."""
+    if not strategy_type:
+        return '0DTE'
+    key = str(strategy_type).strip().upper()
+    if key == 'SHORT_STRADDLE':
+        key = 'STRADDLE_WITH_ADJUSTMENT'
+    return key if key in STRATEGY_PARAM_NAMESPACES else '0DTE'
+
+
+def get_strategy_param_namespace(strategy_type: str) -> Dict[str, Set[str]]:
+    """Return namespace metadata for a strategy (currently forbidden param set)."""
+    key = _normalize_strategy_namespace_key(strategy_type)
+    namespace = STRATEGY_PARAM_NAMESPACES.get(key, STRATEGY_PARAM_NAMESPACES['0DTE'])
+    return {
+        'forbidden': set(namespace.get('forbidden', set())),
+    }
+
+
+def get_forbidden_params_for_strategy(strategy_type: str) -> Set[str]:
+    """Convenience accessor for strategy-forbidden patch keys."""
+    return get_strategy_param_namespace(strategy_type).get('forbidden', set())
 
 
 def validate_params(params: Dict[str, Any], hot_only: bool = False) -> Tuple[Dict[str, Any], list]:
@@ -682,6 +858,25 @@ def get_param_info() -> Dict[str, Dict]:
         'adaptive_dry_run': 'Shadow mode: compute what the adaptive engine would change but only log it — do not apply. Use to validate adaptive behavior before enabling live tuning.',
         'atm_shield_partial_pct': 'Fraction of active positions to close on shield fire. 1.0 = close all (default). 0.5 = close half. Partial mode useful in oscillating markets — avoids crystallizing full loss on a potential reversal while still reducing gamma exposure.',
         'atm_shield_defer_resell_beats': 'Beats to wait after closing before re-selling at new OTM strike. 0 = immediate re-sell (default). 1 = wait one heartbeat interval. Deferring lets the market settle and often catches a better premium, especially in high-volatility conditions.',
+        # Straddle Roll + Price Guard
+        'straddle_roll_enabled': 'Enable pure straddle roll logic for STRADDLE_ROLL / STRADDLE_WITH_ADJUSTMENT flows.',
+        'straddle_roll_trigger_pct': 'Fallback roll trigger as % of spot. Used when points-based trigger cannot be derived from entry premium.',
+        'straddle_roll_max_per_session': 'Maximum rolls allowed per session. Set 0 for no-roll / hard-stop-only mode.',
+        'straddle_roll_cooldown_mins': 'Minimum minutes between roll executions.',
+        'straddle_roll_emergency_mult': 'Cooldown bypass multiplier under severe move conditions.',
+        'straddle_roll_min_time_to_expiry': 'Minimum minutes remaining to allow a roll attempt.',
+        'straddle_roll_min_credit_pct': 'Minimum acceptable credit ratio vs baseline for roll re-entry.',
+        'straddle_roll_slippage_factor': 'Expected slippage factor used in roll safety and abort checks.',
+        'straddle_roll_loss_abort_mult': 'Abort multiplier for adverse loss conditions during roll execution.',
+        'straddle_roll_lot_scale': 'Lot scaling factor applied to roll lot sizing.',
+        'straddle_roll_iv_spike_mult': 'IV-spike multiplier used by roll safety gates.',
+        'straddle_roll_price_max_age_secs': 'Maximum allowed cached price age (seconds) for roll guard checks.',
+        'straddle_roll_max_spread_pct': 'Maximum allowed bid-ask spread % on candidate strike during roll.',
+        'price_guard_enabled': 'Enable low-latency WebSocket price guard to trigger force-heartbeat near roll thresholds.',
+        'price_guard_interval_secs': 'Price guard polling interval in seconds.',
+        'price_guard_buffer_pts': 'Pre-trigger buffer (points) for early force-heartbeat before roll threshold is hit.',
+        'price_guard_cooldown_secs': 'Minimum seconds between price-guard force-heartbeat events.',
+        'straddle_roll_hard_stop_market_order': 'Use market order for hard-stop exit in pure straddle-roll mode.',
     }
 
     info = {}

@@ -45,12 +45,18 @@ def _run_async(coro):
 from .mmm_storage import get_storage
 from .mmm_state import (
     create_session,
+    derive_strategy_type,
     initialize_side_from_entry,
     get_session_summary,
     DEFAULT_PARAMS,
     HOT_RELOAD_PARAMS,
 )
-from .mmm_config import validate_params, get_hot_reload_params, get_param_info
+from .mmm_config import (
+    validate_params,
+    get_hot_reload_params,
+    get_param_info,
+    get_forbidden_params_for_strategy,
+)
 from .mmm_websocket import (
     emit_status_change,
     emit_params_changed,
@@ -64,6 +70,7 @@ from .mmm_monitor import (
     pause_session_monitor, resume_session_monitor,
     get_monitor, get_all_monitors, compute_live_pnl,
 )
+from .mmm_strategy_dispatch import validate_session_for_strategy
 
 log = logging.getLogger('mmm_api')
 
@@ -316,6 +323,24 @@ def create_session_endpoint():
 
         # Validate parameters
         user_params = data.get('params', {})
+        if not isinstance(user_params, dict):
+            return jsonify({
+                'success': False,
+                'error': 'params must be a JSON object',
+            }), 400
+
+        # Canonical strategy identity is derived server-side and immutable.
+        blocked_identity_keys = {'strategy_type', '_preset_source'}
+        illegal = sorted([k for k in blocked_identity_keys if k in user_params])
+        if illegal:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f"Do not set {', '.join(illegal)} directly. "
+                    "Strategy identity is derived server-side from approved preset/DTE inputs."
+                ),
+            }), 400
+
         validated, errors = validate_params(user_params)
         if errors:
             return jsonify({
@@ -359,11 +384,10 @@ def create_session_endpoint():
 
         # Create session state
         session = create_session(mode=mode, params=validated)
+        strategy_type = session.get('strategy_type') or derive_strategy_type(session.get('params', {}))
 
         # ── STRADDLE_WITH_ADJUSTMENT validation: require operator-explicit params ─
-        if session.get('params', {}).get('_preset_source') in (
-            'STRADDLE_WITH_ADJUSTMENT', 'SHORT_STRADDLE'
-        ):
+        if strategy_type == 'STRADDLE_WITH_ADJUSTMENT':
             _missing = []
             if 'initial_lots' not in (data.get('params') or {}):
                 _missing.append('initial_lots')
@@ -379,7 +403,7 @@ def create_session_endpoint():
                 }), 400
 
         # ── STRADDLE_ROLL validation: require operator-explicit params ──────────
-        if session.get('params', {}).get('_preset_source') == 'STRADDLE_ROLL':
+        if strategy_type == 'STRADDLE_ROLL':
             _raw_params = data.get('params') or {}
             _missing = []
             if 'initial_lots' not in _raw_params:
@@ -464,6 +488,17 @@ def create_session_endpoint():
                     )
             except Exception:
                 pass
+
+        # Strategy invariant validator hook (Phase 3): enforce create-time
+        # consistency before the new session is persisted.
+        strategy_violations = validate_session_for_strategy(session, strategy_type)
+        if strategy_violations:
+            return jsonify({
+                'success': False,
+                'error': 'Strategy validation failed',
+                'strategy_type': strategy_type,
+                'violations': strategy_violations,
+            }), 400
 
         # Safety check: Never overwrite a non-STOPPED session
         storage = get_storage()
@@ -2227,10 +2262,82 @@ def update_session_params(session_id: str):
         is_running = status in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP')
 
         data = request.get_json() or {}
+        if not isinstance(data, dict):
+            return jsonify({
+                'success': False,
+                'error': 'Request body must be a JSON object',
+            }), 400
         if not data:
             return jsonify({
                 'success': False,
                 'error': 'No parameters provided',
+            }), 400
+
+        def _norm_identity(v):
+            if v is None:
+                return ''
+            return str(v).strip().upper()
+
+        current_params = session.get('params', {}) or {}
+        current_strategy = session.get('strategy_type') or derive_strategy_type(current_params)
+        identity_violations = []
+
+        if 'strategy_type' in data:
+            requested_strategy = _norm_identity(data.get('strategy_type'))
+            if requested_strategy and requested_strategy != _norm_identity(current_strategy):
+                identity_violations.append(
+                    f"strategy_type ({current_strategy} -> {requested_strategy})"
+                )
+            # strategy_type is not a mutable runtime param.
+            data.pop('strategy_type', None)
+
+        if 'dte_category' in data:
+            old_dte = _norm_identity(current_params.get('dte_category'))
+            new_dte = _norm_identity(data.get('dte_category'))
+            if new_dte and new_dte != old_dte:
+                identity_violations.append(
+                    f"dte_category ({current_params.get('dte_category', '')} -> {data.get('dte_category')})"
+                )
+
+        if '_preset_source' in data:
+            old_preset = _norm_identity(current_params.get('_preset_source'))
+            new_preset = _norm_identity(data.get('_preset_source'))
+            if new_preset and new_preset != old_preset:
+                identity_violations.append(
+                    f"_preset_source ({current_params.get('_preset_source', '')} -> {data.get('_preset_source')})"
+                )
+            # Internal field — never accepted from patch payloads.
+            data.pop('_preset_source', None)
+
+        if identity_violations:
+            return jsonify({
+                'success': False,
+                'error': (
+                    'Strategy identity is immutable for an existing session. '
+                    'Create a new session for a different strategy. '
+                    f"Rejected changes: {', '.join(identity_violations)}"
+                ),
+            }), 400
+
+        if not data:
+            return jsonify({
+                'success': False,
+                'error': 'No mutable parameters provided',
+            }), 400
+
+        # Strategy namespace guardrail: reject params irrelevant to this strategy.
+        forbidden_for_strategy = get_forbidden_params_for_strategy(current_strategy)
+        namespace_violations = sorted([k for k in data.keys() if k in forbidden_for_strategy])
+        if namespace_violations:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f"These parameters are not allowed for strategy_type={current_strategy}: "
+                    f"{', '.join(namespace_violations)}. "
+                    "Use a strategy-appropriate session to modify them."
+                ),
+                'strategy_type': current_strategy,
+                'forbidden_params': namespace_violations,
             }), 400
 
         log.info(f"[{session_id}] Received param update request: {list(data.keys())}")
@@ -2313,6 +2420,27 @@ def update_session_params(session_id: str):
                     f"CE={ce_lots}, PE={pe_lots}, uPnL=${total_unrealized:+.0f}"
                 )
 
+        # Cross-param check: warn when max_lots_per_side > max_total_exposure (if set).
+        # max_total_exposure is the HARD ceiling on active+frozen lots; raising
+        # max_lots_per_side without also raising max_total_exposure means the hard
+        # ceiling (which can already be exceeded by frozen lots) stays low and will
+        # block every adjustment with "Total exposure ceiling".
+        total_exp_warning = None
+        suggest_max_total_exposure = None
+        effective_max_lots = current_params.get('max_lots_per_side', 100)
+        effective_max_exp = current_params.get('max_total_exposure', 0)
+        if effective_max_exp > 0 and effective_max_lots > effective_max_exp:
+            suggest_max_total_exposure = int(effective_max_lots * 2)
+            total_exp_warning = (
+                f"max_lots_per_side ({effective_max_lots}) > max_total_exposure "
+                f"({effective_max_exp}): the hard exposure ceiling is lower than "
+                f"the per-side cap. Adjustments will be blocked by 'Total exposure "
+                f"ceiling' once total lots (active+frozen) reach {effective_max_exp}. "
+                f"Consider raising max_total_exposure to at least {suggest_max_total_exposure} "
+                f"(= max_lots_per_side × 2), or set it to 0 for auto."
+            )
+            log.warning(f"[{session_id}] {total_exp_warning}")
+
         # Set auto-expiry timestamp when breakeven_high_risk_mode is toggled ON.
         # The engine reads _high_risk_mode_expires_at to auto-expire after 4 hours.
         # Must use datetime.now(timezone.utc) — NOT datetime.utcnow() (robustv2 fix #14).
@@ -2367,6 +2495,10 @@ def update_session_params(session_id: str):
         }
         if cap_raise_warning:
             response['cap_raise_warning'] = cap_raise_warning
+        if total_exp_warning:
+            response['total_exposure_warning'] = total_exp_warning
+        if suggest_max_total_exposure is not None:
+            response['suggest_max_total_exposure'] = suggest_max_total_exposure
         return jsonify(response)
 
     except Exception as e:

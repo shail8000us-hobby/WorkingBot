@@ -1999,6 +1999,18 @@ Added Step 3b-ATM (proximity guard) after `_rank_strikes` selects a candidate:
 
 ## 2026-04-06 — MMMX Phase 2: Execution Engine (4 new files, 40 tests)
 
+## 2026-04-11 — Fill Sync Audit Verification (No Code Changes)
+
+- Performed a line-by-line validation of an external AI audit report against current code in:
+  - `webui/backend/routes/mmm/mmm_fill_sync.py`
+  - `webui/backend/routes/mmm/mmm_pnl_core.py`
+  - `webui/backend/routes/mmm/mmm_state.py`
+  - `webui/backend/routes/mmm/mmm_activity.py`
+  - `webui/backend/routes/mmm/mmm_close_at_5.py`
+  - `webui/backend/routes/mmm/mmm_monitor.py`
+- Classified each reported issue as: confirmed real, partially/conditionally real, or not reproducible in current code.
+- No production logic was modified in this session (audit/verification only).
+
 - `mmmx_executor.py` (new): MMMX's only exchange-facing module. `smart_execute()` with sha256 deterministic client_order_id (dedup within minute), preflight margin check (SELL blocked >= 80%, BUY blocked >= 95%), `_being_closed` TTL guard, limit reprice loop (mid → bid/ask in second half), mid-loop margin check (>= 85% falls to market, >= 95% aborts), emergency_execute fallback (IOC). `emergency_execute()` standalone IOC path for crash/margin breach. `ExecutionResult` dataclass with `to_dict()`. Zero `routes.mmm.*` imports.
 - `mmmx_circuit_breaker.py` (new): 3-state fault isolator (CLOSED/HALF_OPEN/OPEN) keyed by session_id. Thread-safe with lock. N=3 consecutive failures → HALF_OPEN; probe failure → OPEN; 5s cooldown → HALF_OPEN for next probe; probe success → CLOSED.
 - `mmmx_margin_guardian.py` (new): Read-only adapter over MMM's `fetch_margin_utilization`. The ONLY mmmx file allowed to import from `routes.mmm.*`. Async `current_utilization()` (caches last value on error), sync `estimated_margin_for_order()`. Singleton via `get_margin_guardian()`.
@@ -3061,3 +3073,447 @@ Wait — actually the v2 flag IS set regardless. Correct workflow: import positi
 **Commits:**
 - 25 files changed, 138,794 insertions(+), 136,999 deletions (mostly doc)
 - Refs: `cc31fabe8..40ae8efae` (SSR branch, pushed to GitHub)
+
+## 2026-04-11 — mmm_storage.py: Production Safety Audit Fixes (B-1, B-2, B-3, C-3, Perf)
+
+Applied all critical and high-priority fixes from the professional storage audit.
+
+- **B-2 fix (`_validate_checksum_raw()` + `_row_to_session()`)**: Checksum validation now runs BEFORE params override, premium backfill, or FillSync correction are applied. Both params and `realized_pnl` are covered by the v2 checksum — validating after mutations was guaranteed to produce false-positive `[CORRUPTION RISK]` alarms on every FillSync-affected session and every hot-reloaded session. Added `_validate_checksum_raw()` for pre-mutation validation. Removed redundant post-mutation validation call from `get_session()`.
+
+- **B-3 fix (`_apply_retroactive_fixes_on_startup()`)**: FillSync double-booking correction (`_correct_fillsync_double_booking`) was applied in memory on every read but never persisted — causing (a) the checksum warning above on every restart, and (b) a re-scan of every position on every load. The startup method now writes back any session that hasn't been marked corrected yet, recalculates checksums, and commits. Safe to run every startup — skips already-patched sessions. Called at the end of `_init_db()`.
+
+- **B-1 fix (`save_session()` BEGIN IMMEDIATE)**: `save_session()` now uses `BEGIN IMMEDIATE` to serialize writes against concurrent `update_session()` calls (which already used BEGIN IMMEDIATE). Without this, a concurrent `update_session()` hot-reload could be silently overwritten by an in-flight engine save. Also: checksums are now computed on a copy dict and the caller's dict is only mutated after a confirmed DB write.
+
+- **C-3 fix (EXITING status)**: `list_sessions(active_only=True)` and `list_session_summaries(active_only=True)` now include `EXITING` status alongside `RUNNING`/`PAUSED`/`BOTH_SIDES_UP`. `get_active_session_ids()` already included it — now all three methods are consistent. Without this fix, a session mid-close-all would disappear from active lists on restart.
+
+- **Perf/correctness (`_init_db()`, `_get_conn()`)**: `PRAGMA journal_mode=WAL` is now set once in `_init_db()` (it's a DB-level setting). Removed the redundant per-connection WAL set from `_get_conn()`. Added `CREATE INDEX IF NOT EXISTS` for `status` and `updated_at` columns to speed up active-session queries.
+
+## 2026-04-11 — mmm_storage.py: Post-fix audit C-4 and C-5
+
+- **C-4 fix (`_row_to_summary_fallback()`)**: Added 10 fields that existed in the primary `json_extract` path but were missing from the fallback (triggered when the SQL query fails). Missing fields were: `ce_premium_collected`, `pe_premium_collected`, `_regime_action`, `_trend_tier`, `_be_nearest_pct`, `_be_enabled`, `_gamma_nearest_pct`, `_gamma_enabled`, `_gamma_zone`, `_data_confidence`. Without these, the dashboard would silently show blank premium and regime-intelligence columns on any restart where the fast path query failed.
+
+- **C-5 fix (`_get_side_premium()`)**: The lot-count fallback `r['lots'] or r['ce_original_lots']` was used for BOTH CE and PE sides. Changed to `r[f'{side}_original_lots']` so PE correctly falls back to `pe_original_lots`. The bug caused slightly wrong PE premium totals in the summary path whenever `lots` was NULL and CE/PE lot counts differed.
+
+## 2026-04-11 — MMM Dashboard per-strategy quick-launch buttons
+
+- **Frontend only** change in `webui/frontend/src/components/mmm/MMMDashboard.js` to add compact per-strategy quick-launch controls in the header:
+  - `Short Strangle 0DTE` → `0DTE`
+  - `Short Strangle 5DTE` → `5DTE`
+  - `Short Window` → `SHORT_WINDOW`
+  - `Straddle + Adj` → `STRADDLE_WITH_ADJUSTMENT`
+  - `Pure Straddle Roll` → `STRADDLE_ROLL`
+- Added shortcut flow wiring so clicking a strategy shortcut now performs one action: sets preset and opens the existing create-session dialog with that preset pre-selected.
+- Preserved fallback flow: existing **New Session** button still opens the same dialog in manual preset mode (no locked preset).
+- Added responsive behavior for narrow screens: strategy shortcuts collapse into a quick-launch dropdown next to the existing New Session button.
+- Updated `CreateSessionDialog` to support `initialPreset` + `presetLocked` props. When opened from shortcut:
+  - preset is pre-selected automatically,
+  - preset field is shown read-only (locked) so users can’t switch strategy mid-form,
+  - all existing form logic and submit behavior remain unchanged.
+- No backend files touched. No changes to `MMMSettingsDialog.js` or tests.
+- Verification: ran frontend build in `webui/frontend` (`npm run build`) successfully. Build completed with existing repo-wide lint warnings unrelated to this task.
+
+## 2026-04-11 — Mobile MMM dashboard hardening (iPhone/Tailscale)
+
+- **Mobile-only frontend update** to improve MMM usability on iPhone without touching desktop MMM files.
+- Updated `webui/frontend/src/mobile/MobileDashboard.js`:
+  - Fixed spot display fallback so mobile no longer renders `$Loading...`; now uses robust fallbacks from heartbeat/session fields and formats safely.
+  - Added heartbeat freshness indicator (`Fresh/Delayed/Stale` + age in seconds) for quick trust check on live data.
+  - Expanded P&L panel with realized/unrealized/fees/active-lots KPI tiles plus max-loss usage gauge.
+  - Improved CE/PE cards with resilient field resolution (flat + nested session state), live premium fallback via premium map, and distance in both points and %.
+  - Added operator-state visibility for `_awaiting_user_action` and existing both-sides/safety alerts.
+  - Added mobile quick actions: Pause/Resume (confirm), Force Heartbeat, Refresh, and jump to Control tab.
+  - Added compact recent activity feed from websocket events (adjustments/shifts/reversals/close@5/safety).
+- Updated `webui/frontend/src/mobile/mobile.css` with new **mobile-prefixed classes only** (`mobile-kpi-*`, `mobile-side-grid`, `mobile-actions-grid`, `mobile-activity-item`, etc.) for responsive card layout and touch usability.
+- **Desktop behavior preserved**: no edits to `webui/frontend/src/components/mmm/` desktop dashboard files.
+- Verification: `npm run build` in `webui/frontend` completes successfully; existing repository-wide lint warnings remain unrelated to this mobile task.
+
+## 2026-04-11 — Mobile MMM phase 2: multi-session command center + per-session emergency controls
+
+- **Mobile-only frontend updates** to remove single-session lock-in and make MMM operable during fast market conditions from phone.
+- Updated `webui/frontend/src/mobile/MobileDashboard.js`:
+  - Replaced hardwired `activeSessions[0]` behavior with selected-session flow from `MMMContext` (`selectedSessionId` + `selectSession`) and automatic fallback to first active session only when no valid selection exists.
+  - Added horizontal **active-session selector chips** (status/lots/pnl) so operators can switch control target instantly on mobile.
+  - Added full-session fetch (`mmmService.getSession`) for the selected session to improve field completeness beyond summary payload.
+  - Added **spot fallback from API** (`mmmService.getSpotPrice`) when heartbeat/session spot is missing, preventing stale/blank spot under websocket gaps.
+  - Added per-session critical actions directly on dashboard: `STOP` and `CLOSE ALL` with two-step full-screen confirmations.
+  - Kept existing pause/resume confirm path and quick actions; all actions now target the selected session.
+- Updated `webui/frontend/src/mobile/MobileControl.js`:
+  - Converted controls from first-session-only to selected-session-aware logic.
+  - Added mobile session selector strip in control view so emergency actions are explicitly tied to the chosen session.
+  - Preserved existing safety confirmations (pause/resume, stop, close-all, emergency kill) while ensuring they execute against current selected session.
+- Updated `webui/frontend/src/mobile/mobile.css`:
+  - Added mobile-only session selector styles (`mobile-session-strip`, `mobile-session-chip`, `mobile-session-chip-active`, `mobile-chip-meta`).
+- **Desktop files untouched** (no edits in `webui/frontend/src/components/mmm/` desktop views).
+- Verification:
+  - `get_errors` on modified mobile files returned no file-level errors.
+  - `npm run build` in `webui/frontend` completed successfully; existing repo-wide lint warnings are pre-existing/unrelated.
+
+## 2026-04-11 — Mobile MMM phase 3: fleet emergency controls + richer mobile telemetry
+
+- **Mobile-only frontend updates** to deepen command-center behavior for high-volatility handling from phone.
+- Updated `webui/frontend/src/mobile/MobileDashboard.js`:
+  - Added fleet summary card (sessions/running-paused/total lots/fleet P&L) and multi-session selector chips.
+  - Added heartbeat freshness health line (`Fresh/Delayed/Stale` + seconds since update).
+  - Added robust data fallback strategy (full session fetch + spot fallback + premium-map fallbacks) to reduce blank/stale values.
+  - Added richer side cards (entry premium, live premium, points + percent distance from spot).
+  - Added quick action grid (pause/resume, force beat, refresh, open control/risk/monitoring, stop, close-all).
+  - Added two-step critical confirmation flows for STOP, CLOSE ALL, and fleet-wide CLOSE ALL.
+  - Added compact recent activity feed (adjustments, shifts, reversals, close events, safety events).
+- Updated `webui/frontend/src/mobile/MobileControl.js`:
+  - Added fleet summary KPI block and explicit selected-session strip.
+  - Added two-step **all-sessions close-all** emergency action (through shared mobile service layer).
+  - Tightened numeric handling for lots/P&L summary calculations.
+- Updated `webui/frontend/src/mobile/mobile.css` with mobile-only utility classes for KPI grids, row layouts, activity feed cards, action grids, and session chips.
+- Verification:
+  - `get_errors` on modified mobile files: no file-level errors.
+  - Production build completed successfully; warnings remain repository-wide pre-existing lint warnings.
+
+## 2026-04-11 — Investigation only: STRADDLE_WITH_ADJUSTMENT lots forced to 1
+
+- Performed root-cause trace for user report: selected `initial_lots=10` at session creation, but session initializes at 1 lot and lots become non-editable.
+- Confirmed create-vs-init split behavior:
+  - `webui/frontend/src/components/mmm/MMMDashboard.js` sets `isStraddle=true` for `_preset_source='STRADDLE_WITH_ADJUSTMENT'` and passes it into config/init flow.
+  - `webui/frontend/src/components/mmm/MMMConfigPanel.js` forces the Lots UI and payload in straddle mode:
+    - field value path uses `isStraddle ? 1 : lots`
+    - field is disabled with helper text "Fixed by preset"
+    - `/init-fresh` request body sends `lots: isStraddle ? 1 : lots`
+  - `webui/backend/routes/mmm/mmm_api.py` persists runtime lots from init payload (`int(data['lots'])`) into `session['lots']`; start/order sizing then uses this persisted value.
+- Verified preset layering in `webui/backend/routes/mmm/mmm_state.py` keeps user params overriding preset defaults at **create** stage, so the effective 10→1 override occurs at the **init panel/payload stage**, not session-create merge.
+- No code changes in MMM logic during this investigation; this entry records diagnosis-only work.
+
+## 2026-04-11 — STRADDLE_WITH_ADJUSTMENT lot hardcode removed + webui redeployed
+
+- Implemented requested fix in `webui/frontend/src/components/mmm/MMMConfigPanel.js` so straddle sessions use user-configured lots at init time:
+  - Removed `lots: isStraddle ? 1 : lots` payload override in `init-fresh` request; now sends `lots` directly.
+  - Removed straddle-only UI lock on Lots input (`value={isStraddle ? 1 : lots}`, `disabled={isStraddle}`, and helper text "Fixed by preset").
+  - Fixed follow-up JSX issue in the expiry selector by merging duplicate `disabled` props into one condition (`!!sessionExpiry || expiryLoading`).
+  - Result: users can choose any lot size for `STRADDLE_WITH_ADJUSTMENT`, and that chosen value is what backend persists via `/init-fresh`.
+- Deployment/restart actions per `backend_frontend.md`:
+  - Ran `./scripts/deploy_webui.sh` (frontend build succeeded; script timed out on 20s health wait).
+  - Verified/recovered LaunchAgent service with `launchctl start com.gridbot.production.webui`.
+  - Confirmed runtime health on production port with `GET /api/health` returning `{"status":"healthy", ...}` and process listening on `:5555`.
+
+## 2026-04-11 — mmm_fill_sync.py: Verified and fixed 5 real bugs from external audit
+
+External audit report was reviewed. Not all claims were genuine — audited the code independently before touching anything.
+
+**What was fabricated / not triggered:**
+- H-3 (close_order_id int/str): All 5 write paths (`close_at_5`, `mmm_monitor` ×3, `mmm_api`) explicitly use `str()`. Not a live bug.
+- C-3 (multi-expiry symbol miss): Straddle roll is an ATM roll (same expiry, new strike). No session has positions at multiple expiries. Scenario doesn't exist.
+- H-1 (empty close_order_id in pnl_confirm): Unreachable — scan loop guard `if close_oid and close_oid == order_id` requires close_oid to be truthy before a position is matched.
+- C-4, C-5: Throughput limitation / speculative API change, not data bugs.
+
+**What was fixed (5 real issues):**
+
+- **C-1+C-2 (`_process_close_fill`)** — Real bug. Unconditional `pos['status']='closed'` + `pos['_fill_confirmed']=True` on lines 361-369 fired even on partial sub-fills (one exchange order → multiple fill events, same `order_id`, different `fill_id`). First sub-fill marked position closed and blocked all subsequent sub-fills via `_fill_confirmed` guard. Ghost lots + P&L loss. Fix: added `_cumulative_lots_filled` tracking on position. Only close when cumulative ≥ `pos['lots']`. Partial sub-fills reduce remaining lots and keep `_fill_confirmed=False` so next sub-fill matches.
+
+- **M-7 (lazy imports)** — Real pattern issue. `from .mmm_state import recompute_side_lots`, `from .mmm_activity import log_activity`, `from .mmm_pnl_core import ...` were inside `_process_close_fill()`, whose exceptions are caught and swallowed by `sync()`. Import error = silent zero fills forever. Fixed by moving all three to module level at top of file and removing the lazy duplicates.
+
+- **M-6 (clock skew silent abort)** — Real missing log. `if now_us <= cursor_us: return 0` had no log. NTP correction would silently kill fill sync with no operator alert. Added `log.warning(...)`.
+
+- **M-4 (naive datetime)** — Defensive fix. `_parse_ts_us` didn't guard against naive datetimes from `fromisoformat()` (triggered if string has no tz suffix). `.timestamp()` on naive datetime uses local time — wrong on IST/non-UTC servers. Added `if dt.tzinfo is None: dt = dt.replace(tzinfo=timezone.utc)`.
+
+- **M-10 (activity type missing)** — `'fill_sync_confirmed'` was absent from `ACTIVITY_TYPES` and `ACTIVITY_CATEGORIES` in `mmm_activity.py`. UI showed raw key string; fill confirmations fell into uncategorized 'system' tab. Added `fill_sync_confirmed` and `fill_sync_partial` to both dicts, routed to 'adjustments' category.
+
+**Tests:** 1311 passed (sealed baseline unchanged).
+
+## 2026-04-12 — STRADDLE_ROLL: Fix roll blocked by lot-size mismatch in Gate 9 min credit check
+
+**Problem:** A live STRADDLE_ROLL session (mmm12apr26-5) had spot 953 pts past the 707-pt trigger but the roll never fired. No log output from `mmm_straddle_roll_pure` was visible because the blocking gate logged at INFO level and only fired during the 4-leg execution phase.
+
+**Root cause:** `_execute_4_leg_roll` uses `roll_lots` (passed from `execute_pure_straddle_roll`, which reads `params.get('initial_lots', 1)`) for the Gate 9 min-credit check and the new-entry lot sizing. The session had `params.initial_lots = 1` (the UI default, never changed at creation) but was initialized with 10-lot positions. Gate 9 min-credit check computed `1-lot credit ($0.64)` vs `30% of 10-lot original credit ($2.12)` → `0.64 < 2.12` → blocked silently.
+
+**Secondary effect (if roll had fired):** The re-entry would have created 1-lot positions, collapsing the straddle from 10 lots to 1 lot after each roll.
+
+**Fix — `mmm_straddle_roll_pure.py` (`_execute_4_leg_roll`):**
+- Added active-lot sanity block at the top of `_execute_4_leg_roll` (before Gate 9):
+  - Counts active CE lots from `session['ce']['positions']`
+  - If `active_ce_lots > 0 and != roll_lots`: logs correction and overrides `roll_lots`
+  - Ensures both the min-credit check and re-entry use the actual position lot count, not `params.initial_lots`
+
+**Verification:**
+- Confirmed via API: spot=73553, ATM=72600, trigger_pts=707.21, spot_move=953 → should fire after fix
+- Confirmed via API: `preview_atm_straddle` returns ATM=73400, CE mid=367.5, PE mid=289.0 → corrected credit for 10 lots = $6.56 >> $2.12 threshold
+- Tests: 1311 passed (all sealed tests green; baseline unchanged).
+
+**Note:** `params.initial_lots` should ideally be set correctly at session creation. The UI defaults `initial_lots=1` in `MMMDashboard.js` line 733 — operators must explicitly change it. The backend fix handles the mismatch gracefully by using actual position lots at roll time.
+
+---
+
+## 2026-04-12 — Fix max_total_exposure ceiling bug + strategy separation plan
+
+**Bug: `max_total_exposure` ceiling blocks all adjustments on session `mmm12apr26-6`**
+
+- **Root cause**: Session had `max_total_exposure=10` explicitly set in params, while `max_lots_per_side=100`. CE side accumulated 15 total lots (active+frozen), which exceeds the ceiling of 10. Every adjustment attempt fired "Total exposure ceiling: CE has 15/10 lots (active+frozen)".
+- **User confusion**: Changing `max_lots_per_side` to 100 via settings did NOT change `max_total_exposure` (they are independent params). The fallback `max_lots_per_side * 2` only applies when `max_total_exposure = 0`, not when it's explicitly set.
+- **Race condition found** (`mmm_storage.py`): `save_session()` always overwrote `params_json` with the monitor's stale in-memory copy. Even though `_save_session()` in `mmm_monitor.py` read fresh params from DB, that read was OUTSIDE the `BEGIN IMMEDIATE` transaction, creating a window where user's hot-reload changes could be overwritten by the monitor's next heartbeat save.
+- **Fix 1** (`mmm_storage.py`): In `save_session()`, moved params preservation INSIDE the `BEGIN IMMEDIATE` transaction. Now reads current `params_json` from DB atomically before writing — for existing sessions, uses DB's params (preserving hot-reload changes); for new sessions, uses session's own params.
+- **Fix 2** (`mmm_api.py`): Added cross-param warning when `max_lots_per_side > max_total_exposure > 0`. Returned as `total_exposure_warning` in PATCH /params response.
+- **Fix 3** (DB direct): Updated `mmm12apr26-6` params_json directly: `max_total_exposure = 50`. Monitor picks up on next heartbeat.
+
+**Strategy Separation Plan created**
+
+- Created `tasks/MMM_STRATEGY_SEPARATION_PLAN.md` — 6-phase plan to properly isolate all 5 strategies (0DTE, 5DTE, SHORT_WINDOW, STRADDLE_WITH_ADJUSTMENT, STRADDLE_ROLL).
+- Phases: DB schema (`strategy_type` column), param namespaces, backend dispatch, settings dialog filter, strategy-aware cards, strategy-specific create forms.
+- Context-window-safe: each phase is a self-contained session with explicit file list.
+
+## 2026-04-12 — Strategy identity groundwork: canonical `strategy_type` + immutability
+
+- `webui/backend/routes/mmm/mmm_state.py`:
+  - Added canonical strategy identity helpers (`derive_strategy_type`, alias mapping `SHORT_STRADDLE -> STRADDLE_WITH_ADJUSTMENT`).
+  - `create_session()` now stamps immutable top-level `session['strategy_type']`.
+  - `get_session_summary()` now always exposes `strategy_type` (with legacy fallback from `_preset_source` / `dte_category`).
+
+- `webui/backend/routes/mmm/mmm_storage.py`:
+  - Added `strategy_type` column to `mmm_sessions` schema with migration helper.
+  - Added startup backfill for pre-migration rows (legacy-aware derivation).
+  - `save_session()` / `update_session()` now persist `strategy_type` to both column and `data_json`.
+  - `list_session_summaries()` SQL path and fallback path now include `strategy_type`.
+  - Added active-session update protection to prevent strategy mutation while active.
+  - Fixed param arbitration in `save_session()` so newer DB params win only when caller snapshot is stale (preserves hot-reload safety without breaking explicit saves).
+
+- `webui/backend/routes/mmm/mmm_api.py`:
+  - Session create now rejects direct client injection of immutable identity keys (`strategy_type`, `_preset_source`).
+  - Params PATCH now blocks strategy drift attempts (`strategy_type`, `dte_category`, `_preset_source` changes) and returns a clear immutable-identity error.
+
+- Tests:
+  - Updated `webui/backend/routes/mmm/tests/test_mmm_summary_preset_source.py` to assert `strategy_type` exposure in state summary, SQL summary, and fallback summary, plus alias mapping coverage.
+  - Added `webui/backend/routes/mmm/tests/test_mmm_strategy_type_identity.py` covering create-time identity injection rejection and params immutability behavior.
+  - Validation run: `python3 -m pytest ...` focused MMM suite passed (`20 passed`).
+
+## 2026-04-12 — Strategy dispatch migration to canonical `strategy_type` (Phase 2)
+
+- `webui/backend/routes/mmm/mmm_api.py`:
+  - Switched create-time strategy validation branches to canonical `strategy_type` (instead of `_preset_source`).
+  - Preserved explicit safety requirements for both straddle modes:
+    - `STRADDLE_WITH_ADJUSTMENT` requires `initial_lots` and `straddle_roll_max_per_session`.
+    - `STRADDLE_ROLL` requires `initial_lots`, `straddle_roll_max_per_session`, and `max_loss_amount`.
+  - Kept STRADDLE_ROLL `max_lots_per_side = initial_lots` invariant unchanged.
+
+- `webui/backend/routes/mmm/mmm_monitor.py`:
+  - Added canonical strategy helper usage (`derive_strategy_type`) and centralized strategy resolution.
+  - Migrated straddle-specific runtime gates and Step 5.4 dispatch selection to use `strategy_type`.
+  - Removed stale `SHORT_STRADDLE_CATEGORY` import after dispatch migration cleanup.
+
+- `webui/backend/routes/mmm/mmm_straddle_adjustment.py`:
+  - Gate 2 now validates strategy via canonical `strategy_type` (legacy-aware fallback retained).
+
+- `webui/backend/routes/mmm/mmm_straddle_roll_pure.py`:
+  - Gate 2 now validates strategy via canonical `strategy_type` (legacy-aware fallback retained).
+
+- Verification:
+  - Fixed an indentation regression introduced during refactor in `mmm_api.py` (STRADDLE_ROLL validation block).
+  - Focused test run passed:
+    - `test_mmm_strategy_type_identity.py`
+    - `test_mmm_summary_preset_source.py`
+    - `test_sealed_straddle_adjustment.py`
+    - `test_sealed_straddle_roll_pure.py`
+  - Result: `57 passed`.
+
+## 2026-04-12 — Post-migration safety sweep (full MMM regression)
+
+- Re-audited runtime dispatch gates after Phase 2 migration:
+  - Confirmed no `_preset_source` runtime branching remains in:
+    - `webui/backend/routes/mmm/mmm_monitor.py`
+    - `webui/backend/routes/mmm/mmm_straddle_roll_pure.py`
+  - `webui/backend/routes/mmm/mmm_straddle_adjustment.py` only retains a legacy-compatibility comment for derivation context.
+
+- Verified remaining `dte_category` references in `mmm_monitor.py` are non-dispatch logic
+  (adaptive interval and replenish behavior), not strategy routing.
+
+- Ran full MMM backend test suite for regression confidence:
+  - Command: `python3 -m pytest webui/backend/routes/mmm/tests`
+  - Result: `1315 passed, 599 warnings` (no failures).
+
+- No additional code changes were required after the full regression run.
+
+## 2026-04-12 — Strategy namespace guardrails + audit-traceable plan update
+
+- Updated `tasks/MMM_STRATEGY_SEPARATION_PLAN.md` to reflect actual execution state (no longer "planning-only"):
+  - Added completed-work ledger with file-level deltas and test evidence.
+  - Added phase status tracker (`completed / partial / next`) for faster audit/debug handoff.
+  - Documented immediate next backend target as strategy param-namespace enforcement.
+
+- Added backend strategy namespace enforcement for `PATCH /api/mmm/session/<id>/params`:
+  - `webui/backend/routes/mmm/mmm_config.py`
+    - Added `STRATEGY_PARAM_NAMESPACES` with strategy-specific forbidden param sets.
+    - Added helpers `get_strategy_param_namespace()` and `get_forbidden_params_for_strategy()`.
+    - Guardrails implemented so:
+      - `STRADDLE_ROLL` rejects adjustment-engine-only params.
+      - `0DTE/5DTE/SHORT_WINDOW` reject straddle-roll control params.
+      - `STRADDLE_WITH_ADJUSTMENT` allows shared straddle-roll controls but blocks pure-roll-only hard-stop mode.
+  - `webui/backend/routes/mmm/mmm_api.py`
+    - `update_session_params()` now checks strategy-forbidden keys and returns HTTP 400 with `strategy_type` + `forbidden_params` details.
+    - Added structured response hint `suggest_max_total_exposure` when `max_lots_per_side > max_total_exposure > 0`.
+
+- Tests:
+  - Extended `webui/backend/routes/mmm/tests/test_mmm_strategy_type_identity.py` with:
+    - STRADDLE_ROLL forbidden adjustment-param rejection.
+    - 0DTE forbidden pure-roll-param rejection.
+    - `suggest_max_total_exposure` response assertion.
+  - Validation run:
+    - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_strategy_type_identity.py webui/backend/routes/mmm/tests/test_mmm_summary_preset_source.py webui/backend/routes/mmm/tests/test_sealed_mmm_config.py -q`
+    - Result: `30 passed`.
+
+## 2026-04-12 — Phase 3 backend: strategy dispatch module + validator hooks
+
+- Added `webui/backend/routes/mmm/mmm_strategy_dispatch.py` as the central strategy-routing layer:
+  - `StrategyHandler` contract (`run_step_5_4`, `validate_session`, `should_run_adjustment`).
+  - `STRATEGY_DISPATCH` table for all 5 strategies.
+  - Step 5.4 runners for `STRADDLE_WITH_ADJUSTMENT` and `STRADDLE_ROLL`.
+  - Strategy validators for straddle invariants (strike symmetry, pure-roll frozen-lot guard, DTE sanity).
+
+- Updated `webui/backend/routes/mmm/mmm_monitor.py`:
+  - Step 5.4 inline `if/elif` routing replaced with dispatch-table handler invocation.
+  - Added heartbeat validator hook (`_run_strategy_validation`) with deduped warning/safety emission.
+  - Added monitor-start validator hook in `start_session_monitor()` (warn + safety payload on violations).
+  - Kept reverse-mode hard if/else path untouched.
+
+- Updated `webui/backend/routes/mmm/mmm_api.py`:
+  - `create_session` now runs strategy validator pre-persist and rejects invalid sessions with structured `violations` payload.
+
+- Added/extended tests:
+  - `webui/backend/routes/mmm/tests/test_mmm_strategy_dispatch.py` (dispatch + validator unit coverage).
+  - `webui/backend/routes/mmm/tests/test_mmm_monitor_strategy_validation.py` (monitor-start validator hook coverage).
+  - `webui/backend/routes/mmm/tests/test_mmm_strategy_type_identity.py` extended with create-time validator rejection check.
+
+- Verification:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_strategy_dispatch.py webui/backend/routes/mmm/tests/test_mmm_monitor_strategy_validation.py webui/backend/routes/mmm/tests/test_mmm_strategy_type_identity.py -q`
+  - Result: `14 passed`.
+
+## 2026-04-12 — Phase 3 broader regression confirmation
+
+- Re-read this work log at session start (mandatory MMM session rule) before further Phase 3 actions.
+- Reconfirmed Phase 3 scope and ran a broader targeted MMM regression subset to remove ambiguity from the prior warning-heavy capture.
+  - Command: `python3 -m pytest webui/backend/routes/mmm/tests -k "straddle_roll or strategy_dispatch or strategy_type_identity or monitor_strategy_validation" -q --disable-warnings`
+  - Result: `41 passed, 1285 deselected, 598 warnings`.
+- No additional code changes were required; this session focused on verification confidence and handoff readiness.
+
+## 2026-04-12 — Frontend strategy identity parity + settings warning surfacing
+
+- Synced frontend MMM surfaces to canonical strategy identity (`strategy_type`) so badge/render behavior no longer drifts based on mixed `_preset_source`/`dte_category` fallbacks:
+  - `webui/frontend/src/components/mmm/MMMDashboard.js`
+    - Added canonical strategy resolver (`resolveSessionStrategyType`) and centralized badge mapping (`getStrategyBadgeProps`).
+    - SessionCard strategy chip now maps from canonical identity.
+    - Straddle-only overview signals (roll count + price guard) now key off canonical straddle detection.
+    - `MMMConfigPanel` `isStraddle` prop now derives from canonical strategy type.
+
+- Hardened settings dialog strategy separation and operator feedback:
+  - `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+    - Added canonical strategy resolver + strategy metadata banner.
+    - Added strategy-forbidden param filtering (`STRATEGY_FORBIDDEN_PARAMS`) so irrelevant params are hidden from section render, search results, and group counts.
+    - Replaced `_preset_source`-only checks with canonical strategy checks for straddle variants.
+    - Surfaced backend param-patch warnings (`total_exposure_warning`, `cap_raise_warning`) in dialog after save.
+
+- Updated execution tracking document to match landed implementation state:
+  - `tasks/MMM_STRATEGY_SEPARATION_PLAN.md`
+    - Corrected phase status snapshot and completion ledger.
+    - Marked backend phases complete and frontend identity/filter pass complete; left deeper dashboard KPI/filter and create-form split as pending.
+
+- Validation:
+  - Editor diagnostics (Problems check) run on modified frontend files:
+    - `MMMSettingsDialog.js`: no errors
+    - `MMMDashboard.js`: no errors
+
+## 2026-04-12 — Frontend Phase 5.2–5.4 + Phase 6 completion (strategy UX separation)
+
+- Completed remaining strategy-separation frontend work in `webui/frontend/src/components/mmm/MMMDashboard.js`:
+  - Replaced strategy badge identity derivation with canonical `session.strategy_type` path (`resolveSessionStrategyType` now reads immutable top-level identity).
+  - Added centralized `STRATEGY_META` model and reused it for badges, filters, quick launch labels, and strategy descriptions.
+  - Added `StrategyKPIBar` in Session Overview with strategy-specific KPI sets:
+    - 0DTE/5DTE/SHORT_WINDOW: CE lots, PE lots, net P&L, adjustment count, breakeven band
+    - STRADDLE_WITH_ADJUSTMENT: common KPIs + hours-to-expiry + initial credit
+    - STRADDLE_ROLL: roll count, max/session %, net P&L, hard-stop buffer
+  - Added session-list strategy filter chips (`All`, `0DTE`, `5DTE`, `Short Window`, `Straddle+Adj`, `Pure Roll`) with filtered/total tab counts.
+  - Refactored Create Session core form from monolithic conditional block into strategy-specific sections (`STRATEGY_FORM_COMPONENTS`) and added strategy-aware validation:
+    - STRADDLE_ROLL requires explicit `max_loss_amount` + `straddle_roll_max_per_session`
+    - STRADDLE_WITH_ADJUSTMENT requires valid derived `hours_to_expiry > 0` + explicit rolls
+    - Added strategy badge + tooltip help in the dialog header area.
+
+- Completed activity-context filtering in `webui/frontend/src/components/mmm/MMMActivityFeed.js`:
+  - Added strategy-context filter mode (default ON per selected session strategy).
+  - Added strategy-aware hidden event rules; specifically hides `adjustment_skipped` for `STRADDLE_ROLL` sessions.
+  - Added hidden-event bug signal surface so suppressed strategy-conflict events are still visibly flagged.
+
+- Updated plan tracking in `tasks/MMM_STRATEGY_SEPARATION_PLAN.md`:
+  - Marked Phase 5 and Phase 6 as completed.
+  - Updated top-level status and execution note to reflect end-to-end completion of strategy separation milestones.
+
+- Verification:
+  - VS Code Problems check: no errors in modified files (`MMMDashboard.js`, `MMMActivityFeed.js`).
+  - ESLint run on modified MMM frontend files completed with warnings only (legacy/pre-existing no-unused-vars and hook-dependency warnings; no new errors).
+
+## 2026-04-12 — Plan/worklog completion verification (no code changes)
+
+- Re-verified `tasks/MMM_STRATEGY_SEPARATION_PLAN.md` status in-repo:
+  - Top-level status line confirms: execution complete for Phases 1–6.
+- Re-verified latest MMM completion entry exists in this log:
+  - `2026-04-12 — Frontend Phase 5.2–5.4 + Phase 6 completion (strategy UX separation)`.
+- This was a verification-only session; no source code logic changes were made.
+
+---
+
+## 2026-04-12 — Independent audit + 2 bug fixes in strategy separation work
+
+**Scope**: Full code review of all uncommitted changes (Phases 1–6) against git HEAD to verify real-money safety before commit.
+
+**Backend audit result**: No regressions found. All three stale-monitor layers (CLAUDE.md §4) and the reverse-mode hard if/else (CLAUDE.md §5) are untouched. STRADDLE_ROLL isolation in Step 5.4 dispatch is correct and verified by tracing `should_run_adjustment=False` path.
+
+**Two bugs fixed in `webui/backend/routes/mmm/mmm_strategy_dispatch.py`:**
+
+1. **`_validate_straddle_roll_session` checked `_preset_source`** — contradicted the canonical `strategy_type` approach, produced spurious heartbeat warnings, and could block session creation for edge-case flows. Removed the check. The validator is only dispatched when `strategy_type == 'STRADDLE_ROLL'` is already confirmed, so the re-check was redundant.
+
+2. **`_validate_straddle_with_adjustment_session` checked `total_dte_hours > 0` unconditionally** — could block session creation (via `validate_session_for_strategy` in `create_session_endpoint`) if preset edge cases produced `total_dte_hours=0`. Made the check conditional on `session.get('entry_time')` — only enforced for entered (running) sessions, not at create time where the preset builder and explicit missing-param checks already handle it.
+
+**Tests updated** in `test_mmm_strategy_dispatch.py`:
+- Removed `_preset_source` assertion from straddle-roll violation test.
+- Added `entry_time` to `total_dte_hours` failure test.
+- Added new `test_validate_straddle_with_adjustment_skips_dte_check_at_create_time` to lock in create-time safety.
+- Result: `1327 passed` (full suite).
+
+**Frontend audit result** (Phases 5–6 + mobile work):
+- All frontend strategy-type reads use canonical `session.strategy_type` via `resolveSessionStrategyType`. No `_preset_source`/`dte_category` fallback needed since backend migration backfills all sessions.
+- `emergencyCloseAllPositions` with array of session IDs confirmed safe (mmmService already supports `session_ids[]` payload).
+- `MMMConfigPanel.js` lots-lock removal (old code forced `lots=1` for straddle sessions at initialization — wrong for multi-lot sessions) is a correct fix.
+- `MMMConfigPanel.js` duplicate `disabled` props on expiry Select (old: `disabled={!!sessionExpiry}` was overridden by `disabled={expiryLoading}`) combined into `disabled={!!sessionExpiry || expiryLoading}` — genuine bug fix.
+- Distance color in MobileDashboard changed from absolute points to percentage (3%/1.5% thresholds) — display improvement only.
+- All mobile "Close All Sessions" actions use 2-step confirmation. No trading behavior changed.
+
+## 2026-04-12 — Fix: Straddle Roll settings showed “No changes detected” while running
+
+- **Root cause found**: `webui/backend/routes/mmm/mmm_config.py` did not register the Straddle Roll / Price Guard fields in `PARAM_RULES`, so `/api/mmm/params/info` did not expose them as editable/hot-reloadable. In the settings dialog save path (`MMMSettingsDialog.js`), these keys were filtered out, resulting in `changedParams = {}` and the banner **“No changes detected”**.
+- **Fix applied** (`webui/backend/routes/mmm/mmm_config.py`): Added full validation + metadata entries (hot-reload enabled) for straddle-roll params and price-guard params, including:
+  - `straddle_roll_max_per_session`, `straddle_roll_cooldown_mins`, `straddle_roll_emergency_mult`, `straddle_roll_max_spread_pct`, `straddle_roll_trigger_pct`
+  - `price_guard_enabled`, `price_guard_interval_secs`, `price_guard_buffer_pts`, `price_guard_cooldown_secs`
+  - plus remaining roll keys (`straddle_roll_enabled`, `straddle_roll_min_time_to_expiry`, `straddle_roll_min_credit_pct`, `straddle_roll_slippage_factor`, `straddle_roll_loss_abort_mult`, `straddle_roll_lot_scale`, `straddle_roll_iv_spike_mult`, `straddle_roll_price_max_age_secs`, `straddle_roll_hard_stop_market_order`) for contract completeness.
+- **Verification**:
+  - Focused tests passed: `test_mmm_integration.py::TestConfigValidation::test_hot_reload_params` and `...::test_valid_params_pass`.
+  - Runtime sanity check confirms affected keys are now present in `get_param_info()` and included in `get_hot_reload_params()`.
+
+---
+
+## 2026-04-12 — Fix: ATM Shield fires in Dangerous Mode, loss loop on manual replenish
+
+**Incident (mmm12apr26-3, 12 Apr 2026 ~13:05–13:10):**
+- CE @ 72000 (spot 71646, 0.49% away) triggered ATM Shield FIRE #1
+- No viable OTM replacement: 72200/72400/72600 all flagged `low_prem` (bid $11–28, below threshold)
+- Wind-down activated as fallback; session moved toward PAUSED
+- Heartbeat froze for 156s → watchdog fired, killed monitor, **`_save_session` blocked** → shield fire count/timestamp never persisted
+- Monitor restarted; loaded stale DB state (count=0, no last_fire) → ATM Shield fired again immediately on first heartbeat
+- User manually replenished CE @ 72000 (sold at 55) → shield fired again, closed at 65 → -$1000 per cycle
+
+**Two bugs fixed in `webui/backend/routes/mmm/mmm_atm_shield.py`:**
+
+1. **ATM Shield must not fire in Dangerous Mode** (`_check_shield_gates`):
+   - Added `dangerous_mode` gate: when `params['dangerous_mode']=True`, shield returns `(False, 'dangerous_mode')` immediately.
+   - Rationale: Dangerous Mode means user has manual control. Shield auto-closing a manually replenished position creates a loss loop the user cannot escape without turning off ATM shield entirely.
+
+2. **Fire metadata not saved in close-only path** (`execute_atm_shield` Step 5):
+   - When `new_strike is None` (close-only, no viable OTM), the existing save calls inside the re-sell block are skipped.
+   - Added `monitor._save_my_session()` immediately after Step 5 state update in the `new_strike is None` path.
+   - Prevents watchdog-restart from losing the fire count/cooldown timestamp, which caused immediate re-fire on restart.
+
+3. **Replenish proximity guard blocked even when ATM shield is suppressed** (`mmm_monitor.py` `_process_replenish` Step 3b-ATM):
+   - The guard at line ~6522 fired regardless of dangerous mode: `if strike_info and params.get('atm_shield_enabled', False)`.
+   - When dangerous mode is on the ATM shield cannot fire, so the guard's entire purpose (preventing replenish→shield→close cycles) is moot — but it still ran, found 72400 @ $12 as the "safe" alternative, overwrote the viable 71800 @ $125 candidate, and Step 3c rejected it ($12 < $30 min_premium) → replenish returned False → OCS pause continued indefinitely.
+   - **Fix**: added `and not params.get('dangerous_mode', False)` to the guard condition. In dangerous mode the proximity guard is fully skipped; replenish picks 71800 @ $125 and proceeds normally.

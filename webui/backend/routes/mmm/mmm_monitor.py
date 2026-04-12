@@ -84,7 +84,7 @@ from .mmm_perp_hedge import (
 from .mmm_storage import get_storage
 from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key, _D, _LOT
 from .mmm_margin_guardian import MarginGuardian, TIER_GREEN, TIER_YELLOW, TIER_ORANGE, TIER_RED, TIER_CRITICAL
-from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY
+from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, STRADDLE_ROLL_CATEGORY
 from .mmm_regime import MMMRegimeEngine, ACTION_NORMAL, ACTION_WARN, ACTION_BLOCK_CE_SELLS, ACTION_BLOCK_PE_SELLS, ACTION_BLOCK_ALL_SELLS, ACTION_FORCE_REDUCE, ACTION_PAUSE
 from .mmm_telegram import (
     alert_margin_tier_change, alert_emergency_close,
@@ -96,6 +96,11 @@ from .mmm_reverse import (
     check_reverse_close_at_threshold, close_all_reverse_positions,
     check_reverse_emergency, disable_reverse_mode,
     is_reverse_mode_on, initialize_reverse_state,
+)
+from .mmm_strategy_dispatch import (
+    get_strategy_handler,
+    resolve_strategy_type as _resolve_strategy_type,
+    validate_session_for_strategy,
 )
 
 # L-2 fix: module-level import removes per-call import-lock overhead on every heartbeat.
@@ -119,6 +124,11 @@ def _is_user_awake_hours() -> bool:
     IST = timezone(timedelta(hours=5, minutes=30))
     now_ist = datetime.now(IST)
     return 8 <= now_ist.hour < 23
+
+
+def _session_strategy_type(session: Dict[str, Any]) -> str:
+    """Canonical strategy identity with legacy fallback for older sessions."""
+    return _resolve_strategy_type(session)
 
 
 class MMMMonitor:
@@ -357,9 +367,9 @@ class MMMMonitor:
         # STRADDLE_ROLL. Keys are consumed by mmm_straddle_adjustment and
         # mmm_straddle_roll_pure. _straddle_initial_credit MUST be initialised here
         # for Gate 10 in _check_pure_roll_gates() to allow rolls to execute.
-        if self.session.get('params', {}).get('_preset_source') in (
-            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY,
-            STRADDLE_ROLL_CATEGORY
+        if _session_strategy_type(self.session) in (
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY,
+            STRADDLE_ROLL_CATEGORY,
         ):
             # Re-run if key missing OR if it was computed with the old buggy logic
             # (original_lots key doesn't exist on position dicts → was always 0).
@@ -530,8 +540,9 @@ class MMMMonitor:
         # Price Guard: start real-time spot monitor for straddle sessions.
         # STRADDLE_ROLL reuses the same price guard coroutine — it reads
         # _straddle_roll_trigger_pts which both presets populate identically.
-        if self.session.get('params', {}).get('_preset_source') in (
-            STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY, STRADDLE_ROLL_CATEGORY
+        if _session_strategy_type(self.session) in (
+            STRADDLE_WITH_ADJUSTMENT_CATEGORY,
+            STRADDLE_ROLL_CATEGORY,
         ):
             self._start_price_guard()
 
@@ -800,6 +811,54 @@ class MMMMonitor:
             # Flag for _run_loop to send Telegram after run_until_complete returns.
             # Cannot call run_until_complete here (we're already inside it).
             self._stale_abort_gen = self._my_generation
+
+    def _run_strategy_validation(self, context: str = 'heartbeat') -> list:
+        """Run strategy invariant checks and emit one warning per unique violation set."""
+        session = self.session
+        sid = self.session_id
+        strategy_type = _session_strategy_type(session)
+        violations = validate_session_for_strategy(session, strategy_type)
+
+        session['_strategy_validation_errors'] = violations
+        if not violations:
+            session.pop('_strategy_validation_warned_sig', None)
+            return []
+
+        sig = '|'.join(sorted(violations))
+        if session.get('_strategy_validation_warned_sig') == sig:
+            return violations
+
+        session['_strategy_validation_warned_sig'] = sig
+        details = {
+            'strategy_type': strategy_type,
+            'context': context,
+            'violations': violations,
+        }
+        msg = '; '.join(violations)
+
+        log.warning(f"[{sid}] Strategy validation ({context}) failed: {msg}")
+        try:
+            log_activity(
+                'strategy_validation',
+                f'⚠️ Strategy validation ({context}): {msg}',
+                sid, 'warning',
+                details,
+            )
+        except Exception:
+            pass
+
+        try:
+            emit_safety(
+                sid,
+                'strategy_invariant',
+                'warning',
+                f'Strategy invariant warning ({context}): {msg}',
+                details,
+            )
+        except Exception:
+            pass
+
+        return violations
 
     def _should_stop(self) -> bool:
         """Bug #11 fix: check if stop has been requested (use in long operations)."""
@@ -1292,6 +1351,10 @@ class MMMMonitor:
                     f"total_lots corrected from {_ck_stored} → {_ck_new} "
                     f"(positions[] recompute fixed stale derived value)"
                 )
+
+            # Strategy validator hook (Phase 3): heartbeat-level invariant checks.
+            # Violations are warned/emitted but do not abort the heartbeat.
+            self._run_strategy_validation(context='heartbeat')
 
         # ── GLOBAL GRACEFUL EXIT GATE ─────────────────────────────────────────
         # When strategy_status == 'EXITING' (set by POST /exit_all endpoint),
@@ -2759,47 +2822,22 @@ class MMMMonitor:
         except Exception as _adapt_err:
             log.error(f"[{sid}] Adaptive engine error: {_adapt_err}", exc_info=True)
 
-        # ── Step 5.4: Straddle Roll ─────────────────────────────────────────
-        # Full ATM reset for STRADDLE_WITH_ADJUSTMENT sessions. Only fires when
-        # _preset_source is STRADDLE_WITH_ADJUSTMENT and straddle_roll_enabled is True.
-        # NOTE: _skip_to_pnl is intentionally NOT checked here (same pattern as
-        # ATM Shield). The roll is the primary risk-management action — a trailing
-        # stop or guardrail block (stop_adjustments) must NOT prevent the roll.
-        # Only a paused/stopped session suppresses the roll.
-        if (params.get('straddle_roll_enabled', False)
-                and params.get('_preset_source') in (
-                    STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
-                )
-                and not self._paused):
-            try:
-                from .mmm_straddle_adjustment import execute_straddle_roll
-                _straddle_roll_fired = await execute_straddle_roll(
-                    self, session, sid, minutes_to_expiry
-                )
-                if _straddle_roll_fired:
-                    _skip_to_pnl = True
-            except Exception as _roll_err:
-                log.error(f"[{sid}] Straddle Roll error: {_roll_err}", exc_info=True)
-        elif (params.get('_preset_source') == STRADDLE_ROLL_CATEGORY
-                and not self._paused):
-            # Pure straddle roll — no adjustment engine between rolls.
-            # This branch is mutually exclusive with the STRADDLE_WITH_ADJUSTMENT block above:
-            # a session has exactly one _preset_source value.
-            try:
-                from .mmm_straddle_roll_pure import execute_pure_straddle_roll
-                _pure_roll_fired = await execute_pure_straddle_roll(
-                    self, session, sid, minutes_to_expiry
-                )
-                if _pure_roll_fired:
-                    _skip_to_pnl = True
-            except Exception as _pure_roll_err:
-                log.error(f"[{sid}] Pure Straddle Roll error: {_pure_roll_err}", exc_info=True)
-            # STRADDLE_ROLL strategy only: always skip MMM trigger evaluation.
-            # The strategy decision tree is fully handled inside execute_pure_straddle_roll
-            # (hard stop → expiry guard → roll trigger). The strangle trigger/adjustment
-            # engine is never relevant for a symmetric straddle. Force skip here so that
-            # on "nothing to do" beats the strangle logic never runs by accident.
-            _skip_to_pnl = True
+        # ── Step 5.4: Strategy dispatch ─────────────────────────────────────
+        # Strategy-specific runtime behavior is routed via mmm_strategy_dispatch.
+        # NOTE: _skip_to_pnl is intentionally NOT checked before this step
+        # (same pattern as ATM Shield). Strategy handlers decide whether this
+        # beat should skip trigger/adjustment flow.
+        strategy_type = _session_strategy_type(session)
+        if not self._paused:
+            _strategy_handler = get_strategy_handler(strategy_type)
+            _step_5_4_skip = await _strategy_handler.run_step_5_4(
+                self,
+                session,
+                sid,
+                minutes_to_expiry,
+            )
+            if _step_5_4_skip or not _strategy_handler.should_run_adjustment:
+                _skip_to_pnl = True
         # ────────────────────────────────────────────────────────────────────
 
         # Step 5.5: ATM Shield — proactive close & retreat
@@ -6481,7 +6519,7 @@ class MMMMonitor:
             #       using replenish_min_premium (NOT shift_threshold — find_new_strike
             #       uses shift_threshold which is too strict for replenish).
             #   (b) If no safe strike exists → return False so PAUSE takes over.
-            if strike_info and params.get('atm_shield_enabled', False):
+            if strike_info and params.get('atm_shield_enabled', False) and not params.get('dangerous_mode', False):
                 _mins_rem = self._get_minutes_to_expiry() or 360
                 _hours_rem = max(_mins_rem / 60.0, 0.5)
                 _t_mult = min(3.0, max(1.0, 3.0 / _hours_rem))
@@ -6510,12 +6548,24 @@ class MMMMonitor:
                     _safe_strike_info = None
                     if _chain_result and _chain_result.get('success'):
                         # Filter chain to only strikes safely outside the ATM buffer
+                        # AND with sufficient premium to survive Step 3c.
+                        # Without the premium filter, a low-prem safe strike (e.g.
+                        # 72400 @ $12) overwrites the viable near-buffer candidate
+                        # (71800 @ $125), and Step 3c then rejects it — losing the
+                        # good candidate and sending replenish into OCS-pause forever.
+                        # If no safe strike passes the premium floor the block below
+                        # falls through to the grace-hold path, which accepts the
+                        # near-buffer candidate with ATM shield suppressed.
+                        _opt_key = 'call' if closed_side == 'ce' else 'put'
                         _safe_chain = [
                             row for row in _chain_result.get('chain', [])
-                            if (closed_side == 'ce'
-                                and row.get('strike', 0) >= spot_price + _min_abs_dist)
-                            or (closed_side == 'pe'
-                                and row.get('strike', 0) <= spot_price - _min_abs_dist)
+                            if (
+                                (closed_side == 'ce'
+                                 and row.get('strike', 0) >= spot_price + _min_abs_dist)
+                                or (closed_side == 'pe'
+                                    and row.get('strike', 0) <= spot_price - _min_abs_dist)
+                            )
+                            and (row.get(_opt_key) or {}).get('mark_price', 0) >= min_premium
                         ]
                         try:
                             _safe_best, _ = self.initializer._rank_strikes(
@@ -10241,6 +10291,42 @@ _monitors_lock = threading.Lock()
 
 def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
     """Start a monitor for a session. Thread-safe (C-1 fix)."""
+    _strategy_type = _session_strategy_type(session)
+    _start_violations = validate_session_for_strategy(session, _strategy_type)
+    if _start_violations:
+        _start_msg = '; '.join(_start_violations)
+        log.warning(
+            f"[{session_id}] Strategy validation (monitor_start) failed: {_start_msg}"
+        )
+        try:
+            log_activity(
+                'strategy_validation',
+                f'⚠️ Strategy validation (monitor_start): {_start_msg}',
+                session_id,
+                'warning',
+                {
+                    'strategy_type': _strategy_type,
+                    'context': 'monitor_start',
+                    'violations': _start_violations,
+                },
+            )
+        except Exception:
+            pass
+        try:
+            emit_safety(
+                session_id,
+                'strategy_invariant',
+                'warning',
+                f'Strategy invariant warning (monitor_start): {_start_msg}',
+                {
+                    'strategy_type': _strategy_type,
+                    'context': 'monitor_start',
+                    'violations': _start_violations,
+                },
+            )
+        except Exception:
+            pass
+
     # Check-then-stop under lock to prevent TOCTOU race
     with _monitors_lock:
         existing = _monitors.pop(session_id, None)

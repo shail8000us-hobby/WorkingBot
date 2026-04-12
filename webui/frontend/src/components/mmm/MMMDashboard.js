@@ -49,6 +49,8 @@ import {
   FormControlLabel,
   Slider,
   Autocomplete,
+  Menu,
+  useMediaQuery,
 } from '@mui/material';
 import ContentCutIcon from '@mui/icons-material/ContentCut';
 import {
@@ -66,6 +68,8 @@ import {
   Circle as CircleIcon,
   Bolt as BoltIcon,
   LocalFireDepartment as DangerIcon,
+  ArrowDropDown as ArrowDropDownIcon,
+  HelpOutline as HelpOutlineIcon,
 } from '@mui/icons-material';
 import { useMMM } from './MMMContext';
 import mmmService from './mmmService';
@@ -174,6 +178,85 @@ const STATUS_CONFIG = {
   ERROR: { color: '#f44336', bg: 'rgba(244,67,54,0.12)', label: 'Error' },
   STOPPED: { color: '#757575', bg: 'rgba(117,117,117,0.12)', label: 'Stopped' },
   EXITING: { color: '#ff6f00', bg: 'rgba(255,111,0,0.12)', label: 'Exiting...' },
+};
+
+const STRATEGY_META = {
+  '0DTE': {
+    label: 'Short Strangle 0DTE',
+    shortLabel: '0DTE',
+    color: '#f59e0b',
+    icon: '⚡',
+    badgeColor: 'default',
+    badgeSx: { borderColor: 'rgba(255,255,255,0.3)', color: 'text.secondary' },
+    description: 'Intraday short strangle with full adjustment engine and close-at-5 protection.',
+  },
+  '5DTE': {
+    label: 'Short Strangle 5DTE',
+    shortLabel: '5DTE',
+    color: '#3b82f6',
+    icon: '📅',
+    badgeColor: 'info',
+    badgeSx: {},
+    description: 'Slower multi-day short strangle profile with wider breathing room.',
+  },
+  'SHORT_WINDOW': {
+    label: 'Short Window',
+    shortLabel: 'Short Window',
+    color: '#a855f7',
+    icon: '🪟',
+    badgeColor: 'warning',
+    badgeSx: {},
+    description: 'Time-boxed evening theta harvest strategy with hard session window auto-exit.',
+  },
+  'STRADDLE_WITH_ADJUSTMENT': {
+    label: 'Straddle + Adj',
+    shortLabel: 'Straddle+Adj',
+    color: '#10b981',
+    icon: '⚖️',
+    badgeColor: 'secondary',
+    badgeSx: {},
+    description: 'ATM short straddle with adjustment and roll controls tuned by time-to-expiry.',
+  },
+  'STRADDLE_ROLL': {
+    label: 'Pure Straddle Roll',
+    shortLabel: 'Pure Roll',
+    color: '#06b6d4',
+    icon: '🔄',
+    badgeColor: 'success',
+    badgeSx: {},
+    description: 'ATM straddle that only rolls on trigger; no adjustment engine involvement.',
+  },
+};
+
+const STRATEGY_ORDER = ['0DTE', '5DTE', 'SHORT_WINDOW', 'STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_ROLL'];
+
+const STRATEGY_SHORTCUTS = STRATEGY_ORDER.map((key) => ({
+  key,
+  label: STRATEGY_META[key].label,
+  color: STRATEGY_META[key].color,
+  icon: STRATEGY_META[key].icon,
+}));
+
+const PRESET_LABEL_MAP = Object.fromEntries(STRATEGY_SHORTCUTS.map(s => [s.key, s.label]));
+
+const normalizeStrategyType = (rawStrategyType) => {
+  const raw = String(rawStrategyType || '0DTE').toUpperCase();
+  if (raw === 'SHORT_STRADDLE') return 'STRADDLE_WITH_ADJUSTMENT';
+  return STRATEGY_META[raw] ? raw : '0DTE';
+};
+
+const resolveSessionStrategyType = (session) => normalizeStrategyType(session?.strategy_type);
+
+const getStrategyMeta = (strategyType) => STRATEGY_META[normalizeStrategyType(strategyType)] || STRATEGY_META['0DTE'];
+
+const getStrategyBadgeProps = (session) => {
+  const strategyType = resolveSessionStrategyType(session);
+  const meta = getStrategyMeta(strategyType);
+  if (strategyType === 'SHORT_WINDOW') {
+    const h = session?.params?.session_window_hours || 5;
+    return { label: `Short Window ${h}h`, color: meta.badgeColor, sx: meta.badgeSx };
+  }
+  return { label: meta.label, color: meta.badgeColor, sx: meta.badgeSx };
 };
 
 const getStatusConfig = (status) =>
@@ -370,29 +453,16 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             </Typography>
             {/* Strategy type badge — single badge, always visible, unambiguous */}
             {(() => {
-              const src = String(session._preset_source || session.params?._preset_source || '').toUpperCase();
-              const dte = String(session.dte_category || session.params?.dte_category || '').toUpperCase();
-              if (src === 'STRADDLE_ROLL' || dte === 'STRADDLE_ROLL') {
-                return <Chip label="Short Straddle Roll" size="small" color="success" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
-              }
-              if (
-                src === 'STRADDLE_WITH_ADJUSTMENT' ||
-                src === 'SHORT_STRADDLE' ||
-                dte === 'STRADDLE_WITH_ADJUSTMENT' ||
-                dte === 'SHORT_STRADDLE'
-              ) {
-                return <Chip label="Short Straddle Adjustment" size="small" color="secondary" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
-              }
-              // Strangle — append DTE category so type is fully clear
-              if (dte === 'SHORT_WINDOW') {
-                const h = session.params?.session_window_hours || 5;
-                return <Chip label={`Short Strangle ${h}h`} size="small" color="warning" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
-              }
-              if (dte === '5DTE') {
-                return <Chip label="Short Strangle 5DTE" size="small" color="info" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700 }} />;
-              }
-              // 0DTE and everything else → Short Strangle 0DTE
-              return <Chip label="Short Strangle 0DTE" size="small" color="default" variant="outlined" sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, borderColor: 'rgba(255,255,255,0.3)', color: 'text.secondary' }} />;
+              const badge = getStrategyBadgeProps(session);
+              return (
+                <Chip
+                  label={badge.label}
+                  size="small"
+                  color={badge.color}
+                  variant="outlined"
+                  sx={{ height: 18, fontSize: '0.6rem', fontWeight: 700, ...badge.sx }}
+                />
+              );
             })()}
             {/* Health Grade Badge */}
             {session._health_grade && (
@@ -707,10 +777,393 @@ const formatExpiry = (ddmmyyyy) => {
   return `${dd} ${months[mm] || '???'} ${yyyy}`;
 };
 
+const computeHoursToExpiry = (ddmmyyyy) => {
+  if (!ddmmyyyy || ddmmyyyy.length !== 8) return null;
+  try {
+    const d = parseInt(ddmmyyyy.slice(0, 2), 10);
+    const m = parseInt(ddmmyyyy.slice(2, 4), 10);
+    const y = parseInt(ddmmyyyy.slice(4, 8), 10);
+    if (!d || !m || !y) return null;
+    // Delta expiry is 5:30 PM IST = 12:00 PM UTC
+    const expiryUtcMs = Date.UTC(y, m - 1, d, 12, 0, 0, 0);
+    const hours = (expiryUtcMs - Date.now()) / (1000 * 60 * 60);
+    return Number.isFinite(hours) ? hours : null;
+  } catch {
+    return null;
+  }
+};
+
+const parseIntOrEmpty = (value) => {
+  if (value === '') return '';
+  const parsed = parseInt(value, 10);
+  return Number.isNaN(parsed) ? '' : parsed;
+};
+
+const parseFloatOrEmpty = (value) => {
+  if (value === '') return '';
+  const parsed = parseFloat(value);
+  return Number.isNaN(parsed) ? '' : parsed;
+};
+
+const ExpiryField = ({ params, handleParamChange, expiries, expiryLoading }) => (
+  <FormControl fullWidth size="small">
+    <InputLabel>Expiry</InputLabel>
+    <Select
+      value={params.expiry}
+      label="Expiry"
+      onChange={(e) => handleParamChange('expiry', e.target.value)}
+      disabled={expiryLoading}
+    >
+      {expiryLoading && (
+        <MenuItem value="" disabled>Loading expiries...</MenuItem>
+      )}
+      {expiries.map((exp) => (
+        <MenuItem key={exp} value={exp}>
+          {formatExpiry(exp)}
+        </MenuItem>
+      ))}
+    </Select>
+  </FormControl>
+);
+
+const StrangleFormFields = ({ params, handleParamChange, expiries, expiryLoading }) => (
+  <Grid container spacing={2} sx={{ mb: 3 }}>
+    <Grid item xs={4}>
+      <TextField
+        label="Desired CE Premium"
+        type="number"
+        value={params.desired_ce_premium}
+        onChange={(e) => handleParamChange('desired_ce_premium', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 10 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Desired PE Premium"
+        type="number"
+        value={params.desired_pe_premium}
+        onChange={(e) => handleParamChange('desired_pe_premium', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 10 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Initial Lots"
+        type="number"
+        value={params.initial_lots}
+        onChange={(e) => handleParamChange('initial_lots', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <ExpiryField
+        params={params}
+        handleParamChange={handleParamChange}
+        expiries={expiries}
+        expiryLoading={expiryLoading}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Adj. Interval (sec)"
+        type="number"
+        value={params.adjustment_interval}
+        onChange={(e) => handleParamChange('adjustment_interval', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 10, step: 30 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Max Loss ($)"
+        type="number"
+        value={params.max_loss_amount}
+        onChange={(e) => handleParamChange('max_loss_amount', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 1000 }}
+      />
+    </Grid>
+  </Grid>
+);
+
+const ShortWindowFormFields = ({ params, handleParamChange, expiries, expiryLoading }) => (
+  <Grid container spacing={2} sx={{ mb: 3 }}>
+    <Grid item xs={12}>
+      <Box sx={{ px: 1 }}>
+        <Typography variant="caption" sx={{ fontWeight: 600 }}>
+          Session window: {params.session_window_hours || 5}h
+        </Typography>
+        <Slider
+          value={params.session_window_hours || 5}
+          min={1}
+          max={8}
+          step={0.5}
+          marks={[
+            { value: 1, label: '1h' },
+            { value: 3, label: '3h' },
+            { value: 5, label: '5h' },
+            { value: 8, label: '8h' },
+          ]}
+          valueLabelDisplay="auto"
+          onChange={(_, v) => handleParamChange('session_window_hours', v)}
+          sx={{ mt: 0.5 }}
+        />
+      </Box>
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Desired CE Premium"
+        type="number"
+        value={params.desired_ce_premium}
+        onChange={(e) => handleParamChange('desired_ce_premium', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 10 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Desired PE Premium"
+        type="number"
+        value={params.desired_pe_premium}
+        onChange={(e) => handleParamChange('desired_pe_premium', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 10 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Initial Lots"
+        type="number"
+        value={params.initial_lots}
+        onChange={(e) => handleParamChange('initial_lots', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <ExpiryField
+        params={params}
+        handleParamChange={handleParamChange}
+        expiries={expiries}
+        expiryLoading={expiryLoading}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Adj. Interval (sec)"
+        type="number"
+        value={params.adjustment_interval}
+        onChange={(e) => handleParamChange('adjustment_interval', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 10, step: 30 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Max Loss ($)"
+        type="number"
+        value={params.max_loss_amount}
+        onChange={(e) => handleParamChange('max_loss_amount', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 1000 }}
+      />
+    </Grid>
+  </Grid>
+);
+
+const StraddleAdjFormFields = ({ params, handleParamChange, expiries, expiryLoading }) => {
+  const hoursToExpiry = computeHoursToExpiry(params.expiry);
+  return (
+    <Grid container spacing={2} sx={{ mb: 3 }}>
+      <Grid item xs={12}>
+        <Box sx={{
+          p: 1.5,
+          borderRadius: 1,
+          border: '1px solid rgba(255,255,255,0.12)',
+          backgroundColor: 'rgba(255,255,255,0.04)',
+        }}>
+          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+            Strike Selection
+          </Typography>
+          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+            ATM — auto-selected at session creation
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            CE and PE sold simultaneously at the same ATM strike.
+          </Typography>
+        </Box>
+      </Grid>
+      <Grid item xs={4}>
+        <TextField
+          label="Initial Lots"
+          type="number"
+          value={params.initial_lots}
+          onChange={(e) => handleParamChange('initial_lots', parseIntOrEmpty(e.target.value))}
+          fullWidth
+          size="small"
+          inputProps={{ min: 1 }}
+        />
+      </Grid>
+      <Grid item xs={4}>
+        <TextField
+          label="Max Rolls / Session"
+          type="number"
+          value={params.straddle_roll_max_per_session}
+          onChange={(e) => handleParamChange('straddle_roll_max_per_session', parseIntOrEmpty(e.target.value))}
+          fullWidth
+          size="small"
+          inputProps={{ min: 0, max: 20 }}
+          helperText="Required"
+        />
+      </Grid>
+      <Grid item xs={4}>
+        <TextField
+          label="Max Loss ($)"
+          type="number"
+          value={params.max_loss_amount}
+          onChange={(e) => handleParamChange('max_loss_amount', parseFloatOrEmpty(e.target.value))}
+          fullWidth
+          size="small"
+          inputProps={{ min: 1, step: 1 }}
+          helperText="Optional override"
+        />
+      </Grid>
+      <Grid item xs={4}>
+        <ExpiryField
+          params={params}
+          handleParamChange={handleParamChange}
+          expiries={expiries}
+          expiryLoading={expiryLoading}
+        />
+      </Grid>
+      <Grid item xs={8}>
+        <TextField
+          label="Hours to Expiry (derived)"
+          value={hoursToExpiry != null ? `${Math.max(hoursToExpiry, 0).toFixed(2)}h` : '—'}
+          fullWidth
+          size="small"
+          InputProps={{ readOnly: true }}
+          helperText={hoursToExpiry != null && hoursToExpiry > 0 ? 'Computed from selected expiry (IST 5:30 PM cut-off).' : 'Select a valid upcoming expiry.'}
+        />
+      </Grid>
+    </Grid>
+  );
+};
+
+const StraddleRollFormFields = ({ params, handleParamChange, expiries, expiryLoading }) => (
+  <Grid container spacing={2} sx={{ mb: 3 }}>
+    <Grid item xs={12}>
+      <Box sx={{
+        p: 1.5,
+        borderRadius: 1,
+        border: '1px solid rgba(255,255,255,0.12)',
+        backgroundColor: 'rgba(255,255,255,0.04)',
+      }}>
+        <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
+          Strike Selection
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 500 }}>
+          ATM only — pure roll strategy
+        </Typography>
+        <Typography variant="caption" color="text.secondary">
+          No adjustment engine. Rolls trigger on move threshold only.
+        </Typography>
+      </Box>
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Initial Lots"
+        type="number"
+        value={params.initial_lots}
+        onChange={(e) => handleParamChange('initial_lots', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1 }}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Max Rolls / Session"
+        type="number"
+        value={params.straddle_roll_max_per_session}
+        onChange={(e) => handleParamChange('straddle_roll_max_per_session', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 0, max: 20 }}
+        helperText="Required (0 = hard-stop-only mode)"
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Max Loss ($)"
+        type="number"
+        value={params.max_loss_amount}
+        onChange={(e) => handleParamChange('max_loss_amount', parseFloatOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        inputProps={{ min: 1, step: 1 }}
+        helperText="Required"
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <ExpiryField
+        params={params}
+        handleParamChange={handleParamChange}
+        expiries={expiries}
+        expiryLoading={expiryLoading}
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Adj. Interval (sec)"
+        type="number"
+        value={params.adjustment_interval}
+        onChange={(e) => handleParamChange('adjustment_interval', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        disabled
+      />
+    </Grid>
+    <Grid item xs={4}>
+      <TextField
+        label="Max Lots / Side"
+        type="number"
+        value={params.max_lots_per_side}
+        onChange={(e) => handleParamChange('max_lots_per_side', parseIntOrEmpty(e.target.value))}
+        fullWidth
+        size="small"
+        disabled
+        helperText="Locked to initial lots at create"
+      />
+    </Grid>
+  </Grid>
+);
+
+const STRATEGY_FORM_COMPONENTS = {
+  '0DTE': StrangleFormFields,
+  '5DTE': StrangleFormFields,
+  'SHORT_WINDOW': ShortWindowFormFields,
+  'STRADDLE_WITH_ADJUSTMENT': StraddleAdjFormFields,
+  'STRADDLE_ROLL': StraddleRollFormFields,
+};
+
 /**
  * Create Session dialog — with proper expiry dropdown and import fields
  */
-const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
+const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo, initialPreset = '', presetLocked = false }) => {
   const [mode, setMode] = useState('fresh');
   const [dtePreset, setDtePreset] = useState('');  // '' = Custom (no preset)
   const [dtePresets, setDtePresets] = useState({});  // preset_details from API
@@ -736,6 +1189,36 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
   const [spotPrice, setSpotPrice] = useState(null);
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
+  const isPresetLocked = Boolean(presetLocked && initialPreset);
+  const selectedStrategyType = normalizeStrategyType(dtePreset || initialPreset || '0DTE');
+  const selectedStrategyMeta = getStrategyMeta(selectedStrategyType);
+  const StrategyFormFields = STRATEGY_FORM_COMPONENTS[selectedStrategyType] || StrangleFormFields;
+  const derivedHoursToExpiry = computeHoursToExpiry(params.expiry);
+
+  const createDisabled = useMemo(() => {
+    if (creating || !params.expiry) return true;
+    if (selectedStrategyType === 'STRADDLE_WITH_ADJUSTMENT') {
+      const rollRaw = params.straddle_roll_max_per_session;
+      const rollMax = Number(params.straddle_roll_max_per_session);
+      return !Number.isFinite(derivedHoursToExpiry)
+        || derivedHoursToExpiry <= 0
+        || rollRaw === ''
+        || !Number.isFinite(rollMax)
+        || rollMax < 0;
+    }
+    if (selectedStrategyType === 'STRADDLE_ROLL') {
+      const rollRaw = params.straddle_roll_max_per_session;
+      const maxLossRaw = params.max_loss_amount;
+      const rollMax = Number(params.straddle_roll_max_per_session);
+      const maxLoss = Number(params.max_loss_amount);
+      return rollRaw === ''
+        || !Number.isFinite(rollMax)
+        || rollMax < 0
+        || maxLossRaw === ''
+        || maxLoss <= 0;
+    }
+    return false;
+  }, [creating, params, selectedStrategyType, derivedHoursToExpiry]);
 
   // Apply DTE preset when selection changes
   const handlePresetChange = (presetName) => {
@@ -757,6 +1240,12 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       }));
     }
   };
+
+  // When launched from a strategy shortcut, pre-select that preset on open.
+  useEffect(() => {
+    if (!open || !initialPreset) return;
+    setDtePreset(initialPreset);
+  }, [open, initialPreset]);
 
   // Fetch expiries, spot price, and DTE presets when dialog opens
   React.useEffect(() => {
@@ -786,6 +1275,20 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         }
         if (presetResult.success && presetResult.preset_details) {
           setDtePresets(presetResult.preset_details);
+          if (initialPreset && presetResult.preset_details[initialPreset]) {
+            const preset = presetResult.preset_details[initialPreset];
+            const isRoll = initialPreset === 'STRADDLE_ROLL';
+            setParams(prev => ({
+              ...prev,
+              adjustment_interval: preset.adjustment_interval ?? prev.adjustment_interval,
+              close_at_threshold: preset.close_at_threshold ?? prev.close_at_threshold,
+              max_lots_per_side: preset.max_lots_per_side ?? prev.max_lots_per_side,
+              max_loss_amount: isRoll ? '' : (preset.max_loss_amount ?? prev.max_loss_amount),
+              straddle_roll_max_per_session: isRoll ? '' : (preset.straddle_roll_max_per_session ?? prev.straddle_roll_max_per_session),
+              min_trigger_move: preset.min_trigger_move ?? prev.min_trigger_move,
+              session_window_hours: preset.session_window_hours ?? 0,
+            }));
+          }
         }
       } catch (err) {
         console.error('Failed to fetch expiries/spot:', err);
@@ -819,6 +1322,34 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       return;
     }
 
+    if (selectedStrategyType === 'STRADDLE_WITH_ADJUSTMENT') {
+      const rollRaw = params.straddle_roll_max_per_session;
+      const rollMax = Number(params.straddle_roll_max_per_session);
+      if (!Number.isFinite(derivedHoursToExpiry) || derivedHoursToExpiry <= 0) {
+        setError('STRADDLE_WITH_ADJUSTMENT requires a valid future expiry (hours_to_expiry > 0).');
+        return;
+      }
+      if (rollRaw === '' || !Number.isFinite(rollMax) || rollMax < 0) {
+        setError('STRADDLE_WITH_ADJUSTMENT requires max rolls/session (0 or more).');
+        return;
+      }
+    }
+
+    if (selectedStrategyType === 'STRADDLE_ROLL') {
+      const rollRaw = params.straddle_roll_max_per_session;
+      const maxLossRaw = params.max_loss_amount;
+      const rollMax = Number(params.straddle_roll_max_per_session);
+      const maxLoss = Number(params.max_loss_amount);
+      if (rollRaw === '' || !Number.isFinite(rollMax) || rollMax < 0) {
+        setError('STRADDLE_ROLL requires max rolls/session (0 or more).');
+        return;
+      }
+      if (maxLossRaw === '' || maxLoss <= 0) {
+        setError('STRADDLE_ROLL requires max_loss_amount > 0.');
+        return;
+      }
+    }
+
     // Validate import data
     if (mode === 'import') {
       const { ce, pe } = importData;
@@ -845,7 +1376,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
       // For adopt mode, create as 'fresh' on backend — adoption happens in ConfigPanel
       const backendMode = mode === 'adopt' ? 'fresh' : mode;
       let sessionParams;
-      if (dtePreset === 'STRADDLE_WITH_ADJUSTMENT') {
+      if (selectedStrategyType === 'STRADDLE_WITH_ADJUSTMENT') {
         // STRADDLE_WITH_ADJUSTMENT: backend builds all params from the preset server-side.
         // Only send what the user explicitly controls — preset-driven values
         // (max_loss_amount, adjustment_interval, etc.) must not be sent so they
@@ -853,20 +1384,20 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         sessionParams = {
           expiry: params.expiry,
           dte_category: 'STRADDLE_WITH_ADJUSTMENT',
-          initial_lots: params.initial_lots,
-          straddle_roll_max_per_session: params.straddle_roll_max_per_session,
-          desired_ce_premium: params.desired_ce_premium,
-          desired_pe_premium: params.desired_pe_premium,
+          initial_lots: Number(params.initial_lots),
+          straddle_roll_max_per_session: Number(params.straddle_roll_max_per_session),
+          desired_ce_premium: Number(params.desired_ce_premium),
+          desired_pe_premium: Number(params.desired_pe_premium),
         };
-      } else if (dtePreset === 'STRADDLE_ROLL') {
+      } else if (selectedStrategyType === 'STRADDLE_ROLL') {
         // STRADDLE_ROLL: backend builds all params from the preset server-side.
         // Three fields required: initial_lots, straddle_roll_max_per_session, max_loss_amount.
         sessionParams = {
           expiry: params.expiry,
           dte_category: 'STRADDLE_ROLL',
-          initial_lots: params.initial_lots,
-          straddle_roll_max_per_session: params.straddle_roll_max_per_session,
-          max_loss_amount: params.max_loss_amount,
+          initial_lots: Number(params.initial_lots),
+          straddle_roll_max_per_session: Number(params.straddle_roll_max_per_session),
+          max_loss_amount: Number(params.max_loss_amount),
         };
       } else {
         sessionParams = { ...params };
@@ -941,36 +1472,47 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         {/* DTE Preset + Mode selection */}
         <Grid container spacing={2} sx={{ mb: 3, mt: 1 }}>
           <Grid item xs={6}>
-            <FormControl fullWidth size="small">
-              <InputLabel>DTE Preset</InputLabel>
-              <Select
-                value={dtePreset}
-                label="DTE Preset"
-                onChange={(e) => handlePresetChange(e.target.value)}
-              >
-                <MenuItem value="">Custom (no preset)</MenuItem>
-                {Object.keys(dtePresets).map((name) => (
-                  <MenuItem key={name} value={name}>
-                    {name === 'SHORT_WINDOW'
-                      ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
-                      : name === 'STRADDLE_WITH_ADJUSTMENT'
-                      ? 'Short Straddle — with Adjustment'
-                      : name === 'STRADDLE_ROLL'
-                      ? 'Short Straddle — Pure Roll'
-                      : name}
-                    {dtePresets[name]?.max_loss_amount && (
-                      <Typography
-                        component="span"
-                        variant="caption"
-                        sx={{ ml: 1, color: 'text.secondary' }}
-                      >
-                        — Max Loss ${dtePresets[name].max_loss_amount.toLocaleString()}
-                      </Typography>
-                    )}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+            {isPresetLocked ? (
+              <TextField
+                fullWidth
+                size="small"
+                label="Strategy Preset"
+                value={PRESET_LABEL_MAP[dtePreset] || dtePreset || PRESET_LABEL_MAP[initialPreset] || initialPreset}
+                InputProps={{ readOnly: true }}
+                helperText="Preset locked from quick launch"
+              />
+            ) : (
+              <FormControl fullWidth size="small">
+                <InputLabel>DTE Preset</InputLabel>
+                <Select
+                  value={dtePreset}
+                  label="DTE Preset"
+                  onChange={(e) => handlePresetChange(e.target.value)}
+                >
+                  <MenuItem value="">Custom (no preset)</MenuItem>
+                  {Object.keys(dtePresets).map((name) => (
+                    <MenuItem key={name} value={name}>
+                      {name === 'SHORT_WINDOW'
+                        ? `Short Window (${dtePresets[name].session_window_hours ?? 5}h)`
+                        : name === 'STRADDLE_WITH_ADJUSTMENT'
+                        ? 'Short Straddle — with Adjustment'
+                        : name === 'STRADDLE_ROLL'
+                        ? 'Short Straddle — Pure Roll'
+                        : name}
+                      {dtePresets[name]?.max_loss_amount && (
+                        <Typography
+                          component="span"
+                          variant="caption"
+                          sx={{ ml: 1, color: 'text.secondary' }}
+                        >
+                          — Max Loss ${dtePresets[name].max_loss_amount.toLocaleString()}
+                        </Typography>
+                      )}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            )}
           </Grid>
           <Grid item xs={6}>
             <FormControl fullWidth size="small">
@@ -989,6 +1531,25 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
           </Grid>
         </Grid>
 
+        <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Chip
+            label={`${selectedStrategyMeta.icon} ${selectedStrategyMeta.label}`}
+            size="small"
+            variant="outlined"
+            sx={{
+              fontWeight: 700,
+              borderColor: `${selectedStrategyMeta.color}70`,
+              color: selectedStrategyMeta.color,
+              backgroundColor: `${selectedStrategyMeta.color}12`,
+            }}
+          />
+          <Tooltip title={selectedStrategyMeta.description}>
+            <IconButton size="small" sx={{ color: 'text.secondary' }}>
+              <HelpOutlineIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+
         {/* DTE preset info */}
         {dtePreset && dtePresets[dtePreset] && (
           <Alert severity="info" sx={{ mb: 2 }} icon={false}>
@@ -1001,31 +1562,14 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
                   Optimized for 1–8h evening sessions. Wind-down starts 1h before deadline.
                   Auto-closes all positions at session end.
                 </Typography>
-                <Box sx={{ px: 1 }}>
-                  <Typography variant="caption" sx={{ fontWeight: 600 }}>
-                    Session window: {params.session_window_hours}h
-                  </Typography>
-                  <Slider
-                    value={params.session_window_hours || 5}
-                    min={1}
-                    max={8}
-                    step={0.5}
-                    marks={[
-                      { value: 1, label: '1h' },
-                      { value: 3, label: '3h' },
-                      { value: 5, label: '5h' },
-                      { value: 8, label: '8h' },
-                    ]}
-                    valueLabelDisplay="auto"
-                    onChange={(_, v) => handleParamChange('session_window_hours', v)}
-                    sx={{ mt: 0.5 }}
-                  />
-                </Box>
                 <Typography variant="caption" color="text.secondary">
                   Interval: {dtePresets[dtePreset].adjustment_interval}s
                   {' • '}Trigger: {dtePresets[dtePreset].min_trigger_move}%
                   {' • '}Max Lots: {dtePresets[dtePreset].max_lots_per_side}/side
                   {' • '}Max Loss: ${dtePresets[dtePreset].max_loss_amount?.toLocaleString()}
+                </Typography>
+                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                  Session window can be tuned in Core Parameters below.
                 </Typography>
               </>
             ) : dtePreset === 'STRADDLE_ROLL' ? (
@@ -1099,122 +1643,12 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
 
         {/* Core parameters */}
         <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>Core Parameters</Typography>
-        <Grid container spacing={2} sx={{ mb: 3 }}>
-          {(dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') ? (
-            /* ATM straddle presets: strike is auto-selected — premium fields are not applicable */
-            <Grid item xs={8}>
-              <Box sx={{
-                p: 1.5,
-                borderRadius: 1,
-                border: '1px solid rgba(255,255,255,0.12)',
-                backgroundColor: 'rgba(255,255,255,0.04)',
-              }}>
-                <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>
-                  Strike Selection
-                </Typography>
-                <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                  ATM — auto-selected at session creation
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  CE and PE sold simultaneously at the same ATM strike. No manual premium target needed.
-                </Typography>
-              </Box>
-            </Grid>
-          ) : (
-            <>
-              <Grid item xs={4}>
-                <TextField
-                  label="Desired CE Premium"
-                  type="number"
-                  value={params.desired_ce_premium}
-                  onChange={(e) => handleParamChange('desired_ce_premium', parseFloat(e.target.value) || 0)}
-                  fullWidth
-                  size="small"
-                  inputProps={{ min: 1, step: 10 }}
-                />
-              </Grid>
-              <Grid item xs={4}>
-                <TextField
-                  label="Desired PE Premium"
-                  type="number"
-                  value={params.desired_pe_premium}
-                  onChange={(e) => handleParamChange('desired_pe_premium', parseFloat(e.target.value) || 0)}
-                  fullWidth
-                  size="small"
-                  inputProps={{ min: 1, step: 10 }}
-                />
-              </Grid>
-            </>
-          )}
-          <Grid item xs={4}>
-            <TextField
-              label="Initial Lots"
-              type="number"
-              value={params.initial_lots}
-              onChange={(e) => handleParamChange('initial_lots', parseInt(e.target.value, 10) || 1)}
-              fullWidth
-              size="small"
-              inputProps={{ min: 1 }}
-            />
-          </Grid>
-          {(dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') && (
-            <Grid item xs={4}>
-              <TextField
-                label="Max Rolls / Session"
-                type="number"
-                value={params.straddle_roll_max_per_session}
-                onChange={(e) => handleParamChange('straddle_roll_max_per_session', parseInt(e.target.value, 10) || 1)}
-                fullWidth
-                size="small"
-                inputProps={{ min: 1, max: 20 }}
-                helperText="Required — no default"
-              />
-            </Grid>
-          )}
-          <Grid item xs={4}>
-            <FormControl fullWidth size="small">
-              <InputLabel>Expiry</InputLabel>
-              <Select
-                value={params.expiry}
-                label="Expiry"
-                onChange={(e) => handleParamChange('expiry', e.target.value)}
-                disabled={expiryLoading}
-              >
-                {expiryLoading && (
-                  <MenuItem value="" disabled>Loading expiries...</MenuItem>
-                )}
-                {expiries.map((exp) => (
-                  <MenuItem key={exp} value={exp}>
-                    {formatExpiry(exp)}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Grid>
-          <Grid item xs={4}>
-            <TextField
-              label="Adj. Interval (sec)"
-              type="number"
-              value={params.adjustment_interval}
-              onChange={(e) => handleParamChange('adjustment_interval', parseInt(e.target.value, 10) || 60)}
-              fullWidth
-              size="small"
-              inputProps={{ min: 10, step: 30 }}
-              disabled={dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL'}
-            />
-          </Grid>
-          <Grid item xs={4}>
-            <TextField
-              label="Max Loss ($)"
-              type="number"
-              value={params.max_loss_amount}
-              onChange={(e) => handleParamChange('max_loss_amount', parseFloat(e.target.value) || 0)}
-              fullWidth
-              size="small"
-              inputProps={{ min: 1, step: (dtePreset === 'STRADDLE_WITH_ADJUSTMENT' || dtePreset === 'STRADDLE_ROLL') ? 1 : 1000 }}
-            />
-          </Grid>
-        </Grid>
+        <StrategyFormFields
+          params={params}
+          handleParamChange={handleParamChange}
+          expiries={expiries}
+          expiryLoading={expiryLoading}
+        />
 
         {/* Import data (only for import mode) */}
         {mode === 'import' && (
@@ -1325,7 +1759,7 @@ const CreateSessionDialog = ({ open, onClose, onCreated, paramsInfo }) => {
         <Button
           variant="contained"
           onClick={handleCreate}
-          disabled={creating || !params.expiry}
+          disabled={createDisabled}
           startIcon={creating ? <CircularProgress size={16} /> : <AddIcon />}
         >
           {creating ? 'Creating...' : 'Create Session'}
@@ -2063,6 +2497,92 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   );
 };
 
+const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
+  if (!session) return null;
+
+  const resolvedStrategy = normalizeStrategyType(strategyType);
+  const meta = getStrategyMeta(resolvedStrategy);
+
+  const ceLots = session?.ce?.active_lots ?? session?.ce_active_lots ?? 0;
+  const peLots = session?.pe?.active_lots ?? session?.pe_active_lots ?? 0;
+  const netPnl = session?.net_pnl ?? 0;
+  const adjustmentCount = session?.adjustment_count ?? 0;
+  const beDistance = heartbeat?.breakeven?.nearest_distance_pct ?? session?._be_nearest_pct ?? null;
+  const beZone = heartbeat?.breakeven?.zone ?? session?._be_zone ?? 'SAFE';
+
+  const minutesToExpiry = heartbeat?.minutes_to_expiry;
+  const derivedHoursToExpiry = computeHoursToExpiry(session?.params?.expiry);
+  const hoursToExpiry = minutesToExpiry != null ? Math.max(minutesToExpiry / 60, 0) : derivedHoursToExpiry;
+
+  const initialCredit = session?._straddle_initial_credit ?? session?.initial_total_premium ?? null;
+
+  const rollCount = session?._straddle_roll_count ?? 0;
+  const rollMax = session?.params?.straddle_roll_max_per_session;
+  const rollPct = (Number.isFinite(Number(rollMax)) && Number(rollMax) > 0)
+    ? Math.min(100, (rollCount / Number(rollMax)) * 100)
+    : null;
+
+  const maxLossAmount = Number(session?.params?.max_loss_amount || 0);
+  const hardStopBuffer = maxLossAmount > 0
+    ? Math.max(0, maxLossAmount - Math.max(0, -netPnl))
+    : null;
+
+  let metrics = [
+    { key: 'ceLots', label: 'CE Lots', value: ceLots, color: '#4caf50' },
+    { key: 'peLots', label: 'PE Lots', value: peLots, color: '#f44336' },
+    { key: 'netPnl', label: 'Net P&L', value: `$${netPnl.toFixed(2)}`, color: netPnl >= 0 ? '#4caf50' : '#f44336' },
+    { key: 'adjCount', label: 'Adj Count', value: adjustmentCount, color: '#ab47bc' },
+    { key: 'beBand', label: 'BE Band', value: beDistance != null ? `${beDistance.toFixed(2)}% (${beZone})` : '—', color: beDistance != null && beDistance <= 1.5 ? '#f44336' : '#90caf9' },
+  ];
+
+  if (resolvedStrategy === 'STRADDLE_WITH_ADJUSTMENT') {
+    metrics = [
+      ...metrics,
+      { key: 'hoursToExpiry', label: 'Hours to Expiry', value: hoursToExpiry != null ? `${Math.max(hoursToExpiry, 0).toFixed(2)}h` : '—', color: '#ffb74d' },
+      { key: 'initialCredit', label: 'Initial Credit', value: initialCredit != null ? `$${Number(initialCredit).toFixed(2)}` : '—', color: '#26c6da' },
+    ];
+  }
+
+  if (resolvedStrategy === 'STRADDLE_ROLL') {
+    metrics = [
+      { key: 'rollCount', label: 'Roll Count', value: Number.isFinite(Number(rollMax)) ? `${rollCount}/${Number(rollMax)}` : rollCount, color: '#26c6da' },
+      { key: 'rollBudget', label: 'Max/Session %', value: rollPct != null ? `${rollPct.toFixed(0)}%` : 'N/A', color: rollPct != null && rollPct >= 80 ? '#ff9800' : '#4db6ac' },
+      { key: 'netPnl', label: 'Net P&L', value: `$${netPnl.toFixed(2)}`, color: netPnl >= 0 ? '#4caf50' : '#f44336' },
+      { key: 'hardStop', label: 'Hard Stop Buffer', value: hardStopBuffer != null ? `$${hardStopBuffer.toFixed(2)}` : '—', color: hardStopBuffer != null && hardStopBuffer <= maxLossAmount * 0.2 ? '#f44336' : '#ffb74d' },
+    ];
+  }
+
+  return (
+    <Paper elevation={0} sx={{ p: 1.5, mb: 2, borderRadius: 2, border: `1px solid ${meta.color}40`, backgroundColor: `${meta.color}10` }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
+        <Typography variant="subtitle2" sx={{ fontWeight: 700, color: meta.color }}>
+          {meta.icon} {meta.label} — Strategy KPIs
+        </Typography>
+      </Box>
+      <Grid container spacing={1}>
+        {metrics.map((metric) => (
+          <Grid
+            item
+            xs={6}
+            sm={resolvedStrategy === 'STRADDLE_ROLL' ? 3 : 4}
+            md={resolvedStrategy === 'STRADDLE_ROLL' ? 3 : (resolvedStrategy === 'STRADDLE_WITH_ADJUSTMENT' ? 3 : 2)}
+            key={metric.key}
+          >
+            <Box sx={{ p: 1, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                {metric.label}
+              </Typography>
+              <Typography variant="body2" sx={{ mt: 0.2, fontWeight: 700, fontFamily: 'monospace', color: metric.color }}>
+                {metric.value}
+              </Typography>
+            </Box>
+          </Grid>
+        ))}
+      </Grid>
+    </Paper>
+  );
+};
+
 /**
  * Session detail panel — tabbed live dashboard view
  */
@@ -2335,6 +2855,8 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const pe = session.pe || {};
   const status = session.strategy_status || session.status || 'IDLE';
   const isLive = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status);
+  const strategyType = resolveSessionStrategyType(session);
+  const isStraddleStrategy = ['STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_ROLL'].includes(strategyType);
 
   // P&L calculations — H-14 fix: use ?? 0 to prevent NaN when backend returns null
   // Prefer session.net_pnl (kept fresh by mmm_pnl_update event) over locally-recomputed value.
@@ -2474,8 +2996,8 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                   sx={{ fontFamily: 'monospace', fontSize: '0.78rem', color: 'text.secondary' }}
                 />
               )}
-              {/* Straddle Roll badge — only for STRADDLE_WITH_ADJUSTMENT sessions */}
-              {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' || session.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT') &&
+              {/* Straddle Roll badge — for STRADDLE_WITH_ADJUSTMENT and STRADDLE_ROLL sessions */}
+              {isStraddleStrategy &&
                 session._straddle_roll_count != null && (
                 <Tooltip title={
                   <span>
@@ -2501,7 +3023,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                 </Tooltip>
               )}
               {/* Price Guard indicator — shows when real-time 5s spot monitor is active */}
-              {(session.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' || session.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT') &&
+              {isStraddleStrategy &&
                 session.params?.price_guard_enabled !== false &&
                 status === 'RUNNING' && (
                 <Tooltip title="⚡ Price Guard active — spot monitored every 5s, heartbeat forced when approaching roll trigger">
@@ -2556,6 +3078,12 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
               <StatusChip status={status} />
             </Box>
           </Box>
+
+          <StrategyKPIBar
+            session={session}
+            heartbeat={heartbeat}
+            strategyType={strategyType}
+          />
 
           {/* KPI Cards Row */}
           <Grid container spacing={1.5} sx={{ mb: 2 }}>
@@ -3673,9 +4201,13 @@ const MMMDashboard = () => {
   const wsData = useMMMWebSocket(selectedSessionId, socket);
 
   const [tabValue, setTabValue] = useState(0);
+  const [sessionStrategyFilter, setSessionStrategyFilter] = useState('ALL');
   const [createOpen, setCreateOpen] = useState(false);
+  const [createPresetContext, setCreatePresetContext] = useState({ preset: '', locked: false });
+  const [quickLaunchAnchorEl, setQuickLaunchAnchorEl] = useState(null);
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [adoptModeForSession, setAdoptModeForSession] = useState(null);  // session_id that needs adopt mode
+  const isCompactHeader = useMediaQuery('(max-width:1200px)');
 
   // Settings dialog state
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -3719,6 +4251,18 @@ const MMMDashboard = () => {
     () => sessions.find((s) => s.session_id === selectedSessionId),
     [sessions, selectedSessionId]
   );
+
+  const openCreateDialog = useCallback((preset = '', locked = false) => {
+    setCreatePresetContext({ preset, locked });
+    setCreateOpen(true);
+    setQuickLaunchAnchorEl(null);
+  }, []);
+
+  const closeCreateDialog = useCallback(() => {
+    setCreateOpen(false);
+    setCreatePresetContext({ preset: '', locked: false });
+    setQuickLaunchAnchorEl(null);
+  }, []);
 
   // Fetch full session details when selected
   const fetchFullSession = useCallback(async () => {
@@ -3951,18 +4495,35 @@ const MMMDashboard = () => {
   }, [fetchSessions, selectSession]);
 
   // Categorize sessions
-  const activeSessions = useMemo(
+  const activeSessionsAll = useMemo(
     () => sessions.filter((s) => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY', 'EXITING'].includes(s.status)),
     [sessions]
   );
-  const idleSessions = useMemo(
+  const idleSessionsAll = useMemo(
     () => sessions.filter((s) => s.status === 'IDLE'),
     [sessions]
   );
-  const stoppedSessions = useMemo(
+  const stoppedSessionsAll = useMemo(
     () => sessions.filter((s) => s.status === 'STOPPED'),
     [sessions]
   );
+
+  const strategyCounts = useMemo(() => {
+    const counts = { ALL: sessions.length };
+    STRATEGY_ORDER.forEach((strategyKey) => {
+      counts[strategyKey] = sessions.filter((s) => resolveSessionStrategyType(s) === strategyKey).length;
+    });
+    return counts;
+  }, [sessions]);
+
+  const applyStrategyFilter = useCallback((list) => {
+    if (sessionStrategyFilter === 'ALL') return list;
+    return list.filter((s) => resolveSessionStrategyType(s) === sessionStrategyFilter);
+  }, [sessionStrategyFilter]);
+
+  const activeSessions = useMemo(() => applyStrategyFilter(activeSessionsAll), [activeSessionsAll, applyStrategyFilter]);
+  const idleSessions = useMemo(() => applyStrategyFilter(idleSessionsAll), [idleSessionsAll, applyStrategyFilter]);
+  const stoppedSessions = useMemo(() => applyStrategyFilter(stoppedSessionsAll), [stoppedSessionsAll, applyStrategyFilter]);
 
   // =========================================================================
   // Render
@@ -4000,15 +4561,56 @@ const MMMDashboard = () => {
           )}
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          {!isCompactHeader && (
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', mr: 0.5 }}>
+              <Typography sx={{ fontSize: '0.68rem', color: '#4b5563', fontWeight: 600, letterSpacing: '0.6px', textTransform: 'uppercase', mr: 0.5, whiteSpace: 'nowrap' }}>
+                Quick Launch
+              </Typography>
+              {STRATEGY_SHORTCUTS.map((shortcut) => (
+                <Box
+                  key={shortcut.key}
+                  onClick={() => openCreateDialog(shortcut.key, true)}
+                  sx={{
+                    display: 'flex', alignItems: 'center', gap: 0.5,
+                    px: 1.25, py: '4px',
+                    borderRadius: '6px',
+                    border: `1px solid ${shortcut.color}35`,
+                    background: `${shortcut.color}0d`,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                    '&:hover': {
+                      background: `${shortcut.color}22`,
+                      border: `1px solid ${shortcut.color}70`,
+                      transform: 'translateY(-1px)',
+                      boxShadow: `0 2px 8px ${shortcut.color}25`,
+                    },
+                    '&:active': { transform: 'translateY(0px)' },
+                  }}
+                >
+                  <Typography sx={{ fontSize: '0.72rem', lineHeight: 1 }}>{shortcut.icon}</Typography>
+                  <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color: shortcut.color, whiteSpace: 'nowrap', lineHeight: 1 }}>
+                    {shortcut.label}
+                  </Typography>
+                </Box>
+              ))}
+            </Box>
+          )}
           <Button
             variant="contained"
             size="small"
             startIcon={<AddIcon />}
-            onClick={() => setCreateOpen(true)}
+            onClick={() => openCreateDialog('', false)}
           >
             New Session
           </Button>
+          {isCompactHeader && (
+            <Tooltip title="Quick Launch Strategy">
+              <IconButton size="small" onClick={(e) => setQuickLaunchAnchorEl(e.currentTarget)}>
+                <ArrowDropDownIcon />
+              </IconButton>
+            </Tooltip>
+          )}
           <Tooltip title="Refresh">
             <IconButton onClick={() => fetchSessions(false)} size="small">
               <RefreshIcon />
@@ -4016,6 +4618,20 @@ const MMMDashboard = () => {
           </Tooltip>
         </Box>
       </Box>
+
+      <Menu
+        anchorEl={quickLaunchAnchorEl}
+        open={Boolean(quickLaunchAnchorEl)}
+        onClose={() => setQuickLaunchAnchorEl(null)}
+      >
+        <MenuItem onClick={() => openCreateDialog('', false)}>New Session (manual preset)</MenuItem>
+        <Divider />
+        {STRATEGY_SHORTCUTS.map((shortcut) => (
+          <MenuItem key={shortcut.key} onClick={() => openCreateDialog(shortcut.key, true)}>
+            {shortcut.label}
+          </MenuItem>
+        ))}
+      </Menu>
 
       {/* Error banner */}
       {error && (
@@ -4117,18 +4733,64 @@ const MMMDashboard = () => {
                 sx={{ mb: 1, minHeight: 36 }}
               >
                 <Tab
-                  label={`Active (${activeSessions.length})`}
+                  label={sessionStrategyFilter === 'ALL'
+                    ? `Active (${activeSessions.length})`
+                    : `Active (${activeSessions.length}/${activeSessionsAll.length})`
+                  }
                   sx={{ minHeight: 36, py: 0 }}
                 />
                 <Tab
-                  label={`Idle (${idleSessions.length})`}
+                  label={sessionStrategyFilter === 'ALL'
+                    ? `Idle (${idleSessions.length})`
+                    : `Idle (${idleSessions.length}/${idleSessionsAll.length})`
+                  }
                   sx={{ minHeight: 36, py: 0 }}
                 />
                 <Tab
-                  label={`History (${stoppedSessions.length})`}
+                  label={sessionStrategyFilter === 'ALL'
+                    ? `History (${stoppedSessions.length})`
+                    : `History (${stoppedSessions.length}/${stoppedSessionsAll.length})`
+                  }
                   sx={{ minHeight: 36, py: 0 }}
                 />
               </Tabs>
+
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mb: 1.25 }}>
+                <Chip
+                  label={`All (${strategyCounts.ALL || 0})`}
+                  size="small"
+                  clickable
+                  onClick={() => setSessionStrategyFilter('ALL')}
+                  sx={{
+                    height: 22,
+                    fontSize: '0.68rem',
+                    fontWeight: sessionStrategyFilter === 'ALL' ? 700 : 500,
+                    border: sessionStrategyFilter === 'ALL' ? '1px solid rgba(144,164,174,0.8)' : '1px solid rgba(255,255,255,0.12)',
+                    backgroundColor: sessionStrategyFilter === 'ALL' ? 'rgba(144,164,174,0.18)' : 'transparent',
+                    color: sessionStrategyFilter === 'ALL' ? '#eceff1' : 'text.secondary',
+                  }}
+                />
+                {STRATEGY_ORDER.map((strategyKey) => {
+                  const meta = getStrategyMeta(strategyKey);
+                  return (
+                    <Chip
+                      key={strategyKey}
+                      label={`${meta.shortLabel} (${strategyCounts[strategyKey] || 0})`}
+                      size="small"
+                      clickable
+                      onClick={() => setSessionStrategyFilter(strategyKey)}
+                      sx={{
+                        height: 22,
+                        fontSize: '0.68rem',
+                        fontWeight: sessionStrategyFilter === strategyKey ? 700 : 500,
+                        border: sessionStrategyFilter === strategyKey ? `1px solid ${meta.color}` : '1px solid rgba(255,255,255,0.12)',
+                        backgroundColor: sessionStrategyFilter === strategyKey ? `${meta.color}20` : 'transparent',
+                        color: sessionStrategyFilter === strategyKey ? meta.color : 'text.secondary',
+                      }}
+                    />
+                  );
+                })}
+              </Box>
 
               {tabValue === 0 && activeSessions.map((s) => (
                 <SessionCard
@@ -4142,7 +4804,10 @@ const MMMDashboard = () => {
               ))}
               {tabValue === 0 && activeSessions.length === 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                  No active sessions
+                  {sessionStrategyFilter === 'ALL'
+                    ? 'No active sessions'
+                    : `No active ${getStrategyMeta(sessionStrategyFilter).shortLabel} sessions`
+                  }
                 </Typography>
               )}
 
@@ -4157,7 +4822,10 @@ const MMMDashboard = () => {
               ))}
               {tabValue === 1 && idleSessions.length === 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                  No idle sessions
+                  {sessionStrategyFilter === 'ALL'
+                    ? 'No idle sessions'
+                    : `No idle ${getStrategyMeta(sessionStrategyFilter).shortLabel} sessions`
+                  }
                 </Typography>
               )}
 
@@ -4172,7 +4840,10 @@ const MMMDashboard = () => {
               ))}
               {tabValue === 2 && stoppedSessions.length === 0 && (
                 <Typography variant="body2" color="text.secondary" sx={{ p: 2, textAlign: 'center' }}>
-                  No stopped sessions
+                  {sessionStrategyFilter === 'ALL'
+                    ? 'No stopped sessions'
+                    : `No historical ${getStrategyMeta(sessionStrategyFilter).shortLabel} sessions`
+                  }
                 </Typography>
               )}
 
@@ -4198,11 +4869,7 @@ const MMMDashboard = () => {
                   sessionId={selectedSessionId}
                   sessionStatus={fullSession.strategy_status || fullSession.status}
                   sessionExpiry={fullSession.params?.expiry || ''}
-                  isStraddle={
-                    fullSession.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT' ||
-                    fullSession.params?.dte_category === 'STRADDLE_WITH_ADJUSTMENT' ||
-                    fullSession.params?._preset_source === 'STRADDLE_ROLL'
-                  }
+                  isStraddle={['STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_ROLL'].includes(resolveSessionStrategyType(fullSession))}
                   initialMode={adoptModeForSession === selectedSessionId ? 'adopt' : undefined}
                   onInitialized={() => {
                     setSnackbar({ open: true, message: 'Session initialized!', severity: 'success' });
@@ -4290,7 +4957,11 @@ const MMMDashboard = () => {
 
               {/* Background Activities Feed */}
               <Box sx={{ mt: 2 }}>
-                <MMMActivityFeed sessionId={selectedSessionId} socket={wsData.socket} />
+                <MMMActivityFeed
+                  sessionId={selectedSessionId}
+                  socket={wsData.socket}
+                  strategyType={fullSession ? resolveSessionStrategyType(fullSession) : '0DTE'}
+                />
               </Box>
 
               {/* Session Analytics Summary */}
@@ -4305,9 +4976,11 @@ const MMMDashboard = () => {
       {/* Dialogs */}
       <CreateSessionDialog
         open={createOpen}
-        onClose={() => setCreateOpen(false)}
+        onClose={closeCreateDialog}
         onCreated={handleSessionCreated}
         paramsInfo={paramsInfo}
+        initialPreset={createPresetContext.preset}
+        presetLocked={createPresetContext.locked}
       />
 
       <MMMBothSidesAlert

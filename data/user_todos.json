@@ -1,5 +1,15 @@
 [
   {
+    "id": "1775898385643",
+    "title": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
+    "work": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
+    "completed": false,
+    "pinned": false,
+    "createdAt": "2026-04-11T14:36:25.643824",
+    "updatedAt": "2026-04-11T14:36:25.643824",
+    "text": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15\ncd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15"
+  },
+  {
     "id": "1774075007655",
     "text": "tasks/MMM_STRIKE_SHIFT_REDESIGN.md",
     "completed": false,
@@ -40,13 +50,13 @@
     "pinned": false
   },
   {
-    "id": "1775898385643",
-    "title": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
-    "work": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
+    "id": "1775913387664",
+    "title": "fileserver",
+    "work": "pkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py",
     "completed": false,
     "pinned": false,
-    "createdAt": "2026-04-11T14:36:25.643824",
-    "updatedAt": "2026-04-11T14:36:25.643824",
-    "text": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15\ncd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15"
+    "createdAt": "2026-04-11T18:46:27.664002",
+    "updatedAt": "2026-04-11T18:46:27.664002",
+    "text": "fileserver\npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py"
   }
 ]

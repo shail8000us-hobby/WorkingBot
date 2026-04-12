@@ -423,7 +423,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
         pe_strike: selectedPe.strike,
         pe_premium: selectedPe.premium,
         pe_symbol: selectedPe.symbol,
-        lots: isStraddle ? 1 : lots,
+        lots,
         expiry: selectedExpiry,
       });
 
@@ -778,7 +778,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
             <Select
               value={selectedExpiry}
               label={sessionExpiry ? `Expiry (locked to session)` : 'Expiry'}
-              disabled={!!sessionExpiry}  // L-8 fix: lock dropdown when session expiry is set
+              disabled={!!sessionExpiry || expiryLoading}  // L-8 fix: lock dropdown when session expiry is set
               onChange={(e) => {
                 const newExpiry = e.target.value;
                 setSelectedExpiry(newExpiry);
@@ -791,7 +791,6 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
                   }));
                 }
               }}
-              disabled={expiryLoading}
             >
               {expiries.map((exp) => (
                 <MenuItem key={exp} value={exp}>
@@ -805,13 +804,11 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
           <TextField
             label="Lots per side"
             type="number"
-            value={isStraddle ? 1 : lots}
-            onChange={(e) => !isStraddle && setLots(Math.max(1, parseInt(e.target.value) || 1))}
+            value={lots}
+            onChange={(e) => setLots(Math.max(1, parseInt(e.target.value) || 1))}
             fullWidth
             size="small"
             inputProps={{ min: 1 }}
-            disabled={isStraddle}
-            helperText={isStraddle ? 'Fixed by preset' : undefined}
           />
         </Grid>
         <Grid item xs={3}>

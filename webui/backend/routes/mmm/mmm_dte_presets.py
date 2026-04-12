@@ -343,7 +343,9 @@ def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
     effectively disabled via min_trigger_move=9999.
 
     Key differences from STRADDLE_WITH_ADJUSTMENT:
-    - min_trigger_move: 9999  →  adjustment engine never fires
+    - Strategy dispatch (mmm_strategy_dispatch) routes to pure roll handler;
+      _process_adjustment() is never called (should_run_adjustment=False).
+    - min_trigger_move: 9999  →  belt-and-suspenders; primary isolation is dispatch
     - max_lots_per_side: locked to initial_lots (set in mmm_api.py)
     - straddle_roll_hard_stop_market_order: True  →  hard stop fills immediately
     - CE:PE ratio is always 1:1
@@ -384,10 +386,14 @@ def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
         # ── Heartbeat ────────────────────────────────────────────────────────
         'adjustment_interval':                  120,
 
-        # ── MMM adjustment engine: effectively disabled ───────────────────────
-        # 9999 pts trigger means no real BTC move will ever reach the threshold.
-        # The adjustment engine code is untouched — it evaluates the condition
-        # and returns immediately every heartbeat. Zero code changes to the engine.
+        # ── MMM adjustment engine: belt-and-suspenders guard ─────────────────
+        # PRIMARY isolation: mmm_strategy_dispatch dispatches STRADDLE_ROLL to
+        # _run_step_5_4_straddle_roll(), which always returns True (_skip_to_pnl=True),
+        # so _process_adjustment() is never reached regardless of this param.
+        #
+        # SECONDARY (belt-and-suspenders): 9999 pts trigger means no real BTC
+        # move will ever reach the threshold if somehow the dispatch layer were
+        # bypassed. This is not the active safety mechanism — it is a fallback.
         'min_trigger_move':                     9999,
 
         # ── Roll mechanism ───────────────────────────────────────────────────

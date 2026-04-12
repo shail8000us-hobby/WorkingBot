@@ -118,6 +118,10 @@ ACTIVITY_TYPES = {
     'whipsaw_guard': 'Whipsaw Guard',
     'atm_shield': 'ATM Shield',
 
+    # Fill sync
+    'fill_sync_confirmed': 'Fill Confirmed',
+    'fill_sync_partial': 'Partial Sub-Fill',
+
     # Ghost-close recovery
     'ghost_close_recovered': 'Ghost Close Recovered',
 
@@ -188,7 +192,8 @@ ACTIVITY_CATEGORIES = {
                     'replenish_triggered', 'replenish_complete', 'replenish_failed',
                     'replenish_blocked',
                     'straddle_roll', 'straddle_roll_blocked',
-                    'reverse_entry', 'reverse_closed', 'reverse_status'},
+                    'reverse_entry', 'reverse_closed', 'reverse_status',
+                    'fill_sync_confirmed', 'fill_sync_partial'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                'adjustments_stopped', 'regime_control', 'regime_block', 'regime_emergency',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',

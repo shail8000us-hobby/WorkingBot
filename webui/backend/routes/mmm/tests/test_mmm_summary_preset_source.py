@@ -61,6 +61,7 @@ def test_get_session_summary_exposes_preset_source_and_dte_category():
 
     assert summary['dte_category'] == '5DTE'
     assert summary['_preset_source'] == 'STRADDLE_ROLL'
+    assert summary['strategy_type'] == 'STRADDLE_ROLL'
 
 
 def test_list_session_summaries_exposes_preset_source_and_dte_category_from_sql():
@@ -74,6 +75,7 @@ def test_list_session_summaries_exposes_preset_source_and_dte_category_from_sql(
     assert len(summaries) == 1
     assert summaries[0]['dte_category'] == '5DTE'
     assert summaries[0]['_preset_source'] == 'STRADDLE_ROLL'
+    assert summaries[0]['strategy_type'] == 'STRADDLE_ROLL'
 
 
 def test_row_to_summary_fallback_keeps_preset_source_and_dte_category():
@@ -85,3 +87,14 @@ def test_row_to_summary_fallback_keeps_preset_source_and_dte_category():
 
     assert summary['dte_category'] == '5DTE'
     assert summary['_preset_source'] == 'STRADDLE_ROLL'
+    assert summary['strategy_type'] == 'STRADDLE_ROLL'
+
+
+def test_strategy_type_alias_short_straddle_maps_to_straddle_with_adjustment():
+    session = _build_session('mmm-alias-1')
+    session['params']['_preset_source'] = 'SHORT_STRADDLE'
+    session['params']['dte_category'] = 'SHORT_WINDOW'
+
+    summary = get_session_summary(session)
+
+    assert summary['strategy_type'] == 'STRADDLE_WITH_ADJUSTMENT'

@@ -29,7 +29,8 @@ from typing import Dict, Tuple, Any
 
 from .mmm_constants import LOT_SIZE_BTC
 from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
-from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY
+from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY
+from .mmm_state import derive_strategy_type
 from .mmm_close_at_5 import close_position
 from .mmm_engine import get_engine
 from .mmm_wind_down import is_wind_down_active
@@ -141,9 +142,11 @@ def check_straddle_roll_gates(
     if status not in (None, 'RUNNING', 'ACTIVE'):
         return False, 'session_not_running', {}
 
-    # ── Gate 2 — Correct preset ───────────────────────────────────────────────
-    # Accept both new name and legacy DB value ('SHORT_STRADDLE' from pre-rename sessions)
-    if params.get('_preset_source') not in (STRADDLE_WITH_ADJUSTMENT_CATEGORY, SHORT_STRADDLE_CATEGORY):
+    # ── Gate 2 — Correct strategy identity ───────────────────────────────────
+    # Canonical source-of-truth is session.strategy_type. Legacy sessions may
+    # only have _preset_source/dte_category, so derive_strategy_type() bridges them.
+    strategy_type = session.get('strategy_type') or derive_strategy_type(params)
+    if strategy_type != STRADDLE_WITH_ADJUSTMENT_CATEGORY:
         return False, 'wrong_preset', {}
 
     # ── Gate 2.5 — Leg symmetry ───────────────────────────────────────────────

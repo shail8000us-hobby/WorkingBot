@@ -98,6 +98,14 @@ def _check_shield_gates(
     if not params.get('atm_shield_enabled', False):
         return False, 'disabled'
 
+    # Dangerous mode — user has manual control; do not auto-close positions.
+    # The whole point of dangerous mode is to let the user manage the position
+    # themselves.  If the ATM shield fires while dangerous mode is on it will
+    # immediately close any position the user just manually replenished,
+    # creating a loss loop.
+    if params.get('dangerous_mode', False):
+        return False, 'dangerous_mode'
+
     status = session.get('strategy_status', 'RUNNING')
     if status != 'RUNNING':
         return False, f'status={status}'
@@ -574,6 +582,16 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
             f"[{sid}] ATM Shield EXHAUSTED for {endangered_side.upper()} "
             f"({new_count}/{max_fires})"
         )
+
+    # Save fire state immediately in the close-only path (new_strike is None).
+    # In the re-sell path the save already happens inside the re-sell block.
+    # Without this, if the watchdog kills the monitor before the heartbeat
+    # naturally saves (e.g. heartbeat took 156s), the count/last_fire timestamp
+    # are lost.  On restart the cooldown gate sees no prior fire and the shield
+    # fires again on the very first heartbeat — causing a repeated open→close
+    # loss loop on any manually replenished position.
+    if new_strike is None:
+        monitor._save_my_session()
 
     # ── Step 6: ACTIVITY LOG + WEBSOCKET ─────────────────────────────
     try:

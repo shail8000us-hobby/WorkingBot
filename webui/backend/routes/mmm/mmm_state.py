@@ -12,7 +12,7 @@ Created: February 15, 2026
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Set
 from dataclasses import dataclass, field, asdict
 from copy import deepcopy
 
@@ -345,6 +345,53 @@ def recompute_side_lots(side_state: Dict) -> Dict:
 # =============================================================================
 # Section 2: Global State + Section 19: Parameters → MMMSession
 # =============================================================================
+
+# Canonical MMM strategy identities.
+VALID_STRATEGY_TYPES: Set[str] = {
+    '0DTE',
+    '5DTE',
+    'SHORT_WINDOW',
+    'STRADDLE_WITH_ADJUSTMENT',
+    'STRADDLE_ROLL',
+}
+
+STRATEGY_TYPE_ALIASES = {
+    # Legacy preset marker used in older sessions.
+    'SHORT_STRADDLE': 'STRADDLE_WITH_ADJUSTMENT',
+}
+
+
+def _normalize_strategy_type(value: Any) -> str:
+    """Normalize strategy identity string to canonical MMM strategy_type."""
+    if value is None:
+        return ''
+    normalized = str(value).strip().upper()
+    normalized = STRATEGY_TYPE_ALIASES.get(normalized, normalized)
+    return normalized if normalized in VALID_STRATEGY_TYPES else ''
+
+
+def derive_strategy_type(params: Dict[str, Any] = None, fallback: str = '0DTE') -> str:
+    """
+    Derive canonical strategy_type from params / legacy identity markers.
+
+    Priority:
+      1) params['strategy_type'] (if already canonical)
+      2) params['_preset_source']
+      3) params['dte_category']
+      4) fallback (default: 0DTE)
+    """
+    p = params or {}
+    for candidate in (
+        p.get('strategy_type'),
+        p.get('_preset_source'),
+        p.get('dte_category'),
+    ):
+        norm = _normalize_strategy_type(candidate)
+        if norm:
+            return norm
+
+    fallback_norm = _normalize_strategy_type(fallback)
+    return fallback_norm or '0DTE'
 
 # Default parameter values from Section 19
 DEFAULT_PARAMS = {
@@ -849,6 +896,9 @@ def create_session(
     if params:
         merged_params.update(params)
 
+    # strategy_type is a top-level immutable session identity, not a runtime param.
+    merged_params.pop('strategy_type', None)
+
     # Multi-Expiry: Apply DTE preset if specified
     dte_category = merged_params.get('dte_category', '')
     if dte_category:
@@ -908,6 +958,9 @@ def create_session(
             merged_params.get('expiry_minute_utc', 0),
         )
         merged_params['total_dte_hours'] = max(0.0, total_dte_hours)
+
+    # Canonical immutable strategy identity (source-of-truth across API/storage/UI)
+    strategy_type = derive_strategy_type(merged_params)
 
     # C-4 fix: enforce expiry is present — a session without expiry is a zombie
     if not merged_params.get('expiry'):
@@ -974,6 +1027,7 @@ def create_session(
     session = {
         'session_id': session_id,
         'mode': mode,
+        'strategy_type': strategy_type,
         'created_at': datetime.now(timezone.utc).isoformat(),
         'updated_at': datetime.now(timezone.utc).isoformat(),
 
@@ -1281,6 +1335,7 @@ def get_session_summary(session: Dict) -> Dict:
         'session_id': session.get('session_id'),
         'status': session.get('strategy_status', 'IDLE'),
         'mode': session.get('mode', 'fresh'),
+        'strategy_type': session.get('strategy_type') or derive_strategy_type(session.get('params', {})),
         'created_at': session.get('created_at'),
         'entry_time': session.get('entry_time'),
 

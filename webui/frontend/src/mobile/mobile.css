@@ -99,6 +99,112 @@
   margin-bottom: 6px;
 }
 
+.mobile-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.mobile-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.mobile-kpi-item {
+  border: 1px solid #2f2f45;
+  border-radius: 8px;
+  padding: 8px;
+  background: rgba(14, 14, 24, 0.5);
+}
+
+.mobile-kpi-label {
+  color: #888;
+  font-size: 11px;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.mobile-kpi-value {
+  color: #fff;
+  font-size: 14px;
+  font-weight: 700;
+  margin-top: 3px;
+}
+
+.mobile-side-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+
+.mobile-actions-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.mobile-session-strip {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(150px, 1fr);
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.mobile-session-chip {
+  border: 1px solid #2f2f45;
+  border-radius: 10px;
+  background: rgba(13, 13, 22, 0.65);
+  color: #e8e8ef;
+  text-align: left;
+  padding: 10px;
+  min-height: 56px;
+}
+
+.mobile-session-chip-active {
+  border-color: #4caf50;
+  box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.25);
+  background: rgba(76, 175, 80, 0.12);
+}
+
+.mobile-chip-meta {
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #9aa;
+  font-size: 11px;
+}
+
+.mobile-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 20px;
+  border: 1px solid #555;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.mobile-activity-item {
+  border: 1px solid #2f2f45;
+  border-radius: 10px;
+  padding: 10px;
+  background: rgba(13, 13, 22, 0.65);
+}
+
+.mobile-activity-item + .mobile-activity-item {
+  margin-top: 8px;
+}
+
 /* Performance: Reduce animations on low-end devices */
 @media (prefers-reduced-motion: reduce) {
   .mobile-btn {
@@ -142,5 +248,17 @@
   .mobile-btn {
     min-height: 40px;
     font-size: 14px;
+  }
+}
+
+@media (min-width: 480px) {
+  .mobile-side-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 360px) {
+  .mobile-actions-grid {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useMMM } from '../components/mmm/MMMContext';
 import useMMMWebSocket from '../components/mmm/hooks/useMMMWebSocket';
 import mmmService from '../components/mmm/mmmService';
@@ -6,9 +6,55 @@ import { Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material
 import '../mobile/mobile.css';
 
 const MobileControl = ({ socket }) => {
-    const { activeSessions, connectionStatus } = useMMM();
-    const session = activeSessions[0];
+    const { activeSessions, connectionStatus, selectedSessionId, selectSession } = useMMM();
+
+    const sessions = useMemo(() => activeSessions || [], [activeSessions]);
+    const resolvedSessionId = useMemo(() => {
+        if (!sessions.length) return null;
+        if (selectedSessionId && sessions.some((s) => s.session_id === selectedSessionId)) {
+            return selectedSessionId;
+        }
+        return sessions[0].session_id;
+    }, [sessions, selectedSessionId]);
+
+    useEffect(() => {
+        if (resolvedSessionId && resolvedSessionId !== selectedSessionId) {
+            selectSession(resolvedSessionId);
+        }
+    }, [resolvedSessionId, selectedSessionId, selectSession]);
+
+    const session = useMemo(
+        () => sessions.find((s) => s.session_id === resolvedSessionId) || null,
+        [sessions, resolvedSessionId]
+    );
     const sessionId = session?.session_id;
+    const allSessionIds = useMemo(
+        () => sessions.map((s) => s.session_id).filter(Boolean),
+        [sessions]
+    );
+
+    const fleetSummary = useMemo(() => {
+        let totalLots = 0;
+        let totalPnl = 0;
+        let running = 0;
+        let paused = 0;
+
+        sessions.forEach((s) => {
+            totalLots += (Number(s.ce_active_lots) || 0) + (Number(s.pe_active_lots) || 0);
+            totalPnl += Number(s.net_pnl) || 0;
+            const st = String(s.status || '').toUpperCase();
+            if (st === 'RUNNING') running += 1;
+            if (st === 'PAUSED') paused += 1;
+        });
+
+        return {
+            totalSessions: sessions.length,
+            totalLots,
+            totalPnl,
+            running,
+            paused,
+        };
+    }, [sessions]);
 
     const ws = useMMMWebSocket(sessionId, socket);
 
@@ -18,9 +64,9 @@ const MobileControl = ({ socket }) => {
     const isConnected = ws.connected && connectionStatus === 'connected';
 
     // Calculate risk metrics
-    const activeLots = (session?.ce_active_lots || 0) + (session?.pe_active_lots || 0);
-    const unrealizedPnl = session?.unrealized_pnl || 0;
-    const netPnl = session?.net_pnl || 0;
+    const activeLots = (Number(session?.ce_active_lots) || 0) + (Number(session?.pe_active_lots) || 0);
+    const unrealizedPnl = Number(session?.unrealized_pnl) || 0;
+    const netPnl = Number(session?.net_pnl) || 0;
     const maxLoss = parseFloat(session?.params?.max_loss_usd) || 200;
     const pnlPercentage = Math.abs(netPnl / maxLoss) * 100;
 
@@ -77,6 +123,21 @@ const MobileControl = ({ socket }) => {
                     assertSuccess(result, 'Failed to close all positions');
                     closeModal();
                 }
+            } else if (modalMode === 'closeall_sessions') {
+                if (step === 1) {
+                    setStep(2);
+                } else {
+                    if (!allSessionIds.length) {
+                        throw new Error('No active sessions selected');
+                    }
+                    const result = await mmmService.emergencyCloseAllPositions(
+                        'mobile_control_close_all_sessions',
+                        allSessionIds,
+                        false,
+                    );
+                    assertSuccess(result, 'Failed to close all session positions');
+                    closeModal();
+                }
             } else if (modalMode === 'emergency') {
                 if (step === 1) {
                     setStep(2);
@@ -93,6 +154,72 @@ const MobileControl = ({ socket }) => {
 
     return (
         <div className="mobile-screen">
+            {fleetSummary.totalSessions > 0 && (
+                <div className="mobile-card" style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: '#9aa', marginBottom: 8, textTransform: 'uppercase', fontWeight: 700 }}>
+                        MMM Fleet Control
+                    </div>
+                    <div className="mobile-kpi-grid" style={{ marginBottom: 10 }}>
+                        <div className="mobile-kpi-item">
+                            <div className="mobile-kpi-label">Sessions</div>
+                            <div className="mobile-kpi-value">{fleetSummary.totalSessions}</div>
+                        </div>
+                        <div className="mobile-kpi-item">
+                            <div className="mobile-kpi-label">Running / Paused</div>
+                            <div className="mobile-kpi-value">{fleetSummary.running} / {fleetSummary.paused}</div>
+                        </div>
+                        <div className="mobile-kpi-item">
+                            <div className="mobile-kpi-label">Fleet Lots</div>
+                            <div className="mobile-kpi-value">{fleetSummary.totalLots.toFixed(0)}</div>
+                        </div>
+                        <div className="mobile-kpi-item">
+                            <div className="mobile-kpi-label">Fleet P&L</div>
+                            <div className="mobile-kpi-value" style={{ color: fleetSummary.totalPnl >= 0 ? '#4caf50' : '#f44336' }}>
+                                ${fleetSummary.totalPnl.toFixed(2)}
+                            </div>
+                        </div>
+                    </div>
+                    {fleetSummary.totalSessions > 1 && (
+                        <button
+                            className="mobile-btn"
+                            style={{ background: '#b71c1c', color: '#fff' }}
+                            onClick={() => triggerModal('closeall_sessions')}
+                            disabled={!isConnected}
+                        >
+                            CLOSE ALL POSITIONS (ALL SESSIONS)
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {sessions.length > 1 && (
+                <div className="mobile-card" style={{ marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, color: '#9aa', marginBottom: 8, textTransform: 'uppercase', fontWeight: 700 }}>
+                        Select Session for Controls
+                    </div>
+                    <div className="mobile-session-strip">
+                        {sessions.map((s) => {
+                            const selected = s.session_id === sessionId;
+                            const sLots = (Number(s.ce_active_lots) || 0) + (Number(s.pe_active_lots) || 0);
+                            return (
+                                <button
+                                    key={s.session_id}
+                                    type="button"
+                                    className={`mobile-session-chip ${selected ? 'mobile-session-chip-active' : ''}`}
+                                    onClick={() => selectSession(s.session_id)}
+                                >
+                                    <div style={{ fontWeight: 700, fontSize: 12 }}>{s.session_id}</div>
+                                    <div className="mobile-chip-meta">
+                                        <span>{s.status || '—'}</span>
+                                        <span>{sLots} lots</span>
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             <div style={{ textAlign: 'center', marginBottom: 24, marginTop: 16 }}>
                 <h2 style={{ color: isConnected ? '#4caf50' : '#f44336', margin: 0, fontSize: '22px' }}>
                     {isConnected ? 'LIVE WS CONNECTED' : 'WS DISCONNECTED'}
@@ -198,7 +325,13 @@ const MobileControl = ({ socket }) => {
             >
                 <div style={{ display: 'flex', flexDirection: 'column', height: '100%', padding: '24px' }}>
                     <DialogTitle style={{ textAlign: 'center', fontSize: '28px', color: modalMode === 'emergency' || modalMode === 'closeall' ? '#e74c3c' : '#fff' }}>
-                        {modalMode === 'emergency' ? 'EMERGENCY OVERRIDE' : modalMode === 'closeall' ? 'CLOSE ALL POSITIONS' : 'CONFIRM ACTION'}
+                        {modalMode === 'emergency'
+                            ? 'EMERGENCY OVERRIDE'
+                            : modalMode === 'closeall'
+                                ? 'CLOSE ALL POSITIONS'
+                                : modalMode === 'closeall_sessions'
+                                    ? 'CLOSE ALL SESSIONS'
+                                    : 'CONFIRM ACTION'}
                     </DialogTitle>
                     <DialogContent style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center' }}>
                         {modalMode === 'pause' && (
@@ -247,6 +380,19 @@ const MobileControl = ({ socket }) => {
                                 {step === 1 ? <p style={{ color: '#aaa', marginTop: 24 }}>Step 1 of 2</p> : <p style={{ color: '#f39c12', marginTop: 24 }}>FINAL CONFIRMATION: Tap again to stop.</p>}
                             </>
                         )}
+                        {modalMode === 'closeall_sessions' && (
+                            <>
+                                <h2 style={{ color: '#e74c3c' }}>Close all active session positions?</h2>
+                                <div style={{ marginTop: 16, padding: '12px', background: '#c0392b33', border: '1px solid #e74c3c', borderRadius: '8px' }}>
+                                    <p style={{ color: '#ffb3b3', margin: 0, fontSize: '14px' }}>
+                                        Sessions: {fleetSummary.totalSessions} · Total lots: {fleetSummary.totalLots.toFixed(0)}
+                                    </p>
+                                </div>
+                                {step === 1
+                                    ? <p style={{ color: '#aaa', marginTop: 24 }}>Step 1 of 2</p>
+                                    : <p style={{ color: '#e74c3c', fontSize: '20px', fontWeight: 'bold', marginTop: 24 }}>FINAL CONFIRMATION: CLOSE ALL</p>}
+                            </>
+                        )}
                         {modalMode === 'emergency' && (
                             <>
                                 <h2 style={{ color: '#c0392b' }}>KILL ALL PROCESSES?</h2>
@@ -285,6 +431,7 @@ const MobileControl = ({ socket }) => {
                         >
                             {modalMode === 'emergency' ? (step === 1 ? 'TAP TO CONFIRM (1/2)' : 'YES, KILL ALL (2/2)') :
                                 modalMode === 'closeall' ? (step === 1 ? 'TAP TO CONFIRM (1/2)' : `YES, CLOSE ${activeLots} LOTS (2/2)`) :
+                                    modalMode === 'closeall_sessions' ? (step === 1 ? 'TAP TO CONFIRM (1/2)' : 'YES, CLOSE ALL SESSIONS (2/2)') :
                                     modalMode === 'stop' ? (step === 1 ? 'TAP TO CONFIRM (1/2)' : 'YES, STOP SESSION (2/2)') :
                                         'CONFIRM'}
                         </button>

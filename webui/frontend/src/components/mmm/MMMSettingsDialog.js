@@ -442,6 +442,81 @@ const PARAM_GROUPS = {
   },
 };
 
+const flattenGroupParamNames = (group) => (
+  group.params
+    ? group.params
+    : (group.sections || []).flatMap((section) => section.params)
+);
+
+const ALL_PARAM_NAMES = [...new Set(
+  Object.values(PARAM_GROUPS).flatMap(flattenGroupParamNames)
+)];
+
+const buildForbiddenFromAllowedGroups = (allowedGroups) => {
+  const allowedParams = new Set(
+    [...allowedGroups].flatMap((groupKey) => flattenGroupParamNames(PARAM_GROUPS[groupKey] || {}))
+  );
+  return new Set(ALL_PARAM_NAMES.filter((param) => !allowedParams.has(param)));
+};
+
+const STRATEGY_FORBIDDEN_PARAMS = {
+  STRADDLE_WITH_ADJUSTMENT: new Set(['straddle_roll_hard_stop_market_order']),
+  STRADDLE_ROLL: buildForbiddenFromAllowedGroups(new Set(['core', 'expiry', 'straddleRoll'])),
+};
+
+const STRATEGY_META = {
+  '0DTE': {
+    label: 'Short Strangle 0DTE',
+    icon: '⚡',
+    color: '#f59e0b',
+    bg: 'rgba(245,158,11,0.10)',
+    border: 'rgba(245,158,11,0.35)',
+  },
+  '5DTE': {
+    label: 'Short Strangle 5DTE',
+    icon: '📅',
+    color: '#3b82f6',
+    bg: 'rgba(59,130,246,0.10)',
+    border: 'rgba(59,130,246,0.35)',
+  },
+  SHORT_WINDOW: {
+    label: 'Short Window',
+    icon: '🪟',
+    color: '#a855f7',
+    bg: 'rgba(168,85,247,0.10)',
+    border: 'rgba(168,85,247,0.35)',
+  },
+  STRADDLE_WITH_ADJUSTMENT: {
+    label: 'Short Straddle + Adjustment',
+    icon: '⚖️',
+    color: '#10b981',
+    bg: 'rgba(16,185,129,0.10)',
+    border: 'rgba(16,185,129,0.35)',
+  },
+  STRADDLE_ROLL: {
+    label: 'Pure Straddle Roll',
+    icon: '🔄',
+    color: '#06b6d4',
+    bg: 'rgba(6,182,212,0.10)',
+    border: 'rgba(6,182,212,0.35)',
+  },
+};
+
+const resolveStrategyType = (sessionData) => {
+  const raw = String(
+    sessionData?.strategy_type ||
+    sessionData?.params?.strategy_type ||
+    sessionData?.params?._preset_source ||
+    sessionData?.params?.dte_category ||
+    '0DTE'
+  ).toUpperCase();
+
+  if (raw === 'SHORT_STRADDLE') {
+    return 'STRADDLE_WITH_ADJUSTMENT';
+  }
+  return raw;
+};
+
 // Rich tooltip text for each parameter (maps param name → detailed help)
 const PARAM_TOOLTIPS = {
   initial_lots: 'Starting lots per side at entry. CE and PE each get this many lots. These "original" lots naturally hedge each other — when one side loses, the other gains. This is the safe foundation of the strategy.',
@@ -674,6 +749,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [serverError, setServerError] = useState(null);
+  const [saveWarning, setSaveWarning] = useState(null);
   const [loading, setLoading] = useState(false);
   const [sessionData, setSessionData] = useState(null);
   const [search, setSearch] = useState('');
@@ -684,12 +760,16 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const isAdaptiveActive = formValues.adaptive_mode === 'adaptive';
   const operatorLocked = new Set(sessionData?._adaptive_operator_overrides || []);
 
+  const strategyType = resolveStrategyType(sessionData);
+  const strategyMeta = STRATEGY_META[strategyType] || STRATEGY_META['0DTE'];
+  const forbiddenParams = STRATEGY_FORBIDDEN_PARAMS[strategyType] || new Set();
+
   // STRADDLE_WITH_ADJUSTMENT: only 5 groups are relevant — all others locked.
   // Locked = 40% opacity, not clickable, 🔒 badge. Settings still exist in backend
   // but operator cannot accidentally hot-reload them and break the roll mechanism.
-  const isShortStraddle = sessionData?.params?._preset_source === 'STRADDLE_WITH_ADJUSTMENT';
+  const isShortStraddle = strategyType === 'STRADDLE_WITH_ADJUSTMENT';
   // STRADDLE_ROLL (pure): only core + expiry + straddleRoll groups are relevant.
-  const isStraddleRoll = sessionData?.params?._preset_source === 'STRADDLE_ROLL';
+  const isStraddleRoll = strategyType === 'STRADDLE_ROLL';
 
   const STRADDLE_LOCKED_GROUPS = new Set([
     // ── Preset-disabled (would fight roll mechanism if re-enabled) ──
@@ -784,6 +864,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       setErrors({});
       setSuccess(false);
       setServerError(null);
+      setSaveWarning(null);
       setActiveSection(null);
       return;
     }
@@ -908,6 +989,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
     setSaving(true);
     setServerError(null);
+    setSaveWarning(null);
 
     try {
       const currentParams = sessionData.params || {};
@@ -940,12 +1022,23 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       }
 
       // Send update request
-      await mmmService.updateSessionParams(sessionId, changedParams);
+      const result = await mmmService.updateSessionParams(sessionId, changedParams);
+
+      const warnings = [];
+      if (result?.total_exposure_warning) {
+        warnings.push(result.total_exposure_warning);
+      }
+      if (result?.cap_raise_warning?.message) {
+        warnings.push(result.cap_raise_warning.message);
+      }
+      if (warnings.length > 0) {
+        setSaveWarning(warnings.join(' '));
+      }
 
       setSuccess(true);
       setTimeout(() => {
         onClose(true); // true = params were updated
-      }, 1000);
+      }, warnings.length > 0 ? 3000 : 1000);
 
     } catch (error) {
       console.error('Failed to update params:', error);
@@ -1076,6 +1169,10 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     const error = errors[paramName];
     const isHot = info.hot_reload;
     const description = info.description || paramName;
+
+    if (forbiddenParams.has(paramName)) {
+      return null;
+    }
 
     // Search filter — hide params that don't match (skipped in flat search mode)
     if (!skipFilter && search.trim()) {
@@ -1356,6 +1453,23 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
           <HotIcon sx={{ fontSize: 14 }} />
           <span><strong>Hot Reload:</strong> changes apply on next heartbeat. <strong>🔒</strong> params require session restart.</span>
         </Box>
+
+        <Box sx={{
+          mt: 1,
+          background: strategyMeta.bg,
+          border: `1px solid ${strategyMeta.border}`,
+          borderRadius: '6px',
+          px: 1.5,
+          py: 0.75,
+          fontSize: '0.82rem',
+          color: strategyMeta.color,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 0.75,
+        }}>
+          <span>{strategyMeta.icon}</span>
+          <span><strong>Strategy:</strong> {strategyMeta.label}</span>
+        </Box>
       </DialogTitle>
 
       <DialogContent
@@ -1377,6 +1491,12 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
         {!loading && serverError && (
           <Alert severity="error" sx={{ mx: 2, mt: 2, mb: 1, flexShrink: 0 }} onClose={() => setServerError(null)}>
             {serverError}
+          </Alert>
+        )}
+
+        {!loading && saveWarning && (
+          <Alert severity="warning" sx={{ mx: 2, mt: 2, mb: 1, flexShrink: 0 }} onClose={() => setSaveWarning(null)}>
+            {saveWarning}
           </Alert>
         )}
 
@@ -1402,7 +1522,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     const allParams = group.params
                       ? group.params
                       : (group.sections || []).flatMap(s => s.params);
-                    const hits = allParams.filter(p => {
+                    const hits = allParams.filter((p) => !forbiddenParams.has(p)).filter(p => {
                       const info = params[p] || {};
                       const desc = (info.description || '').toLowerCase();
                       const tooltip = (PARAM_TOOLTIPS[p] || '').toLowerCase();
@@ -1559,9 +1679,8 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     // straddleRoll group is only shown for STRADDLE_ROLL sessions
                     if (key === 'straddleRoll' && !isStraddleRoll) return null;
 
-                    const count = group.params
-                      ? group.params.length
-                      : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
+                    const count = flattenGroupParamNames(group).filter((p) => !forbiddenParams.has(p)).length;
+                    if (count === 0) return null;
                     const isActive = activeSection === key;
                     const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
                     return (
@@ -1647,24 +1766,34 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                         {group.sections ? (
                           group.sections.map((section, sectionIdx) => (
                             <Box key={sectionIdx}>
-                              {sectionIdx > 0 && <Divider sx={{ my: 1.5, borderStyle: 'dashed', borderColor: '#21262d' }} />}
-                              {section.header && (
-                                <Typography sx={{
-                                  display: 'block', fontWeight: 600, color: group.color || '#6e7681',
-                                  mb: 1, mt: sectionIdx > 0 ? 0.5 : 0,
-                                  letterSpacing: '0.6px', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.90,
-                                }}>
-                                  {section.header}
-                                </Typography>
-                              )}
-                              <Grid container spacing={1}>
-                                {section.params.map((paramName) => renderParam(paramName))}
-                              </Grid>
+                              {(() => {
+                                const visibleParams = section.params.filter((paramName) => !forbiddenParams.has(paramName));
+                                if (visibleParams.length === 0) return null;
+                                return (
+                                  <>
+                                    {sectionIdx > 0 && <Divider sx={{ my: 1.5, borderStyle: 'dashed', borderColor: '#21262d' }} />}
+                                    {section.header && (
+                                      <Typography sx={{
+                                        display: 'block', fontWeight: 600, color: group.color || '#6e7681',
+                                        mb: 1, mt: sectionIdx > 0 ? 0.5 : 0,
+                                        letterSpacing: '0.6px', textTransform: 'uppercase', fontSize: '0.75rem', opacity: 0.90,
+                                      }}>
+                                        {section.header}
+                                      </Typography>
+                                    )}
+                                    <Grid container spacing={1}>
+                                      {visibleParams.map((paramName) => renderParam(paramName))}
+                                    </Grid>
+                                  </>
+                                );
+                              })()}
                             </Box>
                           ))
                         ) : (
                           <Grid container spacing={1}>
-                            {group.params.map((paramName) => renderParam(paramName))}
+                            {group.params
+                              .filter((paramName) => !forbiddenParams.has(paramName))
+                              .map((paramName) => renderParam(paramName))}
                           </Grid>
                         )}
                       </>
@@ -1743,9 +1872,8 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
                       const cat = SECTION_CATEGORY[key] || 'advanced';
                       const meta = CATEGORY_META[cat];
-                      const count = group.params
-                        ? group.params.length
-                        : (group.sections || []).reduce((acc, s) => acc + s.params.length, 0);
+                      const count = flattenGroupParamNames(group).filter((p) => !forbiddenParams.has(p)).length;
+                      if (count === 0) return;
                       const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
 
                       // Category divider row

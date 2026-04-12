@@ -65,6 +65,39 @@ const CATEGORY_CONFIG = {
   system: { label: 'System', Icon: SystemIcon, color: '#78909c' },
 };
 
+const normalizeStrategyType = (strategyType) => {
+  const raw = String(strategyType || '0DTE').toUpperCase();
+  if (raw === 'SHORT_STRADDLE') return 'STRADDLE_WITH_ADJUSTMENT';
+  return raw;
+};
+
+const STRATEGY_CONTEXT_FILTERS = {
+  DEFAULT: {
+    hiddenTypes: new Set(),
+    bugSignalTypes: new Set(),
+  },
+  '0DTE': {
+    hiddenTypes: new Set(['straddle_roll_blocked']),
+    bugSignalTypes: new Set(),
+  },
+  '5DTE': {
+    hiddenTypes: new Set(['straddle_roll_blocked']),
+    bugSignalTypes: new Set(),
+  },
+  'SHORT_WINDOW': {
+    hiddenTypes: new Set(['straddle_roll_blocked']),
+    bugSignalTypes: new Set(),
+  },
+  'STRADDLE_WITH_ADJUSTMENT': {
+    hiddenTypes: new Set(),
+    bugSignalTypes: new Set(),
+  },
+  'STRADDLE_ROLL': {
+    hiddenTypes: new Set(['adjustment_skipped']),
+    bugSignalTypes: new Set(['adjustment_skipped']),
+  },
+};
+
 const getSeverityConfig = (sev) => SEVERITY_CONFIG[sev] || SEVERITY_CONFIG.info;
 
 // =============================================================================
@@ -414,14 +447,20 @@ ActivityItem.displayName = 'ActivityItem';
 // Main Component
 // =============================================================================
 
-export default function MMMActivityFeed({ sessionId = null, socket = null }) {
+export default function MMMActivityFeed({ sessionId = null, socket = null, strategyType = '0DTE' }) {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(true);
   const [newCount, setNewCount] = useState(0);
   const [activeFilter, setActiveFilter] = useState('all');
+  const [strategyContextEnabled, setStrategyContextEnabled] = useState(true);
   const [heartbeatSummary, setHeartbeatSummary] = useState(null);
   const listRef = useRef(null);
+  const normalizedStrategyType = useMemo(() => normalizeStrategyType(strategyType), [strategyType]);
+  const strategyContext = useMemo(
+    () => STRATEGY_CONTEXT_FILTERS[normalizedStrategyType] || STRATEGY_CONTEXT_FILTERS.DEFAULT,
+    [normalizedStrategyType]
+  );
 
   // Fetch activities from API
   const fetchActivities = useCallback(async () => {
@@ -445,6 +484,10 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
     setLoading(true);
     fetchActivities();
   }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setStrategyContextEnabled(true);
+  }, [sessionId, normalizedStrategyType]);
 
   // Reduced polling — pauses when tab is hidden
   useVisibilityAwarePolling(fetchActivities, 30000, 120000);
@@ -486,7 +529,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
   }, [expanded]);
 
   // Filter activities by time + category
-  const displayedActivities = useMemo(() => {
+  const { displayedActivities, hiddenContextCount, hiddenBugSignalCount } = useMemo(() => {
     let items = activities;
 
     // Time filter: show last 60 min when no session selected
@@ -503,8 +546,20 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
       items = items.filter((a) => a.category === activeFilter);
     }
 
-    return items;
-  }, [activities, sessionId, activeFilter]);
+    let hiddenItems = [];
+    if (strategyContextEnabled && strategyContext.hiddenTypes.size > 0) {
+      hiddenItems = items.filter((a) => strategyContext.hiddenTypes.has(a.type));
+      items = items.filter((a) => !strategyContext.hiddenTypes.has(a.type));
+    }
+
+    const hiddenBugSignals = hiddenItems.filter((a) => strategyContext.bugSignalTypes.has(a.type)).length;
+
+    return {
+      displayedActivities: items,
+      hiddenContextCount: hiddenItems.length,
+      hiddenBugSignalCount: hiddenBugSignals,
+    };
+  }, [activities, sessionId, activeFilter, strategyContextEnabled, strategyContext]);
 
   const errorCount = activities.filter((a) => a.severity === 'error').length;
   const warningCount = activities.filter((a) => a.severity === 'warning').length;
@@ -579,6 +634,7 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
         {/* Category Filter Chips */}
         <Box sx={{
           display: 'flex', gap: 0.5, px: 1.5, py: 0.75,
+          flexWrap: 'wrap',
           borderBottom: '1px solid rgba(255,255,255,0.04)',
           bgcolor: 'rgba(255,255,255,0.01)',
         }}>
@@ -598,7 +654,34 @@ export default function MMMActivityFeed({ sessionId = null, socket = null }) {
               }}
             />
           ))}
+
+          <Chip
+            size="small"
+            label={strategyContextEnabled ? `Context: ${normalizedStrategyType}` : 'Context: Off'}
+            onClick={() => setStrategyContextEnabled((v) => !v)}
+            sx={{
+              height: 22,
+              fontSize: '0.7rem',
+              cursor: 'pointer',
+              bgcolor: strategyContextEnabled ? 'rgba(129,199,132,0.15)' : 'transparent',
+              color: strategyContextEnabled ? '#81c784' : 'rgba(255,255,255,0.4)',
+              border: strategyContextEnabled ? '1px solid rgba(129,199,132,0.45)' : '1px solid rgba(255,255,255,0.08)',
+              fontWeight: strategyContextEnabled ? 700 : 400,
+              '&:hover': { bgcolor: strategyContextEnabled ? 'rgba(129,199,132,0.2)' : 'rgba(255,255,255,0.05)' },
+            }}
+          />
         </Box>
+
+        {strategyContextEnabled && hiddenContextCount > 0 && (
+          <Box sx={{ px: 1.5, py: 0.6, borderBottom: '1px solid rgba(255,255,255,0.04)', bgcolor: 'rgba(255,255,255,0.015)' }}>
+            <Typography variant="caption" sx={{ color: hiddenBugSignalCount > 0 ? '#ffb74d' : 'rgba(255,255,255,0.5)', fontSize: '0.72rem' }}>
+              {hiddenBugSignalCount > 0
+                ? `⚠️ ${hiddenBugSignalCount} hidden strategy-conflict event(s) detected (${normalizedStrategyType}). Toggle Context Off to inspect.`
+                : `Filtered ${hiddenContextCount} out-of-context event(s) for ${normalizedStrategyType}.`
+              }
+            </Typography>
+          </Box>
+        )}
 
         {/* Activity List */}
         <Box
