@@ -133,6 +133,7 @@ const SECTION_CATEGORY = {
   adaptiveTuning:    'execution',
   gammaDetector:     'advanced',
   reverseMode:       'advanced',
+  godLayer:          'advanced',
 };
 
 const CATEGORY_ORDER = ['critical', 'core', 'execution', 'advanced'];
@@ -370,11 +371,15 @@ const PARAM_GROUPS = {
   straddleRoll: {
     title: '🔄 Straddle Roll Settings',
     color: '#06b6d4',
-    blurb: 'Pure straddle roll controls: max rolls per session, roll cooldown, real-time price guard, and emergency bypass multiplier. All settings are hot-reloadable.',
+    blurb: 'Pure straddle roll controls: dynamic trigger (shrinks with theta decay), roll limits, cooldown, real-time price guard, and emergency bypass. All settings are hot-reloadable.',
     sections: [
       {
         header: 'Roll Limits',
         params: ['straddle_roll_max_per_session', 'straddle_roll_cooldown_mins', 'straddle_roll_emergency_mult'],
+      },
+      {
+        header: 'Dynamic Trigger',
+        params: ['straddle_dynamic_trigger_enabled', 'straddle_min_trigger_pts'],
       },
       {
         header: 'Spread & Trigger',
@@ -410,6 +415,25 @@ const PARAM_GROUPS = {
       {
         header: 'Advanced — Phase 9 Gate (requires session restart)',
         params: ['gamma_severity_multiplier_enabled'],
+      },
+    ],
+  },
+  godLayer: {
+    title: '🌐 God Layer (Strategic Integrity Monitor)',
+    color: '#9c27b0',
+    blurb: 'Periodic meta-guardian that watches the session every 25 minutes. If PNL has drifted significantly AND the algo has been inactive (guards were blocking), it fires one corrective adjustment in god_mode — bypassing soft guards (lot velocity, regime BLOCK_SELLS, margin YELLOW). Hard stops (PAUSED, margin ORANGE/RED, FORCE_REDUCE) are always respected. OFF by default — enable only after calibrating thresholds on a test session.',
+    sections: [
+      {
+        header: 'Master Switch',
+        params: ['god_enabled'],
+      },
+      {
+        header: 'Detection Window',
+        params: ['god_check_interval_min', 'god_pnl_threshold', 'god_min_silence_min'],
+      },
+      {
+        header: 'After Firing',
+        params: ['god_cooldown_min'],
       },
     ],
   },
@@ -461,7 +485,17 @@ const buildForbiddenFromAllowedGroups = (allowedGroups) => {
 
 const STRATEGY_FORBIDDEN_PARAMS = {
   STRADDLE_WITH_ADJUSTMENT: new Set(['straddle_roll_hard_stop_market_order']),
-  STRADDLE_ROLL: buildForbiddenFromAllowedGroups(new Set(['core', 'expiry', 'straddleRoll'])),
+  STRADDLE_ROLL: (() => {
+    const base = buildForbiddenFromAllowedGroups(new Set(['core', 'expiry', 'straddleRoll']));
+    // These expiry-group params are irrelevant for pure straddle roll:
+    // stop_adjustment_mins — no adjustments exist in pure roll
+    // close_at_threshold  — close-at-5 watcher is disabled in preset
+    // theta_acceleration_window — adaptive interval is disabled in preset
+    base.add('stop_adjustment_mins');
+    base.add('close_at_threshold');
+    base.add('theta_acceleration_window');
+    return base;
+  })(),
 };
 
 const STRATEGY_META = {
@@ -708,15 +742,23 @@ const PARAM_TOOLTIPS = {
   gamma_detect_epsilon: 'Minimum absolute P&L second-difference (USD) to classify a point as a gamma boundary. Too low = noise triggers false kinks. Too high = misses real boundaries. At 0.3, a kink must cause a $0.30+ curvature change per step. Range: 0.01–50.0. Default 0.3.',
   gamma_severity_multiplier_enabled: 'Phase 9 gate — enables lot multiplier modulation from gamma severity scores. When ON, gamma boundary proximity boosts hedge lots directionally (toward the threatened side). The combined multiplier ceiling (max_combined_lot_multiplier) still applies. REQUIRES SESSION RESTART when toggled. Off by default until Phase 9 validation is complete.',
   // Straddle Roll
+  straddle_dynamic_trigger_enabled: 'Dynamic roll trigger: when ON (default), the roll distance shrinks as the straddle loses premium through theta decay. Each heartbeat the bot reads the live bid/ask mid of your CE + PE legs and uses that as the new trigger distance (floored at straddle_min_trigger_pts). Result: a fresh straddle rolls at ±1000pts, but after 2 days of theta decay when the straddle is worth 600pts it rolls at ±600pts — protecting you earlier. Turn OFF to revert to the original fixed-premium trigger (distance never changes between rolls).',
+  straddle_min_trigger_pts: 'Minimum roll trigger distance in BTC points. Prevents the dynamic trigger from shrinking too tight near expiry when premium approaches zero. Example: 200 = the roll will never fire at less than ±200pts from ATM regardless of how much premium has decayed. Hot-reloadable: raise mid-session if market is choppy, lower it for more responsive late-session protection. Default 200 pts.',
   straddle_roll_max_per_session: 'Maximum rolls allowed per session. After this many rolls, the session holds at its current position until expiry or hard stop. Set 0 = no rolls (pure theta decay — hard stop is the only exit). Hot-reloadable: raise mid-session via settings to add more rolls.',
   straddle_roll_cooldown_mins: 'Minimum minutes between consecutive rolls. Prevents a fast trending move from triggering multiple rolls before the new straddle premium is established. Default 15.',
   straddle_roll_emergency_mult: 'Emergency bypass multiplier. If spot has moved N× the trigger distance from ATM, the cooldown is bypassed regardless. Example: 2.0 = bypass if spot has moved 2× collected premium from ATM. Protects against severe moves when cooldown would normally block. Default 2.0.',
   straddle_roll_max_spread_pct: 'Maximum allowed bid-ask spread (%) on the new ATM strike before re-entry is blocked. Wide spreads mean the exchange is illiquid — rolling into poor spreads wastes premium. Example: 15 = block if CE or PE spread exceeds 15%. Default 15.0.',
-  straddle_roll_trigger_pct: 'Fallback trigger as % of spot. Only used when _straddle_roll_trigger_pts cannot be computed (no entry_premium on positions). In normal operation the premium-points trigger is used instead. Default 1.0% of spot.',
+  straddle_roll_trigger_pct: 'Last-resort fallback trigger as % of spot. Only fires when both the dynamic live-mark trigger AND the fixed entry-premium trigger are unavailable (e.g. no WebSocket data and no entry_premium on positions). In normal operation the dynamic trigger runs instead. Adjust only if you are running without a WebSocket feed. Default 1.0% of spot.',
   price_guard_enabled: 'Enable real-time price guard. Checks every price_guard_interval_secs seconds via WebSocket (no API calls) and fires a force-heartbeat when spot approaches the roll trigger or estimated loss approaches max_loss. Zero API cost. Dramatically reduces reaction time from 120s → 5–10s.',
   price_guard_interval_secs: 'How often (seconds) the price guard polls the WebSocket price. Lower = faster detection but more CPU. Default 5. Minimum effective value is ~2s (WebSocket update frequency).',
   price_guard_buffer_pts: 'Force a heartbeat when spot is within this many points of the roll trigger (before actually crossing it). Gives the heartbeat time to warm up. Example: 50 pts = pre-alert 50 pts before trigger fires. Default 50.',
   price_guard_cooldown_secs: 'Minimum seconds between consecutive force-heartbeats from the price guard. Prevents spam during fast trending moves. After one force-HB fires, the guard waits this long before firing again. Default 30.',
+  // God Layer
+  god_enabled: 'Master switch for the God Layer (Strategic Integrity Monitor). OFF by default — must be explicitly enabled. When ON, God checks every god_check_interval_min minutes whether PNL has drifted AND the algo has been inactive. If both conditions are met, it places one corrective adjustment bypassing soft guards. Start with conservative thresholds and observe the god_correction activity log entries before lowering them.',
+  god_check_interval_min: 'How often (minutes) God evaluates the session for drift. At each interval God takes a PNL snapshot and compares it to the previous one. Default 25 minutes. Lower = more responsive but more checks. Adaptive heartbeat speed has no effect on this — God always runs on its own clock.',
+  god_pnl_threshold: 'Minimum $ PNL drop over the check window needed for God to consider acting. If PNL dropped less than this, God takes a fresh snapshot and goes back to sleep. Set conservatively high (e.g. $40–$80) when first enabling — lower only after observing real god_correction events. Default $40.',
+  god_min_silence_min: 'Minimum minutes since the last executed adjustment before God considers acting. If the algo adjusted recently, God assumes it is working and does nothing. Both this AND god_pnl_threshold must be exceeded. Default 20 minutes.',
+  god_cooldown_min: 'Minutes God stays silent after firing a correction. Prevents God from firing repeatedly on the same move. After the cooldown, God takes a fresh snapshot and begins a new detection window. Default 45 minutes.',
 };
 
 // =============================================================================
@@ -771,30 +813,29 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   // STRADDLE_ROLL (pure): only core + expiry + straddleRoll groups are relevant.
   const isStraddleRoll = strategyType === 'STRADDLE_ROLL';
 
+  // True when the session is actively running (RUNNING, PAUSED, or BOTH_SIDES_UP).
+  // Used to disable non-hot-reloadable inputs to prevent confusing "No changes" errors.
+  const isSessionRunning = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(
+    (sessionData?.strategy_status || sessionData?.status || 'IDLE').toUpperCase()
+  );
+
   const STRADDLE_LOCKED_GROUPS = new Set([
     // ── Preset-disabled (would fight roll mechanism if re-enabled) ──
     'windDown',           // wind_down_enabled=False — closes OTM leg, breaks straddle structure
     'positionLifecycle',  // harvest_enabled=False — partial closes break CE/PE symmetry
     'balanceControl',     // CE/PE asymmetry rebalancing is strangle-only
     'favorableScaleUp',   // scale_enabled=False in preset
-    'reverseMode',        // incompatible with straddle roll
-
-    // ── Strangle-specific infrastructure (N/A for straddle) ──
-    'triggers',           // min_trigger_move/shift_threshold = individual leg shift params; straddle rolls both legs together
-    'safety',             // whipsaw/ITM guard = strangle-specific; straddle expects one leg ITM on every move
-    'regimeControls',     // 37 trend/vol/gamma params — strangle directional intelligence, unused in straddle
-    'consecutiveDir',     // directional sell limiter — straddle has no directional selling
-    'autoReplenish',      // replenish re-opens one side only = naked position; straddle rolls both legs together
+    'reverseMode',        // incompatible with straddle
     'perpHedge',          // perp_hedge_enabled=False in preset
     'adaptiveTuning',     // adaptive_mode locked to 'preset' at session creation
 
-    // ── Conflicts with roll mechanism ──
-    'atmShield',          // ATM Shield retreats to OTM; straddle should ROLL instead — these two conflict directly
-    'lotVelocity',        // lot velocity cap could throttle/block the 4-leg roll execution
+    // ── Conflicts with straddle structure ──
+    'atmShield',          // ATM Shield retreats to OTM; straddle starts ATM — shield fires on first move and breaks structure
+    'gammaDetector',      // P&L curvature tool calibrated for OTM strangle shape, not symmetric ATM straddle
 
-    // ── Monitoring tools calibrated for strangle shape ──
-    'marginGuardian',     // defaults are correct; operator has no reason to change margin tiers
-    'gammaDetector',      // P&L curvature tool calibrated for strangle strikes, not symmetric straddle
+    // NOTE: 'safety', 'triggers', 'lotVelocity', 'regimeControls', 'marginGuardian', etc. are intentionally
+    // NOT locked — they are actively used by STRADDLE_WITH_ADJUSTMENT (preset sets whipsaw, max_lots_per_side,
+    // lot_velocity, regime params). Operators need access to tune these as their position scales.
   ]);
 
   // STRADDLE_ROLL pure: stricter lock set. Only core, expiry, straddleRoll are active.
@@ -824,6 +865,22 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     'breakevenEngine',    // strangle-specific zone logic; straddle breakeven = ±total_premium
     'closeAt5Watcher',    // straddle exits via auto_close_mins expiry guard, not close-at-5
   ]);
+
+  // Build a flat set of ALL params that belong to the current strategy's locked groups.
+  // Used to filter My Controls so only applicable params are shown.
+  const lockedGroupParams = (() => {
+    const activeLockedGroups = isShortStraddle
+      ? STRADDLE_LOCKED_GROUPS
+      : isStraddleRoll
+        ? STRADDLE_ROLL_LOCKED_GROUPS
+        : null;
+    if (!activeLockedGroups) return new Set();
+    const s = new Set();
+    activeLockedGroups.forEach(gk => {
+      flattenGroupParamNames(PARAM_GROUPS[gk] || {}).forEach(p => s.add(p));
+    });
+    return s;
+  })();
 
   // Pinned / Favorites — persisted to backend so they survive builds and cache clears
   const [pinned, setPinned] = useState(new Set());
@@ -927,9 +984,13 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
   const getConflictWarnings = (values) => {
     const warnings = {};
     for (const rule of CONFLICTS) {
+      // Skip conflict rules where any triggering param is locked/inapplicable for this strategy
+      if (rule.params.some(p => lockedGroupParams.has(p))) continue;
       if (rule.check(values)) {
         for (const p of rule.params_affected) {
-          warnings[p] = rule.message;
+          if (!lockedGroupParams.has(p)) {
+            warnings[p] = rule.message;
+          }
         }
       }
     }
@@ -1001,6 +1062,8 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       const changedParams = {};
       const hotParams = new Set(paramsInfo?.hot_reload_params || []);
       const editableParams = paramsInfo?.params || {};
+      const defaults = paramsInfo?.defaults || {};
+      const skippedNonHot = [];
 
       for (const [key, value] of Object.entries(formValues)) {
         // Skip internal params that aren't editable
@@ -1008,15 +1071,34 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
           continue;
         }
 
+        // Skip params that (a) don't exist in the current session yet AND (b) still hold
+        // the default value — this prevents newly-added DEFAULT_PARAMS (e.g. straddle-roll
+        // specific params added to global defaults) from being injected into every save for
+        // sessions that predate those params, which would cause a backend 400 namespace
+        // violation for strategy types that forbid those params.
+        if (!(key in currentParams) && value === defaults[key]) {
+          continue;
+        }
+
         if (value !== currentParams[key]) {
           if (!isRunning || hotParams.has(key)) {
             changedParams[key] = value;
+          } else {
+            // Running + non-hot param — cannot apply, collect for useful error
+            skippedNonHot.push(key);
           }
         }
       }
 
       if (Object.keys(changedParams).length === 0) {
-        setServerError('No changes detected');
+        if (skippedNonHot.length > 0) {
+          setServerError(
+            `${skippedNonHot.join(', ')} cannot be changed while the session is running ` +
+            `(🔒 requires session restart). Stop the session, change the value, then restart.`
+          );
+        } else {
+          setServerError('No changes detected');
+        }
         setSaving(false);
         return;
       }
@@ -1328,9 +1410,17 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     }
 
     // ── Numeric ──
+    // Non-hot params cannot be changed while the session is running — disable input to
+    // prevent confusing "No changes detected / cannot change while running" errors.
+    const isLockedWhileRunning = isSessionRunning && !isHot;
+    // For initial_lots in straddle sessions, show guidance pointing to max_lots_per_side
+    const isInitialLotsStraddle = paramName === 'initial_lots' && isShortStraddle;
     return (
       <Grid item xs={12} sm={6} key={paramName}>
-        <Box sx={{ ...cardSx, ...getAdaptiveCardSx(paramName) }}>
+        <Box sx={{
+          ...cardSx, ...getAdaptiveCardSx(paramName),
+          ...(isLockedWhileRunning ? { opacity: 0.65, cursor: 'not-allowed' } : {}),
+        }}>
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 0.75 }}>
             <Typography sx={{ ...descSx, flex: 1 }}>{description}</Typography>
             {renderAdaptiveBadge(paramName)}
@@ -1344,32 +1434,51 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   {rangeText}
                 </Typography>
               )}
-              <TextField
-                type="number"
-                value={value}
-                onChange={(e) => handleChange(paramName, e.target.value, type)}
-                size="small"
-                error={Boolean(error)}
-                inputProps={{ min: info.min, max: info.max, step: (type === 'int' || Number.isInteger(Number(value))) ? 1 : 0.01 }}
-                sx={{
-                  width: 90,
-                  '& .MuiOutlinedInput-root': {
-                    background: '#0d1117',
-                    '& fieldset': { borderColor: error ? 'error.main' : '#30363d' },
-                    '&:hover fieldset': { borderColor: error ? 'error.main' : '#6e7681' },
-                    '&.Mui-focused fieldset': { borderColor: '#388bfd' },
-                  },
-                  '& .MuiInputBase-input': {
-                    py: '4px', px: '8px',
-                    fontSize: '1.0rem', fontWeight: 600,
-                    textAlign: 'right',
-                    color: error ? 'error.main' : '#79c0ff',
-                    fontFamily: '"SF Mono","Fira Code",monospace',
-                  },
-                }}
-              />
+              <Tooltip
+                title={isLockedWhileRunning ? 'Cannot change while session is running (🔒 requires restart)' : ''}
+                placement="top"
+                disableHoverListener={!isLockedWhileRunning}
+              >
+                <span>
+                  <TextField
+                    type="number"
+                    value={value}
+                    onChange={(e) => !isLockedWhileRunning && handleChange(paramName, e.target.value, type)}
+                    size="small"
+                    disabled={isLockedWhileRunning}
+                    error={Boolean(error)}
+                    inputProps={{ min: info.min, max: info.max, step: (type === 'int' || Number.isInteger(Number(value))) ? 1 : 0.01 }}
+                    sx={{
+                      width: 90,
+                      '& .MuiOutlinedInput-root': {
+                        background: isLockedWhileRunning ? '#0a0e14' : '#0d1117',
+                        '& fieldset': { borderColor: error ? 'error.main' : (isLockedWhileRunning ? '#1e2430' : '#30363d') },
+                        '&:hover fieldset': { borderColor: error ? 'error.main' : (isLockedWhileRunning ? '#1e2430' : '#6e7681') },
+                        '&.Mui-focused fieldset': { borderColor: '#388bfd' },
+                      },
+                      '& .MuiInputBase-input': {
+                        py: '4px', px: '8px',
+                        fontSize: '1.0rem', fontWeight: 600,
+                        textAlign: 'right',
+                        color: error ? 'error.main' : (isLockedWhileRunning ? '#4a5568' : '#79c0ff'),
+                        fontFamily: '"SF Mono","Fira Code",monospace',
+                      },
+                    }}
+                  />
+                </span>
+              </Tooltip>
             </Box>
           </Box>
+          {isLockedWhileRunning && isInitialLotsStraddle && (
+            <Typography sx={{ fontSize: '0.72rem', color: '#6e7681', mt: 0.5, lineHeight: 1.4 }}>
+              To allow more adjustment lots → <strong style={{ color: '#ffb74d' }}>Safety Limits → max_lots_per_side</strong>
+            </Typography>
+          )}
+          {isLockedWhileRunning && !isInitialLotsStraddle && (
+            <Typography sx={{ fontSize: '0.72rem', color: '#6e7681', mt: 0.5 }}>
+              🔒 Requires session restart to change
+            </Typography>
+          )}
           {error && (
             <Typography sx={{ fontSize: '0.72rem', color: 'error.main', mt: 0.25 }}>{error}</Typography>
           )}
@@ -1736,16 +1845,35 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
 
                 {/* Main content area */}
                 <Box sx={{ flex: 1, overflowY: 'auto', p: '16px 20px' }}>
-                  {activeSection === '_pinned' ? (
-                    <>
-                      <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem' }}>
-                        💡 Click ⭐ on any parameter to pin or unpin it here.
-                      </Typography>
-                      <Grid container spacing={1}>
-                        {[...pinned].map(p => renderParam(p, true))}
-                      </Grid>
-                    </>
-                  ) : (() => {
+                  {activeSection === '_pinned' ? (() => {
+                    // Filter out params from locked groups — they don't apply to this strategy
+                    const applicablePinned = [...pinned].filter(
+                      p => !forbiddenParams.has(p) && !lockedGroupParams.has(p)
+                    );
+                    const hiddenCount = pinned.size - applicablePinned.length;
+                    return (
+                      <>
+                        <Typography sx={{ display: 'block', color: '#9ba8b5', mb: 1.25, fontStyle: 'italic', fontSize: '0.80rem' }}>
+                          💡 Click ⭐ on any parameter to pin or unpin it here.
+                        </Typography>
+                        {hiddenCount > 0 && (
+                          <Box sx={{
+                            mb: 1.5, px: '12px', py: '8px',
+                            background: 'rgba(255,152,0,0.07)',
+                            border: '1px solid rgba(255,152,0,0.28)',
+                            borderRadius: '8px',
+                          }}>
+                            <Typography sx={{ fontSize: '0.78rem', color: '#ffb74d', lineHeight: 1.4 }}>
+                              🔒 {hiddenCount} pinned param{hiddenCount !== 1 ? 's are' : ' is'} hidden — preset-locked for <strong>{strategyMeta.label}</strong> and have no effect on this session.
+                            </Typography>
+                          </Box>
+                        )}
+                        <Grid container spacing={1}>
+                          {applicablePinned.map(p => renderParam(p, true))}
+                        </Grid>
+                      </>
+                    );
+                  })() : (() => {
                     const group = PARAM_GROUPS[activeSection];
                     if (!group) return null;
                     return (
@@ -1763,6 +1891,47 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                             color: '#f0883e', borderRadius: '4px', px: '6px', py: '1px',
                           }}>⚠ CRITICAL</Box>
                         )}
+                        {/* Straddle: explain max_lots_per_side role and warn if cap == initial lots */}
+                        {isShortStraddle && activeSection === 'safety' && (() => {
+                          const initLots = Number(sessionData?.params?.initial_lots ?? 0);
+                          const maxLots = Number(formValues.max_lots_per_side ?? sessionData?.params?.max_lots_per_side ?? 0);
+                          const atCap = initLots > 0 && maxLots > 0 && initLots >= maxLots;
+                          return (
+                            <Box sx={{
+                              mb: 1.5, px: '12px', py: '9px',
+                              background: atCap ? 'rgba(245,158,11,0.08)' : 'rgba(16,185,129,0.07)',
+                              border: `1px solid ${atCap ? 'rgba(245,158,11,0.35)' : 'rgba(16,185,129,0.3)'}`,
+                              borderRadius: '8px',
+                            }}>
+                              <Typography sx={{ fontSize: '0.80rem', color: atCap ? '#fbbf24' : '#6ee7b7', lineHeight: 1.45 }}>
+                                {atCap
+                                  ? <>⚠ <strong>Adjustment lots blocked.</strong> <code style={{ fontSize: '0.78rem' }}>max_lots_per_side = {maxLots}</code> equals your initial {initLots} lots — no room to add adjustment lots. Raise <strong>max_lots_per_side</strong> above <strong>{initLots}</strong> (e.g. {initLots * 2}–{initLots * 3}) to allow the adjustment engine to operate.</>
+                                  : <>⚖ <strong>Straddle tip:</strong> <code style={{ fontSize: '0.78rem' }}>max_lots_per_side</code> is your adjustment headroom. Each adjustment adds lots on the winning side — make sure this is set well above your initial {initLots > 0 ? `${initLots} lots` : 'lot count'}.</>
+                                }
+                              </Typography>
+                            </Box>
+                          );
+                        })()}
+                        {/* Straddle: warn when initial_lots fills the entire max_lots_per_side cap */}
+                        {isShortStraddle && activeSection === 'core' && (() => {
+                          const initLots = Number(formValues.initial_lots ?? sessionData?.params?.initial_lots ?? 0);
+                          const maxLots = Number(formValues.max_lots_per_side ?? sessionData?.params?.max_lots_per_side ?? 0);
+                          if (initLots <= 0 || maxLots <= 0 || initLots < maxLots) return null;
+                          return (
+                            <Box sx={{
+                              mb: 1.5, px: '12px', py: '9px',
+                              background: 'rgba(245,158,11,0.08)',
+                              border: '1px solid rgba(245,158,11,0.35)',
+                              borderRadius: '8px',
+                            }}>
+                              <Typography sx={{ fontSize: '0.80rem', color: '#fbbf24', lineHeight: 1.45 }}>
+                                ⚠ <strong>No room for adjustment lots.</strong> You started with <strong>{initLots} lots</strong> per side and <code style={{ fontSize: '0.78rem', color: '#fde68a' }}>max_lots_per_side = {maxLots}</code>.
+                                The cap is already full — the adjustment engine cannot sell any additional lots.
+                                Go to <strong>Safety Limits</strong> and raise <code style={{ fontSize: '0.78rem', color: '#fde68a' }}>max_lots_per_side</code> above <strong>{initLots}</strong> to allow adjustments.
+                              </Typography>
+                            </Box>
+                          );
+                        })()}
                         {group.sections ? (
                           group.sections.map((section, sectionIdx) => (
                             <Box key={sectionIdx}>
@@ -1793,7 +1962,16 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                           <Grid container spacing={1}>
                             {group.params
                               .filter((paramName) => !forbiddenParams.has(paramName))
-                              .map((paramName) => renderParam(paramName))}
+                              .flatMap((paramName) => {
+                                const items = [renderParam(paramName)];
+                                // For straddle_with_adjustment, inject max_lots_per_side right
+                                // after initial_lots so the operator can raise the adjustment
+                                // cap without navigating to Safety Limits.
+                                if (isShortStraddle && paramName === 'initial_lots') {
+                                  items.push(renderParam('max_lots_per_side'));
+                                }
+                                return items;
+                              })}
                           </Grid>
                         )}
                       </>
@@ -1805,35 +1983,44 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
             ) : (
               /* ── Navigator grid ── */
               <Box sx={{ flex: 1, overflowY: 'auto', p: '16px 20px' }}>
-                {pinned.size > 0 && (
-                  <Box
-                    onClick={() => setActiveSection('_pinned')}
-                    sx={{
-                      display: 'flex', alignItems: 'center', gap: 1.5,
-                      background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.25)',
-                      borderRadius: '10px', p: '12px 16px', mb: 2,
-                      cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s',
-                      '&:hover': { borderColor: 'rgba(255,215,0,0.5)', background: 'rgba(255,215,0,0.09)' },
-                    }}
-                  >
-                    <Box sx={{ width: 4, height: 36, backgroundColor: '#ffd700', borderRadius: '2px', flexShrink: 0 }} />
-                    <Box sx={{ flex: 1 }}>
-                      <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: '#ffd700' }}>⭐ My Controls</Typography>
-                      <Typography sx={{ fontSize: '0.78rem', color: '#9ba8b5', mt: 0.25 }}>
-                        {pinned.size} pinned parameter{pinned.size !== 1 ? 's' : ''} — quick access
-                      </Typography>
-                    </Box>
-                    <Chip
-                      label={pinned.size}
-                      size="small"
+                {pinned.size > 0 && (() => {
+                  const applicablePinnedCount = [...pinned].filter(
+                    p => !forbiddenParams.has(p) && !lockedGroupParams.has(p)
+                  ).length;
+                  const hiddenPinnedCount = pinned.size - applicablePinnedCount;
+                  return (
+                    <Box
+                      onClick={() => setActiveSection('_pinned')}
                       sx={{
-                        height: 20, fontSize: '0.68rem',
-                        background: 'rgba(255,215,0,0.15)', color: '#ffd700',
-                        border: '1px solid rgba(255,215,0,0.3)', '& .MuiChip-label': { px: '6px' },
+                        display: 'flex', alignItems: 'center', gap: 1.5,
+                        background: 'rgba(255,215,0,0.06)', border: '1px solid rgba(255,215,0,0.25)',
+                        borderRadius: '10px', p: '12px 16px', mb: 2,
+                        cursor: 'pointer', transition: 'border-color 0.15s, background 0.15s',
+                        '&:hover': { borderColor: 'rgba(255,215,0,0.5)', background: 'rgba(255,215,0,0.09)' },
                       }}
-                    />
-                  </Box>
-                )}
+                    >
+                      <Box sx={{ width: 4, height: 36, backgroundColor: '#ffd700', borderRadius: '2px', flexShrink: 0 }} />
+                      <Box sx={{ flex: 1 }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: '0.93rem', color: '#ffd700' }}>⭐ My Controls</Typography>
+                        <Typography sx={{ fontSize: '0.78rem', color: '#9ba8b5', mt: 0.25 }}>
+                          {applicablePinnedCount} active param{applicablePinnedCount !== 1 ? 's' : ''} — quick access
+                          {hiddenPinnedCount > 0 && (
+                            <span style={{ color: '#6e7681' }}> · {hiddenPinnedCount} locked hidden</span>
+                          )}
+                        </Typography>
+                      </Box>
+                      <Chip
+                        label={applicablePinnedCount}
+                        size="small"
+                        sx={{
+                          height: 20, fontSize: '0.68rem',
+                          background: 'rgba(255,215,0,0.15)', color: '#ffd700',
+                          border: '1px solid rgba(255,215,0,0.3)', '& .MuiChip-label': { px: '6px' },
+                        }}
+                      />
+                    </Box>
+                  );
+                })()}
 
                 {isShortStraddle && (
                   <Box sx={{

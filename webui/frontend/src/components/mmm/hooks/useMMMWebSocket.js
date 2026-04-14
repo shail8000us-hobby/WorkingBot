@@ -17,6 +17,8 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 
+const LIVE_PRICE_FLUSH_MS = 250;
+
 const EVENTS = [
   'mmm_heartbeat',
   'mmm_price_tick',
@@ -62,9 +64,16 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   // Live bid/ask prices from options_ticker_update (sub-second from Delta WS l1_orderbook)
   // { [symbol]: { bid, ask, mid, ts } }
   const [livePrices, setLivePrices] = useState({});
+  const livePriceBufferRef = useRef({});
+  const livePriceFlushTimerRef = useRef(null);
 
   // Reset all state when sessionId changes to prevent stale cross-session data
   useEffect(() => {
+    if (livePriceFlushTimerRef.current) {
+      clearTimeout(livePriceFlushTimerRef.current);
+      livePriceFlushTimerRef.current = null;
+    }
+    livePriceBufferRef.current = {};
     setLivePrices({});
     setHeartbeat(null);
     setAdjustments([]);
@@ -258,18 +267,48 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
 
     // Live bid/ask from Delta WS l1_orderbook via the existing options ticker pipeline.
     // Same event as the options panel — no backend changes needed.
+    const flushLivePrices = () => {
+      livePriceFlushTimerRef.current = null;
+      const buffered = livePriceBufferRef.current;
+      livePriceBufferRef.current = {};
+      const symbols = Object.keys(buffered);
+      if (symbols.length === 0) return;
+
+      setLivePrices((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const symbol of symbols) {
+          const update = buffered[symbol];
+          const prevTick = prev[symbol];
+          if (
+            prevTick
+            && prevTick.bid === update.bid
+            && prevTick.ask === update.ask
+            && prevTick.mid === update.mid
+            && prevTick.ts === update.ts
+          ) {
+            continue;
+          }
+          next[symbol] = update;
+          changed = true;
+        }
+        return changed ? next : prev;
+      });
+    };
+
     const onOptionsTicker = (data) => {
       const { symbol, best_bid, best_ask, timestamp } = data;
       if (!symbol) return;
-      setLivePrices((prev) => ({
-        ...prev,
-        [symbol]: {
-          bid: best_bid,
-          ask: best_ask,
-          mid: best_bid > 0 && best_ask > 0 ? (best_bid + best_ask) / 2 : (best_bid || best_ask || 0),
-          ts: timestamp,
-        },
-      }));
+      livePriceBufferRef.current[symbol] = {
+        bid: best_bid,
+        ask: best_ask,
+        mid: best_bid > 0 && best_ask > 0 ? (best_bid + best_ask) / 2 : (best_bid || best_ask || 0),
+        ts: timestamp,
+      };
+
+      if (!livePriceFlushTimerRef.current) {
+        livePriceFlushTimerRef.current = setTimeout(flushLivePrices, LIVE_PRICE_FLUSH_MS);
+      }
     };
     addListener('options_ticker_update', onOptionsTicker, false);
 
@@ -278,6 +317,11 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
       for (const [eventName, handler] of listeners) {
         socket.off(eventName, handler);
       }
+      if (livePriceFlushTimerRef.current) {
+        clearTimeout(livePriceFlushTimerRef.current);
+        livePriceFlushTimerRef.current = null;
+      }
+      livePriceBufferRef.current = {};
       // Fix F3.11: Clear ref to prevent memory retention on unmount
       latestPremiumMap.current = {};
     };

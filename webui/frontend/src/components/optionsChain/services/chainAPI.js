@@ -13,12 +13,52 @@ const API_BASE = '/api/options-chain';
  * Options Chain API client
  */
 class OptionsChainAPI {
+  constructor() {
+    this.expirationCache = new Map();
+    this.chainCache = new Map();
+    this.expirationTtlMs = 60 * 1000;
+    this.chainTtlMs = 20 * 1000;
+  }
+
+  getCached(cache, key, ttlMs) {
+    const cached = cache.get(key);
+    if (!cached) return null;
+
+    if ((Date.now() - cached.ts) > ttlMs) {
+      cache.delete(key);
+      return null;
+    }
+
+    return cached.value;
+  }
+
+  setCached(cache, key, value) {
+    cache.set(key, {
+      ts: Date.now(),
+      value,
+    });
+  }
+
+  /**
+   * Preload lightweight Options Chain data ahead of first navigation.
+   * Keeps first open of the Options Chain tab snappy.
+   */
+  async warmup(underlying = 'BTC') {
+    await this.getExpirations(underlying);
+  }
+
   /**
    * Get available expiry dates for underlying
    * @param {string} underlying - BTC or ETH
    * @returns {Promise<string[]>} Array of expiry dates (DDMMYYYY format)
    */
   async getExpirations(underlying = 'BTC') {
+    const cacheKey = String(underlying || 'BTC').toUpperCase();
+    const cached = this.getCached(this.expirationCache, cacheKey, this.expirationTtlMs);
+    if (cached) {
+      return cached;
+    }
+
     try {
       const response = await fetch(`${API_BASE}/expirations?underlying=${underlying}`);
 
@@ -27,7 +67,9 @@ class OptionsChainAPI {
       }
 
       const data = await response.json();
-      return data.expirations || [];
+      const expirations = data.expirations || [];
+      this.setCached(this.expirationCache, cacheKey, expirations);
+      return expirations;
     } catch (error) {
       console.error('[OptionsChainAPI] getExpirations error:', error);
       throw error;
@@ -41,6 +83,12 @@ class OptionsChainAPI {
    * @returns {Promise<Object>} Chain data with spot, ATM, and all strikes
    */
   async getChainData(underlying = 'BTC', expiry) {
+    const cacheKey = `${String(underlying || 'BTC').toUpperCase()}:${expiry}`;
+    const cached = this.getCached(this.chainCache, cacheKey, this.chainTtlMs);
+    if (cached) {
+      return cached;
+    }
+
     try {
       if (!expiry) {
         throw new Error('Expiry date is required');
@@ -53,6 +101,7 @@ class OptionsChainAPI {
       }
 
       const data = await response.json();
+      this.setCached(this.chainCache, cacheKey, data);
       return data;
     } catch (error) {
       console.error('[OptionsChainAPI] getChainData error:', error);
@@ -76,6 +125,16 @@ class OptionsChainAPI {
 
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const normalizedUnderlying = String(underlying || 'BTC').toUpperCase();
+      this.expirationCache.delete(normalizedUnderlying);
+      if (expiry) {
+        this.chainCache.delete(`${normalizedUnderlying}:${expiry}`);
+      } else {
+        [...this.chainCache.keys()]
+          .filter((k) => k.startsWith(`${normalizedUnderlying}:`))
+          .forEach((k) => this.chainCache.delete(k));
       }
 
       return await response.json();

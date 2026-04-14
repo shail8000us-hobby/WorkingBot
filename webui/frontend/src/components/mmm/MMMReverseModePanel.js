@@ -164,12 +164,12 @@ function PositionsTable({ positions }) {
               <TableRow key={i}>
                 <TableCell>
                   <Chip
-                    label={String(pos.side || '').toUpperCase()}
+                    label={String(pos.option_type || '').toUpperCase()}
                     size="small"
                     sx={{
                       fontWeight: 700, fontSize: 11,
-                      backgroundColor: pos.side === 'ce' ? 'rgba(33,150,243,0.15)' : 'rgba(244,67,54,0.15)',
-                      color: pos.side === 'ce' ? '#2196f3' : '#f44336',
+                      backgroundColor: pos.option_type === 'ce' ? 'rgba(33,150,243,0.15)' : 'rgba(244,67,54,0.15)',
+                      color: pos.option_type === 'ce' ? '#2196f3' : '#f44336',
                     }}
                   />
                 </TableCell>
@@ -228,7 +228,7 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
     setLoading(true);
     setMsg(null);
     try {
-      await mmmService.post(`/session/${sessionId}/reverse/enable`);
+      await mmmService.enableReverseMode(sessionId);
       setMsg({ type: 'success', text: 'Reverse mode enabled.' });
     } catch (e) {
       setMsg({ type: 'error', text: e?.message || 'Failed to enable.' });
@@ -242,7 +242,7 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
     setLoading(true);
     setMsg(null);
     try {
-      await mmmService.post(`/session/${sessionId}/reverse/disable`, { reason: 'manual_ui_disable' });
+      await mmmService.disableReverseMode(sessionId);
       setMsg({ type: 'success', text: 'Reverse mode disabled.' });
     } catch (e) {
       setMsg({ type: 'error', text: e?.message || 'Failed to disable.' });
@@ -257,7 +257,7 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
     setLoading(true);
     setMsg(null);
     try {
-      await mmmService.post(`/session/${sessionId}/reverse/close`, { reason: 'manual_ui_close_all' });
+      await mmmService.closeAllReversePositions(sessionId);
       setMsg({ type: 'success', text: 'Reverse positions closed.' });
     } catch (e) {
       setMsg({ type: 'error', text: e?.message || 'Failed to close.' });

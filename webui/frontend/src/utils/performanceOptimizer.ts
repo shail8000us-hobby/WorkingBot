@@ -53,18 +53,55 @@ export function useThrottledCallback<T extends (...args: any[]) => any>(
 }
 
 export function useSmartPolling(
-  callback: () => void,
+  callback: () => void | Promise<void>,
   interval: number = 30000,
   isVisible: boolean = true
 ): void {
+  const callbackRef = useRef(callback);
+  const pollInFlightRef = useRef(false);
+  const pendingPollRef = useRef(false);
+
   useEffect(() => {
-    if (!isVisible) return;
+    callbackRef.current = callback;
+  }, [callback]);
 
-    callback();
+  const executePoll = useCallback(async () => {
+    if (pollInFlightRef.current) {
+      pendingPollRef.current = true;
+      return;
+    }
 
-    const timer = setInterval(callback, interval);
+    pollInFlightRef.current = true;
+    try {
+      await Promise.resolve(callbackRef.current());
+    } finally {
+      pollInFlightRef.current = false;
+      if (pendingPollRef.current) {
+        if (isVisible) {
+          pendingPollRef.current = false;
+          Promise.resolve().then(() => {
+            executePoll();
+          });
+        } else {
+          pendingPollRef.current = false;
+        }
+      }
+    }
+  }, [isVisible]);
+
+  useEffect(() => {
+    if (!isVisible) {
+      pendingPollRef.current = false;
+      return;
+    }
+
+    executePoll();
+
+    const timer = setInterval(() => {
+      executePoll();
+    }, interval);
     return () => clearInterval(timer);
-  }, [callback, interval, isVisible]);
+  }, [interval, isVisible, executePoll]);
 }
 
 export default { debounce, throttle, useDebounced, useThrottledCallback, useSmartPolling };

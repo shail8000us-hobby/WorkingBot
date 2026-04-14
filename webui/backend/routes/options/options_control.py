@@ -1281,6 +1281,17 @@ def get_options_status():
     })
 
 
+@options_bp.route('/ws-cache-stats', methods=['GET'])
+def get_ws_cache_stats():
+    """Diagnostic: WS position cache health and stats."""
+    try:
+        from webui.backend.routes.options.options_ws_cache import get_ws_cache
+        cache = get_ws_cache()
+        return jsonify({'success': True, **cache.stats()})
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 # =============================================================================
 # STOP-LOSS / TAKE-PROFIT API ENDPOINTS
 # =============================================================================

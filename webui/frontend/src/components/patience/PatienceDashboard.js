@@ -20,6 +20,7 @@ import IVPanel from './IVPanel';
 import PerformanceHistory from './PerformanceHistory';
 import TemplateManager from './TemplateManager';
 import PatiencePayoffGraph from './PatiencePayoffGraph';
+import { readWarmJSON, setWarmJSON } from '../../utils/dataWarmCache';
 
 // ── Constants ──────────────────────────────────────────────────────────
 const STATUS_COLORS = {
@@ -271,10 +272,30 @@ function SwimLane({ title, accent, cards, selectedCardId, collapsible = false, d
 // ── Portfolio Overview (right panel default) ───────────────────────────
 function PortfolioOverview({ btcPrice, ivPct, status, cards, wsEvents }) {
   const [posData, setPosData] = useState(null);
+  const posInFlightRef = useRef(false);
+  const posPendingRef = useRef(false);
 
   useEffect(() => {
     const fetch = async () => {
-      try { const r = await patienceAPI.getPositions(); setPosData(r.data); } catch {}
+      if (posInFlightRef.current) {
+        posPendingRef.current = true;
+        return;
+      }
+
+      posInFlightRef.current = true;
+      try {
+        const r = await patienceAPI.getPositions();
+        setPosData(r.data);
+      } catch {}
+      finally {
+        posInFlightRef.current = false;
+        if (posPendingRef.current) {
+          posPendingRef.current = false;
+          Promise.resolve().then(() => {
+            fetch();
+          });
+        }
+      }
     };
     fetch();
     const id = setInterval(fetch, 12000);
@@ -395,10 +416,18 @@ function MiniCardDetail({
 }) {
   const [log, setLog]       = useState([]);
   const [prices, setPrices] = useState({});
+  const detailInFlightRef = useRef(false);
+  const detailPendingRef = useRef(false);
 
   useEffect(() => {
     if (!card?.card_id) return;
     const fetch = async () => {
+      if (detailInFlightRef.current) {
+        detailPendingRef.current = true;
+        return;
+      }
+
+      detailInFlightRef.current = true;
       const [logRes, priceRes] = await Promise.allSettled([
         patienceAPI.getLog(card.card_id),
         patienceAPI.getPrices(card.card_id),
@@ -408,6 +437,14 @@ function MiniCardDetail({
         const m = {};
         (priceRes.value.data?.prices || []).forEach(p => { m[p.leg_id] = p; });
         setPrices(m);
+      }
+
+      detailInFlightRef.current = false;
+      if (detailPendingRef.current) {
+        detailPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetch();
+        });
       }
     };
     fetch();
@@ -575,8 +612,8 @@ function MiniCardDetail({
 
 // ── Main Dashboard ─────────────────────────────────────────────────────
 export default function PatienceDashboard() {
-  const [status,       setStatus]       = useState(null);
-  const [cards,        setCards]        = useState([]);
+  const [status,       setStatus]       = useState(() => readWarmJSON('/api/patience/status') || null);
+  const [cards,        setCards]        = useState(() => readWarmJSON('/api/patience/cards')?.cards || []);
   const [activeTab,    setActiveTab]    = useState('cards');
   const [selectedCard, setSelectedCard] = useState(null);   // shown in right panel
   const [fullDetailCard, setFullDetailCard] = useState(null); // full-page CardDetail
@@ -586,10 +623,22 @@ export default function PatienceDashboard() {
   const [showKillModal, setShowKillModal] = useState(false);
   const [executingRound, setExecutingRound] = useState(null);
   const [wsEvents,     setWsEvents]     = useState([]);
-  const [ivPct,        setIvPct]        = useState(null);
+  const [ivPct,        setIvPct]        = useState(() => readWarmJSON('/api/patience/iv/current')?.percentile ?? null);
   const socket = useSocket();
 
   const visibleRef = useRef(true);
+  const statusInFlightRef = useRef(false);
+  const statusPendingRef = useRef(false);
+  const ivInFlightRef = useRef(false);
+  const ivPendingRef = useRef(false);
+  const cardsInFlightRef = useRef(false);
+  const cardsPendingRef = useRef(false);
+  const cardsRef = useRef(cards);
+
+  useEffect(() => {
+    cardsRef.current = cards;
+  }, [cards]);
+
   useEffect(() => {
     const onVis = () => { visibleRef.current = !document.hidden; };
     document.addEventListener('visibilitychange', onVis);
@@ -600,7 +649,26 @@ export default function PatienceDashboard() {
   useEffect(() => {
     const fetch = async () => {
       if (!visibleRef.current) return;
-      try { const r = await patienceAPI.getStatus(); setStatus(r.data); } catch {}
+      if (statusInFlightRef.current) {
+        statusPendingRef.current = true;
+        return;
+      }
+
+      statusInFlightRef.current = true;
+      try {
+        const r = await patienceAPI.getStatus();
+        setStatus(r.data);
+        setWarmJSON('/api/patience/status', r.data, { ttlMs: 10000 });
+      } catch {}
+      finally {
+        statusInFlightRef.current = false;
+        if (statusPendingRef.current) {
+          statusPendingRef.current = false;
+          Promise.resolve().then(() => {
+            fetch();
+          });
+        }
+      }
     };
     fetch();
     const id = setInterval(fetch, 3000);
@@ -610,7 +678,26 @@ export default function PatienceDashboard() {
   // Poll IV (5 min)
   useEffect(() => {
     const fetch = async () => {
-      try { const r = await patienceAPI.getIVCurrent(); setIvPct(r.data?.percentile ?? null); } catch {}
+      if (ivInFlightRef.current) {
+        ivPendingRef.current = true;
+        return;
+      }
+
+      ivInFlightRef.current = true;
+      try {
+        const r = await patienceAPI.getIVCurrent();
+        setIvPct(r.data?.percentile ?? null);
+        setWarmJSON('/api/patience/iv/current', r.data, { ttlMs: 45000 });
+      } catch {}
+      finally {
+        ivInFlightRef.current = false;
+        if (ivPendingRef.current) {
+          ivPendingRef.current = false;
+          Promise.resolve().then(() => {
+            fetch();
+          });
+        }
+      }
     };
     fetch();
     const id = setInterval(fetch, 5 * 60 * 1000);
@@ -620,7 +707,26 @@ export default function PatienceDashboard() {
   // Poll cards (5s)
   const fetchCards = useCallback(async () => {
     if (!visibleRef.current) return;
-    try { const r = await patienceAPI.getCards(); setCards(r.data.cards || []); } catch {}
+    if (cardsInFlightRef.current) {
+      cardsPendingRef.current = true;
+      return;
+    }
+
+    cardsInFlightRef.current = true;
+    try {
+      const r = await patienceAPI.getCards();
+      setCards(r.data.cards || []);
+      setWarmJSON('/api/patience/cards', r.data, { ttlMs: 10000 });
+    } catch {}
+    finally {
+      cardsInFlightRef.current = false;
+      if (cardsPendingRef.current) {
+        cardsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchCards();
+        });
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -720,17 +826,17 @@ export default function PatienceDashboard() {
       } else if (payload.event === 'completed') {
         setExecutingRound(null);
         fetchCards();
-        const c = cards.find(x => x.card_id === payload.card_id);
+        const c = cardsRef.current.find(x => x.card_id === payload.card_id);
         addWsEvent('success', `${c?.card_name || 'Card'} execution complete ✅`);
       } else if (payload.event === 'paused') {
         fetchCards();
-        const c = cards.find(x => x.card_id === payload.card_id);
+        const c = cardsRef.current.find(x => x.card_id === payload.card_id);
         addWsEvent('error', `${c?.card_name || 'Card'} PAUSED — ${payload.error || 'unknown'}`);
       }
     };
     socket.on('patience_card_update', handler);
     return () => socket.off('patience_card_update', handler);
-  }, [socket, fetchCards, cards, addWsEvent]);
+  }, [socket, fetchCards, addWsEvent]);
 
   const btcPrice  = status?.btc_price;
   const allActive = cards.filter(c => !['CANCELLED', 'CLOSED'].includes(c.status));
@@ -1026,11 +1132,32 @@ function PositionsPanel({ btcPrice }) {
   const [data,    setData]    = useState(null);
   const [loading, setLoading] = useState(true);
   const [lastAt,  setLastAt]  = useState(null);
+  const positionsInFlightRef = useRef(false);
+  const positionsPendingRef = useRef(false);
 
   const fetchPositions = useCallback(async () => {
-    try { const r = await patienceAPI.getPositions(); setData(r.data); setLastAt(new Date()); }
+    if (positionsInFlightRef.current) {
+      positionsPendingRef.current = true;
+      return;
+    }
+
+    positionsInFlightRef.current = true;
+    try {
+      const r = await patienceAPI.getPositions();
+      setData(r.data);
+      setLastAt(new Date());
+    }
     catch {}
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      positionsInFlightRef.current = false;
+      if (positionsPendingRef.current) {
+        positionsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchPositions();
+        });
+      }
+    }
   }, []);
 
   useEffect(() => {

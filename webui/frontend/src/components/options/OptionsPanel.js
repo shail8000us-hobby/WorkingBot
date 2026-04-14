@@ -3043,9 +3043,17 @@ const OptionsPanel = () => {
 
   // Poll backend auto-loop status — drives autoLoopRunning / progress / error
   const autoLoopPollRef = useRef(null);
+  const autoLoopPollInFlightRef = useRef(false);
+  const autoLoopPollPendingRef = useRef(false);
   useEffect(() => {
     // Poll when autoLoopRunning OR on mount (to detect loops surviving refresh)
     const pollBackend = async () => {
+      if (autoLoopPollInFlightRef.current) {
+        autoLoopPollPendingRef.current = true;
+        return;
+      }
+
+      autoLoopPollInFlightRef.current = true;
       try {
         const { data } = await api.get('/api/options/auto-loop/status?loop_id=main');
         if (!data.success) return;
@@ -3104,16 +3112,28 @@ const OptionsPanel = () => {
 
       } catch (err) {
         // Silent fail for polling
+      } finally {
+        autoLoopPollInFlightRef.current = false;
+        if (autoLoopPollPendingRef.current && !document.hidden) {
+          autoLoopPollPendingRef.current = false;
+          Promise.resolve().then(() => {
+            pollBackend();
+          });
+        } else {
+          autoLoopPollPendingRef.current = false;
+        }
       }
     };
 
     // Check immediately on mount for any running backend loops
     pollBackend();
 
-    // Poll every 1.5s — skip when tab is hidden to reduce load
+    // Adaptive poll: fast while running, slower while idle to reduce background load.
+    const pollMs = autoLoopRunning ? 1500 : 6000;
     autoLoopPollRef.current = setInterval(() => {
       if (!document.hidden) pollBackend();
-    }, 1500);
+    }, pollMs);
+
     return () => {
       if (autoLoopPollRef.current) clearInterval(autoLoopPollRef.current);
     };
@@ -3302,10 +3322,18 @@ const OptionsPanel = () => {
 
   // Poll backend for per-expiry loop status
   const expiryPollRef = useRef(null);
+  const expiryPollInFlightRef = useRef(false);
+  const expiryPollPendingRef = useRef(false);
   useEffect(() => {
     const hasRunning = Object.values(expiryLoopState).some(s => s.running);
 
     const pollExpiryLoops = async () => {
+      if (expiryPollInFlightRef.current) {
+        expiryPollPendingRef.current = true;
+        return;
+      }
+
+      expiryPollInFlightRef.current = true;
       try {
         const { data } = await api.get('/api/options/auto-loop/status');
         if (!data.success) return;
@@ -3369,6 +3397,16 @@ const OptionsPanel = () => {
         });
       } catch (err) {
         // Silent fail
+      } finally {
+        expiryPollInFlightRef.current = false;
+        if (expiryPollPendingRef.current && !document.hidden) {
+          expiryPollPendingRef.current = false;
+          Promise.resolve().then(() => {
+            pollExpiryLoops();
+          });
+        } else {
+          expiryPollPendingRef.current = false;
+        }
       }
     };
 

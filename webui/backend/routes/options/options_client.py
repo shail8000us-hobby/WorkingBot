@@ -6,13 +6,17 @@ Extracted from options_control.py — see docs/refactoring/OPTIONS_CONTROL_REFAC
 
 DO NOT move the event loop architecture (_get_dedicated_loop / run_coroutine_threadsafe).
 It was built specifically to solve "bound to different event loop" errors.
+
+Named/isolated clients (get_named_client):
+Each monitor/algo can own a separate asyncio event loop + httpx connection pool.
+Fault isolation: if one loop blocks or deadlocks, the others keep running.
 """
 
 from __future__ import annotations
 
 import asyncio
 import threading
-from typing import Optional
+from typing import Optional, Dict
 
 import logging
 
@@ -145,16 +149,15 @@ def get_unified_client():
             symbol='BTCUSD',
             enable_websocket=False
         )
-        # Tune BOTH circuit breakers for WebUI: higher thresholds tolerate
-        # the burst of concurrent requests on startup (40 tickers at once);
-        # shorter timeouts mean the breakers self-heal quickly if they trip.
+        # Circuit breakers: high thresholds tolerate startup bursts; short recovery.
         # Outer (UnifiedAPIClient)
         _unified_client_singleton.circuit_breaker.failure_threshold = 50
         _unified_client_singleton.circuit_breaker.timeout = 10
         # Inner (AsyncDeltaClient)
         _unified_client_singleton.rest_client._circuit_breaker.failure_threshold = 50
         _unified_client_singleton.rest_client._circuit_breaker.reset_after = 10
-        log.info("✅ UnifiedAPIClient singleton created (both CBs: threshold=50, timeout=10s)")
+        log.info("✅ UnifiedAPIClient singleton created (CBs: threshold=50, timeout=10s; "
+                 "max_connections=100 — Delta 10k-unit/5min quota, no client throttle)")
     return _unified_client_singleton
 
 
@@ -164,3 +167,113 @@ async def with_timeout(coro, timeout_seconds=30):
         return await asyncio.wait_for(coro, timeout=timeout_seconds)
     except asyncio.TimeoutError:
         raise Exception(f"Operation timed out after {timeout_seconds}s")
+
+
+# ---------------------------------------------------------------------------
+# Isolated async clients — one dedicated loop + httpx pool per named caller
+# ---------------------------------------------------------------------------
+# Each monitor/algo that calls get_named_client("sl_tp") / get_named_client("max_loss")
+# gets its own asyncio event loop running in its own real OS thread, plus its own
+# AsyncDeltaClient (separate httpx connection pool).
+#
+# Benefits:
+# 1. Fault isolation — a blocked/slow loop for one monitor cannot starve another.
+# 2. No connection-pool contention — each caller has dedicated connections.
+# 3. If one loop deadlocks the others keep running independently.
+# ---------------------------------------------------------------------------
+
+# Use original (unpatched) threading.Lock for cross-greenlet/thread safety.
+try:
+    from eventlet.patcher import original as _ev_orig_nc
+    _named_clients_lock = _ev_orig_nc('threading').Lock()
+except Exception:
+    _named_clients_lock = threading.Lock()
+
+_named_clients: Dict[str, "_IsolatedAsyncClient"] = {}
+
+
+class _IsolatedAsyncClient:
+    """Encapsulates an asyncio event loop + AsyncDeltaClient for one named caller.
+
+    Never create this directly — use get_named_client(name).
+    """
+
+    def __init__(self, name: str, max_connections: int = 10):
+        self.name = name
+
+        from bot.api.async_delta_client import AsyncDeltaClient
+        from config.loader import get_api_credentials
+        creds = get_api_credentials()
+        self._delta_client = AsyncDeltaClient(
+            api_key=creds['api_key'],
+            api_secret=creds['api_secret'],
+            max_connections=max_connections,
+        )
+
+        # Own event loop in a real (unpatched) OS thread.
+        self._loop = asyncio.new_event_loop()
+        try:
+            from eventlet.patcher import original as _orig
+            _RealThread = _orig('threading').Thread
+        except Exception:
+            _RealThread = threading.Thread
+
+        t = _RealThread(
+            target=self._loop.run_forever,
+            daemon=True,
+            name=f"async-loop-{name}",
+        )
+        t.start()
+        self._thread = t
+        log.info(f"✅ IsolatedAsyncClient '{name}' ready (max_connections={max_connections})")
+
+    @property
+    def rest_client(self):
+        """Direct access to the underlying AsyncDeltaClient."""
+        return self._delta_client
+
+    def run_async(self, coro, timeout: float = 20.0):
+        """Submit *coro* to this client's dedicated loop and block until done.
+
+        Uses the same yield strategy as the shared _run_async: eventlet.sleep()
+        when called from the main eventlet thread, time.sleep() from real OS threads.
+        """
+        import time as _time
+
+        _yield = _time.sleep
+        try:
+            from eventlet.patcher import original as _ev_orig2
+            _orig_threading = _ev_orig2('threading')
+            if _orig_threading.current_thread() is _orig_threading.main_thread():
+                import eventlet as _ev
+                _yield = _ev.sleep
+        except Exception:
+            pass
+
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+        deadline = _time.time() + timeout
+        while not future.done():
+            if _time.time() >= deadline:
+                future.cancel()
+                raise TimeoutError(f"[{self.name}] Async operation timed out after {timeout}s")
+            _yield(0.01)
+
+        return future.result(timeout=0)
+
+
+def get_named_client(name: str, max_connections: int = 10) -> "_IsolatedAsyncClient":
+    """Get (or lazily create) an isolated async client for the given caller name.
+
+    Each name gets its own asyncio event loop thread + httpx connection pool.
+    Typical callers:
+        get_named_client("sl_tp")       # SL/TP monitor
+        get_named_client("max_loss")    # Max-loss monitor
+        get_named_client("tp_monitor")  # Take-profit monitor
+
+    The shared singleton (get_unified_client / _run_async) is reserved for
+    the options control routes that serve the frontend.
+    """
+    with _named_clients_lock:
+        if name not in _named_clients:
+            _named_clients[name] = _IsolatedAsyncClient(name, max_connections=max_connections)
+        return _named_clients[name]

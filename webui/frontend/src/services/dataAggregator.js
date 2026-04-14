@@ -28,6 +28,8 @@ class DataAggregator {
     this.maxConsecutiveErrors = 5;
     this.isDocumentVisible = true;
     this._lastResponseHash = null; // Skip updates when data hasn't changed
+    this._fetchInFlight = false;
+    this._fetchPending = false;
   }
 
   /**
@@ -121,6 +123,7 @@ class DataAggregator {
       clearInterval(this.interval);
       this.interval = null;
       this.isRunning = false;
+      this._fetchPending = false;
 
       // Cleanup visibility listener
       if (this._visibilityHandler && typeof document !== 'undefined') {
@@ -159,6 +162,12 @@ class DataAggregator {
    * @private
    */
   async _fetchAllData() {
+    if (this._fetchInFlight) {
+      this._fetchPending = true;
+      return;
+    }
+
+    this._fetchInFlight = true;
     try {
       // Set loading state
       const store = useStore.getState();
@@ -250,6 +259,14 @@ class DataAggregator {
       // Stop if too many errors
       if (this.consecutiveErrors >= this.maxConsecutiveErrors) {
         this.stop();
+      }
+    } finally {
+      this._fetchInFlight = false;
+      if (this._fetchPending && this.isRunning) {
+        this._fetchPending = false;
+        Promise.resolve().then(() => {
+          this._fetchAllData();
+        });
       }
     }
   }

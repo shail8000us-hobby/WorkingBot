@@ -518,3 +518,29 @@ Bot is PAUSED. No new trades will execute.
 ⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"""
 
     return await _send_async(msg, f"activehours_unhedged_pause_{session_id}")
+
+
+async def alert_god_correction(
+    session_id: str,
+    aggressor: str,
+    pnl_drift: float,
+    minutes_inactive: float,
+) -> bool:
+    """Alert when the God Layer fires a corrective adjustment.
+
+    God fires when PNL has drifted significantly AND the algo has been inactive
+    (no executed adjustments) — indicating soft guards were blocking the hedge.
+    This is an informational alert, not an emergency — God is self-correcting.
+    """
+    drift_color = '🔴' if pnl_drift < -100 else '🟡'
+    msg = (
+        f"🌐 *GOD LAYER CORRECTION* — `{session_id}`\n\n"
+        f"Strategic drift detected — soft guards blocked the hedge for too long.\n\n"
+        f"📊 *Aggressor*: `{aggressor.upper()}`\n"
+        f"{drift_color} *PNL drift*: `${pnl_drift:+.2f}` over window\n"
+        f"⏱ *Inactive for*: `{minutes_inactive:.0f} min` (no executed adjustments)\n\n"
+        f"God layer placed a corrective hedge in *god\\_mode* (bypassed soft guards).\n"
+        f"Session is *continuing normally* — no action required.\n\n"
+        f"⏰ {datetime.now(timezone.utc).strftime('%d %b %Y, %H:%M:%S')} UTC"
+    )
+    return await _send_async(msg, key=f'god_correction_{session_id}')

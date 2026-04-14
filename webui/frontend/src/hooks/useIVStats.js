@@ -17,8 +17,16 @@ export default function useIVStats() {
   const [ivStats, setIvStats] = useState({});
   const [loading, setLoading] = useState(false);
   const timerRef = useRef(null);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
 
   const fetch = useCallback(async () => {
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+
+    inFlightRef.current = true;
     setLoading(true);
     try {
       const res = await window.fetch(ENDPOINT);
@@ -28,6 +36,13 @@ export default function useIVStats() {
     } catch (_) {
     } finally {
       setLoading(false);
+      inFlightRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetch();
+        });
+      }
     }
   }, []);
 

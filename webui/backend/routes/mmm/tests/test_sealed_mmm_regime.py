@@ -464,13 +464,25 @@ class TestComputeRegimeAction:
         assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
 
     @pytest.mark.sealed
-    def test_c_cra_9_trend_tier3_block_all(self):
+    def test_c_cra_9_trend_tier3_trend_up_blocks_ce_only(self):
+        """Tier 3 TREND_UP: only CE (aggressor) is blocked. PE (safe side) must remain free.
+        trend_boost_enabled has no effect on blocking — it only controls lot multipliers in the engine."""
         from webui.backend.routes.mmm.mmm_regime import (
-            _compute_regime_action, ACTION_BLOCK_ALL_SELLS, TREND_TIER_BLOCK
+            _compute_regime_action, ACTION_BLOCK_CE_SELLS, TREND_TIER_BLOCK
         )
         sess = self._sess_with_regimes(trend='TREND_UP', tier=TREND_TIER_BLOCK)
         sess['_trend_direction'] = 'up'
-        assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
+        assert _compute_regime_action(sess) == ACTION_BLOCK_CE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_9b_trend_tier3_trend_down_blocks_pe_only(self):
+        """Tier 3 TREND_DOWN: only PE (aggressor) is blocked. CE (safe side) must remain free."""
+        from webui.backend.routes.mmm.mmm_regime import (
+            _compute_regime_action, ACTION_BLOCK_PE_SELLS, TREND_TIER_BLOCK
+        )
+        sess = self._sess_with_regimes(trend='TREND_DOWN', tier=TREND_TIER_BLOCK)
+        sess['_trend_direction'] = 'down'
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
 
     @pytest.mark.sealed
     def test_c_cra_10_trend_tier4_wind_down_flag(self):

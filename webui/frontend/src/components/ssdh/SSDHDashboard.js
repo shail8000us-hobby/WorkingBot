@@ -19,6 +19,7 @@ import SSDHPositionsTable from './SSDHPositionsTable';
 import SSDHPnLPanel from './SSDHPnLPanel';
 import SSDHActivityLog from './SSDHActivityLog';
 import SSDHSessionCreate from './SSDHSessionCreate';
+import { readWarmJSON, setWarmJSON } from '../../utils/dataWarmCache';
 
 const POLL_MS = 10000;
 const LIVE_STATUSES = ['RUNNING', 'WIND_DOWN', 'INITIALIZING', 'EMERGENCY'];
@@ -277,7 +278,7 @@ function SSDHLandingPage({ sessions, onLaunch, onSelectSession, activeSession })
 // ─── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function SSDHDashboard() {
-  const [sessions, setSessions]       = useState([]);
+  const [sessions, setSessions]       = useState(() => readWarmJSON('/api/ssdh/sessions')?.sessions || []);
   const [activeSession, setActive]    = useState(null);
   const [showCreate, setShowCreate]   = useState(false);
   const [vegaSpike, setVegaSpike]     = useState(false);
@@ -291,6 +292,8 @@ export default function SSDHDashboard() {
   const loadSessions = useCallback(async () => {
     try {
       const data = await ssdh_service.getSessions();
+      setWarmJSON('/api/ssdh/sessions', data, { ttlMs: 12000 });
+
       const list = data.sessions || [];
       setSessions(list);
       const live = list.find(s => LIVE_STATUSES.includes(s.status));

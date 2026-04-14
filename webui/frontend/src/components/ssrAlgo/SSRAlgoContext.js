@@ -126,20 +126,45 @@ export function SSRAlgoProvider({ children, socket }) {
   const [state, dispatch] = useReducer(ssrAlgoReducer, initialState);
   const retryTimeoutRef = useRef(null);
   const retryCountRef = useRef(0);
+  const sessionsFetchInFlightRef = useRef(false);
+  const sessionsFetchPendingRef = useRef(false);
+  const sessionsFetchPendingShowLoadingRef = useRef(false);
+  const healthCheckInFlightRef = useRef(false);
+  const healthCheckPendingRef = useRef(false);
+  const soundEnabledRef = useRef(initialState.soundEnabled);
+  const maxLossAlertActiveRef = useRef(initialState.maxLossAlertActive);
   const maxRetries = 5;
   const baseRetryDelay = 2000;
 
+  useEffect(() => {
+    soundEnabledRef.current = state.soundEnabled;
+  }, [state.soundEnabled]);
+
+  useEffect(() => {
+    maxLossAlertActiveRef.current = state.maxLossAlertActive;
+  }, [state.maxLossAlertActive]);
+
   // Play max loss alert sound
   const playMaxLossAlert = useCallback(() => {
-    if (state.soundEnabled && soundManager.initialized) {
+    if (soundEnabledRef.current && soundManager.initialized) {
       soundManager.playSound('alert');
       console.log('🔔 SSR Algo: Max loss zone alert sound played');
     }
-  }, [state.soundEnabled]);
+  }, []);
 
   // Fetch sessions with retry logic
   const fetchSessions = useCallback(async (showLoading = true) => {
-    if (showLoading) {
+    if (sessionsFetchInFlightRef.current) {
+      sessionsFetchPendingRef.current = true;
+      sessionsFetchPendingShowLoadingRef.current =
+        sessionsFetchPendingShowLoadingRef.current || showLoading;
+      return;
+    }
+
+    sessionsFetchInFlightRef.current = true;
+    const shouldShowLoading = showLoading;
+
+    if (shouldShowLoading) {
       dispatch({ type: ACTIONS.SET_LOADING, payload: true });
     }
     
@@ -159,7 +184,19 @@ export function SSRAlgoProvider({ children, socket }) {
       dispatch({ type: ACTIONS.SET_ERROR, payload: err.message });
       handleNetworkError();
     } finally {
-      dispatch({ type: ACTIONS.SET_LOADING, payload: false });
+      if (shouldShowLoading) {
+        dispatch({ type: ACTIONS.SET_LOADING, payload: false });
+      }
+
+      sessionsFetchInFlightRef.current = false;
+      if (sessionsFetchPendingRef.current) {
+        const pendingShowLoading = sessionsFetchPendingShowLoadingRef.current;
+        sessionsFetchPendingRef.current = false;
+        sessionsFetchPendingShowLoadingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchSessions(pendingShowLoading);
+        });
+      }
     }
   }, []);
 
@@ -172,6 +209,10 @@ export function SSRAlgoProvider({ children, socket }) {
       console.log(`SSR Algo: Network error, retrying in ${delay}ms (attempt ${retryCountRef.current + 1}/${maxRetries})`);
       
       dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'reconnecting' });
+
+      if (retryTimeoutRef.current) {
+        clearTimeout(retryTimeoutRef.current);
+      }
       
       retryTimeoutRef.current = setTimeout(() => {
         retryCountRef.current++;
@@ -185,11 +226,25 @@ export function SSRAlgoProvider({ children, socket }) {
 
   // Health check
   const checkHealth = useCallback(async () => {
+    if (healthCheckInFlightRef.current) {
+      healthCheckPendingRef.current = true;
+      return;
+    }
+
+    healthCheckInFlightRef.current = true;
     try {
       const result = await ssrAlgoService.healthCheck();
       dispatch({ type: ACTIONS.SET_HEALTH_STATUS, payload: result.success ? 'healthy' : 'error' });
     } catch (err) {
       dispatch({ type: ACTIONS.SET_HEALTH_STATUS, payload: 'error' });
+    } finally {
+      healthCheckInFlightRef.current = false;
+      if (healthCheckPendingRef.current) {
+        healthCheckPendingRef.current = false;
+        Promise.resolve().then(() => {
+          checkHealth();
+        });
+      }
     }
   }, []);
 
@@ -202,13 +257,15 @@ export function SSRAlgoProvider({ children, socket }) {
     dispatch({ type: ACTIONS.SET_LAST_UPDATE, payload: new Date().toISOString() });
     
     // Check for max loss zone entry
-    if (data.monitor_status?.in_max_loss_zone && !state.maxLossAlertActive) {
+    if (data.monitor_status?.in_max_loss_zone && !maxLossAlertActiveRef.current) {
       dispatch({ type: ACTIONS.SET_MAX_LOSS_ALERT, payload: true });
+      maxLossAlertActiveRef.current = true;
       playMaxLossAlert();
-    } else if (!data.monitor_status?.in_max_loss_zone && state.maxLossAlertActive) {
+    } else if (!data.monitor_status?.in_max_loss_zone && maxLossAlertActiveRef.current) {
       dispatch({ type: ACTIONS.SET_MAX_LOSS_ALERT, payload: false });
+      maxLossAlertActiveRef.current = false;
     }
-  }, [state.maxLossAlertActive, playMaxLossAlert]);
+  }, [playMaxLossAlert]);
 
   // Handle new session created via WebSocket
   const handleNewSession = useCallback((data) => {
@@ -236,11 +293,15 @@ export function SSRAlgoProvider({ children, socket }) {
     socket.on('ssr_algo_session_update', handleSessionUpdate);
     socket.on('ssr_algo_new_session', handleNewSession);
     socket.on('ssr_algo_session_deleted', handleSessionDeleted);
-    socket.on('ssr_algo_max_loss_alert', (data) => {
-      dispatch({ type: ACTIONS.SET_MAX_LOSS_ALERT, payload: true });
+    const handleMaxLossAlert = (data) => {
+      if (!maxLossAlertActiveRef.current) {
+        dispatch({ type: ACTIONS.SET_MAX_LOSS_ALERT, payload: true });
+        maxLossAlertActiveRef.current = true;
+      }
       playMaxLossAlert();
       console.warn('🚨 SSR Algo: Max loss zone alert!', data);
-    });
+    };
+    socket.on('ssr_algo_max_loss_alert', handleMaxLossAlert);
 
     // Cleanup
     return () => {
@@ -248,7 +309,7 @@ export function SSRAlgoProvider({ children, socket }) {
       socket.off('ssr_algo_session_update', handleSessionUpdate);
       socket.off('ssr_algo_new_session', handleNewSession);
       socket.off('ssr_algo_session_deleted', handleSessionDeleted);
-      socket.off('ssr_algo_max_loss_alert');
+      socket.off('ssr_algo_max_loss_alert', handleMaxLossAlert);
       console.log('📡 SSR Algo: Unsubscribed from WebSocket events');
     };
   }, [socket, handleSessionUpdate, handleNewSession, handleSessionDeleted, playMaxLossAlert]);

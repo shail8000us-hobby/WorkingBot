@@ -57,10 +57,18 @@ export const SymbolProvider = ({ children }) => {
 
   // Refs for cache management
   const cacheTimestamps = useRef({});
+  const loadSymbolsInFlightRef = useRef(false);
+  const loadSymbolsPendingRef = useRef(false);
   const CACHE_TTL = 30000; // 30 seconds
 
   // Load symbols from API
   const loadSymbols = useCallback(async () => {
+    if (loadSymbolsInFlightRef.current) {
+      loadSymbolsPendingRef.current = true;
+      return;
+    }
+
+    loadSymbolsInFlightRef.current = true;
     try {
       const response = await fetch('/api/symbols');
       const data = await response.json();
@@ -90,6 +98,13 @@ export const SymbolProvider = ({ children }) => {
       console.error('Failed to load symbols:', err);
     } finally {
       setLoading(false);
+      loadSymbolsInFlightRef.current = false;
+      if (loadSymbolsPendingRef.current) {
+        loadSymbolsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          loadSymbols();
+        });
+      }
     }
   }, []); // Remove selectedSymbol dependency to prevent loop
 

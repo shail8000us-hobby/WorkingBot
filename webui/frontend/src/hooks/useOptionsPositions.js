@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import api from '../utils/apiShim';
+import { readWarmJSON, setWarmJSON } from '../utils/dataWarmCache';
 
 // Phase 5 Optimization: IV cache with 60s TTL to avoid 17+ external API calls per poll
 const IV_CACHE_TTL_MS = 60000;
@@ -102,13 +103,28 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   const activeIntervalsRef = useRef([]);
   const socketRef = useRef(null);
   const lastModifiedRef = useRef(null);
+  const dashboardInFlightRef = useRef(false);
+  const dashboardPendingRef = useRef(false);
+  const positionsInFlightRef = useRef(false);
+  const positionsPendingRef = useRef(false);
+  const pendingOrdersInFlightRef = useRef(false);
+  const pendingOrdersPendingRef = useRef(false);
+  const feesInFlightRef = useRef(false);
 
   // ---- Fetch functions ----
   const fetchDashboard = useCallback(async () => {
+    if (dashboardInFlightRef.current) {
+      dashboardPendingRef.current = true;
+      return true;
+    }
+
+    dashboardInFlightRef.current = true;
     try {
       const { data } = await api.get('/api/options/dashboard');
 
       if (data?.success) {
+        setWarmJSON('/api/options/dashboard', data, { ttlMs: 10000 });
+
         // Always update lastDataUpdate on a successful backend response,
         // even if data is unchanged (cached) — prevents false "STALE" warning
         // when exchange API is temporarily unavailable but backend is healthy.
@@ -155,6 +171,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         setError(`Connection error: ${err.message}`);
       }
       return false;
+    } finally {
+      dashboardInFlightRef.current = false;
+      if (dashboardPendingRef.current) {
+        dashboardPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchDashboard();
+        });
+      }
     }
   }, []);
 
@@ -175,6 +199,12 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   }, []);
 
   const fetchPositions = useCallback(async () => {
+    if (positionsInFlightRef.current) {
+      positionsPendingRef.current = true;
+      return;
+    }
+
+    positionsInFlightRef.current = true;
     try {
       const [optionsResponse, mvStraddleResponse] = await Promise.all([
         api.get('/api/options/positions'),
@@ -223,6 +253,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       } else {
         setError(`Connection error: ${err.message}`);
       }
+    } finally {
+      positionsInFlightRef.current = false;
+      if (positionsPendingRef.current) {
+        positionsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchPositions();
+        });
+      }
     }
   }, []);
 
@@ -243,6 +281,12 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   }, []);
 
   const fetchPendingOrders = useCallback(async () => {
+    if (pendingOrdersInFlightRef.current) {
+      pendingOrdersPendingRef.current = true;
+      return;
+    }
+
+    pendingOrdersInFlightRef.current = true;
     try {
       const { data } = await api.get('/api/positions/pending-orders');
       if (data?.success) {
@@ -259,6 +303,14 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     } catch (err) {
       console.error('Failed to fetch pending orders:', err);
       setPendingOrdersError(err.message);
+    } finally {
+      pendingOrdersInFlightRef.current = false;
+      if (pendingOrdersPendingRef.current) {
+        pendingOrdersPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchPendingOrders();
+        });
+      }
     }
   }, []);
 
@@ -359,6 +411,37 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
 
     const loadData = async () => {
       setLoading(true);
+
+      const warmedDashboard = readWarmJSON('/api/options/dashboard');
+      if (warmedDashboard?.success) {
+        const warmPositions = warmedDashboard.positions || [];
+        const warmStatus = warmedDashboard.status || {};
+        const warmPendingOrders = warmedDashboard.pending_orders || [];
+        const warmFuturesPositions = warmedDashboard.futures_positions || [];
+
+        setPositions(warmPositions);
+        setStatus(warmStatus);
+        setPendingOrders(warmPendingOrders);
+        setFuturesPositions(warmFuturesPositions);
+        setError(null);
+        setLastDataUpdate(Date.now());
+        hasPositionsRef.current = warmPositions.length > 0;
+
+        if (warmedDashboard.margin) {
+          setMarginData(warmedDashboard.margin);
+        }
+
+        setLoading(false);
+
+        enrichPositionsWithIV(warmPositions)
+          .then((enriched) => {
+            setPositions(enriched);
+          })
+          .catch(() => {
+            // warm IV enrichment is best-effort
+          });
+      }
+
       const dashSuccess = await fetchDashboard();
       setLoading(false);
       clearTimeout(safetyTimer);
@@ -506,6 +589,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   const [feesMap, setFeesMap] = useState({});
 
   const fetchFees = useCallback(async () => {
+    if (feesInFlightRef.current) {
+      return;
+    }
+
+    feesInFlightRef.current = true;
     try {
       const { data } = await api.get('/api/options/fees-summary');
       if (data?.success && data.fees) {
@@ -514,6 +602,8 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     } catch (err) {
       // Non-critical — fees column just shows nothing if unavailable
       console.warn('[useOptionsPositions] fees-summary fetch failed:', err.message);
+    } finally {
+      feesInFlightRef.current = false;
     }
   }, []);
 

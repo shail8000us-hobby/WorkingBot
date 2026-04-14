@@ -282,7 +282,8 @@ def test_c11_trend_reduction_dangerous_side():
 # ─── C12: IMP-3 asymmetry reduction on heavy side ─────────────────────────
 
 def test_c12_asymmetry_reduction_on_heavy_side():
-    """If _asymmetry_lot_reduction_pct=0.5 and selling heavy side → lots halved."""
+    """Asymmetry is now warn-only — _asymmetry_lot_reduction_pct is ignored by
+    calculate_lots_to_sell. Even with the flag set, lots are NOT reduced."""
     engine = _make_engine()
     session = _base_session(
         asymmetry_reduction=0.5,
@@ -291,9 +292,8 @@ def test_c12_asymmetry_reduction_on_heavy_side():
     )
     base_lots = math.ceil(10.0 / (100.0 * LOT_SIZE_BTC))
     lots, msg, cap = engine.calculate_lots_to_sell(session, 'ce', 10.0, 100.0)
-    expected = max(math.ceil(base_lots * 0.5), 1)
-    assert lots == expected
-    assert 'Asymmetry' in msg or 'reduction' in msg.lower()
+    # Engine no longer reads _asymmetry_lot_reduction_pct — lots are at base_lots
+    assert lots == base_lots
 
 
 def test_c12b_asymmetry_no_reduction_on_non_heavy_side():

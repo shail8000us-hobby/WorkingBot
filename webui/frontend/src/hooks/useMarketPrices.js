@@ -7,7 +7,7 @@
  * Created: January 18, 2026
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
 
 const POLLING_INTERVAL = 5000; // 5 seconds fallback polling
@@ -21,9 +21,18 @@ export const useMarketPrices = () => {
 
   const socketRef = useRef(null);
   const pollingIntervalRef = useRef(null);
+  const restInFlightRef = useRef(false);
+  const pendingRestRef = useRef(false);
+  const lastWsPriceRef = useRef({ btc: null, eth: null });
 
   // Fetch prices via REST API (fallback)
-  const fetchPricesREST = async () => {
+  const fetchPricesREST = useCallback(async () => {
+    if (restInFlightRef.current) {
+      pendingRestRef.current = true;
+      return;
+    }
+
+    restInFlightRef.current = true;
     try {
       const cacheBuster = Date.now();
 
@@ -35,14 +44,14 @@ export const useMarketPrices = () => {
       if (btcRes.ok) {
         const btcData = await btcRes.json();
         if (btcData.price) {
-          setBtcPrice(btcData.price);
+          setBtcPrice((prev) => (prev === btcData.price ? prev : btcData.price));
         }
       }
 
       if (ethRes.ok) {
         const ethData = await ethRes.json();
         if (ethData.price) {
-          setEthPrice(ethData.price);
+          setEthPrice((prev) => (prev === ethData.price ? prev : ethData.price));
         }
       }
 
@@ -51,8 +60,16 @@ export const useMarketPrices = () => {
     } catch (error) {
       console.error('[useMarketPrices] REST fetch error:', error);
       setLoading(false);
+    } finally {
+      restInFlightRef.current = false;
+      if (pendingRestRef.current) {
+        pendingRestRef.current = false;
+        Promise.resolve().then(() => {
+          fetchPricesREST();
+        });
+      }
     }
-  };
+  }, []);
 
   useEffect(() => {
     // Initialize Socket.IO connection
@@ -99,14 +116,20 @@ export const useMarketPrices = () => {
     });
 
     socket.on('market_price_update', (data) => {
-      const { symbol, price, timestamp } = data;
+      const { symbol, price } = data;
 
       if (symbol === 'BTC' && price) {
-        setBtcPrice(price);
-        console.log(`[useMarketPrices] BTC: $${price.toLocaleString()}`);
+        if (lastWsPriceRef.current.btc !== price) {
+          lastWsPriceRef.current.btc = price;
+          setBtcPrice(price);
+          console.log(`[useMarketPrices] BTC: $${price.toLocaleString()}`);
+        }
       } else if (symbol === 'ETH' && price) {
-        setEthPrice(price);
-        console.log(`[useMarketPrices] ETH: $${price.toLocaleString()}`);
+        if (lastWsPriceRef.current.eth !== price) {
+          lastWsPriceRef.current.eth = price;
+          setEthPrice(price);
+          console.log(`[useMarketPrices] ETH: $${price.toLocaleString()}`);
+        }
       }
 
       setLoading(false);
@@ -135,7 +158,7 @@ export const useMarketPrices = () => {
         clearInterval(pollingIntervalRef.current);
       }
     };
-  }, []);
+  }, [fetchPricesREST]);
 
   return {
     btcPrice,

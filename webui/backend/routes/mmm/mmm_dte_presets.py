@@ -188,7 +188,7 @@ def build_straddle_adjustment_preset(hours_to_expiry: float) -> dict:
         # ── Lot Sizing (fixed) ──
         'initial_lots': 1,
         'max_lots_per_side': 5,
-        'max_total_exposure': 10,
+        'max_total_exposure': 0,  # 0 = auto (2× max_lots_per_side) — never hardcode to avoid mismatch when max_lots_per_side is overridden
         'max_adjustments': clamp(round(H * 4), 10, 50),
 
         # ── Heartbeat ──
@@ -381,7 +381,7 @@ def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
         # ── Lot control ──────────────────────────────────────────────────────
         # initial_lots: REQUIRED — operator must provide explicitly.
         # max_lots_per_side: locked to initial_lots by mmm_api.py after validation.
-        'max_total_exposure':                   20,
+        'max_total_exposure':                   0,  # 0 = auto (2× max_lots_per_side)
 
         # ── Heartbeat ────────────────────────────────────────────────────────
         'adjustment_interval':                  120,
@@ -407,6 +407,9 @@ def build_straddle_roll_preset(hours_to_expiry: float) -> dict:
         'straddle_roll_iv_spike_mult':          2.0,    # IV spike: logs warning, does NOT block roll
         'straddle_roll_loss_abort_mult':        3.0,    # belt-and-suspenders (hard stop fires earlier)
         'straddle_roll_hard_stop_market_order': True,   # hard stop must fill immediately
+        # Dynamic trigger: use live straddle mark (CE mid + PE mid) as roll distance
+        'straddle_dynamic_trigger_enabled':     True,   # shrinks trigger as premium decays
+        'straddle_min_trigger_pts':             200,    # floor: never roll at < 200pts from ATM
 
         # max_loss_amount: REQUIRED — operator must set explicitly.
 

@@ -1,9 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Card, CardContent, Typography, Box, Chip, LinearProgress, Alert } from '@mui/material';
 import {
   CheckCircle,
   Warning,
-  Error as ErrorIcon,
   TrendingUp,
   TrendingDown,
   Security,
@@ -14,9 +13,11 @@ import {
 import { useInstanceAPI } from '../hooks/useInstanceAPI';
 import { useInstance, parseInstanceName } from '../context/InstanceContext';
 import SymbolBadge from './common/SymbolBadge';
+import { readWarmJSON, setWarmJSON } from '../utils/dataWarmCache';
 
 const MonitoringDashboard = () => {
   const api = useInstanceAPI();
+  const fetchJSON = api.fetchJSON;
   const { selectedInstance } = useInstance();
   const instanceInfo = parseInstanceName(selectedInstance);
   const selectedSymbol = instanceInfo?.symbol; // backward compat
@@ -29,22 +30,107 @@ const MonitoringDashboard = () => {
   const [advancedPredictions, setAdvancedPredictions] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const dataInFlightRef = useRef(false);
+  const dataPendingRef = useRef(false);
+
+  useEffect(() => {
+    const cachedStatus = readWarmJSON('/api/monitoring/status', {
+      includeSelectedInstance: true,
+    });
+
+    if (!cachedStatus) {
+      return;
+    }
+
+    setMonitoringStatus(cachedStatus);
+
+    if (!cachedStatus.monitoring_active) {
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    let hydratedAny = false;
+
+    const cachedHealth = readWarmJSON('/api/monitoring/price-health', {
+      includeSelectedInstance: true,
+    });
+    if (cachedHealth) {
+      setPriceHealth(cachedHealth);
+      hydratedAny = true;
+    }
+
+    const cachedStats = readWarmJSON('/api/monitoring/pre-order-stats', {
+      includeSelectedInstance: true,
+    });
+    if (cachedStats) {
+      setPreOrderStats(cachedStats);
+      hydratedAny = true;
+    }
+
+    const cachedTP = readWarmJSON('/api/monitoring/tp-verification', {
+      includeSelectedInstance: true,
+    });
+    if (cachedTP) {
+      setTpVerification(cachedTP);
+      hydratedAny = true;
+    }
+
+    const cachedAnomalies = readWarmJSON('/api/monitoring/anomalies', {
+      includeSelectedInstance: true,
+    });
+    if (cachedAnomalies) {
+      setAnomalies(cachedAnomalies.anomaly_list || cachedAnomalies.anomalies || []);
+      hydratedAny = true;
+    }
+
+    const cachedPredictiveMap = readWarmJSON('/api/monitoring/predictive-map', {
+      includeSelectedInstance: true,
+    });
+    if (cachedPredictiveMap) {
+      setPredictiveMap(cachedPredictiveMap);
+      hydratedAny = true;
+    }
+
+    const cachedAdvancedPredictions = readWarmJSON('/api/monitoring/advanced-predictions', {
+      includeSelectedInstance: true,
+    });
+    if (cachedAdvancedPredictions) {
+      setAdvancedPredictions(cachedAdvancedPredictions);
+      hydratedAny = true;
+    }
+
+    if (hydratedAny) {
+      setLoading(false);
+      setError(null);
+    }
+  }, [selectedInstance]);
 
   // Fetch monitoring status
-  const fetchMonitoringStatus = async () => {
+  const fetchMonitoringStatus = useCallback(async () => {
     try {
-      const data = await api.fetchJSON('/api/monitoring/status');
+      const data = await fetchJSON('/api/monitoring/status');
       setMonitoringStatus(data);
+      setWarmJSON('/api/monitoring/status', data, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
       return data.monitoring_active;
     } catch (err) {
       console.error('Failed to fetch monitoring status:', err);
       setError('Failed to connect to monitoring system');
       return false;
     }
-  };
+  }, [fetchJSON]);
 
   // Fetch all monitoring data
-  const fetchMonitoringData = async () => {
+  const fetchMonitoringData = useCallback(async () => {
+    if (dataInFlightRef.current) {
+      dataPendingRef.current = true;
+      return;
+    }
+
+    dataInFlightRef.current = true;
     try {
       setLoading(true);
       setError(null);
@@ -53,18 +139,17 @@ const MonitoringDashboard = () => {
       const isActive = await fetchMonitoringStatus();
 
       if (!isActive) {
-        setLoading(false);
         return;
       }
 
       // Fetch all endpoints in parallel (including new advanced predictions)
       const [health, stats, tp, anom, map, advPred] = await Promise.all([
-        api.fetchJSON('/api/monitoring/price-health'),
-        api.fetchJSON('/api/monitoring/pre-order-stats'),
-        api.fetchJSON('/api/monitoring/tp-verification'),
-        api.fetchJSON('/api/monitoring/anomalies'),
-        api.fetchJSON('/api/monitoring/predictive-map'),
-        api.fetchJSON('/api/monitoring/advanced-predictions'),
+        fetchJSON('/api/monitoring/price-health'),
+        fetchJSON('/api/monitoring/pre-order-stats'),
+        fetchJSON('/api/monitoring/tp-verification'),
+        fetchJSON('/api/monitoring/anomalies'),
+        fetchJSON('/api/monitoring/predictive-map'),
+        fetchJSON('/api/monitoring/advanced-predictions'),
       ]);
 
       setPriceHealth(health);
@@ -74,13 +159,44 @@ const MonitoringDashboard = () => {
       setPredictiveMap(map);
       setAdvancedPredictions(advPred);
 
-      setLoading(false);
+      setWarmJSON('/api/monitoring/price-health', health, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
+      setWarmJSON('/api/monitoring/pre-order-stats', stats, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
+      setWarmJSON('/api/monitoring/tp-verification', tp, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
+      setWarmJSON('/api/monitoring/anomalies', anom, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
+      setWarmJSON('/api/monitoring/predictive-map', map, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
+      setWarmJSON('/api/monitoring/advanced-predictions', advPred, {
+        includeSelectedInstance: true,
+        ttlMs: 12000,
+      });
     } catch (err) {
       console.error('Error fetching monitoring data:', err);
       setError(err.message);
+    } finally {
       setLoading(false);
+      dataInFlightRef.current = false;
+      if (dataPendingRef.current) {
+        dataPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchMonitoringData();
+        });
+      }
     }
-  };
+  }, [fetchJSON, fetchMonitoringStatus]);
 
   // Initial fetch and polling
   // Auto-refresh on mount and symbol change
@@ -88,7 +204,7 @@ const MonitoringDashboard = () => {
     fetchMonitoringData();
     const interval = setInterval(fetchMonitoringData, 30000); // Poll every 30s for faster updates
     return () => clearInterval(interval);
-  }, [selectedSymbol]);
+  }, [selectedSymbol, fetchMonitoringData]);
 
   if (loading && !monitoringStatus) {
     return (

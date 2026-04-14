@@ -39,6 +39,9 @@ const MobileNavDesktopVersion = ({ sections = [], activeSection, onSelect }) => 
                 key={id}
                 type="button"
                 onClick={() => onSelect?.(id)}
+                onMouseEnter={() => prefetchPage(id)}
+                onFocus={() => prefetchPage(id)}
+                onMouseDown={() => prefetchPage(id)}
                 onTouchStart={() => prefetchPage(id)}
                 className={`whitespace-nowrap rounded-full px-4 py-2 text-sm font-semibold transition ${active
                   ? 'bg-sky-500 text-slate-900 shadow-card'
@@ -59,6 +62,11 @@ const MobileNavBottomTabs = ({ sections = [], activeSection }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const path = location.pathname.replace(/^\//, '') || activeSection;
+
+  const prefetchAndNavigate = React.useCallback((tabId) => {
+    prefetchPage(tabId);
+    navigate(`/${tabId}`);
+  }, [navigate]);
 
   // Group sections the same way as MobileNavDesktopVersion
   const groups = [];
@@ -110,7 +118,11 @@ const MobileNavBottomTabs = ({ sections = [], activeSection }) => {
             return (
               <button
                 key={tab.id}
-                onClick={() => navigate(`/${tab.id}`)}
+                onClick={() => prefetchAndNavigate(tab.id)}
+                onMouseEnter={() => prefetchPage(tab.id)}
+                onFocus={() => prefetchPage(tab.id)}
+                onMouseDown={() => prefetchPage(tab.id)}
+                onTouchStart={() => prefetchPage(tab.id)}
                 style={{
                   border: 'none',
                   borderBottom: isActive ? '3px solid #4caf50' : '3px solid transparent',

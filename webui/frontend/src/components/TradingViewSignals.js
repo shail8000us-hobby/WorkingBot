@@ -110,11 +110,24 @@ const TradingViewSignals = () => {
   const [filter, setFilter] = useState({ action: '', symbol: '', strategy: '', limit: 50 });
 
   const socketRef = useRef(null);
-  const signalAudioRef = useRef(null);
+  const inFlightRef = useRef({
+    signals: false,
+    stats: false,
+    health: false,
+    config: false,
+    logs: false,
+  });
+  const statsHealthTimerRef = useRef(null);
+  const skipFirstFilterEffectRef = useRef(true);
 
   // ── API Calls ──
 
   const fetchSignals = useCallback(async () => {
+    if (inFlightRef.current.signals) {
+      return;
+    }
+
+    inFlightRef.current.signals = true;
     setLoading(true);
     setError(null);
     try {
@@ -131,40 +144,84 @@ const TradingViewSignals = () => {
       setError(`Failed to fetch signals: ${err.message}`);
     } finally {
       setLoading(false);
+      inFlightRef.current.signals = false;
     }
   }, [filter]);
 
   const fetchStats = useCallback(async () => {
+    if (inFlightRef.current.stats) {
+      return;
+    }
+
+    inFlightRef.current.stats = true;
     try {
       const resp = await fetch(`${API_URL}/api/tradingview/signals/stats`);
       const data = await resp.json();
       if (data.success) setStats(data.stats);
     } catch (err) { /* ignore */ }
+    finally {
+      inFlightRef.current.stats = false;
+    }
   }, []);
 
   const fetchHealth = useCallback(async () => {
+    if (inFlightRef.current.health) {
+      return;
+    }
+
+    inFlightRef.current.health = true;
     try {
       const resp = await fetch(`${API_URL}/api/tradingview/health`);
       const data = await resp.json();
       if (data.success) setHealth(data.health);
     } catch (err) { /* ignore */ }
+    finally {
+      inFlightRef.current.health = false;
+    }
   }, []);
 
   const fetchWebhookConfig = useCallback(async () => {
+    if (inFlightRef.current.config) {
+      return;
+    }
+
+    inFlightRef.current.config = true;
     try {
       const resp = await fetch(`${API_URL}/api/tradingview/config`);
       const data = await resp.json();
       if (data.success) setWebhookConfig(data.config);
     } catch (err) { /* ignore */ }
+    finally {
+      inFlightRef.current.config = false;
+    }
   }, []);
 
   const fetchWebhookLogs = useCallback(async () => {
+    if (inFlightRef.current.logs) {
+      return;
+    }
+
+    inFlightRef.current.logs = true;
     try {
       const resp = await fetch(`${API_URL}/api/tradingview/webhook-logs?limit=30`);
       const data = await resp.json();
       if (data.success) setWebhookLogs(data.logs);
     } catch (err) { /* ignore */ }
+    finally {
+      inFlightRef.current.logs = false;
+    }
   }, []);
+
+  const scheduleStatsHealthRefresh = useCallback((delayMs = 1000) => {
+    if (statsHealthTimerRef.current) {
+      return;
+    }
+    statsHealthTimerRef.current = setTimeout(() => {
+      statsHealthTimerRef.current = null;
+      fetchStats();
+      fetchHealth();
+    }, delayMs);
+  }, [fetchStats, fetchHealth]);
 
   const deleteSignal = async (signalId) => {
     if (!window.confirm('Delete this signal?')) return;
@@ -173,7 +230,7 @@ const TradingViewSignals = () => {
       const data = await resp.json();
       if (data.success) {
         fetchSignals();
-        fetchStats();
+        scheduleStatsHealthRefresh(250);
         setSnackbar({ open: true, message: 'Signal deleted', severity: 'success' });
       } else {
         setError(data.error || 'Failed to delete');
@@ -197,7 +254,7 @@ const TradingViewSignals = () => {
       if (data.success) {
         setSnackbar({ open: true, message: 'Test signal sent successfully!', severity: 'success' });
         fetchSignals();
-        fetchStats();
+        scheduleStatsHealthRefresh(250);
       } else {
         setSnackbar({ open: true, message: `Test failed: ${data.error}`, severity: 'error' });
       }
@@ -238,8 +295,7 @@ const TradingViewSignals = () => {
 
     socket.on('tradingview_signal', (signal) => {
       setSignals(prev => [signal, ...prev.slice(0, 199)]);
-      fetchStats();
-      fetchHealth();
+      scheduleStatsHealthRefresh(500);
 
       // Browser notification
       if ('Notification' in window && Notification.permission === 'granted') {
@@ -269,12 +325,22 @@ const TradingViewSignals = () => {
       socket.disconnect();
       clearInterval(healthInterval);
       clearInterval(signalInterval);
+      if (statsHealthTimerRef.current) {
+        clearTimeout(statsHealthTimerRef.current);
+        statsHealthTimerRef.current = null;
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Refetch signals when filter changes
-  useEffect(() => { fetchSignals(); }, [filter, fetchSignals]);
+  useEffect(() => {
+    if (skipFirstFilterEffectRef.current) {
+      skipFirstFilterEffectRef.current = false;
+      return;
+    }
+    fetchSignals();
+  }, [filter, fetchSignals]);
 
   const formatTime = (ts) => {
     if (!ts) return 'N/A';

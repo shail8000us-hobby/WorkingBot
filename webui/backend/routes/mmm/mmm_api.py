@@ -2326,20 +2326,31 @@ def update_session_params(session_id: str):
                 'error': 'No mutable parameters provided',
             }), 400
 
-        # Strategy namespace guardrail: reject params irrelevant to this strategy.
+        # Strategy namespace guardrail: strip params irrelevant to this strategy.
+        # We log a warning and silently drop forbidden params rather than hard-rejecting
+        # the entire request — this prevents DEFAULT_PARAMS drift (e.g. new straddle-roll
+        # params added to global defaults) from blocking saves on sessions that predate
+        # those params. Only error if ALL submitted params were forbidden (nothing useful left).
         forbidden_for_strategy = get_forbidden_params_for_strategy(current_strategy)
         namespace_violations = sorted([k for k in data.keys() if k in forbidden_for_strategy])
         if namespace_violations:
-            return jsonify({
-                'success': False,
-                'error': (
-                    f"These parameters are not allowed for strategy_type={current_strategy}: "
-                    f"{', '.join(namespace_violations)}. "
-                    "Use a strategy-appropriate session to modify them."
-                ),
-                'strategy_type': current_strategy,
-                'forbidden_params': namespace_violations,
-            }), 400
+            log.warning(
+                f"[{session_id}] Stripping {len(namespace_violations)} forbidden params "
+                f"for strategy_type={current_strategy}: {namespace_violations}"
+            )
+            for k in namespace_violations:
+                data.pop(k)
+            if not data:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f"All submitted parameters are forbidden for strategy_type={current_strategy}: "
+                        f"{', '.join(namespace_violations)}. "
+                        "Use a strategy-appropriate session to modify them."
+                    ),
+                    'strategy_type': current_strategy,
+                    'forbidden_params': namespace_violations,
+                }), 400
 
         log.info(f"[{session_id}] Received param update request: {list(data.keys())}")
 
@@ -2421,24 +2432,26 @@ def update_session_params(session_id: str):
                     f"CE={ce_lots}, PE={pe_lots}, uPnL=${total_unrealized:+.0f}"
                 )
 
-        # Cross-param check: warn when max_lots_per_side > max_total_exposure (if set).
-        # max_total_exposure is the HARD ceiling on active+frozen lots; raising
-        # max_lots_per_side without also raising max_total_exposure means the hard
-        # ceiling (which can already be exceeded by frozen lots) stays low and will
-        # block every adjustment with "Total exposure ceiling".
+        # Cross-param check: auto-sync max_total_exposure when max_lots_per_side is raised.
+        # If the new max_lots_per_side would exceed the explicit max_total_exposure ceiling,
+        # auto-raise max_total_exposure to max_lots_per_side × 2. This prevents a silent
+        # blocker where the operator raises max_lots_per_side but adjustments keep failing
+        # with "Total exposure ceiling" because max_total_exposure was left stale.
         total_exp_warning = None
         suggest_max_total_exposure = None
         effective_max_lots = current_params.get('max_lots_per_side', 100)
         effective_max_exp = current_params.get('max_total_exposure', 0)
         if effective_max_exp > 0 and effective_max_lots > effective_max_exp:
-            suggest_max_total_exposure = int(effective_max_lots * 2)
+            # Auto-fix: raise max_total_exposure to 2× max_lots_per_side so it never blocks.
+            auto_new_exp = int(effective_max_lots * 2)
+            current_params['max_total_exposure'] = auto_new_exp
+            if 'max_total_exposure' not in changed_keys:
+                changed_keys.append('max_total_exposure')
+            suggest_max_total_exposure = auto_new_exp
             total_exp_warning = (
                 f"max_lots_per_side ({effective_max_lots}) > max_total_exposure "
-                f"({effective_max_exp}): the hard exposure ceiling is lower than "
-                f"the per-side cap. Adjustments will be blocked by 'Total exposure "
-                f"ceiling' once total lots (active+frozen) reach {effective_max_exp}. "
-                f"Consider raising max_total_exposure to at least {suggest_max_total_exposure} "
-                f"(= max_lots_per_side × 2), or set it to 0 for auto."
+                f"({effective_max_exp}): auto-raised max_total_exposure to {auto_new_exp} "
+                f"(= max_lots_per_side × 2) to prevent adjustments from being blocked."
             )
             log.warning(f"[{session_id}] {total_exp_warning}")
 
@@ -2459,8 +2472,9 @@ def update_session_params(session_id: str):
         # Persist
         storage.update_session(session_id, session_updates)
 
-        # Emit WebSocket update
-        emit_params_changed(session_id, {k: validated[k] for k in changed_keys})
+        # Emit WebSocket update (use current_params as source — it includes auto-derived
+        # changes like max_total_exposure that may not be in validated)
+        emit_params_changed(session_id, {k: current_params[k] for k in changed_keys if k in current_params})
 
         # ── SESSION EVENT: param changes (one event per changed param) ─────
         try:
@@ -4348,6 +4362,24 @@ def inject_position(session_id: str):
             fill_price = float(result.get('fill_price', 0))
             order_id = str(result.get('order_id', ''))
             client_order_id = str(result.get('client_order_id', ''))
+            # Use actual filled_size from executor — may be less than lots_param on partial fill.
+            # This is critical: using lots_param here when only a fraction filled would register
+            # phantom lots in session state, causing the algo to track more exposure than exists.
+            actual_lots = result.get('filled_size') or lots_param
+            if actual_lots != lots_param:
+                log.warning(
+                    f'[{session_id}] Inject partial fill: requested={lots_param}, '
+                    f'filled={actual_lots} ({result.get("execution_type", "?")}). '
+                    f'Registering {actual_lots} lots. Use inject again for remaining {lots_param - actual_lots}.'
+                )
+                log_activity(
+                    'manual_inject',
+                    f'⚠️ Partial fill: {actual_lots}/{lots_param} {side_param.upper()} @ {int(strike_val)} '
+                    f'fill ${fill_price:.2f}. Remaining {lots_param - actual_lots} lots not filled.',
+                    session_id, 'warning',
+                    {'side': side_param.upper(), 'strike': strike_val,
+                     'lots_requested': lots_param, 'lots_filled': actual_lots},
+                )
 
             # Record exchange commission via ledger (CRIT-1 fix)
             _od = result.get('order_details') or {}
@@ -4358,6 +4390,10 @@ def inject_position(session_id: str):
                          order_id=str(result.get('order_id', '')),
                          side=side_param)
 
+        # In adopt mode, actual_lots == lots_param; in inject mode, actual_lots was set above.
+        if adopt:
+            actual_lots = lots_param
+
         now = datetime.now(timezone.utc).isoformat()
 
         # --- Record fill in positions[] (Unified Ledger) ---
@@ -4366,7 +4402,7 @@ def inject_position(session_id: str):
         side_state.setdefault('positions', []).append({
             'id': f"{side_param}_manual_{counter:03d}",
             'strike': strike_val,
-            'lots': lots_param,
+            'lots': actual_lots,
             'entry_premium': fill_price,
             'premium': fill_price,
             'type': 'manual',
@@ -4395,7 +4431,7 @@ def inject_position(session_id: str):
                 option_type=side_param.upper(),
                 strike=int(strike_val),
                 quantity_requested=lots_param,
-                quantity_filled=lots_param,
+                quantity_filled=actual_lots,
                 premium=fill_price,
                 event_type='ENTRY',
                 mechanism=_mech,
@@ -4405,7 +4441,7 @@ def inject_position(session_id: str):
                 remark=_btr(
                     'SELL', 'ENTRY',
                     side=side_param, strike=int(strike_val),
-                    lots=lots_param, premium=fill_price,
+                    lots=actual_lots, premium=fill_price,
                     mechanism=_mech,
                 ),
             )
@@ -4413,8 +4449,8 @@ def inject_position(session_id: str):
             pass
         # ── END TRADE AUDIT ──────────────────────────────────────────────
 
-        # Track total premium collected
-        premium_collected = fill_price * lots_param * LOT_SIZE_BTC
+        # Track total premium collected (based on actual filled lots, not requested)
+        premium_collected = fill_price * actual_lots * LOT_SIZE_BTC
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
         )
@@ -4425,7 +4461,8 @@ def inject_position(session_id: str):
         session.setdefault('adjustment_history', []).append({
             'side': side_param.upper(),
             'aggressor': 'OPERATOR',
-            'lots_sold': lots_param,
+            'lots_sold': actual_lots,
+            'lots_requested': lots_param,
             'premium': fill_price,
             'strike': strike_val,
             'timestamp': now,
@@ -4470,7 +4507,7 @@ def inject_position(session_id: str):
             emit_manual_injection(
                 session_id=session_id,
                 side=side_param.upper(),
-                lots=lots_param,
+                lots=actual_lots,
                 strike=strike_val,
                 fill_price=fill_price,
                 order_id=order_id,
@@ -4479,15 +4516,17 @@ def inject_position(session_id: str):
             log.warning(f'[{session_id}] WS emit failed after inject: {ws_err}')
 
         _action = 'Adopt' if adopt else 'Inject'
+        _partial_note = f' (partial: {actual_lots}/{lots_param})' if actual_lots != lots_param else ''
         log_activity(
             'manual_inject',
-            f'💉 {_action} OK: {lots_param} {side_param.upper()} @ {int(strike_val)} '
-            f'fill ${fill_price:.2f} (new active: {side_state.get("active_lots", 0)} lots)',
+            f'💉 {_action} OK: {actual_lots} {side_param.upper()} @ {int(strike_val)} '
+            f'fill ${fill_price:.2f} (new active: {side_state.get("active_lots", 0)} lots){_partial_note}',
             session_id, 'success',
             {
                 'side': side_param.upper(),
                 'strike': strike_val,
-                'lots': lots_param,
+                'lots': actual_lots,
+                'lots_requested': lots_param,
                 'fill_price': fill_price,
                 'order_id': order_id,
                 'new_active_lots': side_state.get('active_lots', 0),
@@ -4497,7 +4536,7 @@ def inject_position(session_id: str):
 
         log.info(
             f'[{session_id}] {_action} complete: {side_param.upper()} '
-            f'{lots_param} lots @ {strike_val} fill=${fill_price:.2f}'
+            f'{actual_lots}/{lots_param} lots @ {strike_val} fill=${fill_price:.2f}'
         )
 
         # Breakeven + gamma cache invalidation — positions changed after inject fill
@@ -4512,12 +4551,14 @@ def inject_position(session_id: str):
         return jsonify({
             'success': True,
             'side': side_param.upper(),
-            'lots': lots_param,
+            'lots': actual_lots,
+            'lots_requested': lots_param,
             'strike': strike_val,
             'fill_price': fill_price,
             'order_id': order_id,
             'new_active_lots': side_state.get('active_lots', 0),
             'adopted': adopt,
+            'partial_fill': actual_lots != lots_param,
         })
 
     except Exception as e:

@@ -3795,3 +3795,649 @@ OCS emergency (`ocs_emergency=True`) additionally bypasses G1 — restores hedge
 ### Test results
 - `test_sealed_mmm_replenish.py`: **33 passed** (count reduced from 46 by collapsing redundant tests; all contracts accurate)
 - Full suite: **1335 passed, 605 warnings** — no regressions
+
+## 2026-04-12 — MMM WebUI performance emergency: active-only refresh + websocket batching + fetch dedupe
+
+- Investigated a live MMM dashboard slowdown with a measurement-first approach and applied frontend-only optimizations (no trading-engine behavior changes).
+- `webui/frontend/src/components/mmm/MMMContext.js`:
+  - Added active-only refresh orchestration (`fetchActiveSessions`, `scheduleActiveRefresh`, merge helpers, in-flight/queued guards).
+  - Replaced frequent full-session summary refresh triggers with coalesced active-session updates.
+- `webui/frontend/src/components/mmm/hooks/useMMMWebSocket.js`:
+  - Added buffered live ticker commits (`LIVE_PRICE_FLUSH_MS = 250`) for `options_ticker_update`.
+  - Added no-op suppression so unchanged live price maps do not trigger unnecessary React renders.
+- `webui/frontend/src/components/mmm/MMMDashboard.js`:
+  - Added full-session fetch dedupe/throttle/queue path (`fetchFullSession(force)` with in-flight + queued refs).
+  - Forced fetch on session switch while preventing request storms from websocket/poll overlap.
+- Post-fix endpoint benchmark (`127.0.0.1:5555`) captured:
+  - Full summary (`/api/mmm/sessions?summary=true`): mean **218.64ms**, p95 **344.86ms**, payload **86,386B**.
+  - Active-only summary (`...&active_only=true`): mean **13.53ms**, p95 **15.79ms**, payload **1,291B**.
+  - Session detail (`/api/mmm/session/<id>?summary=false`): mean **27.44ms**, p95 **30.5ms**, payload **380,682B**.
+  - Full vs active-only ratios: **16.16x latency**, **66.91x payload**.
+- Validation: diagnostics on all three modified MMM frontend files reported no file-level errors.
+
+## 2026-04-12 — STRADDLE_WITH_ADJUSTMENT settings: locked-group fixes + My Controls filtering + lot-cap UX
+
+### Issues addressed
+Two live UX issues on a running `STRADDLE_WITH_ADJUSTMENT` session (5 lots per side):
+1. **My Controls cluttered** with params from preset-locked groups (whipsaw, regime, etc.) that have no effect on straddle sessions.
+2. **Cannot easily change adjustment lots** — `max_lots_per_side` was in the locked `safety` group, unreachable from the navigator. User started with `initial_lots=5` but `max_lots_per_side=5` (preset default), leaving zero headroom for adjustment lots.
+
+### Changes — `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+
+#### Fix 1 — `STRADDLE_LOCKED_GROUPS` corrected
+Previous: 17 groups locked (including `safety`, `triggers`, `regimeControls`, `consecutiveDir`, `autoReplenish`, `lotVelocity`, `marginGuardian`, `breakevenEngine`, `adaptiveTuning`, `perpHedge`). Many of these are actively used by the straddle_with_adjustment preset (`min_trigger_move`, `max_lots_per_side`, `whipsaw_*`, `lot_velocity_*`, `regime_enabled` are all set in the preset).
+
+New: Only 9 groups locked — those whose master feature switch is OFF in the preset or are structurally incompatible:
+- Kept locked: `windDown` (disabled), `positionLifecycle` (harvest disabled), `balanceControl` (strangle-only), `favorableScaleUp` (disabled), `reverseMode` (incompatible), `perpHedge` (disabled), `adaptiveTuning` (preset-locked), `atmShield` (disabled — fires on first move and destroys straddle structure), `gammaDetector` (calibrated for OTM strangle shape)
+- Unlocked: `safety`, `triggers`, `regimeControls`, `consecutiveDir`, `autoReplenish`, `lotVelocity`, `marginGuardian`, `breakevenEngine` — all actively used by the preset
+
+#### Fix 2 — `lockedGroupParams` derived set
+Added computation of a flat `lockedGroupParams` Set immediately after `STRADDLE_LOCKED_GROUPS`/`STRADDLE_ROLL_LOCKED_GROUPS` are defined. Iterates locked groups and collects all their param names. Used for My Controls filtering without re-traversal.
+
+#### Fix 3 — My Controls filters by locked groups
+`activeSection === '_pinned'` rendering now filters `[...pinned]` through `!lockedGroupParams.has(p)` before rendering. Hidden count shown as: "🔒 N params hidden — preset-locked for Short Straddle + Adjustment".
+
+Navigator badge (`My Controls` card in grid): shows `applicablePinnedCount` (not total pinned) and appends "· N locked hidden" in grey when any are hidden.
+
+#### Fix 4 — Better non-hot error when running
+`handleSave` now collects `skippedNonHot` params (running + not hot-reloadable). When `changedParams` is empty and `skippedNonHot.length > 0`, shows: "initial_lots cannot be changed while the session is running (🔒 requires session restart)." instead of the opaque "No changes detected".
+
+#### Fix 5 — Adjustment headroom warnings
+- **Core section** (`activeSection === 'core'`): When `initial_lots >= max_lots_per_side`, shows orange warning: "No room for adjustment lots — cap already full. Go to Safety Limits and raise max_lots_per_side."
+- **Safety section** (`activeSection === 'safety'`): Shows green tip when headroom is OK, or orange warning when at cap. Points operator directly to the fix.
+
+### Files changed
+- `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+
+## 2026-04-12 — Settings dialog: initial_lots read-only while running + max_lots_per_side in Core
+
+### Problem
+After prior session's fixes, user still couldn't change lots. Root cause: `initial_lots` shows as the primary "lots" param in Core section. When the session is RUNNING, `initial_lots` has `hot: False` — changes are silently dropped. User sees our new error message but still can't change the value. They need `max_lots_per_side` instead.
+
+### Changes — `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+
+**1. `isSessionRunning` derived variable**
+Added at component level (near `isShortStraddle`/`isStraddleRoll`). Computed from `sessionData.strategy_status`.
+
+**2. Non-hot numeric inputs disabled while running**
+In `renderParam` (numeric path): added `isLockedWhileRunning = isSessionRunning && !isHot`. When true:
+- TextField has `disabled` prop → greyed-out, no cursor, not clickable
+- Tooltip on hover: "Cannot change while session is running (🔒 requires restart)"
+- Helper text below field: "🔒 Requires session restart to change"
+- For `initial_lots` in straddle: helper text says "To allow more adjustment lots → Safety Limits → max_lots_per_side" instead
+
+**3. `max_lots_per_side` injected into Core section for STRADDLE_WITH_ADJUSTMENT**
+The Core group params list (`['initial_lots', 'adjustment_interval', 'max_loss_amount']`) is flatMapped. For straddle, `max_lots_per_side` is injected immediately after `initial_lots`. The user can now raise the adjustment cap from the same Core section without navigating to Safety Limits.
+- `max_lots_per_side` is hot-reloadable → green value text, editable while running
+- Shows alongside `initial_lots` (greyed/disabled) — visible contrast makes the distinction clear
+
+### Files changed
+- `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+
+---
+
+## 2026-04-12 — God Layer: Strategic Integrity Monitor + Phase 1 guard fixes
+
+### Problem addressed
+Safety guards (lot velocity, regime, margin YELLOW, asymmetry) can collectively block
+triggered hedge sells for many consecutive heartbeats. Each guard is individually correct
+but the cumulative effect causes session shape to drift from its intended hedge posture.
+This is a structural problem that compounds as more guards are added over time.
+
+### Phase 1a — Removed asymmetry block from `_process_adjustment` (`mmm_monitor.py`)
+- The asymmetry guard blocked the hedge (light) side from selling when it was already "heavy".
+- In a one-directional market, the hedge side SHOULD accumulate lots — that's its job.
+- Blocking the triggered hedge sell because it is already heavy compounds loss with no benefit.
+- Asymmetry guard still applies to speculative sells (scale-up, replenish) — unchanged.
+
+### Phase 1b — Removed lot velocity secondary cap from `_process_adjustment` (`mmm_monitor.py`)
+- Secondary cap `max(1, velocity_headroom)` was reducing triggered adjustments from e.g. 10 lots to 1 lot when velocity window was nearly full — severe under-hedging.
+- Primary protection is `mmm_safety.py` `check_lot_velocity()` → `stop_adjustments` → `_skip_to_pnl=True` when `lots_in_window >= limit`. This is the real 300-lots-in-3-hours guard and remains fully intact.
+- Same philosophy as G11 removal from `mmm_replenish.py`: velocity must not block hedge restoration.
+
+### Phase 2 — God Layer (`mmm_god_layer.py`, new file)
+
+**Concept:** Third umpire that watches the session from 10,000 feet every 25 minutes.
+Normal heartbeat guards can block many consecutive beats; God detects the accumulated drift
+and fires one corrective adjustment in god_mode bypassing all soft guards.
+
+**Detection (both signals required to fire):**
+1. `total_pnl` has dropped > `god_pnl_threshold` ($40 default) since last 25-min snapshot
+2. No executed adjustment in > `god_min_silence_min` (20 min default)
+
+**Action:** calls `evaluate_triggers()` to find aggressor → calls `_process_adjustment()` directly
+(bypassing outer regime/margin blocks) → trigger snapshots ratchet naturally → Telegram alert.
+
+**Hard stops God always respects:** PAUSED, STOPPED, margin ORANGE/RED, FORCE_REDUCE,
+stale monitor, straddle roll in progress.
+
+**`god_enabled=False` by default** — must be explicitly enabled per session. Safe to deploy.
+
+Uses 30-min rolling PNL window (NOT inception-based) — handles frozen positions, strike shifts,
+and straddle rolls automatically via `compute_current_total_pnl()`.
+
+### Parameters added (all hot-reloadable)
+- `god_enabled`: bool = False
+- `god_check_interval_min`: int = 25
+- `god_pnl_threshold`: float = 40.0
+- `god_min_silence_min`: int = 20
+- `god_cooldown_min`: int = 45
+
+### Files changed
+- `webui/backend/routes/mmm/mmm_monitor.py` — Phase 1a/1b guard removals; `self._god` init + `initialize()` call; God check hook in `_beat()` before trigger evaluation
+- `webui/backend/routes/mmm/mmm_god_layer.py` — new file, `StrategicIntegrityMonitor` class
+- `webui/backend/routes/mmm/mmm_state.py` — God params in `DEFAULT_PARAMS` + `HOT_RELOAD_PARAMS`
+- `webui/backend/routes/mmm/mmm_telegram.py` — `alert_god_correction()` added
+- `webui/backend/routes/mmm/mmm_activity.py` — `god_correction` registered in registry + safety category
+
+### Test results
+- Full sealed suite: **1335 passed, 605 warnings** — no regressions
+
+---
+
+## 2026-04-13 — Active sessions sorted by closest expiry first
+
+- `webui/frontend/src/components/mmm/MMMDashboard.js` — Added `.sort()` on `activeSessionsAll` useMemo to order active sessions by `expiry_time` ascending (closest expiry at top, farthest at bottom). Sessions without `expiry_time` fall to the end (sorted to `Infinity`). Reuses the same UTC normalization pattern (`+ 'Z'` for naive timestamps) already used by `computeExpiryInfo`.
+
+---
+
+## 2026-04-13 — Partial Fill Tracking Fix (inject-position + smart_execute)
+
+**Context**: Manual inject of 50 CE lots at strike 71200. Exchange filled 6 lots at $54 then
+cancelled remaining 44. smart_execute returned failure (dead order). inject_position returned
+HTTP 500. User retried → placed another 50-lot order → 6 + 50 = 56 lots total. 6 lots on
+exchange were untracked by the algo. Critical at scale (e.g. 500-lot orders).
+
+**Root cause 1 — `mmm_executor.py` `smart_execute` dead-order check (line ~521)**:
+When `_wait_for_fill` returned `(False, {_dead: True})` for an exchange-cancelled order,
+the code immediately returned `_failure()` without checking `unfilled_size`. A partially
+filled, then cancelled order has `unfilled_size < size` (e.g. `unfilled=44, size=50` means
+6 lots actually filled). Those 6 lots landed on the exchange but were never registered.
+
+**Root cause 2 — `mmm_api.py` `inject_position`**:
+Used `lots_param` (the originally requested count) everywhere — position recording, audit log,
+premium tracking, adjustment history, response — even when `result['filled_size']` was available.
+So even if smart_execute had correctly returned a partial fill, inject would have still over-counted.
+
+**Fix 1 — `mmm_executor.py`** (3 changes):
+- Added partial fill accumulators before the while loop: `_cumulative_filled`, `_cumulative_fill_value`, `_current_order_size`.
+- Normal fill path: uses `_current_order_size - unfilled_int` (not original `size`) for the batch. Accumulates into cumulative totals. Returns weighted-average fill price and cumulative filled_size.
+- Dead-order check: detects partial fill via `unfilled_size < _current_order_size`. Accumulates
+  the partial fill, fetches fresh quotes, places a **continuation order** for the remaining lots,
+  and `continue`s the while loop to monitor it. If continuation placement fails, returns partial
+  success (not failure) with what was filled. If attempts exhausted with partial fills, returns
+  partial success instead of total failure.
+
+**Fix 2 — `mmm_api.py`**:
+- After smart_execute returns: `actual_lots = result.get('filled_size') or lots_param`.
+- All position/audit/premium/adjustment/response references now use `actual_lots` not `lots_param`.
+- `lots_requested` preserved in audit trail for traceability.
+- Partial fill is logged as a warning with remaining lots count.
+- Response includes `partial_fill: bool` and `lots_requested` fields.
+
+**Invariants preserved**: Stale monitor guards, reverse mode isolation, straddle roll guards —
+no MMM strategy logic touched. Only executor partial fill tracking and inject bookkeeping changed.
+
+**Files changed**: `mmm_executor.py`, `mmm_api.py`
+
+---
+
+## 2026-04-13 — Partial Fill Audit: All smart_execute Callers
+
+Audited all callers of `smart_execute` across the codebase for the same partial-fill
+tracking bug found in `inject_position`. Each caller must use `result.get('filled_size', ...)`
+not the originally requested lots.
+
+**Audit results — callers that were already correct:**
+- `_wind_down_side` (monitor.py ~3928): `actual_filled = result.get('filled_size', group_lots)` ✅
+- `_process_strike_shift` (monitor.py ~5461): `filled_lots = result.get('filled_size', lots)` ✅
+- `_process_replenish` (monitor.py ~6727): `filled_lots = _exec_result.get('filled_size', lots_to_sell)` ✅
+- `mmm_close_at_5.py ~442`: `actual_lots = result.get('filled_size', lots)` ✅
+- `mmm_reverse.py` entry ~351: `filled_lots = int(result.get('filled_size', slot_size))` ✅
+- `mmm_perp_hedge.py`: `filled_lots = result.get('filled_size', lots)` ✅
+
+**Bugs found and fixed:**
+
+1. **`_scale_up_position` (monitor.py ~6226,6254)** — ENTRY (sell)
+   - CE and PE position dicts used `lots` (original requested) not `ce/pe_result.get('filled_size', lots)`.
+   - Risk: phantom lots registered in frozen positions — algo thinks more exposure than exists.
+   - Fix: added `ce_filled_lots` / `pe_filled_lots` variables from `result.get('filled_size')`.
+
+2. **`_auto_close_all` active close (monitor.py ~7788)** — CLOSE (buy, reduce_only)
+   - P&L ledger call used `int(active_lots)` not `result.get('filled_size', active_lots)`.
+   - Risk: if partial close occurs, P&L mis-stated (records more lots closed than actually were).
+   - Fix: `ac_filled = result.get('filled_size') or active_lots`; passed to `record_close()` and `pnl` calculation.
+
+3. **`mmm_reverse.py` close path ~549** — CLOSE (buy, reduce_only)
+   - `realized` calculation and `record_close(lots_closed=lots)` both used original `lots`.
+   - Risk: P&L mis-stated on partial close of reverse position.
+   - Fix: `close_filled = result.get('filled_size') or lots` used for both.
+
+**Files changed**: `mmm_monitor.py`, `mmm_reverse.py`
+
+---
+
+## 2026-04-13 — Watchdog Silent Restart Failure Fix
+
+**Investigation**: mmm13apr26-1 (Short Strangle 0DTE) stopped automatically at 08:43 UTC leaving CE/PE positions open on exchange. Root cause traced via activity log and session DB.
+
+**Root cause (two events)**:
+1. 03:41 UTC — Beat timeout (271s, interval=90s). Watchdog successfully restarted.
+2. 08:43 UTC — Beat timeout (191s, interval=60s). Heartbeat thread was blocked ~3min in exchange API. Watchdog called `monitor.stop()` then attempted `_restart_monitor()`, but the restart threw an exception. The exception handler only logged — no alert, no PAUSED state, session left STOPPED silently with open positions.
+
+**Why positions were left open**: The watchdog restart path is designed to preserve positions and resume trading (not exit_all). The restart failure left the session STOPPED instead.
+
+**Fix — `mmm_watchdog.py` `_restart_monitor()` exception handler**:
+- Before: `except Exception as e: log.exception(...)` — silent failure
+- After: emits `_emit_alert()` (critical) to dashboard, logs activity with 🚨, sets session to `PAUSED` with `_paused_reason` so user can use Resume button
+- Also fixed the `session not in storage` early-return path — same silent gap, now also emits alert + logs activity
+
+**Files changed**: `mmm_watchdog.py`
+
+---
+
+## 2026-04-13 — Dynamic Roll Trigger for Short Straddle Pure Roll
+
+**Feature**: Replaced fixed premium-points trigger with a live mark-price dynamic trigger.
+
+**Why**: The previous trigger (`_straddle_roll_trigger_pts = CE_fill + PE_fill` at last roll) was frozen at entry premium and never changed during the holding period. After theta decay, the actual breakeven envelope shrinks — the position only has `current_mark` pts of cushion, not the original entry premium. Rolling at the original distance becomes too wide, leaving P&L on the table and delaying necessary rolls.
+
+**New behaviour**: Each heartbeat, the bot reads the live WS bid/ask mid of the active CE and PE legs. Their sum becomes the effective trigger. It shrinks as theta decays, tightens naturally toward expiry, and widens if IV spikes (correct — more vol = more room needed). Hard floor (`straddle_min_trigger_pts`, default 200 pts) prevents noise-firing near expiry.
+
+**Changes**:
+- `mmm_straddle_roll_pure.py`: added `_compute_dynamic_trigger()` (reads WS cache, updates `session['_straddle_dynamic_trigger_pts']`), added `_get_effective_trigger_pts()` (picks dynamic or fixed), updated Gate 7 (emergency bypass) + Gate 8 (distance check) to use effective trigger, called `_compute_dynamic_trigger()` in STEP 3 before gate check, reset `_straddle_dynamic_trigger_pts` after each roll so fresh decay tracking begins immediately
+- `mmm_monitor.py`: price guard now prefers `_straddle_dynamic_trigger_pts` over fixed trigger (same or-chain: dynamic → fixed)
+- `mmm_state.py`: added `straddle_dynamic_trigger_enabled` (default `True`) and `straddle_min_trigger_pts` (default `200`) to defaults and hot-reload list
+- `mmm_dte_presets.py`: both params added to `build_straddle_roll_preset()`
+- `MMMSettingsDialog.js`: new "Dynamic Trigger" section in Straddle Roll Settings group with toggle + floor input + full tooltips
+
+**Invariants preserved**: all other algos (MMM strangle, STRADDLE_WITH_ADJUSTMENT, gridbot, reverse mode) are completely untouched. Dynamic trigger logic is isolated inside `mmm_straddle_roll_pure.py` behind the `STRADDLE_ROLL_CATEGORY` dispatch guard.
+
+---
+
+## 2026-04-13 — Fix: Dynamic Trigger Never Updated (wrong WS field names)
+
+**Bug**: `_compute_dynamic_trigger()` in `mmm_straddle_roll_pure.py` used `entry.get('bid', 0)` and `entry.get('ask', 0)` to read the WS cache. The WS cache (`delta_price_websocket.py`) stores prices under `best_bid` and `best_ask`. Both keys were always 0, so `_ws_mid()` always returned `None`, and `_compute_dynamic_trigger()` always returned `0.0` without ever setting `session['_straddle_dynamic_trigger_pts']`.
+
+**Impact**: The dynamic trigger was silently broken since it was added (2026-04-13). Every STRADDLE_ROLL heartbeat fell back to the fixed trigger (`_straddle_roll_trigger_pts` = original entry premium, e.g. 1196.57 pts for session mmm14apr26-3). The roll could only fire when spot moved the full entry premium distance from ATM — much too wide. Sessions appeared to never roll.
+
+**Fix** (`mmm_straddle_roll_pure.py:101-102`): Changed `entry.get('bid', 0)` → `entry.get('best_bid', 0)` and `entry.get('ask', 0)` → `entry.get('best_ask', 0)` in the `_ws_mid` local helper inside `_compute_dynamic_trigger()`. Now consistent with every other `_ws_mid` helper in the codebase (mmm_monitor.py lines 9143/9144 and 10540/10541).
+
+**Root cause**: Copy-paste from a stale code pattern. The WS cache was updated to use `best_bid`/`best_ask` field names (matching Delta Exchange l1_orderbook format) but this helper wasn't updated at the same time.
+
+---
+
+## 2026-04-13 — Fix: Dynamic Trigger Source Wrong (existing position prices → fresh ATM prices)
+
+**Bug**: After the field-name fix above, `_straddle_dynamic_trigger_pts` began computing correctly — but the value was ALWAYS larger than `spot_move`, so the roll condition `spot_move ≥ trigger` could never be satisfied.
+
+**Root cause (mathematical)**: The function read the bid/ask mid of the EXISTING position legs (CE at old ATM strike, e.g. 71000 with spot at 72500). For an ITM/OTM position:
+```
+existing_CE_mid + existing_PE_mid = |spot - K| + time_value_CE + time_value_PE  >  |spot - K|
+```
+Since time_value is always positive, `spot_move` < `trigger` always. The roll condition is mathematically unsatisfiable while any time value remains.
+
+**Evidence**: Session mmm14apr26-3: spot_move ≈ 1488 pts, dynamic_trigger = 1668 pts, diff = 180 pts (= remaining time value). Roll blocked despite spot exceeding the original 1196 pt fixed trigger.
+
+**Fix** (`mmm_straddle_roll_pure.py: _compute_dynamic_trigger()`): Changed price source from WS cache of existing position legs to `preview_atm_straddle()` — the FRESH ATM straddle price at the current spot's ATM strike. Fresh ATM options carry no intrinsic value relative to the current spot, so:
+- Trigger shrinks naturally as theta decays ✓
+- Trigger does NOT inflate from ITM intrinsic value ✓
+- Roll condition CAN be satisfied when spot moves beyond fresh ATM premium ✓
+
+`preview_atm_straddle()` is synchronous (uses chain cache — no extra REST call per heartbeat). Log line now shows fresh ATM strike alongside CE_mid + PE_mid.
+
+---
+
+## 2026-04-14 — Fix: max_total_exposure Blocking Adjustments (Silent Ceiling Bug)
+
+**Bug**: Sessions created from the `STRADDLE_WITH_ADJUSTMENT` preset had `max_total_exposure: 10` hardcoded while `max_lots_per_side` was user-overridable (e.g. 100). Once total lots (active+frozen) per side reached 10, every adjustment was silently blocked with "Total exposure ceiling: PE has 10/10 lots (active+frozen)". The position cap (`max_lots_per_side=100`) was never the gating factor.
+
+**Root cause**: `build_straddle_adjustment_preset()` in `mmm_dte_presets.py` hardcoded `max_total_exposure: 10` (= 2× default `max_lots_per_side=5`). When operators raised `max_lots_per_side` to 100, `max_total_exposure` stayed at 10. `build_straddle_roll_preset()` had the same issue (`max_total_exposure: 20`).
+
+**Affected sessions** (fixed in DB): `mmm14apr26-6`, `mmm14apr26-2`, `mmm26jun26-3` — all had `max_total_exposure=10` with `max_lots_per_side=50 or 100`.
+
+**Fixes**:
+- `mmm_dte_presets.py`: Both preset builders now emit `max_total_exposure: 0` (auto = 2× max_lots_per_side). Never hardcode this relative to a fixed default.
+- `mmm_api.py` `update_session_params()`: Auto-raise `max_total_exposure` to `max_lots_per_side × 2` when `max_lots_per_side` is updated past the current `max_total_exposure` ceiling. Records the change in `changed_keys` so it hot-reloads to the monitor. Warning logged.
+- DB: All 3 affected running sessions patched directly to `max_total_exposure=0`.
+
+**Invariant**: `max_total_exposure=0` means auto (engine computes `max_lots_per_side * 2` inline). Operators can still set an explicit ceiling — auto-sync only fires when the explicit ceiling would block the active cap.
+
+---
+
+## 2026-04-14 — Asymmetry: Warn-Only (Remove All Enforcement)
+
+**Change**: Lot asymmetry detection is now purely informational across all three tiers. Adjustments always proceed at full lot size regardless of CE/PE ratio.
+
+**Before**:
+- 5:1 tier set `_asymmetry_lot_reduction_pct` → engine reduced heavy-side lot size by 50%
+- 7:1 tier set `_asymmetry_blocked_side` session flag and logged a "HARD BLOCK" (the flag was never actually consumed to block — it was dead code, but the misleading message remained)
+
+**After**:
+- All tiers emit activity-log warnings only (3:1 warning, 5:1 alert, 7:1 critical) but `action: 'warn'` in all cases — no enforcement
+- `check_asymmetry()` always clears `_asymmetry_lot_reduction_pct` and `_asymmetry_heavy_side` immediately (stale flags from prior sessions can't linger)
+- Monitor no longer sets `_asymmetry_blocked_side`; clears any stale value instead
+- Engine's IMP-3 lot reduction block removed
+
+**Files changed**: `mmm_safety.py` (check_asymmetry), `mmm_monitor.py` (dead block_heavy_side_sells handler), `mmm_engine.py` (IMP-3 lot reduction)
+
+**Params `asymmetry_7to1_hard_block` and `asymmetry_5to1_lot_reduction`**: Kept in PARAM_RULES and session storage for backward compat but no longer have any effect.
+
+---
+
+## 2026-04-14 — Fix: Settings Save 400 Error from Default-Injected Forbidden Params
+
+**Bug**: Any settings save on 0DTE / 5DTE / STRADDLE_WITH_ADJUSTMENT sessions failed with HTTP 400 after today's addition of `straddle_dynamic_trigger_enabled` and `straddle_min_trigger_pts` to `DEFAULT_PARAMS`.
+
+**Root cause**: `MMMSettingsDialog` opens with `formValues = { ...defaults, ...sessionParams }`. Old sessions (created before these params were added) don't have them in `currentParams`. The save loop treats them as "changed" and includes them in the PATCH request. The backend correctly forbids these straddle-roll-only params for 0DTE/5DTE/STRADDLE_WITH_ADJUSTMENT strategies → 400 "not allowed for strategy_type".
+
+**Fix 1 — Frontend (`MMMSettingsDialog.js` `handleSave`)**: Skip params where `!(key in currentParams) && value === defaults[key]` — i.e., the param doesn't exist in the session yet AND the user left it at its default value. Only send it when the user actively changes it away from the default.
+
+**Fix 2 — Backend (`mmm_api.py` `update_session_params`)**: Convert namespace violation from hard-reject to silent-strip + warning log. If some params remain after stripping, proceed with those. Only hard-reject if ALL submitted params were forbidden. Defense-in-depth against future DEFAULT_PARAMS drift.
+
+**Files changed**: `MMMSettingsDialog.js`, `mmm_api.py`
+
+## 2026-04-13 — Fix phantom conflict warnings + God Layer param descriptions
+
+- **`MMMSettingsDialog.js` — `getConflictWarnings`**: Added `lockedGroupParams` filter. Before fix, conflict rules (e.g. `atm_shield_enabled && wind_down_enabled`) were evaluated against ALL form values including params in locked/inapplicable groups. For STRADDLE_WITH_ADJUSTMENT sessions where both those params existed in session state as `True`, a false conflict fired and blocked saves. Fix: skip any rule where a triggering param is in `lockedGroupParams`; also filter `params_affected` to exclude locked params.
+
+- **`mmm_config.py` — `get_param_info()` `descriptions` dict**: Added descriptions for all 5 God Layer params (`god_enabled`, `god_check_interval_min`, `god_pnl_threshold`, `god_min_silence_min`, `god_cooldown_min`). These were in `PARAM_RULES` but missing from `descriptions`, causing the frontend to fall back to showing raw key names as descriptions (orange "error" appearance in Settings dialog).
+
+## 2026-04-13 — STRADDLE_ROLL isolation forensic verdict (read-only audit)
+
+- Completed a strict read-only source audit focused on strategy isolation between `STRADDLE_ROLL` and `STRADDLE_WITH_ADJUSTMENT`.
+- Re-verified runtime dispatch contract in `mmm_strategy_dispatch.py` + `mmm_monitor.py`:
+  - `STRADDLE_ROLL` handler sets `should_run_adjustment=False`
+  - Step 5.4 always forces `_skip_to_pnl` for pure roll path
+  - Normal `_process_adjustment()` path remains active for non-pure-roll strategies.
+- Re-verified strategy identity and namespace protections in `mmm_api.py` + `mmm_config.py`:
+  - immutable strategy identity checks on params PATCH
+  - forbidden strategy-namespace params stripped/rejected per strategy map.
+- Re-verified eventing/visibility boundary in `mmm_websocket.py` + `mmm_activity.py` + `MMMActivityFeed.js`:
+  - websocket emits are global namespace with payload-level `session_id`
+  - activity logger accepts `session_id=None`
+  - activity feed only rejects mismatched present IDs, so null-session events can appear cross-session.
+- Cross-checked historical intent in `tasks/STRADDLE_ROLL_FIX_PLAN.md` (Rev 4.0): confirms shipped hybrid behavior is intentionally retained as `STRADDLE_WITH_ADJUSTMENT`, while pure roll remains a separate strategy path.
+- No runtime code changes were made in this session (forensic/reporting only).
+
+## 2026-04-13 — Phase 2 observability hygiene audit (read-only)
+
+- Completed a strict observability-only audit across MMM activity/event pipeline with no trading-logic edits.
+- Verified null-session activity emission path and cross-session feed exposure chain:
+  - backend global emergency activity writes with `session_id=None` in `mmm_api.py`
+  - global websocket emission model in `mmm_websocket.py`
+  - session filter gap in `MMMActivityFeed.js` that admits null-session events into selected-session views.
+- Classified additional hygiene risks and severity:
+  - websocket broadcast isolation dependency on client filtering,
+  - stale response race on session switch in activity feed,
+  - missing id-based dedupe in realtime feed updates,
+  - global refresh fan-out churn via `mmm_activities_updated`.
+- Created formal report: `MMM_PHASE2_OBSERVABILITY_HYGIENE_AUDIT_2026-04-13.md` with file-level evidence, severity ranking, and non-trading remediation queue.
+
+## 2026-04-14 — Reverse/Strategy Matrix Forensic Audit (read-only)
+
+- Performed strict read-only cross-layer audit of MMM strategy integrity and reverse-mode parity across:
+  - Frontend: `MMMDashboard.js`, `MMMReverseModePanel.js`, `mmmService.js`, `MMMSettingsDialog.js`
+  - Backend: `mmm_api.py`, `mmm_strategy_dispatch.py`, `mmm_config.py`, `mmm_monitor.py`, `mmm_reverse.py`, `mmm_pnl_core.py`, `mmm_state.py`, `mmm_storage.py`
+- Re-verified invariants remain intact:
+  - STRADDLE_ROLL dispatch isolation (`should_run_adjustment=False`) and Step 5.4 skip-to-P&L path
+  - Strategy identity immutability + namespace guardrails on params PATCH
+  - Reverse-mode hard intercept branch remains mutually exclusive with normal adjustment path
+  - `_auto_close_all()` close ordering remains reverse → perp → core
+  - Canonical P&L formulas still include reverse/perp in `compute_current_total_pnl()` and post-update max-loss checks
+  - Stale monitor protections still present (join-on-restart, generation guards, save-rejection stop path)
+- High-risk frontend/API parity defects identified (no runtime logic edited in this session):
+  - Reverse panel calls `mmmService.post(...)`, but `mmmService` does not expose a generic `post()` method
+  - Reverse panel position renderer expects `pos.side` / `pos.current_premium` while backend reverse positions expose `option_type` and unrealized-only P&L fields
+  - Settings can set `reverse_enabled` via params PATCH, but runtime activation additionally requires `_reverse.active` set by `/reverse/enable`, creating activation-state drift if operators use settings alone
+- No trading logic, order paths, or safety guards were modified in this session.
+
+## 2026-04-14 — Strategy isolation report update (read-only)
+
+- Updated `MMM_STRATEGY_ISOLATION_FORENSIC_REPORT_2026-04-13.md` with 2026-04-14 addendum findings:
+  - preserved LOW risk verdict for strategy execution crossover,
+  - added HIGH risk classification for reverse UI/service call-surface mismatch,
+  - added MEDIUM risk classification for reverse state/render parity drift,
+  - expanded evidence map to include reverse integration files (`MMMReverseModePanel.js`, `mmmService.js`, `mmm_reverse.py`, `mmm_pnl_core.py`).
+- Revised report recommendations to prioritize reverse panel wiring + schema parity before observability hardening work.
+
+---
+
+## 2026-04-14 — Fix: Replenish Blocked by Gate 10 When Open Side Has Only Frozen Lots
+
+**Session**: `mmm14apr26-5` — PE fully closed, CE had 0 active lots + 100 frozen lots.  OCS GUARD fired (correctly), replenish was attempted, but returned `False` silently every heartbeat.  Session stayed PAUSED indefinitely.
+
+**Root cause — 3 interlinked bugs:**
+
+### Bug 1: `_ocs_emergency` used `active_lots` instead of `total_lots` (`mmm_monitor.py:6373`)
+
+```python
+# Before
+_os_active = session.get(open_side, {}).get('active_lots', 0)
+_ocs_emergency = (_cs_total == 0 and _os_active > 0)   # False when CE all-frozen
+```
+
+CE had `active_lots=0` → `_ocs_emergency = False`.  Without OCS emergency, Gate 1 (master switch) was not bypassed and premium-floor was not bypassed.
+
+**Fix:** Use `total_lots` for open side: frozen lots are real open positions.
+
+### Bug 2: Gate 10 used `active_lots` unconditionally (`mmm_replenish.py:109-111`)
+
+```python
+# Before
+open_active = session.get(open_side, {}).get('active_lots', 0)
+if open_active <= 0:
+    return False, 'open_side_has_no_lots'   # blocked every time
+```
+
+Gate 10 blocked replenish because CE `active_lots=0`, ignoring 100 frozen lots.  The rationale "if open side is all frozen (mid-close), replenishing creates a dangling leg" was overly conservative — frozen lots from strike shifts are real exposure, not mid-close positions.
+
+**Fix:** In OCS emergency, check `total_lots` when `active_lots=0`.  Non-OCS path unchanged.
+
+### Bug 3: `determine_replenish_lots` returned 0 (floored to 1) when active=0 (`mmm_replenish.py:148`)
+
+Even if Gate 10 had been bypassed, `match_active` mode returned `active_lots=0` → floor=1 lot.  With 100 frozen CE lots exposed, selling only 1 PE lot is inadequate hedge coverage.
+
+**Fix:** When `active_lots=0`, fall back to `total_lots` for sizing.  The fallback is transparent — `active_lots > 0` path is unchanged.
+
+**End-to-end after fix:**
+1. OCS GUARD fires: PE=0, CE=100 frozen → `_ocs_emergency = True`
+2. Gate 10: `active_lots=0, total_lots=100, ocs_emergency=True` → eligible
+3. `determine_replenish_lots`: `active_lots=0` → `total_lots=100` → sell 100 lots (velocity-capped per heartbeat)
+4. Strike find + execute → PE hedge restored
+
+**Sealed tests updated:**
+- `test_floor_at_one`: now passes `open_total_lots=0` (true empty case)
+- `test_ocs_emergency_still_blocked_when_open_side_empty` → renamed `_truly_empty`: `active=0, total=0` still blocked
+- Added `test_ocs_emergency_eligible_when_open_side_has_frozen_lots`: `active=0, total=100` → eligible
+- Added `test_non_ocs_emergency_blocked_when_only_frozen_lots`: normal path still requires `active_lots > 0`
+- Added `test_match_active_falls_back_to_total_when_active_zero`: sizing uses total_lots on fallback
+
+**Test result:** 36 passed (+4 new tests), 0 failed in replenish suite.  Full suite: 1333 passed, 6 pre-existing failures (unrelated asymmetry tests).
+
+**Files changed:** `mmm_monitor.py`, `mmm_replenish.py`, `tests/test_sealed_mmm_replenish.py`
+
+---
+
+## 2026-04-14 — Fix: Pure Straddle Roll — 4 Bugs Preventing Roll from Ever Firing
+
+**Session**: mmm14apr26-3 (STRADDLE_ROLL, CE+PE @ 71000, spot moved to ~74000 but no roll firing)
+
+### Bug 1 — Wrong WS field names in `_ws_mid` helper
+- `bid`/`ask` → `best_bid`/`best_ask` (Delta WS cache uses `best_bid`/`best_ask`)
+- Effect: `_straddle_dynamic_trigger_pts` was never updated from WS cache; always fell back to fixed 1196 pt trigger
+- **Fix**: `mmm_straddle_roll_pure.py` lines 101-102
+
+### Bug 2 — Dynamic trigger used existing position prices (mathematically broken)
+- `existing_CE_mid + existing_PE_mid = |spot - K| + time_value ≥ |spot - K|` always
+- Condition `spot_move ≥ trigger` was mathematically unsatisfiable — the trigger always exceeded the spot move
+- **Fix**: Replaced `_compute_dynamic_trigger()` entirely to use `preview_atm_straddle()` (fresh ATM at current spot, not existing position prices). After fix: trigger ~734 pts (fresh ATM premium) vs spot_move ~3181 pts → passes easily
+
+### Bug 3 — Gate 9 timestamp hard-block
+- `preview_atm_straddle()` returns no `timestamp` field (uses chain cache, not WS snapshot)
+- Gate 9 in `_execute_4_leg_roll()` checked for timestamp and hard-blocked with `return False` if absent
+- **Fix**: Removed the else-block that blocked on missing timestamp; chain-cache freshness is managed by the chain service
+- `mmm_straddle_roll_pure.py` lines 531-543
+
+### Bug 4 (ROOT CAUSE) — `_straddle_roll_in_progress` set BEFORE calling `_check_pure_roll_gates`
+- Gate 0 in `_check_pure_roll_gates` checks `session.get('_straddle_roll_in_progress')` to block concurrent rolls
+- But the flag was set at the TOP of the `try` block BEFORE calling `_check_pure_roll_gates`
+- Every single roll attempt self-blocked at Gate 0 — the roll had NEVER fired since deploy
+- **Fix**: Moved `session['_straddle_roll_in_progress'] = True` to AFTER `_check_pure_roll_gates` returns True
+- `mmm_straddle_roll_pure.py` in `execute_pure_straddle_roll()`
+
+### Additional fixes
+- All roll-blocking reasons now log at WARNING level (were DEBUG/silent) so they're visible in production logs (root logger = WARNING)
+- Same-strike guard and min-credit check in Gate 9 also upgraded to WARNING
+
+### Logging visibility fix
+- Root logger is WARNING. All gate failures were at INFO/DEBUG → invisible in prod
+- Added WARNING-level logging to `_check_pure_roll_gates` result and key Gate 9 sub-checks
+
+### Session recovery (mmm14apr26-3)
+- After bug 4 fix, the first heartbeat triggered a roll: CE @ 71000 closed successfully
+- Backend was restarted mid-roll → `_straddle_half_roll_state = ce_closed_pe_open` persisted
+- Monitor correctly stopped on restart (C-3 half-roll guard)
+- Manual DB recovery: cleared `_straddle_half_roll_state`, `_straddle_roll_in_progress`, stale `_being_closed` on PE replenish, set status to PAUSED, resumed monitor
+- Session rolled to CE+PE @ 74200 on next heartbeat ✓
+
+**Files changed:** `mmm_straddle_roll_pure.py`, `mmm_strategy_dispatch.py` (temp debug log removed)
+
+---
+
+## 2026-04-14 — Forensic Report Investigation + 5 Bug Fixes
+
+**Scope**: Investigated all findings from `MMM_STRATEGY_ISOLATION_FORENSIC_REPORT_2026-04-13.md`. Every finding independently verified against source before any fix was applied. No trust placed in the report without code-level confirmation.
+
+### Finding M (HIGH) — CONFIRMED + FIXED
+**`MMMReverseModePanel.js` called `mmmService.post(...)` — method does not exist on mmmService.**
+- Root cause: Panel used 3 calls to `mmmService.post('/session/${sessionId}/reverse/enable|disable|close')` but `mmmService.js` exposes no generic `post()` method (all methods are named e.g. `startSession`, `stopSession`).
+- Effect: Enable, Disable, and Close All buttons in the Reverse Mode panel all threw `TypeError: mmmService.post is not a function` — reverse mode was completely inoperable from the UI despite healthy backend routes.
+- **Fix**: Added 3 typed methods to `mmmService.js`: `enableReverseMode(sessionId)`, `disableReverseMode(sessionId, reason)`, `closeAllReversePositions(sessionId, reason)`. Updated panel to call these instead.
+
+### Finding N (MEDIUM) — CONFIRMED + FIXED (field name mismatch + missing current_premium)
+**`PositionsTable` in `MMMReverseModePanel.js` read `pos.side` — backend stores `pos.option_type`.**
+- `pos.side` is always `undefined` — Chip label showed `''` and colors were always wrong (PE color for all positions).
+- Also: `pos.current_premium` never stored on position — "Current $" column always showed `—`.
+- **Fix 1**: Changed `pos.side` → `pos.option_type` in PositionsTable (chip label + color logic).
+- **Fix 2**: Added `pos['current_premium'] = current` in `update_reverse_mtm()` (`mmm_reverse.py`) so each open position carries the latest mark price after every MTM cycle.
+
+### Finding J (MEDIUM-LOW) — CONFIRMED + FIXED
+**WebSocket activity filter passed null-session_id events through when session-scoped.**
+- Filter: `if (sessionId && data.session_id && data.session_id !== sessionId) return;`
+- When `data.session_id` is null/falsy the second condition fails → event passes through even though it doesn't belong to the viewed session.
+- **Fix**: Tightened filter in both handlers in `MMMActivityFeed.js`:
+  `if (sessionId && (!data.session_id || data.session_id !== sessionId)) return;`
+  Now: session-scoped view drops events with null/missing `session_id`.
+
+### Finding N2 (MEDIUM — activation drift) — NOT FIXED (design is correct)
+**Report concern: `reverse_enabled` via params PATCH doesn't activate `_reverse.active`.**
+- Investigated: panel shows "ENABLED (not yet active)" when `reverse_enabled=True` but `active=False` — operator is clearly guided to use the Enable button.
+- `is_reverse_mode_on()` gates on BOTH `reverse_enabled` and `_reverse.active` — no trades fire in the drift state.
+- No code fix needed; behavior is documented and handled by existing panel UI.
+
+### Additional bugs found during test run (not in forensic report)
+
+**Bug: `order_partial_fill` activity type missing from ACTIVITY_TYPES registry** (`mmm_activity.py`)
+- Used in `mmm_executor.py` lines 574 and 825 but not registered → test `test_activity_registry_covers_literal_log_types` was failing.
+- **Fix**: Added `'order_partial_fill': 'Partial Fill'` to `ACTIVITY_TYPES` and `order_partial_fill` to `ACTIVITY_CATEGORIES['orders']`.
+
+**Bug: `KeyError: 'max_total_exposure'` in `update_session_params`** (`mmm_api.py`)
+- When `max_lots_per_side` is raised past `max_total_exposure`, the code auto-raises `max_total_exposure` and adds it to `changed_keys`. But the `emit_params_changed` call used `validated[k]` and `max_total_exposure` is not in `validated` (only explicitly requested params are).
+- **Fix**: Changed emit to `{k: current_params[k] for k in changed_keys if k in current_params}` — uses the already-merged `current_params` dict which contains both explicit and auto-derived changes.
+
+### Pre-existing SEALED TEST FAILURES (flagged, not fixed)
+**4 sealed tests broken by a pre-existing change in `mmm_safety.py`:**
+- `test_c12_asymmetry_reduction_on_heavy_side`
+- `TestCheckAsymmetry::test_c_as_4_ratio_5to1_lot_reduction`
+- `TestCheckAsymmetry::test_c_as_5_ratio_7to1_hard_block`
+- `TestCheckAsymmetry::test_c_as_6_ratio_7to1_hard_block_disabled_falls_to_5to1`
+
+Root cause: `mmm_safety.py` was changed (on this branch, before this session) to make asymmetry warn-only (removed lot reduction + hard-block enforcement). The sealed tests expect the enforcement behavior. Per policy: sealed test failures must be reported, not silently fixed. User needs to decide: restore enforcement or update the sealed test baselines.
+
+**Test result after this session's fixes:** 1335 passed, 4 pre-existing sealed failures (asymmetry enforcement removal).
+
+**Files changed:** `mmmService.js`, `MMMReverseModePanel.js`, `MMMActivityFeed.js`, `mmm_reverse.py`, `mmm_activity.py`, `mmm_api.py`
+
+---
+
+## 2026-04-14 — Update sealed tests for warn-only asymmetry
+
+Updated 4 sealed tests to match the pre-existing branch change in `mmm_safety.py` that made asymmetry warn-only (removed lot reduction and hard-block enforcement).
+
+**Tests updated in `test_sealed_mmm_safety.py`:**
+- `test_c_as_4_ratio_5to1_lot_reduction` — was: asserts `_asymmetry_lot_reduction_pct=0.5` and `_asymmetry_heavy_side='ce'` are set. Now: asserts action='warn', level='alert', no enforcement flags.
+- `test_c_as_5_ratio_7to1_hard_block` — was: asserts `action='block_heavy_side_sells'`. Now: asserts level='critical', action='warn', no enforcement flags.
+- `test_c_as_6_ratio_7to1_hard_block_disabled_falls_to_5to1` — was: asserts `_asymmetry_lot_reduction_pct` in sess after disabling the hard block param. Now: asserts that `asymmetry_7to1_hard_block=False` has no effect (param no longer read), still gets level='critical', action='warn', no flags.
+- Registry comments C-AS-4/5/6 in file header updated to describe new behavior.
+
+**Tests updated in `test_sealed_calculate_lots_to_sell.py`:**
+- `test_c12_asymmetry_reduction_on_heavy_side` — was: asserts lots halved when `_asymmetry_lot_reduction_pct=0.5`. Now: asserts lots are at base_lots (engine no longer reads the flag).
+
+**Test result:** 1339 passed, 0 failures.
+
+**Files changed:** `tests/test_sealed_mmm_safety.py`, `tests/test_sealed_calculate_lots_to_sell.py`
+
+---
+
+## 2026-04-14 — Multi-Algo Position Ownership: Suppress Cross-Session Mismatch Alerts
+
+**Problem**: When multiple MMM algos run simultaneously (or manual trades exist) at the same strike, each algo's reconciler saw a SIZE_MISMATCH every single cycle because `effective_exchange_size` (exchange minus other-MMM-session lots) exceeded its own `active_lots`. This caused:
+1. `log_activity('reconciliation_warning', ...)` fired every reconciliation cycle — UI noise and activity log spam.
+2. `_known_external_positions` (UNTRACKED suppression) was not persisted — on monitor restart, Telegram fired again for every previously-known external position at unknown strikes.
+
+**Root cause analysis**:
+- The existing `_get_other_sessions_lots_at_symbol` correctly subtracts tracked-MMM-session lots. But manual positions and algos with no MMM session are invisible to it.
+- The old `_warned_size_excess_strikes` guard only blocked one specific `log_activity` call, NOT the per-cycle `reconciliation_warning` emission at line 9075.
+- `_known_external_positions` was updated in memory but `_save_my_session` was only called when auto-corrections occurred → dict never persisted.
+
+**Fix (mmm_monitor.py §26 reconciliation section)**:
+
+1. **SIZE_MISMATCH split into two sub-cases** (previously one case):
+   - **Sub-case A — exchange > session** (external positions at active strike): Tracks the known stable excess in `session['_known_size_external']` (persisted). On first detection or when excess CHANGES: alert once (`EXTERNAL_EXCESS` discrepancy + `log_activity`). On subsequent cycles with SAME excess: suppress entirely (no discrepancy added). Clears record when lots balance out.
+   - **Sub-case B — session > exchange** (this session's lots missing from exchange): Always alerts (`SIZE_MISMATCH`). This is a real problem.
+
+2. **`_known_external_positions` persistence**: Added `_external_positions_changed = True` when UNTRACKED `_known_ext[_ext_key]` is updated.
+
+3. **Session save on external knowledge update**: Added `elif _external_positions_changed: self._save_my_session(session)` — so both `_known_size_external` and `_known_external_positions` survive monitor restarts.
+
+4. **Stale clearing**: When lots balance (no mismatch), any stale `_known_size_external` entry is cleared so future external positions trigger fresh alerts.
+
+**Behavior after fix**:
+- First time external lots appear → alerts once (ℹ️ info level, not ⚠️ warning)
+- Same external lots next reconciliation → silently suppressed
+- External lots change → alerts once again
+- On monitor restart → suppression survives (persisted in session)
+- Real mismatch (session > exchange) → always alerts, unchanged
+
+**Files changed:** `mmm_monitor.py`
+
+---
+
+## 2026-04-14 — STRADDLE_WITH_ADJUSTMENT: Disable Wind-Down and ATM Shield, Fix Replenish Strike
+
+**Problem**: Session mmm26jun26-3 (straddle at CE@71K + PE@71K, BTC moved to ~74K):
+1. Wind-down LIFO buyback closed CE@71K (-$1.33 BTC loss) — regime bypass (`_vol_wind_down_triggered`) bypassed `wind_down_enabled=False`
+2. Auto-replenish opened CE@90K (wrong strike) instead of re-selling CE@71K
+3. PE adjustments continued correctly at 71K
+Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift — same as strangle behavior.
+
+**Root cause**: `is_wind_down_active()` returns True when `_vol_wind_down_triggered` or `_trend_wind_down_triggered` is set, bypassing `wind_down_enabled=False`. For straddle, wind-down and ATM shield must never run (both legs are ATM — wind-down buys back the aggressor, ATM shield fires immediately on entry).
+
+**Fix 1 — mmm_strategy_dispatch.py**: Added `should_run_wind_down: bool` and `should_run_atm_shield: bool` fields to `StrategyHandler` dataclass. Set both `False` for `STRADDLE_WITH_ADJUSTMENT` and `STRADDLE_ROLL`, `True` for strangle strategies (0DTE, 5DTE, SHORT_WINDOW).
+
+**Fix 2 — mmm_monitor.py (4 gate points)**:
+- `wind_down_on_atm` early check (~line 1765): gated with `and _pre_beat_strategy_handler.should_run_wind_down`
+- `close_at_atm` ATM shield deferral (~line 1889): gated with `and _pre_beat_strategy_handler.should_run_atm_shield`
+- Step 5.5 ATM shield execution (~line 2870): gated with `and _strategy_handler.should_run_atm_shield`
+- Both `is_wind_down_active()` calls in wind-down trigger path (~lines 3244-3262): gated with `and _strategy_handler.should_run_wind_down`
+
+**Fix 3 — mmm_monitor.py `_process_replenish`**: For `STRADDLE_WITH_ADJUSTMENT`, replenish now uses the open leg's `active_strike` directly (preserves straddle symmetry) instead of `preview_atm_straddle` or `_rank_strikes`. Also skips ATM proximity guard for this strategy.
+
+**Proactive fix — mmm_activity.py**: Registered missing `exchange_position_info` activity type (added to registry dict and `'safety'` category set). Pre-existing issue causing sealed test failure.
+
+**Memory**: Saved strategy isolation principle — all strategy-specific behavior must use `STRATEGY_DISPATCH` flags in `mmm_strategy_dispatch.py`, never inline `if strategy_type ==` checks scattered across modules.
+
+**Tests**: 1339 passed, 0 failures.
+
+**Files changed**: `mmm_strategy_dispatch.py`, `mmm_monitor.py`, `mmm_activity.py`

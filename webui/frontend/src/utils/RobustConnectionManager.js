@@ -12,8 +12,10 @@ class RobustConnectionManager extends ConnectionManager {
     this.retryAttempts = 0;
     this.maxRetries = options.maxRetries || 20; // Increased from 10 for mobile networks
     this.retryDelay = options.retryDelay || 1000; // Start with 1 second
-    this.maxRetryDelay = options.maxRetryDelay || 60000; // Increased from 30s to 60s for mobile
+    this.maxRetryDelay = options.maxRetryDelay || options.maxReconnectDelay || 60000; // Increased from 30s to 60s for mobile
     this.reconnectOnClose = options.reconnectOnClose !== false;
+    this.boundSocket = null;
+    this.hasConnectedOnce = false;
 
     // Ping/Pong for connection health - mobile-optimized
     this.pingInterval = null;
@@ -34,7 +36,9 @@ class RobustConnectionManager extends ConnectionManager {
 
   connect() {
     console.log('🔵 RobustConnectionManager: Initiating connection...');
+    this.reconnectOnClose = true;
     this.retryAttempts = 0;
+    this.clearReconnectTimer();
     this.establishConnection();
   }
 
@@ -42,9 +46,6 @@ class RobustConnectionManager extends ConnectionManager {
     try {
       super.connect();
       this.setupConnectionHandlers();
-      this.startPingPong();
-      this.resetRetryDelay();
-      this.emit('connection_quality', { quality: 'good' });
     } catch (error) {
       console.error('🔴 Connection error:', error);
       this.handleConnectionError(error);
@@ -52,7 +53,25 @@ class RobustConnectionManager extends ConnectionManager {
   }
 
   setupConnectionHandlers() {
-    if (!this.socket) return;
+    if (!this.socket || this.boundSocket === this.socket) return;
+    this.boundSocket = this.socket;
+
+    this.socket.on('connect', () => {
+      const attemptsBeforeSuccess = this.retryAttempts;
+      this.clearReconnectTimer();
+      this.retryAttempts = 0;
+      this.startPingPong();
+
+      if (this.connectionQuality !== 'good') {
+        this.connectionQuality = 'good';
+        this.emit('connection_quality', { quality: 'good' });
+      }
+
+      if (this.hasConnectedOnce && attemptsBeforeSuccess > 0) {
+        this.emit('reconnected', { attempts: attemptsBeforeSuccess });
+      }
+      this.hasConnectedOnce = true;
+    });
 
     // Handle disconnect
     this.socket.on('disconnect', (reason) => {
@@ -60,28 +79,13 @@ class RobustConnectionManager extends ConnectionManager {
       this.stopPingPong();
       this.connectionQuality = 'disconnected';
       this.emit('connection_quality', { quality: 'disconnected', reason });
-
-      if (this.reconnectOnClose && reason !== 'io client disconnect') {
-        this.handleConnectionError(new Error('Disconnected: ' + reason));
-      }
-    });
-
-    // Handle reconnect
-    this.socket.on('reconnect', (attemptNumber) => {
-      console.log('✅ Reconnected after', attemptNumber, 'attempts');
-      this.retryAttempts = 0;
-      this.startPingPong();
-      this.emit('reconnected', { attempts: attemptNumber });
-    });
-
-    // Handle reconnect attempt
-    this.socket.on('reconnect_attempt', (attemptNumber) => {
-      console.log('🔄 Reconnect attempt', attemptNumber);
-      this.emit('reconnecting', { attempt: attemptNumber });
     });
 
     // Handle pong
     this.socket.on('pong', () => {
+      if (this.lastPingTime == null) {
+        return;
+      }
       this.lastPongTime = Date.now();
       const latency = this.lastPongTime - this.lastPingTime;
       this.trackLatency(latency);
@@ -89,12 +93,30 @@ class RobustConnectionManager extends ConnectionManager {
 
     // Handle connect error
     this.socket.on('connect_error', (error) => {
-      console.error('🔴 Connect error:', error);
-      this.handleConnectionError(error);
+      this.connectionQuality = 'poor';
+      this.emit('connection_quality', {
+        quality: 'poor',
+        error: error?.message || String(error),
+      });
     });
   }
 
+  clearReconnectTimer() {
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+  }
+
   handleConnectionError(error) {
+    if (!this.reconnectOnClose) {
+      return;
+    }
+
+    if (this.reconnectTimer) {
+      return;
+    }
+
     if (this.retryAttempts >= this.maxRetries) {
       console.error('❌ Max retries reached');
       this.emit('connection_failed', {
@@ -120,7 +142,14 @@ class RobustConnectionManager extends ConnectionManager {
       delay: delay,
     });
 
-    setTimeout(() => this.establishConnection(), delay);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.establishConnection();
+    }, delay);
+  }
+
+  scheduleReconnect() {
+    this.handleConnectionError(new Error('Connection lost'));
   }
 
   startPingPong() {
@@ -191,11 +220,6 @@ class RobustConnectionManager extends ConnectionManager {
     }
   }
 
-  resetRetryDelay() {
-    this.retryAttempts = 0;
-    this.retryDelay = 1000;
-  }
-
   getConnectionStatus() {
     return {
       connected: this.socket?.connected || false,
@@ -212,17 +236,25 @@ class RobustConnectionManager extends ConnectionManager {
     console.log('🔴 Manually disconnecting...');
     this.reconnectOnClose = false; // Prevent auto-reconnect
     this.stopPingPong();
-    if (this.socket) {
-      this.socket.disconnect();
-    }
+    this.clearReconnectTimer();
+    this.cleanupNetworkMonitoring();
+    this.boundSocket = null;
+    super.disconnect();
   }
 
   forceReconnect() {
     console.log('🔄 Force reconnecting...');
     this.reconnectOnClose = true;
     this.retryAttempts = 0;
-    if (this.socket?.connected) {
+    this.stopPingPong();
+    this.stopHeartbeat();
+    this.stopSync();
+    this.clearReconnectTimer();
+    this.boundSocket = null;
+    if (this.socket) {
+      this.socket.removeAllListeners();
       this.socket.disconnect();
+      this.socket = null;
     }
     this.establishConnection();
   }

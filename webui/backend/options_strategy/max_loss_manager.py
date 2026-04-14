@@ -938,29 +938,42 @@ class MaxLossMonitor:
     
     def _fetch_positions_direct(self):
         """
-        Fetch fresh positions directly via the async client when the shared cache is stale.
+        Fetch fresh positions via an isolated async client (own event loop + httpx pool).
 
-        BUG FIX: The shared positions cache is only refreshed when the frontend actively polls
-        /api/options/positions.  When the browser tab is closed the cache goes stale and
-        max-loss monitoring was silently skipped.  This method fetches positions independently
-        so the monitor is self-sufficient regardless of frontend activity.
+        Using an isolated client means max-loss monitoring never contends with the shared
+        options-control loop.  If the shared loop is busy or slow this monitor is unaffected.
 
-        Uses the same _run_async / get_unified_client path as the positions endpoint — no HTTP
-        self-call, no eventlet deadlock risk.
+        Uses /v2/positions/margined — a single API call that already includes mark_price and
+        unrealized_pnl so no extra tickers request is needed.
+
+        NOTE: do NOT call update_positions_cache here — raw positions lack cashflow and other
+        fields added by enrich_position_data.  Writing them to the shared cache would overwrite
+        enriched data and cause cashflow=$0 in the dashboard.
         """
         try:
-            from webui.backend.routes.options.options_client import _run_async, get_unified_client
-            client = get_unified_client()
+            from webui.backend.routes.options.options_client import get_named_client
+            isolated = get_named_client("max_loss", max_connections=10)
 
             async def _fetch():
-                result = await client.get_all_positions_with_options()
-                return result.get('options', [])
+                # Single API call — all positions with mark_price already included.
+                # /v2/positions/margined returns numeric fields as strings — coerce them.
+                positions = await isolated.rest_client.get_positions_margined()
+                result = []
+                for p in positions:
+                    if not p.get('product_symbol', '').startswith(('C-', 'P-')):
+                        continue
+                    size = float(p.get('size', 0) or 0)
+                    if size == 0:
+                        continue
+                    p['size'] = size
+                    p['mark_price'] = float(p.get('mark_price', 0) or 0)
+                    p['entry_price'] = float(p.get('entry_price', 0) or 0)
+                    p['unrealized_pnl'] = float(p.get('unrealized_pnl', 0) or 0)
+                    result.append(p)
+                return result
 
-            positions = _run_async(_fetch(), timeout=15)
+            positions = isolated.run_async(_fetch(), timeout=15)
             logger.info(f"🔄 Max-loss monitor: fetched {len(positions)} positions directly (cache was stale)")
-            # NOTE: do NOT call update_positions_cache here — raw positions lack cashflow
-            # and other fields added by enrich_position_data. Writing them to the shared
-            # cache would overwrite enriched data and cause cashflow=$0 in the dashboard.
             return positions
         except Exception as e:
             logger.warning(f"⚠️ Max-loss monitor: direct position fetch failed: {e}")
@@ -981,14 +994,35 @@ class MaxLossMonitor:
                 positions = self._test_positions
                 logger.info(f"🧪 TEST MODE: Using {len(positions)} mock positions")
             else:
-                # BUG FIX: Try the shared cache first (cheap).  If it is stale (frontend tab
-                # not open / not polling), fetch positions directly via the async client so
-                # max-loss monitoring is NEVER silently disabled by an inactive browser tab.
-                from webui.backend.routes.options.options_control import get_cached_positions
-                positions = get_cached_positions(max_age=15)  # tighter window than before (was 30s)
+                # Priority: WS cache → shared cache → direct REST fetch.
+                # WS cache has mark prices updated every ~500 ms from l1_orderbook;
+                # positions are refreshed on fills or the 60 s fallback timer.
+                positions = None
+
+                # 1. WS cache (zero REST cost in steady state)
+                try:
+                    from webui.backend.routes.options.options_ws_cache import get_ws_cache
+                    ws_cache = get_ws_cache()
+                    if ws_cache.is_healthy:
+                        cached = ws_cache.get_positions()
+                        if cached:
+                            positions = cached
+                except Exception as wse:
+                    logger.debug(f"Max-loss: WS cache unavailable: {wse}")
+
+                # 2. Shared options_control cache (fresh REST fetch done by frontend)
+                if positions is None:
+                    try:
+                        from webui.backend.routes.options.options_control import get_cached_positions
+                        positions = get_cached_positions(max_age=15)
+                    except Exception:
+                        pass
+
+                # 3. Direct REST fetch via isolated async client
                 if positions is None:
                     logger.warning("⚠️ Max-loss: positions cache is stale — fetching directly")
                     positions = self._fetch_positions_direct()
+
                 if positions is None:
                     logger.warning("⚠️ Max-loss: could not obtain positions — skipping this check")
                     self._skipped_stale += 1

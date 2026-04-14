@@ -33,6 +33,16 @@ class StrategyHandler:
 
     strategy_type: str
     should_run_adjustment: bool
+    # Wind-down (regime-triggered or time-based LIFO buyback) is designed for the
+    # strangle: when premium collapses, it gracefully reduces exposure.
+    # For straddle strategies both legs start ATM — wind-down would immediately
+    # buy back the aggressor leg and break the straddle structure.
+    should_run_wind_down: bool
+    # ATM shield proactively closes the leg approaching ATM and re-sells further OTM.
+    # For strangle this is a critical safety mechanism. For straddle strategies,
+    # CE and PE are BOTH at the same ATM strike — the shield would fire immediately
+    # on entry and continuously fight the strategy structure.
+    should_run_atm_shield: bool
     run_step_5_4: RunStep54Fn
     validate_session: ValidateSessionFn
 
@@ -171,7 +181,6 @@ async def _run_step_5_4_straddle_roll(
     """
     try:
         from .mmm_straddle_roll_pure import execute_pure_straddle_roll
-
         await execute_pure_straddle_roll(
             monitor,
             session,
@@ -185,33 +194,50 @@ async def _run_step_5_4_straddle_roll(
 
 
 STRATEGY_DISPATCH: Dict[str, StrategyHandler] = {
+    # Strangle strategies: full engine enabled, wind-down and ATM shield both active.
     '0DTE': StrategyHandler(
         strategy_type='0DTE',
         should_run_adjustment=True,
+        should_run_wind_down=True,
+        should_run_atm_shield=True,
         run_step_5_4=_run_step_5_4_noop,
         validate_session=_validate_default_strategy_session,
     ),
     '5DTE': StrategyHandler(
         strategy_type='5DTE',
         should_run_adjustment=True,
+        should_run_wind_down=True,
+        should_run_atm_shield=True,
         run_step_5_4=_run_step_5_4_noop,
         validate_session=_validate_default_strategy_session,
     ),
     'SHORT_WINDOW': StrategyHandler(
         strategy_type='SHORT_WINDOW',
         should_run_adjustment=True,
+        should_run_wind_down=True,
+        should_run_atm_shield=True,
         run_step_5_4=_run_step_5_4_noop,
         validate_session=_validate_default_strategy_session,
     ),
+    # Straddle + Adjustment: adjustment engine enabled, but wind-down and ATM shield
+    # must NOT run. Both legs start ATM — wind-down would buy back the aggressor leg
+    # instead of running the standard hedge adjustment, and ATM shield would fire
+    # immediately on entry since CE == PE == ATM strike.
     STRADDLE_WITH_ADJUSTMENT_CATEGORY: StrategyHandler(
         strategy_type=STRADDLE_WITH_ADJUSTMENT_CATEGORY,
         should_run_adjustment=True,
+        should_run_wind_down=False,
+        should_run_atm_shield=False,
         run_step_5_4=_run_step_5_4_straddle_with_adjustment,
         validate_session=_validate_straddle_with_adjustment_session,
     ),
+    # Pure straddle roll: adjustment engine fully disabled, no wind-down or ATM shield.
+    # Risk is managed exclusively via the 4-leg roll in Step 5.4.
     STRADDLE_ROLL_CATEGORY: StrategyHandler(
         strategy_type=STRADDLE_ROLL_CATEGORY,
         should_run_adjustment=False,
+        should_run_wind_down=False,
+        should_run_atm_shield=False,
         run_step_5_4=_run_step_5_4_straddle_roll,
         validate_session=_validate_straddle_roll_session,
     ),

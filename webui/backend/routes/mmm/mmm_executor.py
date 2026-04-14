@@ -397,6 +397,14 @@ class MMMExecutor:
             pass
 
         # Step 2: Wait + Reprice loop
+        # Partial fill accumulators — track lots filled across multiple orders.
+        # When the exchange cancels an order that was partially filled, we place
+        # a new continuation order for the remaining lots rather than returning
+        # failure (which would cause the caller to re-place the FULL size, overfilling).
+        _cumulative_filled = 0
+        _cumulative_fill_value = 0.0
+        _current_order_size = size  # size of the order currently in flight
+
         while attempts < _max_attempts:
             attempts += 1
 
@@ -451,11 +459,12 @@ class MMMExecutor:
                             order_id=order_id, attempts=attempts,
                             total_time=round(elapsed, 2),
                         )
-                    filled_size = size - unfilled_int
+                    # Use _current_order_size (not original size) to compute this batch's fill
+                    filled_size = _current_order_size - unfilled_int
                     if filled_size <= 0:
                         log.error(
                             f"❌ Order {order_id} marked filled but filled_size={filled_size} "
-                            f"(size={size}, unfilled={unfilled_int})"
+                            f"(current_order_size={_current_order_size}, unfilled={unfilled_int})"
                         )
                         return self._failure(
                             f"Order filled but computed filled_size={filled_size}",
@@ -479,16 +488,24 @@ class MMMExecutor:
                         total_time=round(elapsed, 2),
                     )
 
+                # Accumulate this batch into cumulative totals (handles multi-partial case)
+                _cumulative_filled += filled_size
+                _cumulative_fill_value += filled_size * fill_price
+                _final_fill_price = round(_cumulative_fill_value / _cumulative_filled, 4)
+
                 log.info(
                     f"✅ Order {order_id} FILLED at ${fill_price:.2f} "
-                    f"after {elapsed:.1f}s ({attempts} attempt(s))"
+                    f"after {elapsed:.1f}s ({attempts} attempt(s)) — "
+                    f"batch={filled_size}, total={_cumulative_filled}/{size}"
                 )
 
                 _log_activity('order_filled',
-                    f"✅ {side.upper()} {symbol} FILLED @ ${fill_price:.2f} in {elapsed:.1f}s",
+                    f"✅ {side.upper()} {symbol} FILLED @ ${fill_price:.2f} in {elapsed:.1f}s "
+                    f"({_cumulative_filled}/{size} lots total)",
                     session_id=session_id, severity='success',
-                    details={'order_id': order_id, 'fill_price': fill_price,
-                             'elapsed': round(elapsed, 1), 'attempts': attempts})
+                    details={'order_id': order_id, 'fill_price': _final_fill_price,
+                             'filled_size': _cumulative_filled, 'elapsed': round(elapsed, 1),
+                             'attempts': attempts})
 
                 # Feature 10: Confirm the execution intent — links to ORDER_INTENT via order_id.
                 try:
@@ -497,10 +514,10 @@ class MMMExecutor:
                         session_id=session_id or '',
                         event_category='EXECUTION_INTENT',
                         event_type='ORDER_CONFIRMED',
-                        remark=f'{side.upper()} {filled_size} lots @ ${fill_price:.2f}',
+                        remark=f'{side.upper()} {_cumulative_filled} lots @ ${_final_fill_price:.2f}',
                         severity='INFO',
-                        details={'order_id': order_id, 'fill_price': fill_price,
-                                 'filled_size': filled_size},
+                        details={'order_id': order_id, 'fill_price': _final_fill_price,
+                                 'filled_size': _cumulative_filled},
                     )
                 except Exception:
                     pass
@@ -509,16 +526,136 @@ class MMMExecutor:
                     'success': True,
                     'order_id': order_id,
                     'client_order_id': client_order_id,
-                    'fill_price': fill_price,
-                    'filled_size': filled_size,
+                    'fill_price': _final_fill_price,
+                    'filled_size': _cumulative_filled,
                     'execution_type': 'smart_mid_price',
                     'attempts': attempts,
                     'total_time': round(elapsed, 2),
                     'order_details': final_order_data,
                 }
 
-            # Not filled — check if order is dead (cancelled/rejected)
+            # Not filled — check if order is dead (cancelled/rejected by exchange)
             if fill_data and fill_data.get('_dead'):
+                # ── Partial fill recovery ─────────────────────────────────────────
+                # The exchange may cancel an order that was already partially filled.
+                # Example: 50-lot sell at 54.0, exchange fills 6 lots then cancels
+                # the remaining 44. If we return failure here, the caller re-places
+                # the FULL 50 lots → 56 total. Instead: detect the partial fill,
+                # accumulate it, and place a new order for the remaining lots.
+                _pf_unfilled_raw = fill_data.get('unfilled_size')
+                _pf_batch_filled = 0
+                if _pf_unfilled_raw is not None:
+                    try:
+                        _pf_unfilled_int = int(_pf_unfilled_raw)
+                        _pf_batch_filled = _current_order_size - _pf_unfilled_int
+                    except (ValueError, TypeError):
+                        log.error(
+                            f"⚠️ Order {order_id} dead — cannot parse unfilled_size: {_pf_unfilled_raw!r}"
+                        )
+
+                if _pf_batch_filled > 0:
+                    # Exchange cancelled with partial fill — recover
+                    _pf_price_raw = fill_data.get('average_fill_price')
+                    try:
+                        _pf_price = _parse_fill_price(_pf_price_raw)
+                    except (ValueError, TypeError):
+                        _pf_price = mid_price  # fallback to last known limit price
+
+                    _cumulative_filled += _pf_batch_filled
+                    _cumulative_fill_value += _pf_batch_filled * _pf_price
+                    _remaining = size - _cumulative_filled
+
+                    elapsed = time.time() - start_time
+                    log.warning(
+                        f"⚠️ Order {order_id} cancelled by exchange with partial fill: "
+                        f"{_pf_batch_filled} lots @ ${_pf_price:.2f}. "
+                        f"Cumulative: {_cumulative_filled}/{size}. Remaining: {_remaining} lots."
+                    )
+                    _log_activity('order_partial_fill',
+                        f"⚠️ Partial fill on cancelled order: {_pf_batch_filled}/{_current_order_size} lots "
+                        f"@ ${_pf_price:.2f}. Placing continuation for {_remaining} remaining.",
+                        session_id=session_id, severity='warning',
+                        details={'order_id': order_id, 'batch_filled': _pf_batch_filled,
+                                 'cumulative_filled': _cumulative_filled, 'remaining': _remaining,
+                                 'fill_price': _pf_price})
+
+                    if _remaining <= 0:
+                        # Fully filled across partial orders
+                        _weighted_price = round(_cumulative_fill_value / _cumulative_filled, 4)
+                        return {
+                            'success': True,
+                            'order_id': order_id,
+                            'client_order_id': client_order_id,
+                            'fill_price': _weighted_price,
+                            'filled_size': _cumulative_filled,
+                            'execution_type': 'partial_fill_complete',
+                            'attempts': attempts,
+                            'total_time': round(elapsed, 2),
+                            'order_details': fill_data,
+                        }
+
+                    if attempts >= _max_attempts:
+                        # Hit attempt ceiling — return what we have
+                        _weighted_price = round(_cumulative_fill_value / _cumulative_filled, 4)
+                        log.warning(
+                            f"⚠️ Max attempts reached with partial fill: "
+                            f"{_cumulative_filled}/{size} lots @ ${_weighted_price:.2f}"
+                        )
+                        return {
+                            'success': True,
+                            'order_id': order_id,
+                            'client_order_id': client_order_id,
+                            'fill_price': _weighted_price,
+                            'filled_size': _cumulative_filled,
+                            'execution_type': 'partial_fill',
+                            'attempts': attempts,
+                            'total_time': round(elapsed, 2),
+                            'order_details': fill_data,
+                            'error': f'Partial fill: {_cumulative_filled}/{size} lots (attempts exhausted)',
+                        }
+
+                    # Place a new continuation order for remaining lots
+                    _cont_quotes = await self._fetch_quotes(symbol, rest_client)
+                    if _cont_quotes:
+                        _cont_mid = self._calculate_mid_price(_cont_quotes)
+                        if _cont_mid > 0:
+                            mid_price = _cont_mid
+
+                    _current_order_size = _remaining
+                    _cont_result = await self._place_limit_order(
+                        symbol, side, _remaining, mid_price, reduce_only, rest_client,
+                        client_order_id=None,  # fresh coid for continuation order
+                    )
+                    if _cont_result and _cont_result.get('id'):
+                        order_id = str(_cont_result['id'])
+                        product_id = _cont_result.get('product_id')
+                        log.info(
+                            f"📋 Continuation order {order_id}: "
+                            f"{_remaining} remaining lots @ ${mid_price:.2f}"
+                        )
+                        continue  # resume while loop monitoring new order
+
+                    # Couldn't place continuation — return partial success for what filled
+                    log.error(
+                        f"❌ Could not place continuation order for {_remaining} remaining lots — "
+                        f"returning partial fill of {_cumulative_filled}/{size}"
+                    )
+                    _weighted_price = round(_cumulative_fill_value / _cumulative_filled, 4)
+                    elapsed = time.time() - start_time
+                    return {
+                        'success': True,
+                        'order_id': order_id,
+                        'client_order_id': client_order_id,
+                        'fill_price': _weighted_price,
+                        'filled_size': _cumulative_filled,
+                        'execution_type': 'partial_fill',
+                        'attempts': attempts,
+                        'total_time': round(elapsed, 2),
+                        'order_details': fill_data,
+                        'error': f'Partial fill: {_cumulative_filled}/{size} lots (continuation placement failed)',
+                    }
+                # ── End partial fill recovery ─────────────────────────────────────
+
                 elapsed = time.time() - start_time
                 log.warning(f"❌ Order {order_id} is dead ({fill_data.get('state', '?')})")
                 return self._failure(
@@ -676,6 +813,35 @@ class MMMExecutor:
         # Cancel any remaining order
         await self._cancel_order(order_id, product_id)
         log.error(f"❌ Max reprice attempts ({_max_attempts}) exhausted for {symbol} after {elapsed:.0f}s")
+
+        # If we accumulated any partial fills, return partial success rather than total failure.
+        # This prevents the caller from re-placing the full size and overfilling.
+        if _cumulative_filled > 0:
+            _weighted_price = round(_cumulative_fill_value / _cumulative_filled, 4)
+            log.warning(
+                f"⚠️ Returning partial fill: {_cumulative_filled}/{size} lots "
+                f"@ ${_weighted_price:.2f} (attempts exhausted)"
+            )
+            _log_activity('order_partial_fill',
+                f"⚠️ {side.upper()} {symbol} PARTIAL FILL: {_cumulative_filled}/{size} lots "
+                f"@ ${_weighted_price:.2f} after {_max_attempts} attempts ({elapsed:.0f}s)",
+                session_id=session_id, severity='warning',
+                details={'order_id': order_id, 'attempts': _max_attempts,
+                         'filled_size': _cumulative_filled, 'fill_price': _weighted_price,
+                         'elapsed': round(elapsed, 1)})
+            return {
+                'success': True,
+                'order_id': order_id,
+                'client_order_id': client_order_id,
+                'fill_price': _weighted_price,
+                'filled_size': _cumulative_filled,
+                'execution_type': 'partial_fill',
+                'attempts': attempts,
+                'total_time': round(elapsed, 2),
+                'order_details': None,
+                'error': f'Partial fill: {_cumulative_filled}/{size} lots (reprice attempts exhausted)',
+            }
+
         _log_activity('order_failed',
             f"❌ {side.upper()} {symbol} NOT FILLED after {_max_attempts} attempts ({elapsed:.0f}s)",
             session_id=session_id, severity='error',
@@ -835,23 +1001,21 @@ class MMMExecutor:
                                 raise ValueError(f"Invalid numeric value: {raw_fill}")
                         except (ValueError, TypeError) as _ep:
                             log.error(f"❌ Emergency order {order_id} unparseable fill_price: {raw_fill!r} ({_ep})")
-                            fill_price = aggressive_price  # Emergency: use aggressive_price as fallback
+                            # H-2 FIX: Try exchange lookup before fallback
+                            fill_price = await self._h2_exchange_fill_lookup(
+                                order_id, product_id, rest_client, aggressive_price
+                            )
                     else:
                         # C4 NOTE: average_fill_price is missing despite state=filled.
                         # This is an exchange data-lag edge case on IOC orders.
-                        # We fall back to aggressive_price (the IOC limit, worst-case floor)
-                        # rather than returning failure — a failure return here would cause
-                        # the next heartbeat to re-attempt a buyback that already executed,
-                        # risking a double-close. Conservative understatement of fill price
-                        # is safer than a double-execution. Log at error level so operators
-                        # can reconcile manually if needed.
-                        log.error(
-                            f"❌ Emergency order {order_id} state=filled but "
-                            f"average_fill_price missing — using aggressive_price "
-                            f"({aggressive_price:.2f}) as conservative fallback. "
-                            f"Manual reconciliation may be needed."
+                        # H-2 FIX: Try exchange lookup before aggressive_price fallback
+                        log.warning(
+                            f"⚠️ Emergency order {order_id} state=filled but "
+                            f"average_fill_price missing — attempting exchange lookup"
                         )
-                        fill_price = aggressive_price
+                        fill_price = await self._h2_exchange_fill_lookup(
+                            order_id, product_id, rest_client, aggressive_price
+                        )
 
                     # Audit fix BUG-1: Guard unfilled_size parsing.
                     # When state='filled' but unfilled_size==size, nothing was actually
@@ -1115,10 +1279,39 @@ class MMMExecutor:
                             f"CE rollback OK @ ${rollback.get('fill_price', 0):.2f} — no open positions",
                             session_id=session_id, severity='success')
                     else:
-                        log.error(f"❌ CE rollback FAILED: {rollback.get('error')}")
-                        _log_activity('entry_rollback_failed',
-                            f"CE rollback FAILED — ORPHAN POSITION: {ce_symbol}. Close manually!",
-                            session_id=session_id, severity='error')
+                        # H-3 FIX: Escalate to emergency IOC taker
+                        log.warning(f"⚠️ CE smart rollback failed — escalating to emergency_execute")
+                        _log_activity('entry_rollback_escalation',
+                            f"Smart rollback failed for {ce_symbol}. Escalating to emergency IOC.",
+                            session_id=session_id, severity='warning')
+                        try:
+                            emergency_rb = await self.emergency_execute(
+                                ce_symbol, 'buy', lots,
+                                session_id=session_id,
+                            )
+                            if emergency_rb.get('success'):
+                                rollback_ok = True
+                                log.info(
+                                    f"✅ CE emergency rollback OK @ "
+                                    f"${emergency_rb.get('fill_price', 0):.2f}")
+                                _log_activity('entry_rollback_ok',
+                                    f"CE emergency rollback OK @ "
+                                    f"${emergency_rb.get('fill_price', 0):.2f} — positions flat",
+                                    session_id=session_id, severity='success')
+                            else:
+                                log.error(
+                                    f"❌ CE rollback FAILED (smart + emergency): "
+                                    f"ORPHAN POSITION: {ce_symbol}. Close manually!")
+                                _log_activity('entry_rollback_failed',
+                                    f"CE rollback FAILED (both smart + emergency) — "
+                                    f"ORPHAN POSITION: {ce_symbol}. Close manually!",
+                                    session_id=session_id, severity='error')
+                        except Exception as emg_e:
+                            log.error(f"CE emergency rollback exception: {emg_e}")
+                            _log_activity('entry_rollback_failed',
+                                f"CE emergency rollback exception — "
+                                f"ORPHAN POSITION: {ce_symbol}. Close manually!",
+                                session_id=session_id, severity='error')
                 except Exception as e:
                     log.error(f"CE rollback exception: {e}")
 
@@ -1139,10 +1332,39 @@ class MMMExecutor:
                             f"PE rollback OK @ ${rollback.get('fill_price', 0):.2f} — no open positions",
                             session_id=session_id, severity='success')
                     else:
-                        log.error(f"❌ PE rollback FAILED: {rollback.get('error')}")
-                        _log_activity('entry_rollback_failed',
-                            f"PE rollback FAILED — ORPHAN POSITION: {pe_symbol}. Close manually!",
-                            session_id=session_id, severity='error')
+                        # H-3 FIX: Escalate to emergency IOC taker
+                        log.warning(f"⚠️ PE smart rollback failed — escalating to emergency_execute")
+                        _log_activity('entry_rollback_escalation',
+                            f"Smart rollback failed for {pe_symbol}. Escalating to emergency IOC.",
+                            session_id=session_id, severity='warning')
+                        try:
+                            emergency_rb = await self.emergency_execute(
+                                pe_symbol, 'buy', lots,
+                                session_id=session_id,
+                            )
+                            if emergency_rb.get('success'):
+                                rollback_ok = True
+                                log.info(
+                                    f"✅ PE emergency rollback OK @ "
+                                    f"${emergency_rb.get('fill_price', 0):.2f}")
+                                _log_activity('entry_rollback_ok',
+                                    f"PE emergency rollback OK @ "
+                                    f"${emergency_rb.get('fill_price', 0):.2f} — positions flat",
+                                    session_id=session_id, severity='success')
+                            else:
+                                log.error(
+                                    f"❌ PE rollback FAILED (smart + emergency): "
+                                    f"ORPHAN POSITION: {pe_symbol}. Close manually!")
+                                _log_activity('entry_rollback_failed',
+                                    f"PE rollback FAILED (both smart + emergency) — "
+                                    f"ORPHAN POSITION: {pe_symbol}. Close manually!",
+                                    session_id=session_id, severity='error')
+                        except Exception as emg_e:
+                            log.error(f"PE emergency rollback exception: {emg_e}")
+                            _log_activity('entry_rollback_failed',
+                                f"PE emergency rollback exception — "
+                                f"ORPHAN POSITION: {pe_symbol}. Close manually!",
+                                session_id=session_id, severity='error')
                 except Exception as e:
                     log.error(f"PE rollback exception: {e}")
             else:
@@ -1216,17 +1438,125 @@ class MMMExecutor:
             session_id=session_id,
         )
 
+        # ── H-1 FIX: Recovery sell if open leg fails ──────────────────────
+        # If close leg succeeded but open leg failed, the old position is gone
+        # and no new premium was collected. Attempt to re-sell the OLD position
+        # (same symbol that was just bought back) using emergency_execute,
+        # restoring the position and recovering premium.
+        open_leg_recovered = False
+        recovery_result = None
+        if not open_result.get('success') and close_result.get('success'):
+            log.warning(
+                f"⚠️ Adjustment open leg failed — attempting recovery re-sell "
+                f"of {close_symbol} ({close_lots} lots) via emergency_execute"
+            )
+            _log_activity('adjustment_recovery',
+                f"Open leg failed for {open_symbol}. "
+                f"Attempting emergency re-sell of {close_symbol} to recover premium.",
+                session_id=session_id, severity='warning',
+                details={'close_symbol': close_symbol, 'open_symbol': open_symbol,
+                         'lots': close_lots})
+            try:
+                recovery_result = await self.emergency_execute(
+                    close_symbol, 'sell', close_lots,
+                    session_id=session_id,
+                )
+                if recovery_result.get('success'):
+                    open_leg_recovered = True
+                    log.info(
+                        f"✅ Recovery sell filled @ "
+                        f"${recovery_result.get('fill_price', 0):.2f} — "
+                        f"position restored at original strike"
+                    )
+                    _log_activity('adjustment_recovery_ok',
+                        f"✅ Recovery sell OK @ "
+                        f"${recovery_result.get('fill_price', 0):.2f} — "
+                        f"position restored",
+                        session_id=session_id, severity='success',
+                        details={'fill_price': recovery_result.get('fill_price')})
+                else:
+                    log.error(
+                        f"❌ RECOVERY FAILED — ORPHAN GAP: closed {close_symbol} "
+                        f"but could not re-sell. {open_symbol} sell also failed. "
+                        f"Manual intervention required."
+                    )
+                    _log_activity('adjustment_orphan',
+                        f"❌ ORPHAN: closed {close_symbol} but neither "
+                        f"{open_symbol} sell nor recovery re-sell succeeded. "
+                        f"Close manually!",
+                        session_id=session_id, severity='error',
+                        details={'close_symbol': close_symbol,
+                                 'open_symbol': open_symbol,
+                                 'recovery_error': recovery_result.get('error')})
+            except Exception as e:
+                log.error(f"Recovery sell exception: {e}", exc_info=True)
+                _log_activity('adjustment_recovery_exception',
+                    f"Recovery sell exception: {e}",
+                    session_id=session_id, severity='error')
+        # ── END H-1 FIX ──────────────────────────────────────────────────
+
         close_cost = close_result['fill_price'] * close_result.get('filled_size', close_lots)
-        open_credit = open_result['fill_price'] * open_result.get('filled_size', open_lots) if open_result.get('success') else 0
+        if open_result.get('success'):
+            open_credit = open_result['fill_price'] * open_result.get('filled_size', open_lots)
+        elif open_leg_recovered and recovery_result:
+            open_credit = recovery_result['fill_price'] * recovery_result.get('filled_size', close_lots)
+        else:
+            open_credit = 0
         net_cost = close_cost - open_credit
 
         return {
-            'success': open_result.get('success', False),
+            'success': open_result.get('success', False) or open_leg_recovered,
             'close': close_result,
-            'open': open_result,
+            'open': open_result if open_result.get('success') else (recovery_result or open_result),
             'net_cost': round(net_cost, 2),
-            'error': None if open_result.get('success') else f'Open leg failed: {open_result.get("error")}',
+            'open_leg_recovered': open_leg_recovered,
+            'error': None if (open_result.get('success') or open_leg_recovered)
+                     else f'Open leg failed: {open_result.get("error")}',
         }
+
+    # =========================================================================
+    # H-2 FIX: Exchange fill-price lookup before aggressive_price fallback
+    # =========================================================================
+
+    async def _h2_exchange_fill_lookup(
+        self,
+        order_id: str,
+        product_id,
+        rest_client,
+        aggressive_price: float,
+    ) -> float:
+        """
+        H-2 FIX: Attempt to fetch actual fill price from exchange before
+        falling back to aggressive_price.
+
+        Called when _parse_fill_price() fails or average_fill_price is missing.
+        Makes one _get_order_status() call to see if exchange has updated data.
+
+        Returns:
+            Actual fill price from exchange, or aggressive_price as last resort.
+        """
+        try:
+            fresh = await self._get_order_status(order_id, product_id, rest_client)
+            if fresh:
+                raw = fresh.get('average_fill_price')
+                if raw and str(raw).strip() not in ('', '0'):
+                    price = float(raw)
+                    if not (_math.isnan(price) or _math.isinf(price)) and 0 < price < 1_000_000:
+                        log.info(
+                            f"✅ H-2: Exchange lookup found fill_price "
+                            f"${price:.2f} for order {order_id} "
+                            f"(would have used ${aggressive_price:.2f})"
+                        )
+                        return price
+        except Exception as e:
+            log.debug(f"H-2: Exchange fill lookup failed for {order_id}: {e}")
+
+        log.warning(
+            f"⚠️ H-2: Using aggressive_price ${aggressive_price:.2f} as "
+            f"fill_price fallback for order {order_id} "
+            f"(exchange lookup also failed)"
+        )
+        return aggressive_price
 
     # =========================================================================
     # Internal: Quote Fetching

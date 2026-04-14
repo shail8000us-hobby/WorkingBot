@@ -145,30 +145,67 @@ class SLTPMonitor:
             logger.error(f"Error checking positions: {e}", exc_info=True)
     
     def _get_positions(self) -> List[Dict]:
-        """Get current options positions. Uses shared cache when fresh; fetches directly when stale."""
+        """Get current options positions.
+
+        Priority:
+        1. WS cache (zero REST calls — mark prices updated every ~500 ms)
+        2. Shared options_control cache (fresh REST fetch by options panel)
+        3. Isolated REST fetch (own event loop + httpx pool, last resort)
+        """
+        # --- 1. WS cache (preferred — no REST cost) ---
+        try:
+            from webui.backend.routes.options.options_ws_cache import get_ws_cache
+            ws_cache = get_ws_cache()
+            if ws_cache.is_healthy:
+                positions = ws_cache.get_positions()
+                if positions:
+                    return positions
+        except Exception as wse:
+            logger.debug(f"SL/TP monitor: WS cache unavailable: {wse}")
+
+        # --- 2. Shared positions cache ---
         try:
             from webui.backend.routes.options.options_control import get_cached_positions
             positions = get_cached_positions(max_age=15)
             if positions is not None:
                 return positions
-            # Cache stale — fetch directly so SL/TP monitoring works even when browser tab is closed
-            logger.warning("⚠️ SL/TP monitor: positions cache stale — fetching directly")
-            try:
-                from webui.backend.routes.options.options_client import _run_async, get_unified_client
-                client = get_unified_client()
-                async def _fetch():
-                    result = await client.get_all_positions_with_options()
-                    return result.get('options', [])
-                fetched = _run_async(_fetch(), timeout=15)
-                # NOTE: do NOT call update_positions_cache here — raw positions lack cashflow
-                # and other fields added by enrich_position_data. Writing them to the shared
-                # cache would overwrite the enriched data, causing cashflow=$0 in the dashboard.
-                return fetched if fetched is not None else []
-            except Exception as fe:
-                logger.warning(f"⚠️ SL/TP monitor: direct fetch failed: {fe}")
-                return []
-        except Exception as e:
-            logger.error(f"Error fetching positions: {e}", exc_info=True)
+        except Exception:
+            pass
+
+        # --- 3. Direct REST fetch (isolated loop, last resort) ---
+        # Cache stale — fetch directly via an isolated loop (own event loop + httpx pool)
+        # so that a slow shared-loop request cannot block SL/TP monitoring.
+        logger.warning("⚠️ SL/TP monitor: positions cache stale — fetching directly")
+        try:
+            from webui.backend.routes.options.options_client import get_named_client
+            isolated = get_named_client("sl_tp", max_connections=10)
+
+            async def _fetch():
+                # get_positions_margined = single API call, returns all positions
+                # with mark_price already included — no extra tickers call needed.
+                # /v2/positions/margined returns numeric fields as strings — coerce them.
+                raw = await isolated.rest_client.get_positions_margined()
+                result = []
+                for p in raw:
+                    if not p.get('product_symbol', '').startswith(('C-', 'P-')):
+                        continue
+                    size = float(p.get('size', 0) or 0)
+                    if size == 0:
+                        continue
+                    p['size'] = size
+                    p['mark_price'] = float(p.get('mark_price', 0) or 0)
+                    p['entry_price'] = float(p.get('entry_price', 0) or 0)
+                    p['unrealized_pnl'] = float(p.get('unrealized_pnl', 0) or 0)
+                    result.append(p)
+                return result
+
+            fetched = isolated.run_async(_fetch(), timeout=15)
+            # NOTE: do NOT call update_positions_cache here — raw positions lack cashflow
+            # and other enriched fields. Writing them to the shared cache would overwrite
+            # the enriched data and cause cashflow=$0 in the dashboard.
+            return fetched if fetched is not None else []
+        except Exception as fe:
+            logger.warning(f"⚠️ SL/TP monitor: direct fetch failed: {fe}")
             return []
     
     def _handle_trigger(self, trigger: Dict, position: Dict):

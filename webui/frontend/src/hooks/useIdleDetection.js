@@ -165,28 +165,55 @@ export function useIdleDetection(options = {}) {
 export function useSmartPolling(callback, interval = 30000, options = {}) {
   const { isActive } = useIdleDetection(options);
   const callbackRef = useRef(callback);
+  const pollInFlightRef = useRef(false);
+  const pendingPollRef = useRef(false);
 
   // Update callback ref
   useEffect(() => {
     callbackRef.current = callback;
   }, [callback]);
 
+  const executePoll = useCallback(async () => {
+    if (pollInFlightRef.current) {
+      pendingPollRef.current = true;
+      return;
+    }
+
+    pollInFlightRef.current = true;
+    try {
+      await Promise.resolve(callbackRef.current?.());
+    } finally {
+      pollInFlightRef.current = false;
+      if (pendingPollRef.current) {
+        if (isActive) {
+          pendingPollRef.current = false;
+          Promise.resolve().then(() => {
+            executePoll();
+          });
+        } else {
+          pendingPollRef.current = false;
+        }
+      }
+    }
+  }, [isActive]);
+
   useEffect(() => {
     if (!isActive) {
       console.log('⏸️ Polling paused (user idle)');
+      pendingPollRef.current = false;
       return;
     }
 
     // Initial call
-    callbackRef.current();
+    executePoll();
 
     // Set up interval
     const timer = setInterval(() => {
-      callbackRef.current();
+      executePoll();
     }, interval);
 
     return () => clearInterval(timer);
-  }, [interval, isActive]);
+  }, [interval, isActive, executePoll]);
 
   return { isActive };
 }

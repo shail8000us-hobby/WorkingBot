@@ -13,8 +13,8 @@ const groupLabels = {
 };
 
 const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSelect }) {
-  const handleMouseEnter = React.useCallback((sectionId) => {
-    // Prefetch the actual webpack chunk when user hovers — makes page switch instant
+  const handlePrefetchIntent = React.useCallback((sectionId) => {
+    // Prefetch on early intent signals (hover/focus/press) so first open is faster.
     prefetchPage(sectionId);
   }, []);
 
@@ -71,7 +71,9 @@ const Sidebar = React.memo(function Sidebar({ sections = [], activeSection, onSe
                     key={id}
                     type="button"
                     onClick={() => onSelect?.(id)}
-                    onMouseEnter={() => handleMouseEnter(id)}
+                    onMouseEnter={() => handlePrefetchIntent(id)}
+                    onFocus={() => handlePrefetchIntent(id)}
+                    onMouseDown={() => handlePrefetchIntent(id)}
                     title={shortcutNum !== undefined ? `Ctrl+${shortcutNum}` : undefined}
                     className={clsx(
                       'group flex shrink-0 items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition-all duration-150 whitespace-nowrap',

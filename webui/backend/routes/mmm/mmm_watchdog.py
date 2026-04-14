@@ -365,6 +365,13 @@ class MMMWatchdog:
             fresh_session = storage.get_session(sid)
             if not fresh_session:
                 log.error(f"[{sid}] Watchdog: session not in storage — cannot restart")
+                self._emit_alert(
+                    sid,
+                    f"Watchdog restart FAILED: session {sid} not found in storage. "
+                    f"Positions may still be open on exchange. Manual intervention required.",
+                    level='critical',
+                )
+                self._log_activity(sid, f'🚨 Watchdog restart failed: session not found in storage')
                 return
 
             # Record watchdog restart history
@@ -411,6 +418,27 @@ class MMMWatchdog:
 
         except Exception as e:
             log.exception(f"[{sid}] Watchdog restart failed: {e}")
+            # Restart failed — set session to PAUSED so the user can resume,
+            # and fire alerts so the failure is visible (not a silent STOPPED).
+            alert_msg = (
+                f"Watchdog restart FAILED for {sid}: {e}. "
+                f"Session set to PAUSED — use Resume to revive. "
+                f"Positions may still be open on exchange."
+            )
+            self._emit_alert(sid, alert_msg, level='critical')
+            self._log_activity(sid, f'🚨 Watchdog restart failed: {e} — session set to PAUSED')
+            try:
+                from .mmm_storage import get_storage
+                storage = get_storage()
+                failed_session = storage.get_session(sid)
+                if failed_session:
+                    failed_session['strategy_status'] = 'PAUSED'
+                    failed_session['_paused_reason'] = f'Watchdog restart failed: {e}'
+                    failed_session['_paused_at'] = datetime.now(timezone.utc).isoformat()
+                    storage.save_session(failed_session)
+                    log.warning(f"[{sid}] Watchdog: set session to PAUSED after restart failure")
+            except Exception as save_err:
+                log.error(f"[{sid}] Watchdog: could not set PAUSED after restart failure: {save_err}")
 
     # ------------------------------------------------------------------
     # Helpers

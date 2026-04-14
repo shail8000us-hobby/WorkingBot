@@ -186,6 +186,14 @@ class MMMMonitor:
             log.warning(f"[{session_id}] Guardian init failed (non-fatal): {e}")
             self._guardian = None
 
+        # God Layer (strategic integrity monitor — periodic drift correction)
+        try:
+            from .mmm_god_layer import StrategicIntegrityMonitor
+            self._god = StrategicIntegrityMonitor(session_id)
+        except Exception as e:
+            log.warning(f"[{session_id}] God layer init failed (non-fatal): {e}")
+            self._god = None
+
         # Regime Engine (pre-adjustment risk controls)
         self._regime_engine = MMMRegimeEngine()
         self._last_iv_data = {}   # Populated by _fetch_premiums
@@ -317,6 +325,10 @@ class MMMMonitor:
         # Uses initialize_reverse_state only when key is absent (never overwrites live state).
         if '_reverse' not in self.session:
             initialize_reverse_state(self.session)
+
+        # God Layer: ensure _god state block exists (safe on session restore — never overwrites).
+        if self._god:
+            self._god.initialize(self.session)
 
         # NOTE: _being_closed flags are cleared in the AUDIT DEAD-6 block below
         # (after generation is set), then immediately saved to SQLite.
@@ -979,7 +991,12 @@ class MMMMonitor:
                     continue
 
                 atm_strike = self.session.get('ce', {}).get('active_strike', 0)
-                trigger_pts = self.session.get('_straddle_roll_trigger_pts', 0)
+                # Prefer dynamic trigger (current straddle mark) when available;
+                # fall back to fixed entry-premium trigger.
+                trigger_pts = (
+                    self.session.get('_straddle_dynamic_trigger_pts', 0)
+                    or self.session.get('_straddle_roll_trigger_pts', 0)
+                )
                 if atm_strike <= 0 or trigger_pts <= 0:
                     continue
 
@@ -1745,13 +1762,19 @@ class MMMMonitor:
         # ORIGINAL entry strike — real danger territory.
         params = session.get('params', {})
 
+        # Strategy handler resolved early so the ATM wind-down and ATM shield sections
+        # below can gate on should_run_wind_down / should_run_atm_shield without waiting
+        # for Step 5.4 (where the handler is also resolved).
+        _pre_beat_strategy_handler = get_strategy_handler(_session_strategy_type(session))
+
         # ATM Wind-Down Trigger: if enabled, activate wind-down mode when spot ≈ ORIGINAL strike.
         # This is a GENTLER alternative to close_at_atm — instead of closing all positions
         # immediately, it switches the algo into wind-down mode (gradual LIFO buyback).
         # Uses the same 0.5% proximity threshold as close_at_atm.
         # CRITICAL: checks original_strike only on sides with open positions (same guard
         # as close_at_atm — prevents stale zero-lot sides from falsely triggering).
-        if params.get('wind_down_on_atm', False):
+        # STRATEGY GATE: straddle strategies never run wind-down (see mmm_strategy_dispatch.py).
+        if params.get('wind_down_on_atm', False) and _pre_beat_strategy_handler.should_run_wind_down:
             if session.get('_atm_wind_down_triggered'):
                 log.debug(f"[{sid}] ATM wind-down already triggered, skipping check")
             else:
@@ -1863,7 +1886,8 @@ class MMMMonitor:
 
                     if atm_triggered_side:
                         # ATM Shield deferral: let shield handle if gates pass
-                        if params.get('atm_shield_enabled', False):
+                        # STRATEGY GATE: straddle strategies never run ATM shield.
+                        if params.get('atm_shield_enabled', False) and _pre_beat_strategy_handler.should_run_atm_shield:
                             _es = atm_triggered_side.lower()
                             _shield_margin_tier = getattr(self._margin_guardian, 'last_tier', 'GREEN')
                             _shield_mte = self._get_minutes_to_expiry()
@@ -2417,23 +2441,8 @@ class MMMMonitor:
                              {'reason': reason, 'action_type': action_type})
                 _skip_to_pnl = True
 
-        # Handle asymmetry side-specific block: store which side is blocked so
-        # _process_adjustment() can reject only heavy-side sells while still
-        # allowing light-side sells to rebalance the position.
-        _asym_block_event = next(
-            (e for e in safety_events if e.get('action') == 'block_heavy_side_sells'), None
-        )
-        if _asym_block_event:
-            _asym_heavy = _asym_block_event.get('details', {}).get('heavy_side', '')
-            session['_asymmetry_blocked_side'] = _asym_heavy
-            log_activity('asymmetry_side_block',
-                        f'⚖️ Asymmetry 7:1 — blocking {_asym_heavy.upper()} sells only '
-                        f'(light side may still sell to rebalance)',
-                        sid, 'warning',
-                        {'heavy_side': _asym_heavy,
-                         'ratio': _asym_block_event.get('details', {}).get('ratio', 0)})
-        else:
-            session.pop('_asymmetry_blocked_side', None)
+        # Asymmetry is warn-only — clear any stale block flags from prior code
+        session.pop('_asymmetry_blocked_side', None)
 
         pause_needed, pause_reason = should_pause(safety_events)
         if pause_needed:
@@ -2865,7 +2874,12 @@ class MMMMonitor:
         # The shield's own internal vol_gamma_blocked guard prevents the re-sell step when
         # gamma=HARD or vol=ELEVATED, so regime blocking is already handled internally.
         # Only exception: paused session — nothing should trade while paused.
-        if params.get('atm_shield_enabled', False) and not self._paused:
+        # STRATEGY GATE: straddle strategies (STRADDLE_WITH_ADJUSTMENT, STRADDLE_ROLL) skip
+        # the ATM shield entirely — both legs start ATM by definition and the shield would
+        # fire immediately on entry. See mmm_strategy_dispatch.py for per-strategy flags.
+        if (params.get('atm_shield_enabled', False)
+                and not self._paused
+                and _strategy_handler.should_run_atm_shield):
             try:
                 _shield_fired = await execute_atm_shield(self, ce_now, pe_now)
                 if _shield_fired:
@@ -2983,6 +2997,56 @@ class MMMMonitor:
                     session['_gamma_zone_prev'] = new_gamma_zone
             except Exception as _gd_err:
                 log.warning(f'[{sid}] Gamma detector error (non-fatal): {_gd_err}')
+
+        # ── God Layer: strategic drift correction ─────────────────────────────
+        # Runs on its own 25-min clock regardless of _skip_to_pnl.  God bypasses
+        # soft guards (velocity, regime BLOCK_SELLS, margin YELLOW, asymmetry) but
+        # always respects hard stops (PAUSE, STOPPED, margin wind_down, FORCE_REDUCE).
+        # god_enabled=False by default — must be explicitly enabled per session.
+        if not self._paused and self._god:
+            try:
+                _current_pnl_for_god = _pnl_total(session)
+                _god_result = self._god.check(session, ce_now, pe_now, _current_pnl_for_god)
+                if _god_result.get('should_correct'):
+                    log_activity(
+                        'god_correction',
+                        f"🌐 GOD LAYER: {_god_result['reason']}",
+                        sid, 'warning',
+                        {
+                            'aggressor': _god_result['aggressor'].upper(),
+                            'hedge': _god_result['hedge'].upper(),
+                            'pnl_drift': _god_result['pnl_drift'],
+                            'minutes_inactive': _god_result['minutes_inactive'],
+                        },
+                    )
+                    emit_safety(
+                        sid, 'god_correction', 'warning',
+                        f"God layer firing: {_god_result['reason']}",
+                        {'pnl_drift': _god_result['pnl_drift'],
+                         'minutes_inactive': _god_result['minutes_inactive']},
+                    )
+                    try:
+                        from .mmm_telegram import alert_god_correction as _tg_god
+                        import asyncio as _asyncio
+                        _asyncio.ensure_future(_tg_god(
+                            sid,
+                            _god_result['aggressor'],
+                            _god_result['pnl_drift'],
+                            _god_result['minutes_inactive'],
+                        ))
+                    except Exception as _tg_err:
+                        log.debug(f"[{sid}] God layer Telegram alert skipped: {_tg_err}")
+                    await self._process_adjustment(
+                        _god_result['aggressor'],
+                        _god_result['hedge'],
+                        _god_result['premium_now'],
+                        _god_result['hedge_premium'],
+                        ce_now, pe_now,
+                    )
+                    self._god.record_correction(session, _god_result)
+            except Exception as _god_err:
+                log.warning(f"[{sid}] God layer check failed (non-fatal): {_god_err}")
+        # ── End God Layer ───────────────────────────────────────────────────────
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
@@ -3176,11 +3240,14 @@ class MMMMonitor:
                         f'Sell blocked: {block_reason}',
                         {'hedge': hedge, 'aggressor': aggressor},
                     )
-                    # Still allow wind-down buybacks if wind-down is active
-                    if is_wind_down_active(session):
+                    # Still allow wind-down buybacks if wind-down is active.
+                    # STRATEGY GATE: straddle strategies never run wind-down — their legs
+                    # start ATM and wind-down buyback would destroy the straddle structure.
+                    if is_wind_down_active(session) and _strategy_handler.should_run_wind_down:
                         await self._process_wind_down_buyback(aggressor, ce_now, pe_now)
-                # Wind-down mode: reduce instead of adding positions
-                elif is_wind_down_active(session):
+                # Wind-down mode: reduce instead of adding positions.
+                # STRATEGY GATE: straddle strategies always fall through to standard adjustment.
+                elif is_wind_down_active(session) and _strategy_handler.should_run_wind_down:
                     session['_wind_down_mode'] = True
                     # Reverse Mode: disable immediately when wind-down activates.
                     # Reverse positions are unhedged — wind-down and reverse are incompatible.
@@ -4223,24 +4290,12 @@ class MMMMonitor:
             )
         # ── END PENDING ORDER GUARD ───────────────────────────────────────────
 
-        # Asymmetry side-block: only block the heavy side — the light side is
-        # allowed to sell so it can rebalance the position toward symmetry.
-        _asym_blocked_side = session.get('_asymmetry_blocked_side', '')
+        # Asymmetry block intentionally removed from _process_adjustment (2026-04-12).
+        # Rationale: in a one-directional market, asymmetry develops naturally as the
+        # hedge side accumulates lots. Blocking the triggered hedge sell because the
+        # hedge side is already "heavy" causes compounding loss with no benefit.
+        # The asymmetry guard still applies to speculative sells (scale-up, replenish).
         _dangerous_mode_adj = params.get('dangerous_mode', False)
-        if _asym_blocked_side and hedge == _asym_blocked_side:
-            if _dangerous_mode_adj:
-                log_activity('dangerous_mode_bypass',
-                            f'⚠️ DANGEROUS MODE: asymmetry 7:1 block bypassed — '
-                            f'{hedge.upper()} sell proceeding',
-                            sid, 'warning',
-                            {'blocked_side': hedge, 'dangerous_mode': True})
-            else:
-                log_activity('asymmetry_side_blocked',
-                            f'⚖️ {hedge.upper()} sell blocked: asymmetry 7:1 — '
-                            f'{hedge.upper()} is the heavy side',
-                            sid, 'warning',
-                            {'blocked_side': hedge})
-                return
 
         # §9: Check for reversal
         # FM1 fix: Consecutive reversal-skip circuit breaker.
@@ -4570,37 +4625,13 @@ class MMMMonitor:
                 return
         # ── END IMP-5 ─────────────────────────────────────────────────────
 
-        # ── Velocity headroom cap ──────────────────────────────────────────
-        # Safety stage only BLOCKS when lots_in_window >= limit. If the window
-        # is not yet full but this single sell would exceed it (e.g. window=0,
-        # limit=30, lots=40), cap to remaining headroom.
-        # Pre-flight mirror of MMMSafety.check_lot_velocity — keep params/logic in sync.
-        if lots > 0 and params.get('lot_velocity_enabled', True):
-            from datetime import timedelta as _td
-            _vel_limit = params.get('lot_velocity_limit', 10)
-            _vel_window = params.get('lot_velocity_window_mins', 30)
-            _cutoff = datetime.now(timezone.utc) - _td(minutes=_vel_window)
-            _lots_in_window = 0
-            for _adj in session.get('adjustment_history', []):
-                if _adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
-                    continue
-                try:
-                    _ts = datetime.fromisoformat(_adj.get('timestamp', ''))
-                    if _ts.tzinfo is None:
-                        _ts = _ts.replace(tzinfo=timezone.utc)
-                    if _ts >= _cutoff:
-                        _lots_in_window += _adj.get('lots_sold', 0)
-                except (ValueError, TypeError):
-                    continue
-            _headroom = _vel_limit - _lots_in_window
-            if lots > _headroom:
-                log.info(
-                    f"[{sid}] Adjustment: capping lots {lots} → {_headroom} "
-                    f"(velocity headroom: {_lots_in_window}/{_vel_limit} in window)"
-                )
-                constraint_msg = (constraint_msg or '') + f' [velocity cap {lots}→{_headroom}]'
-                lots = max(1, _headroom)
-        # ── END velocity headroom cap ──────────────────────────────────────
+        # Velocity headroom cap removed from _process_adjustment (2026-04-12).
+        # Rationale: triggered hedge sells are reactive (market moved, MUST rebalance),
+        # not speculative. The primary lot velocity guard is in mmm_safety.py
+        # check_lot_velocity() — it fires stop_adjustments → _skip_to_pnl=True when
+        # lots_in_window >= limit, blocking the whole beat. A secondary cap here only
+        # under-hedges without meaningful additional protection (same philosophy as
+        # G11 removal from mmm_replenish.py — velocity must not block hedge restoration).
 
         if lots <= 0:
             # BUG-2 FIX: Always log when trigger fires but lots=0
@@ -6193,6 +6224,11 @@ class MMMMonitor:
 
         now = datetime.now(timezone.utc).isoformat()
 
+        # Use actual filled sizes — smart_execute may return fewer lots than requested
+        # on a partial fill (e.g., exchange cancelled with some lots already filled).
+        ce_filled_lots = ce_result.get('filled_size') or lots
+        pe_filled_lots = pe_result.get('filled_size') or lots if pe_result.get('success') else 0
+
         # Register CE position
         ce_state = session.get('ce', {})
         counter = ce_state.get('_pos_counter', 0) + 1
@@ -6200,7 +6236,7 @@ class MMMMonitor:
         ce_state.setdefault('positions', []).append({
             'id': f"ce_scale_{counter:03d}",
             'strike': ce_target['strike'],
-            'lots': lots,
+            'lots': ce_filled_lots,
             'entry_premium': ce_fill,
             'premium': ce_fill,
             'type': 'scale_up',
@@ -6214,6 +6250,8 @@ class MMMMonitor:
             'realized_pnl': None,
             'timestamp': now,
         })
+        if ce_filled_lots < lots:
+            log.warning(f"[{sid}] Scale-up CE partial fill: requested={lots}, filled={ce_filled_lots}")
         recompute_side_lots(ce_state)
         session['ce'] = ce_state
 
@@ -6225,7 +6263,7 @@ class MMMMonitor:
             pe_state.setdefault('positions', []).append({
                 'id': f"pe_scale_{counter:03d}",
                 'strike': pe_target['strike'],
-                'lots': lots,
+                'lots': pe_filled_lots,
                 'entry_premium': pe_fill,
                 'premium': pe_fill,
                 'type': 'scale_up',
@@ -6239,6 +6277,8 @@ class MMMMonitor:
                 'realized_pnl': None,
                 'timestamp': now,
             })
+            if pe_filled_lots < lots:
+                log.warning(f"[{sid}] Scale-up PE partial fill: requested={lots}, filled={pe_filled_lots}")
             recompute_side_lots(pe_state)
             session['pe'] = pe_state
 
@@ -6342,9 +6382,12 @@ class MMMMonitor:
         # OCS emergency: closed side is completely empty → unhedged position.
         # All rate-limiting gates are bypassed; only margin and open-side-empty
         # gates survive.  See check_replenish_eligibility(ocs_emergency=True).
+        # Use total_lots (not active_lots) for the open side: frozen lots are
+        # real open positions that still need hedging.  When CE has only frozen
+        # lots (active=0, total=100), hedge restoration is just as urgent.
         _cs_total = session.get(closed_side, {}).get('total_lots', 0)
-        _os_active = session.get(open_side, {}).get('active_lots', 0)
-        _ocs_emergency = (_cs_total == 0 and _os_active > 0)
+        _os_total = session.get(open_side, {}).get('total_lots', 0)
+        _ocs_emergency = (_cs_total == 0 and _os_total > 0)
 
         # Step 1: Eligibility
         eligible, reason = check_replenish_eligibility(
@@ -6428,6 +6471,15 @@ class MMMMonitor:
                 and session.get('ce', {}).get('original_strike', 0)
                 == session.get('pe', {}).get('original_strike', 0))
         )
+        # STRADDLE_WITH_ADJUSTMENT: replenish at the open leg's active_strike to preserve
+        # straddle symmetry. Using the current ATM (preview_atm_straddle) would place the
+        # replenished leg at a different strike if BTC has moved since entry.
+        # Strangle strategies must NOT use this path — their CE/PE are at different strikes.
+        _is_straddle_with_adj = (_session_strategy_type(session) == 'STRADDLE_WITH_ADJUSTMENT')
+        _straddle_anchor_strike = (
+            session.get(open_side, {}).get('active_strike', 0)
+            if _is_straddle_with_adj else 0
+        )
         min_premium = params.get('replenish_min_premium', 30.0)
 
         _exec_result = None
@@ -6456,21 +6508,46 @@ class MMMMonitor:
             # Step 3b: Find strike (fresh chain data on every attempt)
             strike_info = None
             if is_straddle:
-                try:
-                    atm = self.initializer.preview_atm_straddle(expiry)
-                    if atm and atm.get('success'):
-                        side_key = 'ce' if closed_side == 'ce' else 'pe'
-                        _atm_premium = atm.get(f'{side_key}_premium', 0)
-                        _atm_strike = atm.get('strike', 0)
-                        _atm_symbol = atm.get(f'{side_key}_symbol', '')
-                        if _atm_premium > 0 and _atm_strike > 0:
+                if _straddle_anchor_strike > 0:
+                    # STRADDLE_WITH_ADJUSTMENT: replenish at the open leg's active strike
+                    # to keep CE and PE symmetric. The current ATM may have drifted from
+                    # the entry strike; using it would silently create a strangle structure.
+                    try:
+                        _opt_type_anchor = 'call' if closed_side == 'ce' else 'put'
+                        _anchor_prem = self._make_fetch_fn()(_straddle_anchor_strike, _opt_type_anchor)
+                        if _anchor_prem and _anchor_prem > 0:
+                            _anchor_sym = self.initializer.build_symbol(
+                                expiry, _straddle_anchor_strike,
+                                'call' if closed_side == 'ce' else 'put'
+                            )
                             strike_info = {
-                                'strike': _atm_strike,
-                                'premium': _atm_premium,
-                                'symbol': _atm_symbol,
+                                'strike': _straddle_anchor_strike,
+                                'premium': _anchor_prem,
+                                'symbol': _anchor_sym or '',
                             }
-                except Exception as _atm_err:
-                    log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {_atm_err}")
+                            log.info(
+                                f"[{sid}] Replenish STRADDLE_WITH_ADJUSTMENT: "
+                                f"using open {open_side.upper()} active_strike "
+                                f"{_straddle_anchor_strike} (premium={_anchor_prem:.2f})"
+                            )
+                    except Exception as _anchor_err:
+                        log.warning(f"[{sid}] Replenish anchor-strike lookup failed: {_anchor_err}")
+                else:
+                    try:
+                        atm = self.initializer.preview_atm_straddle(expiry)
+                        if atm and atm.get('success'):
+                            side_key = 'ce' if closed_side == 'ce' else 'pe'
+                            _atm_premium = atm.get(f'{side_key}_premium', 0)
+                            _atm_strike = atm.get('strike', 0)
+                            _atm_symbol = atm.get(f'{side_key}_symbol', '')
+                            if _atm_premium > 0 and _atm_strike > 0:
+                                strike_info = {
+                                    'strike': _atm_strike,
+                                    'premium': _atm_premium,
+                                    'symbol': _atm_symbol,
+                                }
+                    except Exception as _atm_err:
+                        log.warning(f"[{sid}] Replenish straddle ATM lookup failed: {_atm_err}")
 
             # Strangle-mode params — hoisted here so the ATM-guard fallback (below)
             # can reuse the same chain data and premium threshold without re-fetching.
@@ -6548,7 +6625,12 @@ class MMMMonitor:
             #       using replenish_min_premium (NOT shift_threshold — find_new_strike
             #       uses shift_threshold which is too strict for replenish).
             #   (b) If no safe strike exists → return False so PAUSE takes over.
-            if strike_info and params.get('atm_shield_enabled', False) and not params.get('dangerous_mode', False):
+            # STRATEGY GATE: straddle strategies don't run the ATM shield, so the
+            # proximity guard that prevents replenish → immediate shield cycle is irrelevant.
+            if (strike_info
+                    and params.get('atm_shield_enabled', False)
+                    and not params.get('dangerous_mode', False)
+                    and not _is_straddle_with_adj):
                 _mins_rem = self._get_minutes_to_expiry() or 360
                 _hours_rem = max(_mins_rem / 60.0, 0.5)
                 _t_mult = min(3.0, max(1.0, 3.0 / _hours_rem))
@@ -7753,6 +7835,14 @@ class MMMMonitor:
                     result = await _execute_close(symbol, active_lots)
                     if result.get('success'):
                         close_price = result.get('fill_price', 0)
+                        # Use actual filled lots — smart_execute may return partial fill
+                        # if continuation placement failed after exchange-cancelled partial
+                        ac_filled = result.get('filled_size') or active_lots
+                        if ac_filled < active_lots:
+                            log.warning(
+                                f"[{sid}] Auto-close active PARTIAL FILL: "
+                                f"requested={active_lots}, filled={ac_filled} {side_key.upper()}"
+                            )
                         # Bug #3 fix: weighted avg entry across original + adj fills
                         orig_lots = side_state.get('original_lots', 0)
                         orig_prem = side_state.get('original_premium', 0)
@@ -7766,7 +7856,7 @@ class MMMMonitor:
                                 weighted_sum += f_prem * f_lots
                                 weighted_lots += f_lots
                         avg_entry = weighted_sum / weighted_lots if weighted_lots > 0 else 0
-                        pnl = (avg_entry - close_price) * active_lots * LOT_SIZE_BTC
+                        pnl = (avg_entry - close_price) * ac_filled * LOT_SIZE_BTC
                         # Record exchange commission from auto-close active
                         _od = result.get('order_details') or {}
                         _comm = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
@@ -7779,7 +7869,7 @@ class MMMMonitor:
                             symbol=symbol,
                             option_side=side_key,
                             strike=active_strike,
-                            lots=int(active_lots),
+                            lots=int(ac_filled),
                             entry_premium=float(avg_entry),
                             close_premium=float(close_price),
                             commission=abs(float(_comm)) if _comm else 0.0,
@@ -7787,7 +7877,7 @@ class MMMMonitor:
                         )
                         # ── END P&L via ledger ────────────────────────
                         log.info(
-                            f"[{sid}] Closed {active_lots} active "
+                            f"[{sid}] Closed {ac_filled}/{active_lots} active "
                             f"{side_key.upper()} @ {active_strike}, "
                             f"avg_entry: {avg_entry:.2f}, P&L: {pnl:.2f}"
                         )
@@ -8557,6 +8647,7 @@ class MMMMonitor:
 
             # Compare with session state — per-symbol comparison
             discrepancies = []
+            _external_positions_changed = False  # set True when _known_size_external/_known_external_positions updated → triggers session save
 
             for side_key in ['ce', 'pe']:
                 side = session.get(side_key, {})
@@ -8653,50 +8744,132 @@ class MMMMonitor:
                             discrepancies[-1]['auto_corrected'] = False
 
                 elif abs(active_lots - effective_exchange_size) > 0.1 and active_lots > 0:
-                    # Count mismatch — exchange shows a different number than session.
-                    # NEVER auto-correct by count comparison: the exchange figure includes
-                    # manual trades and other algos at the same strike on the same account.
-                    # Only log the discrepancy; human or order_id verification decides.
-                    discrepancies.append({
-                        'side': side_key.upper(),
-                        'type': 'SIZE_MISMATCH',
-                        'detail': (
-                            f"{side_key.upper()} active @ {active_strike}: session={active_lots} "
-                            f"vs exchange={exchange_size} (other_mmm={other_lots_at_active}) "
-                            f"— NOT auto-corrected (count comparison unreliable with "
-                            f"manual/other-algo positions at same strike)"
-                        ),
-                        'symbol': active_symbol,
-                        'session_lots': active_lots,
-                        'exchange_size': exchange_size,
-                        'auto_corrected': False,
-                    })
-                    log.warning(
-                        f"[{sid}] Recon SIZE_MISMATCH {side_key.upper()} @ {active_strike}: "
-                        f"session={active_lots} exchange={exchange_size} "
-                        f"(other_mmm={other_lots_at_active}) — logged only, no auto-correct. "
-                        f"Verify via client_order_id if count diverges further."
-                    )
+                    # Count mismatch.  Two distinct sub-cases:
+                    #
+                    # A) exchange > session (after subtracting other MMM sessions):
+                    #    The residual excess is from manual trades or algos not tracked in any
+                    #    MMM session.  These are EXTERNAL positions — this algo should not
+                    #    counter or correct them.  Track the known external excess in
+                    #    _known_size_external (persisted) and suppress repeat alerts.
+                    #
+                    # B) session > exchange:
+                    #    This session claims more lots than exist on the exchange.  This is a
+                    #    real mismatch (forced close, expiry, etc.) — always alert.
+                    #
+                    # NEVER auto-correct by count: exchange figure includes manual/other-algo
+                    # lots at the same strike.  Verify via client_order_id instead.
+                    _size_ext = session.setdefault('_known_size_external', {})
+                    _smk = f"{side_key}_{int(active_strike)}"
 
-                    # Bug B fix: First-time alert when exchange has MORE lots than session.
-                    # Pre-existing / external positions can contaminate readings — alert operator.
-                    if exchange_size > active_lots:
-                        _warn_key = f'{side_key}_{int(active_strike)}'
-                        _warned_list = session.setdefault('_warned_size_excess_strikes', [])
-                        if _warn_key not in _warned_list:
-                            _warned_list.append(_warn_key)
-                            excess = int(round(exchange_size - active_lots))
-                            log_activity('exchange_position_warning',
-                                f'⚠️ Exchange has {excess} MORE {side_key.upper()} lots @ {active_strike} '
-                                f'than session tracks (exchange={int(exchange_size)}, '
-                                f'session={active_lots}). May be pre-existing or external positions '
-                                f'— NOT adopted. Investigate manually.',
-                                sid, 'warning',
+                    if effective_exchange_size > active_lots:
+                        # ── Sub-case A: External positions at this session's active strike ──
+                        _cur_excess = effective_exchange_size - active_lots
+                        _prev_excess = _size_ext.get(_smk)
+
+                        if _prev_excess is not None and abs(_prev_excess - _cur_excess) < 0.1:
+                            # Same known external excess — stable. This algo's position is
+                            # intact; the extra lots belong to another algo or manual trade.
+                            # Suppress: do not add to discrepancies, do not log.
+                            log.debug(
+                                f"[{sid}] Recon: suppressing EXTERNAL_EXCESS "
+                                f"{side_key.upper()} @ {active_strike} — known stable "
+                                f"external={_cur_excess:.0f} lots (manual/other-algo). "
+                                f"Exchange={exchange_size}, session={active_lots}, "
+                                f"other_mmm={other_lots_at_active}."
+                            )
+                        else:
+                            # New or changed external excess — alert once, then record.
+                            if _prev_excess is None:
+                                _reason = "First detection of external positions at this strike"
+                            elif _cur_excess > _prev_excess:
+                                _reason = (
+                                    f"External excess grew "
+                                    f"{_prev_excess:.0f}→{_cur_excess:.0f} lots"
+                                )
+                            else:
+                                _reason = (
+                                    f"External excess changed "
+                                    f"{_prev_excess:.0f}→{_cur_excess:.0f} lots"
+                                )
+                            _size_ext[_smk] = _cur_excess
+                            _external_positions_changed = True
+
+                            discrepancies.append({
+                                'side': side_key.upper(),
+                                'type': 'EXTERNAL_EXCESS',
+                                'detail': (
+                                    f"{side_key.upper()} active @ {active_strike}: "
+                                    f"session={active_lots} exchange={exchange_size} "
+                                    f"other_mmm={other_lots_at_active} "
+                                    f"external_excess={_cur_excess:.0f} — {_reason}"
+                                ),
+                                'symbol': active_symbol,
+                                'session_lots': active_lots,
+                                'exchange_size': exchange_size,
+                                'external_excess': _cur_excess,
+                                'auto_corrected': False,
+                            })
+                            log.warning(
+                                f"[{sid}] Recon EXTERNAL_EXCESS {side_key.upper()} "
+                                f"@ {active_strike}: session={active_lots} "
+                                f"exchange={exchange_size} other_mmm={other_lots_at_active} "
+                                f"external={_cur_excess:.0f} — {_reason}"
+                            )
+                            log_activity('exchange_position_info',
+                                f'ℹ️ External positions at {side_key.upper()} @ {active_strike}: '
+                                f'{int(_cur_excess)} lots not owned by this session '
+                                f'(manual/other algo). Exchange={int(exchange_size)}, '
+                                f'session={active_lots}. NOT adopted. Will suppress until changed.',
+                                sid, 'info',
                                 {'side': side_key, 'strike': active_strike,
                                  'exchange_lots': int(exchange_size),
                                  'session_lots': active_lots,
-                                 'excess': excess,
-                                 'other_mmm_lots': other_lots_at_active})
+                                 'external_excess': int(_cur_excess),
+                                 'other_mmm_lots': other_lots_at_active,
+                                 'reason': _reason})
+                    else:
+                        # ── Sub-case B: Session has MORE lots than exchange — real mismatch ──
+                        # Clear any stale external record; this situation needs real attention.
+                        if _smk in _size_ext:
+                            _size_ext.pop(_smk, None)
+                            _external_positions_changed = True
+                        discrepancies.append({
+                            'side': side_key.upper(),
+                            'type': 'SIZE_MISMATCH',
+                            'detail': (
+                                f"{side_key.upper()} active @ {active_strike}: "
+                                f"session={active_lots} vs exchange={exchange_size} "
+                                f"(other_mmm={other_lots_at_active}) "
+                                f"— session has MORE than exchange — verify position!"
+                            ),
+                            'symbol': active_symbol,
+                            'session_lots': active_lots,
+                            'exchange_size': exchange_size,
+                            'auto_corrected': False,
+                        })
+                        log.warning(
+                            f"[{sid}] Recon SIZE_MISMATCH {side_key.upper()} "
+                            f"@ {active_strike}: session={active_lots} "
+                            f"exchange={exchange_size} "
+                            f"(other_mmm={other_lots_at_active}) "
+                            f"— session>exchange, investigate!"
+                        )
+
+                # ── Clear stale external record when lots balance out ──────────────
+                # If the exchange and session now agree (no mismatch), remove any
+                # previously-recorded external excess so that if external positions
+                # are placed again later, the alert fires fresh.
+                if abs(active_lots - effective_exchange_size) <= 0.1:
+                    _size_ext = session.get('_known_size_external', {})
+                    _smk = f"{side_key}_{int(active_strike)}"
+                    if _smk in _size_ext:
+                        _size_ext.pop(_smk, None)
+                        _external_positions_changed = True
+                        log.debug(
+                            f"[{sid}] Cleared known external excess for "
+                            f"{side_key.upper()} @ {active_strike} — lots balanced."
+                        )
+                # ── end stale clear ────────────────────────────────────────────────
 
                 # Check frozen positions at their own strikes
                 # Aggregate frozen lots per strike first (multiple fills at same strike)
@@ -8884,6 +9057,7 @@ class MMMMonitor:
                         # pattern: untracked lot count grows every ~5min heartbeat.
                         _size_grew = (_last_size is not None and ex_size > _last_size)
                         _known_ext[_ext_key] = ex_size
+                        _external_positions_changed = True  # persist so restarts don't re-fire Telegram
                         if _size_grew or _last_size is None:
                             try:
                                 from .mmm_telegram import alert_ghost_positions_growing as _tg_ghost
@@ -9046,6 +9220,15 @@ class MMMMonitor:
                     log.warning(
                         f"[{sid}] RECONCILIATION: {len(auto_corrected)} discrepancies "
                         f"auto-corrected — saving updated session state"
+                    )
+                    self._save_my_session(session)
+                elif _external_positions_changed:
+                    # External position knowledge was updated (_known_size_external or
+                    # _known_external_positions).  Persist so monitor restarts don't
+                    # re-fire Telegram for the same already-known external positions.
+                    log.debug(
+                        f"[{sid}] RECONCILIATION: saving session — "
+                        f"external position knowledge updated."
                     )
                     self._save_my_session(session)
             else:

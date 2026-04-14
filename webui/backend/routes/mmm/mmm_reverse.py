@@ -459,6 +459,7 @@ def update_reverse_mtm(session: Dict, ce_now: float, pe_now: float) -> None:
         current = ce_now if pos['option_type'] == 'ce' else pe_now
         if current is None or current <= 0:
             continue
+        pos['current_premium'] = current
         pos['unrealized_pnl'] = (
             (pos['entry_premium'] - current) * pos['lots'] * LOT_SIZE_BTC
         )
@@ -565,14 +566,22 @@ async def _close_reverse_position(
         return
 
     close_fill = float(result.get('fill_price', current_premium) or current_premium)
-    realized = (pos['entry_premium'] - close_fill) * lots * LOT_SIZE_BTC
+    # Use actual filled lots — smart_execute may return partial fill if continuation
+    # placement failed after an exchange-cancelled partial fill.
+    close_filled = result.get('filled_size') or lots
+    if close_filled < lots:
+        log.warning(
+            f"[{sid}] [REVERSE] Close partial fill for {pos['id']}: "
+            f"requested={lots}, filled={close_filled}"
+        )
+    realized = (pos['entry_premium'] - close_fill) * close_filled * LOT_SIZE_BTC
 
     # Record close in pnl_core for fee attribution
     try:
         from .mmm_pnl_core import record_close as _pnl_close
         _pnl_close(
             session,
-            lots_closed=lots,
+            lots_closed=close_filled,
             close_premium=close_fill,
             entry_premium=pos['entry_premium'],
             source='reverse_close',

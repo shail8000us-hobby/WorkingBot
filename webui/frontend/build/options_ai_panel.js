@@ -34,7 +34,7 @@
     #ai-fab {
       position: fixed;
       bottom: 28px;
-      right: 28px;
+      left: 28px;
       z-index: 9999;
       background: linear-gradient(135deg, #6366f1, #8b5cf6);
       color: #fff;
@@ -60,16 +60,16 @@
 
     #ai-panel {
       position: fixed;
-      top: 60px; right: 0;
+      top: 60px; left: 0;
       width: 420px;
       height: calc(100vh - 60px);
       background: #0f172a;
-      border-left: 1px solid #1e293b;
+      border-right: 1px solid #1e293b;
       z-index: 9998;
       display: flex;
       flex-direction: column;
-      box-shadow: -8px 0 40px rgba(0,0,0,0.45);
-      transform: translateX(100%);
+      box-shadow: 8px 0 40px rgba(0,0,0,0.45);
+      transform: translateX(-100%);
       transition: transform 0.3s cubic-bezier(0.4,0,0.2,1);
       font-family: 'Inter', 'Segoe UI', system-ui, sans-serif;
       color: #e2e8f0;

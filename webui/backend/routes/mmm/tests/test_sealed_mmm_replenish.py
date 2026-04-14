@@ -277,10 +277,18 @@ class TestDetermineReplenishLots:
 
     @pytest.mark.sealed
     def test_floor_at_one(self):
-        """Result floored at 1 even when open side has 0 active."""
-        s = _base_session(lot_mode='match_active', open_active_lots=0)
+        """Result floored at 1 when both active AND total are 0."""
+        s = _base_session(lot_mode='match_active', open_active_lots=0, open_total_lots=0)
         lots = determine_replenish_lots(s, 'ce', 'pe')
         assert lots == 1
+
+    @pytest.mark.sealed
+    def test_match_active_falls_back_to_total_when_active_zero(self):
+        """match_active falls back to total_lots when active_lots=0 (frozen exposure).
+        Frozen lots are real open positions — the hedge size must reflect total exposure."""
+        s = _base_session(lot_mode='match_active', open_active_lots=0, open_total_lots=100)
+        lots = determine_replenish_lots(s, 'ce', 'pe')
+        assert lots == 100
 
     @pytest.mark.sealed
     def test_initial_mode_clamped(self):
@@ -432,12 +440,31 @@ class TestOCSEmergencyBypass20260412:
         assert 'margin' in reason
 
     @pytest.mark.sealed
-    def test_ocs_emergency_still_blocked_when_open_side_empty(self):
-        """OCS emergency must NOT proceed when open side has 0 active lots.
-        Nothing to hedge — replenishing creates an exposed short position."""
-        s = _base_session(open_active_lots=0)
+    def test_ocs_emergency_still_blocked_when_open_side_truly_empty(self):
+        """OCS emergency must NOT proceed when open side has 0 total lots.
+        No active lots AND no frozen lots = nothing to hedge."""
+        s = _base_session(open_active_lots=0, open_total_lots=0)
         ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
-        assert ok is False, "Empty open side must block even in OCS emergency"
+        assert ok is False, "Truly empty open side must block even in OCS emergency"
+        assert 'open_side_has_no_lots' in reason
+
+    @pytest.mark.sealed
+    def test_ocs_emergency_eligible_when_open_side_has_frozen_lots(self):
+        """OCS emergency must allow replenish when open side has frozen (non-active) lots.
+        Frozen lots are real open positions that still need hedging.
+        This is the 'CE: 0 active + 100 frozen, PE: 0' scenario."""
+        s = _base_session(open_active_lots=0, open_total_lots=100)
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=True)
+        assert ok is True, f"Frozen lots must allow OCS emergency replenish; got: {reason!r}"
+        assert 'ocs_emergency' in reason
+
+    @pytest.mark.sealed
+    def test_non_ocs_emergency_blocked_when_only_frozen_lots(self):
+        """Normal (non-OCS-emergency) path is still blocked when active_lots=0,
+        even if frozen lots exist.  Gate 10 is only relaxed in OCS emergency."""
+        s = _base_session(open_active_lots=0, open_total_lots=100)
+        ok, reason = check_replenish_eligibility(s, 'ce', 'pe', ocs_emergency=False)
+        assert ok is False, "Non-OCS-emergency must still require active lots"
         assert 'open_side_has_no_lots' in reason
 
     @pytest.mark.sealed

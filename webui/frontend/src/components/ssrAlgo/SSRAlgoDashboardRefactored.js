@@ -17,7 +17,7 @@
  *   - Config lives in a slide-out drawer, not on screen
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -197,6 +197,8 @@ const SSRAlgoDashboardRefactored = () => {
   const [rightTab, setRightTab] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
+  const sessionsInFlightRef = useRef(false);
+  const healthInFlightRef = useRef(false);
 
   // ── Derived ──
   const sess = selectedSession;
@@ -242,6 +244,11 @@ const SSRAlgoDashboardRefactored = () => {
   }, []);
 
   const fetchSessions = useCallback(async () => {
+    if (sessionsInFlightRef.current) {
+      return;
+    }
+
+    sessionsInFlightRef.current = true;
     try {
       const r = await ssrAlgoService.getSessions(false);
       if (r.success) {
@@ -260,14 +267,26 @@ const SSRAlgoDashboardRefactored = () => {
         }
       }
     } catch (e) { setError(e.message); }
-    finally { setLoading(false); }
+    finally {
+      setLoading(false);
+      sessionsInFlightRef.current = false;
+    }
   }, [fetchSessionData]);
 
   const checkHealth = useCallback(async () => {
+    if (healthInFlightRef.current) {
+      return;
+    }
+
+    healthInFlightRef.current = true;
     try {
       const r = await ssrAlgoService.healthCheck();
       setHealthStatus(r.status || (r.success ? 'healthy' : 'error'));
-    } catch { setHealthStatus('error'); }
+    } catch {
+      setHealthStatus('error');
+    } finally {
+      healthInFlightRef.current = false;
+    }
   }, []);
 
   // ── Polling ──
@@ -281,8 +300,33 @@ const SSRAlgoDashboardRefactored = () => {
   useEffect(() => {
     if (!sess) return;
     const sid = sess.session_id;
-    const rp = async () => { try { const r = await ssrAlgoService.getSessionPayoff(sid); if (r.success) setPayoff(r); } catch {} };
-    const rm = async () => { try { const r = await ssrAlgoService.getMonitorStatus(sid); if (r.success) setMonitor(r.monitor); } catch {} };
+    let payoffInFlight = false;
+    let monitorInFlight = false;
+
+    const rp = async () => {
+      if (payoffInFlight) return;
+      payoffInFlight = true;
+      try {
+        const r = await ssrAlgoService.getSessionPayoff(sid);
+        if (r.success) setPayoff(r);
+      } catch {}
+      finally {
+        payoffInFlight = false;
+      }
+    };
+
+    const rm = async () => {
+      if (monitorInFlight) return;
+      monitorInFlight = true;
+      try {
+        const r = await ssrAlgoService.getMonitorStatus(sid);
+        if (r.success) setMonitor(r.monitor);
+      } catch {}
+      finally {
+        monitorInFlight = false;
+      }
+    };
+
     rp(); rm();
     const pi = setInterval(rp, payoff?.pending_orders_count > 0 ? 5000 : 30000);
     const mi = setInterval(rm, 15000);
@@ -292,7 +336,17 @@ const SSRAlgoDashboardRefactored = () => {
 
   useEffect(() => {
     if (!sess || (!isActive && !isPaused)) return;
-    const sync = async () => { try { await ssrAlgoService.syncOrders(sess.session_id); } catch {} };
+    let syncInFlight = false;
+    const sync = async () => {
+      if (syncInFlight) return;
+      syncInFlight = true;
+      try {
+        await ssrAlgoService.syncOrders(sess.session_id);
+      } catch {}
+      finally {
+        syncInFlight = false;
+      }
+    };
     sync();
     const i = setInterval(sync, 15000);
     return () => clearInterval(i);

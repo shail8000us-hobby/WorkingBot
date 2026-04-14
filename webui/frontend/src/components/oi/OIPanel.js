@@ -101,6 +101,7 @@ export default function OIPanel() {
   useEffect(() => { selectedExpiriesRef.current = selectedExpiries; }, [selectedExpiries]);
   // Track in-flight fetch to cancel on rapid changes
   const fetchAbortRef = useRef(null);
+  const socketRefreshTimerRef = useRef(null);
 
   // ------------------------------------------------------------------
   // ATM strike (derived, not state)
@@ -180,6 +181,19 @@ export default function OIPanel() {
     }
   }, []); // stable — no deps that change
 
+  const scheduleSocketSnapshotRefresh = useCallback(() => {
+    if (socketRefreshTimerRef.current) {
+      return;
+    }
+
+    socketRefreshTimerRef.current = setTimeout(() => {
+      socketRefreshTimerRef.current = null;
+      if (selectedExpiriesRef.current.length > 0) {
+        fetchSnapshot(selectedExpiriesRef.current);
+      }
+    }, 250);
+  }, [fetchSnapshot]);
+
   // ------------------------------------------------------------------
   // SocketIO connection
   // ------------------------------------------------------------------
@@ -250,7 +264,7 @@ export default function OIPanel() {
 
           // Refresh rows for the currently selected expiries
           if (selectedExpiriesRef.current.length > 0) {
-            fetchSnapshot(selectedExpiriesRef.current);
+            scheduleSocketSnapshotRefresh();
           }
         });
 
@@ -278,11 +292,15 @@ export default function OIPanel() {
         socket.disconnect();
         socket = null;
       }
+      if (socketRefreshTimerRef.current) {
+        clearTimeout(socketRefreshTimerRef.current);
+        socketRefreshTimerRef.current = null;
+      }
       if (fetchAbortRef.current) {
         fetchAbortRef.current.abort();
       }
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [fetchSnapshot, fetchSpikes, scheduleSocketSnapshotRefresh]);
 
   // ------------------------------------------------------------------
   // Expiry filter change → fetch new data

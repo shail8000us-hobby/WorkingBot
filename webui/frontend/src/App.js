@@ -1,10 +1,7 @@
-import React, { useState, useEffect, useMemo, useCallback, Suspense, startTransition } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react';
 import { useLocation, useNavigate, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import { Alert, Snackbar } from '@mui/material';
 // framer-motion AnimatePresence removed: replaced with CSS for instant panel switches
-
-// Week 2: Zustand store and data aggregator integration
-import { dataAggregator } from './services/dataAggregator';
 
 import TopBar from './components/layout/TopBar';
 import Sidebar from './components/layout/Sidebar';
@@ -45,7 +42,7 @@ import './App.css';
 
 // Phase 2.3: Extracted navigation config, preloader, and MobileNav
 import { buildSections } from './config/navigationSections';
-import { prefetchAllPages } from './utils/pagePrefetch';
+import { prefetchPage } from './utils/pagePrefetch';
 import MobileNav from './components/layout/MobileNav';
 
 // Phase 12: Route-level lazy loading — each page is its own chunk, only downloaded when visited
@@ -136,7 +133,11 @@ function App() {
   }, [location.pathname]);
   const navParams = location.state; // Navigation params via router state
   const [lastUpdated, setLastUpdated] = useState(null);
-  const [logs, setLogs] = useState([]);
+  const logsRef = useRef([]);
+  const setLogs = useCallback((updater) => {
+    const nextLogs = typeof updater === 'function' ? updater(logsRef.current) : updater;
+    logsRef.current = Array.isArray(nextLogs) ? nextLogs.slice(-400) : [];
+  }, []);
 
   // Phase 2.4: Extracted hooks
   const isMobile = useIsMobile();
@@ -144,7 +145,6 @@ function App() {
 
   // Custom hooks for business logic
   const {
-    tradingSnapshot,
     setTradingSnapshot,
     botStatus,
     setBotStatus,
@@ -201,18 +201,6 @@ function App() {
     return () => perfMonitor.endTimer('app-initialization');
   }, []);
 
-  // Week 2: Start data aggregator on mount
-  useEffect(() => {
-    console.log('🚀 Starting data aggregator...');
-    dataAggregator.start();
-
-    // Cleanup: Stop data aggregator on unmount
-    return () => {
-      console.log('🛑 Stopping data aggregator...');
-      dataAggregator.stop();
-    };
-  }, []); // Run once on mount
-
   useEffect(() => {
     userPreferences.selectedSection = activeSection;
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -227,7 +215,7 @@ function App() {
   }, []);
 
   // Bot control hook
-  const { handleStartBot, handleStopBot, handleRestartBot } = useBotControl({
+  const { handleStartBot, handleStopBot } = useBotControl({
     setBusy,
     showNotification: (message, severity) => setNotification({ open: true, message, severity }),
     onSuccess: debouncedFetchInitialData,
@@ -287,14 +275,62 @@ function App() {
     }
   }, [sections, activeSection, navigate]);
 
-  // Aggressive preload: after 5s idle, preload ALL page chunks in background
-  // This makes every subsequent tab switch instant (no Suspense flash)
+  // Smart preload: prefetch only likely sections when the browser is idle.
+  // Avoids a heavy all-page burst that can make the UI feel sluggish.
   useEffect(() => {
-    const preloadTimer = setTimeout(() => {
-      prefetchAllPages();
-    }, 5000);
-    return () => clearTimeout(preloadTimer);
-  }, []); // Only once on mount
+    const connection = navigator?.connection;
+    const saveData = Boolean(connection?.saveData);
+    const effectiveType = String(connection?.effectiveType || '');
+    const isSlowNetwork = effectiveType.includes('2g');
+
+    if (isMobile || saveData || isSlowNetwork) {
+      return undefined;
+    }
+
+    const likelySections = [
+      'dashboard',
+      'options',
+      'options_chain',
+      'monitoring',
+      'config',
+      'risk',
+      'mmm',
+      'mmmx',
+      'ic',
+      'patience',
+      'ssdh',
+    ];
+    const stagedTimers = [];
+    let idleCallbackId = null;
+    let fallbackTimer = null;
+
+    const doPrefetch = () => {
+      if (document.hidden) return;
+
+      likelySections.forEach((sectionId, idx) => {
+        const t = setTimeout(() => {
+          prefetchPage(sectionId);
+        }, idx * 220);
+        stagedTimers.push(t);
+      });
+    };
+
+    if (typeof window.requestIdleCallback === 'function') {
+      idleCallbackId = window.requestIdleCallback(doPrefetch, { timeout: 3000 });
+    } else {
+      fallbackTimer = setTimeout(doPrefetch, 3000);
+    }
+
+    return () => {
+      if (idleCallbackId !== null && typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleCallbackId);
+      }
+      if (fallbackTimer) {
+        clearTimeout(fallbackTimer);
+      }
+      stagedTimers.forEach((t) => clearTimeout(t));
+    };
+  }, [isMobile]);
 
   const socket = connectionManagerRef.current?.socket;
 

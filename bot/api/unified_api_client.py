@@ -71,42 +71,36 @@ class CircuitBreaker:
 
 
 class RateLimiter:
-    """Simple rate limiter"""
-    
+    """No-op rate limiter.
+
+    Delta Exchange India uses a weight-based quota: 10,000 units per 5-minute sliding
+    window.  Each position/ticker/orderbook call costs 3 units; at our monitoring
+    cadence (~10-15 calls/min across all monitors) we use <100 units/min — well under
+    the 2,000-unit/min average budget.
+
+    The previous 10-req/sec hard cap was artificially starving the connection pool and
+    causing 15-20 s async timeouts.  We now let the exchange enforce its own limits
+    (response 429 with X-RATE-LIMIT-RESET) instead of throttling ourselves.
+    """
+
     _shared_instance: Optional['RateLimiter'] = None
-    
+
     def __init__(self, max_requests: int = 10, window: int = 1):
+        # Parameters kept for API compatibility but are no longer used.
         self.max_requests = max_requests
         self.window = window
-        self.requests = []
-    
+        self.requests: list = []
+
     @classmethod
     def get_shared(cls, max_requests: int = 10, window: int = 1) -> 'RateLimiter':
-        """Get or create the shared singleton rate limiter instance.
-        All UnifiedAPIClient instances share this to prevent aggregate API abuse."""
         if cls._shared_instance is None:
             cls._shared_instance = cls(max_requests=max_requests, window=window)
-            log.info(f"🔒 Shared RateLimiter created ({max_requests} req/{window}s)")
+            log.info("🔓 RateLimiter: no client-side throttle (Delta quota enforced server-side)")
         return cls._shared_instance
-    
+
     async def acquire(self):
-        """Acquire rate limit token"""
-        now = time.time()
-        
-        # Remove old requests outside window
-        self.requests = [r for r in self.requests if now - r < self.window]
-        
-        # Check if we're at limit
-        if len(self.requests) >= self.max_requests:
-            # Calculate wait time
-            oldest = self.requests[0]
-            wait_time = self.window - (now - oldest)
-            if wait_time > 0:
-                log.debug(f"Rate limit reached, waiting {wait_time:.2f}s")
-                await asyncio.sleep(wait_time)
-        
-        # Add this request
-        self.requests.append(time.time())
+        """No-op — Delta Exchange enforces its own rate limit via 429 responses."""
+        pass
 
 
 class UnifiedAPIClient:
@@ -523,56 +517,85 @@ class UnifiedAPIClient:
     async def get_all_positions_with_options(self) -> Dict[str, List[Dict]]:
         """
         Get all positions (futures + options) and separate them by type.
-        Uses product detail caching to avoid rate limiting.
-        INCLUDES calculated unrealized_pnl for each position.
-        
+
+        Uses /v2/positions/margined — a single API call that returns ALL positions
+        across every product with mark_price already included.  Previously this method
+        made TWO sequential calls (/v2/positions + /v2/tickers for PnL) which saturated
+        the 10-connection httpx pool and caused 15-20s timeouts across all monitors.
+
+        unrealized_pnl is computed inline from mark_price / entry_price / size that
+        are present in the /v2/positions/margined response — no extra tickers call needed.
+
         Returns:
             {
                 'futures': [...],  # Perpetual/futures positions with PnL
                 'options': [...]   # Options positions with PnL
             }
         """
-        await self.rate_limiter.acquire()
-        
         if not self.circuit_breaker.can_attempt():
             raise Exception("Circuit breaker open")
-        
+
         try:
-            # Get positions for BTC (underlying_asset_symbol) which includes futures + options
-            all_positions = await self.rest_client.get_positions_for_underlying("BTC")
-            
-            # CRITICAL FIX: Calculate unrealized_pnl for all positions
-            # Delta Exchange API doesn't include unrealized_pnl, only realized_pnl
-            all_positions = await self._add_unrealized_pnl(all_positions)
-            
-            # Separate by product type
+            # Single API call — returns ALL positions with mark_price included.
+            all_positions = await self.rest_client.get_positions_margined()
+
+            # /v2/positions/margined returns numeric fields as strings — coerce all to float.
+            # Then compute unrealized_pnl from mark_price/entry_price/size if the API
+            # doesn't supply it, without making any additional API calls.
             futures_positions = []
             options_positions = []
-            
+            for pos in all_positions:
+                size = float(pos.get('size', 0) or 0)
+                pos['size'] = size
+                if size == 0:
+                    pos['unrealized_pnl'] = 0.0
+                    pos['mark_price'] = float(pos.get('mark_price', 0) or 0)
+                    pos['entry_price'] = float(pos.get('entry_price', 0) or 0)
+                    continue
+
+                entry = float(pos.get('entry_price', 0) or 0)
+                mark = float(pos.get('mark_price', 0) or 0)
+                pos['entry_price'] = entry
+                pos['mark_price'] = mark
+
+                # Use API-supplied unrealized_pnl if present; else calculate inline.
+                raw_pnl = pos.get('unrealized_pnl')
+                if raw_pnl is not None:
+                    pos['unrealized_pnl'] = float(raw_pnl or 0)
+                elif entry == 0 or mark == 0:
+                    pos['unrealized_pnl'] = 0.0
+                else:
+                    symbol = pos.get('product_symbol', '')
+                    if 'BTCUSD' in symbol or 'ETHUSD' in symbol:
+                        qty = abs(size)
+                        pos['unrealized_pnl'] = qty * (mark - entry) if size > 0 else qty * (entry - mark)
+                    else:
+                        qty_btc = abs(size) * 0.001
+                        pos['unrealized_pnl'] = qty_btc * (mark - entry) if size > 0 else qty_btc * (entry - mark)
+
+            # Separate by product type
             for position in all_positions:
-                product_symbol = position.get('product_symbol', '')
-                
-                # Quick check: options have expiry dates in symbol (e.g., "C-BTC-27500-011225")
-                # Format: C-{underlying}-{strike}-{expiry_DDMMYY}
-                if product_symbol.startswith('C-') or product_symbol.startswith('P-'):
+                if position['size'] == 0:
+                    continue
+                symbol = position.get('product_symbol', '')
+                if symbol.startswith('C-') or symbol.startswith('P-'):
                     options_positions.append(position)
                 else:
                     futures_positions.append(position)
-            
+
             self.circuit_breaker.record_success()
-            
-            # Log PnL summary
-            total_pnl = sum(p.get('unrealized_pnl', 0) for p in all_positions)
-            losing_positions = [p for p in all_positions if p.get('unrealized_pnl', 0) < 0]
-            
-            log.info(f"📊 Fetched positions: {len(futures_positions)} futures, {len(options_positions)} options")
-            log.info(f"💰 Total unrealized PnL: ${total_pnl:.4f} | Losing: {len(losing_positions)}")
-            
+
+            total_pnl = sum(p.get('unrealized_pnl', 0.0) for p in all_positions)
+            log.info(
+                f"📊 Fetched positions: {len(futures_positions)} futures, "
+                f"{len(options_positions)} options | PnL ${total_pnl:.4f}"
+            )
+
             return {
                 'futures': futures_positions,
                 'options': options_positions
             }
-            
+
         except Exception as e:
             self.circuit_breaker.record_failure()
             log.error(f"Failed to fetch positions with options: {e}")

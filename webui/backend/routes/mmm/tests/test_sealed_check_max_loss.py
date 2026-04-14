@@ -6,7 +6,7 @@ Function: check_max_loss(session) → List[Dict]
   - Returns [warn event]      when total_pnl <= -max_loss_amount * 0.80
   - Returns [auto_close event] when total_pnl <= -max_loss_amount
   - total_pnl = realized + unrealized + perp.realized + perp.unrealized
-  - Guard: max_loss_amount <= 0 → always returns [] (no instant close)
+  - Guard: max_loss_amount <= 0 → returns [max_loss_config critical event] (M-5 FIX)
   - Default max_loss_amount = 5000.0 when param absent
 
 Confirmed working: mmm17mar26-2 session (HARD stop badge visible, closed all positions)
@@ -153,19 +153,24 @@ def test_auto_close_details_include_perp_pnl(safety):
     assert e['details']['perp_pnl'] == pytest.approx(-70.0)
 
 
-# ── Contract 7: Guard — max_loss_amount <= 0 never fires ─────────────────────
+# ── Contract 7: Guard — max_loss_amount <= 0 → CRITICAL config event ─────────
 
 @pytest.mark.sealed
-def test_max_loss_zero_never_triggers(safety):
-    # max_loss=0 → guard returns [] even with massive loss
+def test_max_loss_zero_emits_config_warning(safety):
+    # M-5 FIX: max_loss=0 → critical config event (was silent before)
     events = safety.check_max_loss(_session(unrealized=-999999.0, max_loss=0.0))
-    assert events == []
+    assert len(events) == 1
+    assert events[0]['type'] == 'max_loss_config'
+    assert events[0]['level'] == 'critical'
+    assert events[0]['action'] == 'warn'
 
 
 @pytest.mark.sealed
-def test_max_loss_negative_never_triggers(safety):
+def test_max_loss_negative_emits_config_warning(safety):
     events = safety.check_max_loss(_session(unrealized=-999999.0, max_loss=-500.0))
-    assert events == []
+    assert len(events) == 1
+    assert events[0]['type'] == 'max_loss_config'
+    assert events[0]['level'] == 'critical'
 
 
 # ── Contract 8: Default max_loss when param absent ───────────────────────────

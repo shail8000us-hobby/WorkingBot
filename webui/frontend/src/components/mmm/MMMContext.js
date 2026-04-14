@@ -57,6 +57,15 @@ const ACTIONS = {
   RESET_STATE: 'RESET_STATE',
 };
 
+const ACTIVE_SESSION_STATUSES = new Set([
+  'RUNNING',
+  'PAUSED',
+  'BOTH_SIDES_UP',
+  'STARTING',
+  'PARTIAL_ENTRY',
+  'EXITING',
+]);
+
 // =============================================================================
 // Reducer
 // =============================================================================
@@ -149,8 +158,26 @@ export function MMMProvider({ children, socket }) {
   const retryTimeoutRef = useRef(null);
   const retryCountRef = useRef(0);
   const lastSessionsJson = useRef('');
+  const sessionsRef = useRef(initialState.sessions);
+  const activeRefreshTimerRef = useRef(null);
+  const activeRefreshInFlightRef = useRef(false);
+  const activeRefreshQueuedRef = useRef(false);
   const maxRetries = 5;
   const baseRetryDelay = 2000;
+
+  useEffect(() => {
+    sessionsRef.current = state.sessions;
+  }, [state.sessions]);
+
+  const applySessionsUpdate = useCallback((sessions) => {
+    const currentJson = JSON.stringify(sessions);
+    if (currentJson !== lastSessionsJson.current) {
+      lastSessionsJson.current = currentJson;
+      dispatch({ type: ACTIONS.SET_SESSIONS, payload: sessions });
+      dispatch({ type: ACTIONS.SET_LAST_UPDATE, payload: new Date().toISOString() });
+      sessionsRef.current = sessions;
+    }
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Fetch sessions with retry logic
@@ -165,13 +192,7 @@ export function MMMProvider({ children, socket }) {
       if (result.success) {
         const sessions = result.sessions || [];
 
-        // Fix: Deep comparison to prevent redundant re-renders
-        const currentJson = JSON.stringify(sessions);
-        if (currentJson !== lastSessionsJson.current) {
-          lastSessionsJson.current = currentJson;
-          dispatch({ type: ACTIONS.SET_SESSIONS, payload: sessions });
-          dispatch({ type: ACTIONS.SET_LAST_UPDATE, payload: new Date().toISOString() });
-        }
+        applySessionsUpdate(sessions);
 
         dispatch({ type: ACTIONS.SET_ERROR, payload: null });
         dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'connected' });
@@ -198,7 +219,7 @@ export function MMMProvider({ children, socket }) {
     } finally {
       dispatch({ type: ACTIONS.SET_LOADING, payload: false });
     }
-  }, []);
+  }, [applySessionsUpdate]);
 
   // Network error with exponential backoff
   const handleNetworkError = useCallback(() => {
@@ -223,6 +244,58 @@ export function MMMProvider({ children, socket }) {
       });
     }
   }, [fetchSessions]);
+
+  const mergeActiveSessions = useCallback((activeSessions) => {
+    const activeIds = new Set(activeSessions.map((s) => s.session_id));
+    const retainedNonActive = (sessionsRef.current || []).filter((session) => {
+      const status = String(session.status || session.strategy_status || '').toUpperCase();
+      return !ACTIVE_SESSION_STATUSES.has(status) && !activeIds.has(session.session_id);
+    });
+
+    const merged = [...activeSessions, ...retainedNonActive];
+    merged.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    return merged;
+  }, []);
+
+  const fetchActiveSessions = useCallback(async () => {
+    if (activeRefreshInFlightRef.current) {
+      activeRefreshQueuedRef.current = true;
+      return;
+    }
+
+    activeRefreshInFlightRef.current = true;
+    try {
+      const result = await mmmService.getSessions(true, true);
+      if (result.success) {
+        const activeSessions = result.sessions || [];
+        const merged = mergeActiveSessions(activeSessions);
+        applySessionsUpdate(merged);
+        dispatch({ type: ACTIONS.SET_ERROR, payload: null });
+        dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'connected' });
+        retryCountRef.current = 0;
+      } else {
+        dispatch({ type: ACTIONS.SET_ERROR, payload: result.error });
+      }
+    } catch (err) {
+      console.error('MMM: Failed to refresh active sessions:', err);
+      dispatch({ type: ACTIONS.SET_ERROR, payload: err.message });
+      handleNetworkError();
+    } finally {
+      activeRefreshInFlightRef.current = false;
+      if (activeRefreshQueuedRef.current) {
+        activeRefreshQueuedRef.current = false;
+        fetchActiveSessions();
+      }
+    }
+  }, [applySessionsUpdate, handleNetworkError, mergeActiveSessions]);
+
+  const scheduleActiveRefresh = useCallback((delayMs = 250) => {
+    if (activeRefreshTimerRef.current) return;
+    activeRefreshTimerRef.current = setTimeout(() => {
+      activeRefreshTimerRef.current = null;
+      fetchActiveSessions();
+    }, delayMs);
+  }, [fetchActiveSessions]);
 
   // Health check
   const checkHealth = useCallback(async () => {
@@ -262,9 +335,9 @@ export function MMMProvider({ children, socket }) {
   const handleAdjustment = useCallback((data) => {
     if (!data?.session_id) return;
     console.log(`💰 MMM: Adjustment on ${data.side} — ${data.lots} lots @ ${data.premium}`);
-    // Trigger a full refresh to get updated state
-    fetchSessions(false);
-  }, [fetchSessions]);
+    // Coalesced active-only refresh avoids bursty full-list fetches
+    scheduleActiveRefresh();
+  }, [scheduleActiveRefresh]);
 
   const handleStatusChange = useCallback((data) => {
     if (!data?.session_id) return;
@@ -292,8 +365,8 @@ export function MMMProvider({ children, socket }) {
   const handleParamsChanged = useCallback((data) => {
     if (!data?.session_id) return;
     console.log('⚙️ MMM: Params updated:', data.changed_params);
-    fetchSessions(false);
-  }, [fetchSessions]);
+    scheduleActiveRefresh();
+  }, [scheduleActiveRefresh]);
 
   const handleSessionCreated = useCallback((data) => {
     if (!data?.session_id) return;
@@ -337,26 +410,33 @@ export function MMMProvider({ children, socket }) {
     socket.on('mmm_session_created', handleSessionCreated);
     socket.on('mmm_session_deleted', handleSessionDeleted);
     socket.on('mmm_pnl_update', handlePnlUpdate);
-    socket.on('mmm_reversal', (data) => {
+
+    const onReversal = (data) => {
       console.log('🔄 MMM: Reversal detected', data);
-      fetchSessions(false);
-    });
-    socket.on('mmm_shift', (data) => {
+      scheduleActiveRefresh();
+    };
+    const onShift = (data) => {
       console.log('📊 MMM: Strike shifted', data);
-      fetchSessions(false);
-    });
-    socket.on('mmm_close_at_5', (data) => {
+      scheduleActiveRefresh();
+    };
+    const onCloseAt5 = (data) => {
       console.log('🏁 MMM: Close-at-5 triggered', data);
-      fetchSessions(false);
-    });
-    socket.on('mmm_harvest', (data) => {
+      scheduleActiveRefresh();
+    };
+    const onHarvest = (data) => {
       console.log('🌾 MMM: Position harvested', data);
-      fetchSessions(false);
-    });
-    socket.on('mmm_recycle', (data) => {
+      scheduleActiveRefresh();
+    };
+    const onRecycle = (data) => {
       console.log('♻️ MMM: Lot recycling executed', data);
-      fetchSessions(false);
-    });
+      scheduleActiveRefresh();
+    };
+
+    socket.on('mmm_reversal', onReversal);
+    socket.on('mmm_shift', onShift);
+    socket.on('mmm_close_at_5', onCloseAt5);
+    socket.on('mmm_harvest', onHarvest);
+    socket.on('mmm_recycle', onRecycle);
 
     console.log('📡 MMM: WebSocket listeners attached');
 
@@ -370,11 +450,11 @@ export function MMMProvider({ children, socket }) {
       socket.off('mmm_session_created', handleSessionCreated);
       socket.off('mmm_session_deleted', handleSessionDeleted);
       socket.off('mmm_pnl_update', handlePnlUpdate);
-      socket.off('mmm_reversal');
-      socket.off('mmm_shift');
-      socket.off('mmm_close_at_5');
-      socket.off('mmm_harvest');
-      socket.off('mmm_recycle');
+      socket.off('mmm_reversal', onReversal);
+      socket.off('mmm_shift', onShift);
+      socket.off('mmm_close_at_5', onCloseAt5);
+      socket.off('mmm_harvest', onHarvest);
+      socket.off('mmm_recycle', onRecycle);
       console.log('📡 MMM: WebSocket listeners detached');
     };
   }, [
@@ -388,7 +468,7 @@ export function MMMProvider({ children, socket }) {
     handleSessionCreated,
     handleSessionDeleted,
     handlePnlUpdate,
-    fetchSessions,
+    scheduleActiveRefresh,
   ]);
 
   // Online/offline recovery
@@ -418,16 +498,20 @@ export function MMMProvider({ children, socket }) {
   useEffect(() => {
     checkHealth();
     fetchParamsInfo();
+    fetchSessions(true);
     return () => {
       if (retryTimeoutRef.current) {
         clearTimeout(retryTimeoutRef.current);
       }
+      if (activeRefreshTimerRef.current) {
+        clearTimeout(activeRefreshTimerRef.current);
+      }
     };
-  }, [checkHealth, fetchParamsInfo]);
+  }, [checkHealth, fetchParamsInfo, fetchSessions]);
 
-  // Session polling — pauses when tab is hidden, slows down on return
-  const fetchSessionsSilent = useCallback(() => fetchSessions(false), [fetchSessions]);
-  useVisibilityAwarePolling(fetchSessionsSilent, 30000, 120000);
+  // Session polling — active-only refresh in background; full refresh remains explicit
+  const pollActiveSessions = useCallback(() => fetchActiveSessions(), [fetchActiveSessions]);
+  useVisibilityAwarePolling(pollActiveSessions, 30000, 120000);
 
   // ---------------------------------------------------------------------------
   // Exposed actions

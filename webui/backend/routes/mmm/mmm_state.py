@@ -700,6 +700,9 @@ DEFAULT_PARAMS = {
     'straddle_roll_iv_spike_mult':      2.0,
     'straddle_roll_price_max_age_secs': 5,   # Gate 9 freshness check (was hardcoded)
     '_straddle_roll_trigger_pts':       0,   # computed at session startup
+    # Dynamic trigger: shrinks with current straddle mark price as theta decays
+    'straddle_dynamic_trigger_enabled': True,  # True = use live mark; False = fixed entry premium
+    'straddle_min_trigger_pts':         200,   # floor: trigger never goes below this many pts
 
     # Price Guard (STRADDLE_WITH_ADJUSTMENT real-time monitoring)
     'price_guard_enabled': True,
@@ -728,6 +731,12 @@ DEFAULT_PARAMS = {
     'reverse_max_loss': 100.0,
     'reverse_close_at_threshold': 8.0,
     'reverse_unhedged_emergency_loss': 200.0,
+    # God Layer (strategic integrity monitor — off by default, enable per session)
+    'god_enabled': False,           # Master switch — must be explicitly enabled
+    'god_check_interval_min': 25,   # How often God evaluates (minutes)
+    'god_pnl_threshold': 40.0,      # $ PNL drop needed to trigger (set conservatively)
+    'god_min_silence_min': 20,      # Minutes without any adjustment needed to trigger
+    'god_cooldown_min': 45,         # Minutes God stays silent after firing
 }
 
 # Which parameters can be changed while algo is running
@@ -857,6 +866,7 @@ HOT_RELOAD_PARAMS = {
     'straddle_roll_loss_abort_mult', 'straddle_roll_lot_scale',
     'straddle_roll_iv_spike_mult',
     'straddle_roll_price_max_age_secs',
+    'straddle_dynamic_trigger_enabled', 'straddle_min_trigger_pts',
     # Price Guard
     'price_guard_enabled', 'price_guard_interval_secs',
     'price_guard_buffer_pts', 'price_guard_cooldown_secs',
@@ -868,6 +878,9 @@ HOT_RELOAD_PARAMS = {
     'reverse_time_start', 'reverse_time_end', 'reverse_duration_mins',
     'reverse_mode_type', 'reverse_cooldown_mins', 'reverse_max_loss',
     'reverse_close_at_threshold', 'reverse_unhedged_emergency_loss',
+    # God Layer (strategic integrity monitor)
+    'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',
+    'god_min_silence_min', 'god_cooldown_min',
 }
 
 

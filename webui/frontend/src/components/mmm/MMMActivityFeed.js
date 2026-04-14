@@ -498,13 +498,13 @@ export default function MMMActivityFeed({ sessionId = null, socket = null, strat
     if (!socket) return;
 
     const handleActivity = (data) => {
-      if (sessionId && data.session_id && data.session_id !== sessionId) return;
+      if (sessionId && (!data.session_id || data.session_id !== sessionId)) return;
       setActivities((prev) => [data, ...prev].slice(0, 120));
       if (!expanded) setNewCount((c) => c + 1);
     };
 
     const handleHeartbeatSummary = (data) => {
-      if (sessionId && data.session_id && data.session_id !== sessionId) return;
+      if (sessionId && (!data.session_id || data.session_id !== sessionId)) return;
       setHeartbeatSummary(data);
     };
 

@@ -280,6 +280,9 @@ PARAM_RULES = {
     'price_guard_buffer_pts':            {'type': float, 'min': 0.0,  'max': 10000.0, 'hot': True},
     'price_guard_cooldown_secs':         {'type': int,   'min': 0,    'max': 3600,  'hot': True},
     'straddle_roll_hard_stop_market_order': {'type': bool, 'min': None, 'max': None, 'hot': True},
+    # Dynamic trigger (STRADDLE_ROLL pure only)
+    'straddle_dynamic_trigger_enabled': {'type': bool,  'min': None, 'max': None,   'hot': True},
+    'straddle_min_trigger_pts':         {'type': float, 'min': 50.0, 'max': 5000.0, 'hot': True},
     # ── Reverse Mode ──
     'reverse_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
     'reverse_capacity_pct':              {'type': float, 'min': 0,    'max': 100,   'hot': True},
@@ -294,6 +297,12 @@ PARAM_RULES = {
     'reverse_max_loss':                  {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
     'reverse_close_at_threshold':        {'type': float, 'min': 0,    'max': 1000,  'hot': True},
     'reverse_unhedged_emergency_loss':   {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
+    # ── God Layer (Strategic Integrity Monitor) ──
+    'god_enabled':                       {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'god_check_interval_min':            {'type': int,   'min': 5,    'max': 120,   'hot': True},
+    'god_pnl_threshold':                 {'type': float, 'min': 1.0,  'max': 500.0, 'hot': True},
+    'god_min_silence_min':               {'type': int,   'min': 1,    'max': 120,   'hot': True},
+    'god_cooldown_min':                  {'type': int,   'min': 5,    'max': 240,   'hot': True},
 }
 
 
@@ -332,6 +341,9 @@ _STRADDLE_ROLL_PARAMS_SHARED = {
 _STRADDLE_ROLL_PURE_ONLY_PARAMS = {
     # Pure-roll hard-stop execution mode; not used by adjustment strategies.
     'straddle_roll_hard_stop_market_order',
+    # Dynamic trigger: only used by pure straddle roll, not by adjustment-roll hybrid.
+    'straddle_dynamic_trigger_enabled',
+    'straddle_min_trigger_pts',
 }
 
 _ADJUSTMENT_ENGINE_ONLY_PARAMS = {
@@ -885,6 +897,14 @@ def get_param_info() -> Dict[str, Dict]:
         'price_guard_buffer_pts': 'Pre-trigger buffer (points) for early force-heartbeat before roll threshold is hit.',
         'price_guard_cooldown_secs': 'Minimum seconds between price-guard force-heartbeat events.',
         'straddle_roll_hard_stop_market_order': 'Use market order for hard-stop exit in pure straddle-roll mode.',
+        'straddle_dynamic_trigger_enabled': 'Use live straddle mark (CE mid + PE mid) as roll trigger distance. Shrinks as theta decays — tighter trigger as premium erodes. Disable to revert to fixed entry-premium trigger.',
+        'straddle_min_trigger_pts': 'Floor for dynamic trigger in BTC points. Roll never fires at less than this distance from ATM, even when premium is near zero. Default 200 pts.',
+        # God Layer (Strategic Integrity Monitor)
+        'god_enabled': 'Enable the Strategic Integrity Monitor (God Layer). Periodically checks P&L health and fires automated intervention if the session is losing money beyond threshold.',
+        'god_check_interval_min': 'How often (in minutes) the God Layer checks session P&L health.',
+        'god_pnl_threshold': 'P&L loss threshold (USD) that triggers a God Layer intervention. If net P&L drops below negative this value, intervention fires.',
+        'god_min_silence_min': 'Minimum quiet time (minutes) required before God Layer will fire again after a recent adjustment.',
+        'god_cooldown_min': 'Cooldown period (minutes) after a God Layer intervention before it can fire again.',
     }
 
     info = {}

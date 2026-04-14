@@ -207,8 +207,19 @@ class MMMSafety:
         params = session.get('params', {})
         max_loss = params.get('max_loss_amount', 5000.0)
 
-        # AUDIT FIX: Guard against max_loss ≤ 0 which would trigger instant auto-close
+        # M-5 FIX: Alert on max_loss ≤ 0 misconfiguration (was silent before)
         if max_loss <= 0:
+            events.append({
+                'type': 'max_loss_config',
+                'level': 'critical',
+                'message': (
+                    f"⚠️ max_loss_amount is {max_loss} (≤ 0). "
+                    f"Max loss protection is DISABLED. "
+                    f"Set a positive value in session params."
+                ),
+                'action': 'warn',
+                'details': {'max_loss_amount': max_loss},
+            })
             return events
 
         # H-1: use single canonical formula (includes fees + perp)
@@ -616,19 +627,23 @@ class MMMSafety:
 
     def check_asymmetry(self, session: Dict) -> List[Dict]:
         """
-        IMP-3: Three-tier asymmetry protection.
+        IMP-3: Three-tier asymmetry warning (warn-only — never blocks or reduces lots).
           3:1 warning  — log and continue
-          5:1 alert    — reduce next lot size by 50% (sets session flag)
-          7:1 critical — hard-block ALL new sells (stop_adjustments)
+          5:1 alert    — log and continue (no lot reduction)
+          7:1 critical — log and continue (no hard block)
+
+        All tiers are informational only. Adjustments always proceed at full lot size
+        regardless of asymmetry ratio. Operator is informed via activity log.
         """
         events = []
-        params = session.get('params', {})
         ce_lots = session.get('ce', {}).get('total_lots', 0)
         pe_lots = session.get('pe', {}).get('total_lots', 0)
 
+        # Always clear enforcement flags — asymmetry never blocks or reduces lots
+        session.pop('_asymmetry_lot_reduction_pct', None)
+        session.pop('_asymmetry_heavy_side', None)
+
         if ce_lots == 0 and pe_lots == 0:
-            session.pop('_asymmetry_lot_reduction_pct', None)
-            session.pop('_asymmetry_heavy_side', None)
             return events
 
         max_lots = max(ce_lots, pe_lots)
@@ -636,46 +651,15 @@ class MMMSafety:
         ratio = max_lots / min_lots
         heavy_side = 'ce' if ce_lots >= pe_lots else 'pe'
 
-        hard_block_enabled = params.get('asymmetry_7to1_hard_block', True)
-        lot_reduction = params.get('asymmetry_5to1_lot_reduction', 0.5)
-
-        if ratio >= 7 and hard_block_enabled:
-            # Tier 3: block ONLY the heavy-side sells — allow the light side to
-            # rebalance.  Previously used 'stop_adjustments' which blocked ALL
-            # trigger evaluation via _skip_to_pnl, preventing PE sells when CE
-            # was the heavy side (e.g. CE=126, PE=2 → PE sells were forbidden
-            # even though they would reduce asymmetry).  Fix: use targeted block.
-            session.pop('_asymmetry_lot_reduction_pct', None)
-            session.pop('_asymmetry_heavy_side', None)
-            light_side = 'pe' if heavy_side == 'ce' else 'ce'
+        if ratio >= 7:
+            # Tier 3: warn only — no block
             events.append({
                 'type': 'asymmetry',
                 'level': 'critical',
                 'message': (
-                    f"ASYMMETRY HARD BLOCK: CE={ce_lots}, PE={pe_lots} "
-                    f"(ratio: {ratio:.1f}:1 ≥ 7:1) — "
-                    f"{heavy_side.upper()} sells blocked, {light_side.upper()} sells allowed to rebalance"
-                ),
-                'action': 'block_heavy_side_sells',
-                'details': {
-                    'ce_lots': ce_lots,
-                    'pe_lots': pe_lots,
-                    'ratio': round(ratio, 1),
-                    'heavy_side': heavy_side,
-                    'light_side': light_side,
-                },
-            })
-        elif ratio >= 5:
-            # Tier 2: reduce heavy-side lot size by 50%
-            session['_asymmetry_lot_reduction_pct'] = lot_reduction
-            session['_asymmetry_heavy_side'] = heavy_side
-            events.append({
-                'type': 'asymmetry',
-                'level': 'alert',
-                'message': (
-                    f"HIGH asymmetry: CE={ce_lots}, PE={pe_lots} "
-                    f"(ratio: {ratio:.1f}:1) — {heavy_side.upper()} lots reduced "
-                    f"by {int((1 - lot_reduction) * 100)}%"
+                    f"ASYMMETRY WARNING (7:1+): CE={ce_lots}, PE={pe_lots} "
+                    f"(ratio: {ratio:.1f}:1) — {heavy_side.upper()} is heavy side. "
+                    f"Adjustments continue at full size."
                 ),
                 'action': 'warn',
                 'details': {
@@ -683,13 +667,28 @@ class MMMSafety:
                     'pe_lots': pe_lots,
                     'ratio': round(ratio, 1),
                     'heavy_side': heavy_side,
-                    'lot_reduction_pct': lot_reduction,
+                },
+            })
+        elif ratio >= 5:
+            # Tier 2: warn only — no lot reduction
+            events.append({
+                'type': 'asymmetry',
+                'level': 'alert',
+                'message': (
+                    f"HIGH asymmetry: CE={ce_lots}, PE={pe_lots} "
+                    f"(ratio: {ratio:.1f}:1) — {heavy_side.upper()} is heavy side. "
+                    f"Adjustments continue at full size."
+                ),
+                'action': 'warn',
+                'details': {
+                    'ce_lots': ce_lots,
+                    'pe_lots': pe_lots,
+                    'ratio': round(ratio, 1),
+                    'heavy_side': heavy_side,
                 },
             })
         elif ratio >= 3:
             # Tier 1: warning only
-            session.pop('_asymmetry_lot_reduction_pct', None)
-            session.pop('_asymmetry_heavy_side', None)
             events.append({
                 'type': 'asymmetry',
                 'level': 'warning',
@@ -704,10 +703,6 @@ class MMMSafety:
                     'ratio': round(ratio, 1),
                 },
             })
-        else:
-            # Below 3:1 — clear any prior flags
-            session.pop('_asymmetry_lot_reduction_pct', None)
-            session.pop('_asymmetry_heavy_side', None)
 
         return events
 

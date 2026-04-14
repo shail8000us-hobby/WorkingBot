@@ -357,29 +357,35 @@ class AsyncWebSocketManager:
     async def _cleanup_tasks(self):
         """
         Clean up all background tasks.
-        
-        FIX NOV 14: Avoid RecursionError by cancelling tasks without waiting.
-        The recursion error occurs when cancelling deeply nested task chains.
-        Instead, we cancel tasks and let them exit naturally.
+
+        FIX NOV 14: Avoid RecursionError by NOT using asyncio.gather() — it causes
+        deeply nested task chain cancellation. Use asyncio.wait() instead.
+
+        FIX APR 13: Actually wait for tasks to complete after cancelling (with a
+        timeout) so that a stale _message_handler exits its recv() before new tasks
+        start calling recv() on the new WebSocket. The original 0.1s sleep was not
+        long enough when the handler was processing a message synchronously.
         """
         log.info("Cleaning up background tasks...")
-        
-        # Cancel all tasks but don't gather them (avoids recursion)
+
         tasks_to_cancel = list(self.background_tasks.copy())
+        pending = []
         for task in tasks_to_cancel:
             if not task.done():
                 try:
                     task.cancel()
+                    pending.append(task)
                 except Exception as e:
                     log.debug(f"Error cancelling task: {e}")
-        
-        # Give tasks a moment to cancel, but don't wait indefinitely
-        # This prevents the RecursionError that occurs in gather()
-        try:
-            await asyncio.sleep(0.1)  # Brief pause to allow cancellation
-        except:
-            pass
-        
+
+        # Wait for cancelled tasks to finish (asyncio.wait avoids RecursionError).
+        # 2s timeout is enough for any in-flight recv/processing to unblock.
+        if pending:
+            try:
+                await asyncio.wait(pending, timeout=2.0)
+            except Exception as e:
+                log.debug(f"Error waiting for task cancellation: {e}")
+
         self.background_tasks.clear()
         log.info("All background tasks cleaned up")
     
@@ -623,45 +629,60 @@ class AsyncWebSocketManager:
         """
         Single message handler - prevents multiple recv() calls.
         This is the ONLY coroutine that calls recv() on the WebSocket.
-        
+
         NOV 13: Added safety check for _ws before recv() to prevent AttributeError.
+        APR 13: Capture ws reference per-iteration so a stale handler never accidentally
+                calls recv() on a new WebSocket after reconnection (race condition fix).
+                Also treat ConcurrencyError as fatal — break instead of continue.
         """
         try:
             while self._running and self.state in [ConnectionState.CONNECTED, ConnectionState.AUTHENTICATED]:
                 try:
-                    # Safety check: ensure WebSocket exists before recv()
-                    if not self._ws:
+                    # Capture WS reference once per iteration.
+                    # If _handle_reconnect swaps self._ws to a new object while this
+                    # coroutine is processing a message, the next iteration will get
+                    # the OLD reference and ConnectionClosed will fire — not the new WS.
+                    ws = self._ws
+                    if not ws:
                         log.warning("WebSocket connection lost in message handler")
                         self.state = ConnectionState.DISCONNECTED
                         await self._handle_reconnect()
                         break
-                    
-                    # Receive message (only one coroutine calls this)
-                    message_str = await self._ws.recv()
-                    
+
+                    # Receive message using the captured reference (only one coroutine calls this)
+                    message_str = await ws.recv()
+
                     # Update heartbeat timestamp
                     self._last_heartbeat = time.time()
-                    
+
                     # Parse message
                     message = json.loads(message_str)
-                    
+
                     # Process message
                     await self._process_message(message)
-                
+
                 except websockets.exceptions.ConnectionClosed as e:
                     log.warning(f"WebSocket connection closed: {e}")
                     self.state = ConnectionState.DISCONNECTED
                     await self._handle_reconnect()
                     break
-                
+
                 except json.JSONDecodeError as e:
                     log.error(f"Failed to parse WebSocket message: {e}")
                     continue
-                
+
                 except Exception as e:
+                    err_str = str(e).lower()
+                    # ConcurrencyError: "cannot call recv while another coroutine is already
+                    # running recv or recv_streaming". This means a newer _message_handler
+                    # task is already reading from the socket — this instance is stale.
+                    # Break rather than looping forever on the same error.
+                    if "recv" in err_str and ("another coroutine" in err_str or "already running" in err_str):
+                        log.warning("Stale message handler detected (concurrent recv) — exiting")
+                        break
                     log.error(f"Error in message handler: {e}")
                     continue
-        
+
         except asyncio.CancelledError:
             log.info("Message handler cancelled")
         except Exception as e:

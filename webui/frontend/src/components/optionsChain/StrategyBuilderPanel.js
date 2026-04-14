@@ -14,7 +14,7 @@
  * Created: January 12, 2026
  */
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
   Box,
   Paper,
@@ -36,8 +36,15 @@ import {
   CircularProgress,
   Collapse,
   Tooltip,
-  Card,
-  CardContent,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemButton,
+  Badge,
 } from '@mui/material';
 import {
   Delete as DeleteIcon,
@@ -45,10 +52,9 @@ import {
   Clear as ClearIcon,
   ExpandMore as ExpandIcon,
   ExpandLess as CollapseIcon,
-  TrendingUp as CallIcon,
-  TrendingDown as PutIcon,
   Calculate as CalcIcon,
-  Refresh as RefreshIcon,
+  BookmarkAdd as SaveTemplateIcon,
+  FolderOpen as LoadTemplateIcon,
 } from '@mui/icons-material';
 import {
   LineChart,
@@ -189,6 +195,48 @@ const parseExpiry = (expiry) => {
   return new Date(year, month, day, 17, 30); // 5:30 PM IST expiry
 };
 
+// ==================== Template Storage (localStorage) ====================
+
+const TEMPLATE_STORAGE_KEY = 'strategy_builder_templates';
+
+const loadTemplatesFromStorage = () => {
+  try {
+    const raw = localStorage.getItem(TEMPLATE_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+};
+
+const saveTemplatesToStorage = (templates) => {
+  try {
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, JSON.stringify(templates));
+  } catch (e) {
+    console.error('Failed to save templates:', e);
+  }
+};
+
+// Build product_symbol from components (e.g. "C-BTC-90000-270226")
+// expiry must be DDMMYYYY; converts to DDMMYY for the symbol tail
+const buildSymbol = (type, underlying, strike, expiryDDMMYYYY) => {
+  if (!type || !underlying || !strike || strike <= 0) return null;
+  const prefix = type === 'call' ? 'C' : 'P';
+  const exp = String(expiryDDMMYYYY || '');
+  if (exp.length !== 8 || !/^\d{8}$/.test(exp)) return null;
+  const dd = exp.slice(0, 2);
+  const mm = exp.slice(2, 4);
+  const yy = exp.slice(6, 8);
+  return `${prefix}-${underlying}-${strike}-${dd}${mm}${yy}`;
+};
+
+// Snap strike to the nearest standard increment for the underlying.
+// Returns null if result is non-positive (prevents garbage symbols).
+const snapStrike = (strike, underlying) => {
+  const increment = underlying === 'BTC' ? 1000 : underlying === 'ETH' ? 100 : 50;
+  const snapped = Math.round(strike / increment) * increment;
+  return snapped > 0 ? snapped : null;
+};
+
 export default function StrategyBuilderPanel({
   legs = [],
   spotPrice,
@@ -197,6 +245,7 @@ export default function StrategyBuilderPanel({
   onUpdateLeg,
   onRemoveLeg,
   onClearAll,
+  onSetLegs,
   onExecute,
   loading = false,
   expanded: initialExpanded = true,
@@ -205,6 +254,115 @@ export default function StrategyBuilderPanel({
   const [executing, setExecuting] = useState(false);
   const [strategyName, setStrategyName] = useState('My Custom Strategy');
   const [error, setError] = useState(null);
+
+  // ---- Template state ----
+  const [templates, setTemplates] = useState(() => loadTemplatesFromStorage());
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showLoadDialog, setShowLoadDialog] = useState(false);
+  const [templateName, setTemplateName] = useState('');
+  const [templateSearch, setTemplateSearch] = useState('');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+  const [templateLoadWarning, setTemplateLoadWarning] = useState(null);
+
+  // ---- Template handlers ----
+
+  const handleSaveTemplate = useCallback(() => {
+    if (!legs.length) return;
+    const name = (templateName || strategyName || 'My Strategy').trim();
+    if (!name) return;
+    const atmRef = spotPrice || 0;
+    const newTemplate = {
+      id: Date.now().toString(),
+      name,
+      underlying,
+      saved_spot: atmRef,
+      created_at: new Date().toISOString(),
+      legs: legs.map((leg) => ({
+        type: leg.type,
+        side: leg.side,
+        quantity: leg.quantity || 1,
+        strike: leg.strike,
+        // Store ATM-relative offset so it can be reused at different spot levels
+        atm_offset: atmRef > 0 ? leg.strike - atmRef : 0,
+      })),
+    };
+    const updated = [newTemplate, ...templates];
+    setTemplates(updated);
+    saveTemplatesToStorage(updated);
+    setShowSaveDialog(false);
+    setTemplateName('');
+    // Show inline confirmation
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 3000);
+  }, [legs, templates, templateName, strategyName, underlying, spotPrice]);
+
+  const handleLoadTemplate = useCallback((template) => {
+    if (!onSetLegs) return;
+    const currentExpiry = expiry;
+    const currentSpot = spotPrice || template.saved_spot || 0;
+
+    const newLegs = template.legs.map((tLeg) => {
+      // Recompute strike from ATM offset if we have a live spot price
+      let strike = tLeg.strike;
+      if (currentSpot > 0 && tLeg.atm_offset !== undefined && tLeg.atm_offset !== null) {
+        const rawStrike = currentSpot + tLeg.atm_offset;
+        strike = snapStrike(rawStrike, template.underlying || underlying);
+      }
+      // Guard: strike must be positive
+      if (!strike || strike <= 0) strike = tLeg.strike;
+
+      const symbol = currentExpiry
+        ? buildSymbol(tLeg.type, template.underlying || underlying, strike, currentExpiry)
+        : null;
+      return {
+        type: tLeg.type,
+        side: tLeg.side,
+        quantity: tLeg.quantity || 1,
+        strike,
+        symbol,
+        expiry: currentExpiry,
+        // Market data is not available for template legs — will be blank until
+        // user clicks the same row in the chain (which updates via onUpdateLeg)
+        _fromTemplate: true,  // marker so Price column can show a hint
+        premium: null,
+        ltp: null,
+        bid: null,
+        ask: null,
+        iv: null,
+        delta: null,
+      };
+    });
+
+    onSetLegs(newLegs);
+    setStrategyName(template.name);
+    setShowLoadDialog(false);
+
+    // Warn if no expiry — legs loaded but symbols are null, execute will fail
+    if (!currentExpiry) {
+      setTemplateLoadWarning('Template loaded — select an expiry from the chain above to populate symbols before executing.');
+    } else {
+      setTemplateLoadWarning('Template loaded. Prices shown are estimates — click chain rows to refresh live bid/ask.');
+    }
+  }, [expiry, spotPrice, underlying, onSetLegs]);
+
+  const handleDeleteTemplate = useCallback((id, e) => {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    const updated = templates.filter((t) => t.id !== id);
+    setTemplates(updated);
+    saveTemplatesToStorage(updated);
+  }, [templates]);
+
+  const filteredTemplates = useMemo(() => {
+    if (!templateSearch.trim()) return templates;
+    const q = templateSearch.toLowerCase();
+    return templates.filter((t) => t.name.toLowerCase().includes(q));
+  }, [templates, templateSearch]);
+
+  // Detect if any legs are template-loaded (no live market data)
+  const hasTemplateLegs = useMemo(
+    () => legs.some((l) => l._fromTemplate && l.bid == null),
+    [legs]
+  );
 
   // Calculate totals
   const totals = useMemo(() => {
@@ -321,10 +479,12 @@ export default function StrategyBuilderPanel({
       }
       
       // Validate each leg has a symbol (format: C-BTC-90000-270226)
-      for (let i = 0; i < legs.length; i++) {
-        if (!legs[i].symbol) {
-          throw new Error(`Leg ${i + 1} is missing a symbol. Please ensure all legs are properly selected from the options chain.`);
+      const legsWithNoSymbol = legs.filter((l) => !l.symbol);
+      if (legsWithNoSymbol.length > 0) {
+        if (!expiry) {
+          throw new Error('Template loaded but no expiry selected — pick an expiry from the chain dropdown first, then try again.');
         }
+        throw new Error(`${legsWithNoSymbol.length} leg(s) are missing a product symbol. Click their row in the chain to link them before executing.`);
       }
       
       // Extract expiry from first leg's symbol for backend validation
@@ -446,6 +606,7 @@ export default function StrategyBuilderPanel({
   };
 
   return (
+    <>
     <Paper
       elevation={4}
       sx={{
@@ -468,11 +629,13 @@ export default function StrategyBuilderPanel({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          cursor: 'pointer',
         }}
-        onClick={() => setExpanded(!expanded)}
       >
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+        {/* Left: title + leg count — clicking expands */}
+        <Box
+          sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, cursor: 'pointer' }}
+          onClick={() => setExpanded(!expanded)}
+        >
           <CalcIcon color="primary" />
           <Typography variant="subtitle1" fontWeight="bold">
             New Strategy
@@ -485,7 +648,38 @@ export default function StrategyBuilderPanel({
             />
           )}
         </Box>
-        <IconButton size="small">{expanded ? <CollapseIcon /> : <ExpandIcon />}</IconButton>
+
+        {/* Right: template buttons + collapse */}
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Tooltip title={legs.length > 0 ? 'Save as Template' : 'Add legs first to save template'}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={(e) => { e.stopPropagation(); setTemplateName(strategyName); setShowSaveDialog(true); }}
+                disabled={legs.length === 0}
+                color="primary"
+              >
+                <SaveTemplateIcon fontSize="small" />
+              </IconButton>
+            </span>
+          </Tooltip>
+          <Tooltip title={`Load Template (${templates.length} saved)`}>
+            <span>
+              <IconButton
+                size="small"
+                onClick={(e) => { e.stopPropagation(); setTemplateSearch(''); setShowLoadDialog(true); }}
+                color={templates.length > 0 ? 'warning' : 'default'}
+              >
+                <Badge badgeContent={templates.length || null} color="warning" max={9}>
+                  <LoadTemplateIcon fontSize="small" />
+                </Badge>
+              </IconButton>
+            </span>
+          </Tooltip>
+          <IconButton size="small" onClick={() => setExpanded(!expanded)}>
+            {expanded ? <CollapseIcon /> : <ExpandIcon />}
+          </IconButton>
+        </Box>
       </Box>
 
       <Collapse in={expanded}>
@@ -595,11 +789,26 @@ export default function StrategyBuilderPanel({
                       {/* Price */}
                       <TableCell sx={{ py: 0.5, fontSize: '0.75rem' }}>
                         {(() => {
-                          const bid = leg.bid || leg.best_bid_price || 0;
-                          const ask = leg.ask || leg.best_ask_price || 0;
-                          const midPrice = bid > 0 && ask > 0 ? (bid + ask) / 2 : (leg.premium || leg.ltp || 0);
+                          const bid = leg.bid != null ? leg.bid : (leg.best_bid_price != null ? leg.best_bid_price : null);
+                          const ask = leg.ask != null ? leg.ask : (leg.best_ask_price != null ? leg.best_ask_price : null);
+                          const hasLiveData = bid != null && ask != null;
+                          const midPrice = hasLiveData
+                            ? (bid + ask) / 2
+                            : (leg.premium != null ? leg.premium : (leg.ltp != null ? leg.ltp : null));
+
+                          if (midPrice == null) {
+                            return (
+                              <Tooltip title="No live price — click this row in the chain to refresh">
+                                <span style={{ color: '#888', fontStyle: 'italic', fontSize: '0.7rem' }}>
+                                  —
+                                </span>
+                              </Tooltip>
+                            );
+                          }
+                          const bidStr = bid != null ? bid.toFixed(1) : '—';
+                          const askStr = ask != null ? ask.toFixed(1) : '—';
                           return (
-                            <Tooltip title={`Bid: ${bid.toFixed(1)} | Ask: ${ask.toFixed(1)} | Mid: ${midPrice.toFixed(1)}`}>
+                            <Tooltip title={`Bid: ${bidStr} | Ask: ${askStr} | Mid: ${midPrice.toFixed(1)}`}>
                               <span style={{ cursor: 'help', borderBottom: '1px dotted #666' }}>
                                 {midPrice.toFixed(1)}
                               </span>
@@ -754,6 +963,24 @@ export default function StrategyBuilderPanel({
         {/* Strategy Name & Execute */}
         {legs.length > 0 && (
           <Box sx={{ p: 2 }}>
+            {/* Save success banner */}
+            {saveSuccess && (
+              <Alert severity="success" onClose={() => setSaveSuccess(false)} sx={{ mb: 1.5, py: 0.5 }}>
+                Template saved — survives page refresh &amp; backend restarts.
+              </Alert>
+            )}
+            {/* Template load warning */}
+            {templateLoadWarning && (
+              <Alert severity="info" onClose={() => setTemplateLoadWarning(null)} sx={{ mb: 1.5, py: 0.5 }}>
+                {templateLoadWarning}
+              </Alert>
+            )}
+            {/* No live price warning */}
+            {hasTemplateLegs && !templateLoadWarning && (
+              <Alert severity="warning" sx={{ mb: 1.5, py: 0.5 }}>
+                Some legs have no live price. Click their rows in the chain to refresh bid/ask before executing.
+              </Alert>
+            )}
             {/* Error Alert */}
             {error && (
               <Alert severity="error" onClose={() => setError(null)} sx={{ mb: 2 }}>
@@ -787,5 +1014,216 @@ export default function StrategyBuilderPanel({
         )}
       </Collapse>
     </Paper>
+
+    {/* ==================== Save Template Dialog ==================== */}
+    <Dialog
+      open={showSaveDialog}
+      onClose={() => setShowSaveDialog(false)}
+      maxWidth="xs"
+      fullWidth
+    >
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <SaveTemplateIcon color="primary" />
+          Save Strategy as Template
+        </Box>
+      </DialogTitle>
+      <DialogContent>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+          Saves the current {legs.length}-leg structure. On reload you can pick a different expiry
+          and strikes will auto-adjust relative to the spot price.
+        </Typography>
+        <TextField
+          fullWidth
+          size="small"
+          label="Template Name"
+          value={templateName}
+          onChange={(e) => setTemplateName(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSaveTemplate()}
+          autoFocus
+          placeholder="e.g. Iron Condor BTC"
+        />
+
+        {/* Preview legs */}
+        <Box sx={{ mt: 2 }}>
+          <Typography variant="caption" color="text.secondary" gutterBottom>
+            Legs to save ({legs.length}):
+          </Typography>
+          {legs.map((leg, i) => (
+            <Box key={i} sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 0.5 }}>
+              <Chip
+                label={leg.side === 'buy' ? 'B' : 'S'}
+                size="small"
+                color={leg.side === 'buy' ? 'primary' : 'error'}
+                sx={{ minWidth: 28, height: 20, '& .MuiChip-label': { px: 0.5, fontSize: '0.65rem' } }}
+              />
+              <Chip
+                label={leg.type === 'call' ? 'CE' : 'PE'}
+                size="small"
+                sx={{
+                  height: 18,
+                  bgcolor: leg.type === 'call' ? 'success.dark' : 'error.dark',
+                  color: 'white',
+                  '& .MuiChip-label': { px: 0.5, fontSize: '0.6rem' },
+                }}
+              />
+              <Typography variant="caption">
+                {leg.strike?.toLocaleString()}
+                {spotPrice > 0 && (
+                  <span style={{ color: '#888', marginLeft: 4 }}>
+                    ({leg.strike - spotPrice > 0 ? '+' : ''}{Math.round(leg.strike - spotPrice).toLocaleString()} from ATM)
+                  </span>
+                )}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                × {leg.quantity || 1}
+              </Typography>
+            </Box>
+          ))}
+        </Box>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setShowSaveDialog(false)} size="small">Cancel</Button>
+        <Button
+          onClick={handleSaveTemplate}
+          variant="contained"
+          size="small"
+          disabled={!templateName.trim()}
+          startIcon={<SaveTemplateIcon />}
+        >
+          Save Template
+        </Button>
+      </DialogActions>
+    </Dialog>
+
+    {/* ==================== Load Template Dialog ==================== */}
+    <Dialog
+      open={showLoadDialog}
+      onClose={() => setShowLoadDialog(false)}
+      maxWidth="sm"
+      fullWidth
+    >
+      <DialogTitle sx={{ pb: 0 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <LoadTemplateIcon color="warning" />
+          Load Strategy Template
+        </Box>
+      </DialogTitle>
+      <DialogContent sx={{ p: 0 }}>
+        {/* No-expiry warning — prominent Alert, not just footer text */}
+        {!expiry && (
+          <Alert severity="warning" sx={{ mx: 2, mt: 1.5, mb: 0.5 }}>
+            No expiry selected. Template will load but symbols will be missing — select an expiry
+            from the chain dropdown after loading, then try executing.
+          </Alert>
+        )}
+        {expiry && spotPrice > 0 && (
+          <Alert severity="info" sx={{ mx: 2, mt: 1.5, mb: 0.5 }} icon={false}>
+            Strikes will auto-adjust relative to current spot ({spotPrice?.toLocaleString()}).
+            Saved spot is shown for reference.
+          </Alert>
+        )}
+
+        {/* Search */}
+        {templates.length > 3 && (
+          <Box sx={{ px: 2, pt: 1 }}>
+            <TextField
+              fullWidth
+              size="small"
+              placeholder="Search templates..."
+              value={templateSearch}
+              onChange={(e) => setTemplateSearch(e.target.value)}
+              autoFocus={templates.length > 3}
+            />
+          </Box>
+        )}
+
+        {filteredTemplates.length === 0 ? (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Typography color="text.secondary" variant="body2">
+              {templates.length === 0
+                ? 'No saved templates yet. Build a strategy and click the 📑 icon to save one.'
+                : 'No templates match your search.'}
+            </Typography>
+          </Box>
+        ) : (
+          <List dense sx={{ pt: 0.5 }}>
+            {filteredTemplates.map((tmpl, idx) => (
+              <React.Fragment key={tmpl.id}>
+                {idx > 0 && <Divider />}
+                {/* Use ListItem with secondaryAction (MUI v5 pattern, avoids z-index issues) */}
+                <ListItem
+                  disablePadding
+                  secondaryAction={
+                    <Tooltip title="Delete template">
+                      <IconButton
+                        edge="end"
+                        size="small"
+                        onClick={(e) => handleDeleteTemplate(tmpl.id, e)}
+                        sx={{ opacity: 0.4, mr: 0.5, '&:hover': { opacity: 1, color: 'error.main' } }}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  }
+                >
+                  <ListItemButton
+                    onClick={() => handleLoadTemplate(tmpl)}
+                    sx={{ py: 1, px: 2, pr: 6 }}
+                  >
+                    <ListItemText
+                      primary={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Typography variant="body2" fontWeight="bold">{tmpl.name}</Typography>
+                          <Chip
+                            label={`${tmpl.legs?.length || 0} legs`}
+                            size="small"
+                            sx={{ height: 18, '& .MuiChip-label': { px: 0.5, fontSize: '0.6rem' } }}
+                          />
+                          <Typography variant="caption" color="text.disabled">
+                            {tmpl.underlying}
+                          </Typography>
+                        </Box>
+                      }
+                      secondary={
+                        <Box component="span" sx={{ display: 'block', mt: 0.5 }}>
+                          {/* Leg summary chips */}
+                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 0.5 }}>
+                            {(tmpl.legs || []).map((leg, li) => {
+                              const offsetStr = leg.atm_offset > 0
+                                ? `+${Math.round(leg.atm_offset / 1000)}k`
+                                : leg.atm_offset < 0
+                                  ? `${Math.round(leg.atm_offset / 1000)}k`
+                                  : 'ATM';
+                              return (
+                                <Chip
+                                  key={li}
+                                  label={`${leg.side === 'buy' ? 'B' : 'S'} ${leg.type === 'call' ? 'CE' : 'PE'} ${offsetStr}`}
+                                  size="small"
+                                  color={leg.side === 'buy' ? 'primary' : 'error'}
+                                  variant="outlined"
+                                  sx={{ height: 18, '& .MuiChip-label': { px: 0.5, fontSize: '0.6rem' } }}
+                                />
+                              );
+                            })}
+                          </Box>
+                          <Typography variant="caption" color="text.disabled" component="span">
+                            Saved {new Date(tmpl.created_at).toLocaleDateString()} · ref spot: {tmpl.saved_spot?.toLocaleString() || '—'}
+                          </Typography>
+                        </Box>
+                      }
+                    />
+                  </ListItemButton>
+                </ListItem>
+              </React.Fragment>
+            ))}
+          </List>
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setShowLoadDialog(false)} size="small">Close</Button>
+      </DialogActions>
+    </Dialog>
+    </>
   );
 }

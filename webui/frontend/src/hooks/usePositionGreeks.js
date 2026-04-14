@@ -19,11 +19,19 @@ export default function usePositionGreeks(btcSpot = 0) {
   const [loading, setLoading] = useState(false);
   const timerRef = useRef(null);
   const spotRef = useRef(btcSpot);
+  const inFlightRef = useRef(false);
+  const pendingRef = useRef(false);
 
   // Keep ref current without triggering re-renders / effect re-runs
   spotRef.current = btcSpot;
 
   const fetchGreeks = useCallback(async () => {
+    if (inFlightRef.current) {
+      pendingRef.current = true;
+      return;
+    }
+
+    inFlightRef.current = true;
     setLoading(true);
     try {
       const spot = spotRef.current;
@@ -39,6 +47,13 @@ export default function usePositionGreeks(btcSpot = 0) {
       // Silently ignore — non-critical data
     } finally {
       setLoading(false);
+      inFlightRef.current = false;
+      if (pendingRef.current) {
+        pendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchGreeks();
+        });
+      }
     }
   }, []); // stable — no deps that change
 

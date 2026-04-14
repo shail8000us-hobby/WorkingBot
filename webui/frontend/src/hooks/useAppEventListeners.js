@@ -9,7 +9,7 @@
  *  - keyboard-start / keyboard-stop / keyboard-refresh events
  */
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useCallback } from 'react';
 
 export function useAppEventListeners({
   ensureFresh,
@@ -17,21 +17,66 @@ export function useAppEventListeners({
   handleStopBot,
   showNotification,
 }) {
+  const refreshInFlightRef = useRef(false);
+  const refreshPendingRef = useRef(false);
+  const refreshTimerRef = useRef(null);
+
+  const runEnsureFresh = useCallback(async () => {
+    if (refreshInFlightRef.current) {
+      refreshPendingRef.current = true;
+      return;
+    }
+
+    refreshInFlightRef.current = true;
+    try {
+      await Promise.resolve(ensureFresh());
+    } finally {
+      refreshInFlightRef.current = false;
+      if (refreshPendingRef.current) {
+        refreshPendingRef.current = false;
+        Promise.resolve().then(() => {
+          runEnsureFresh();
+        });
+      }
+    }
+  }, [ensureFresh]);
+
+  const scheduleEnsureFresh = useCallback(
+    (delayMs = 0) => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+
+      refreshTimerRef.current = setTimeout(() => {
+        runEnsureFresh();
+      }, delayMs);
+    },
+    [runEnsureFresh]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current);
+      }
+    };
+  }, []);
+
   // Tab visibility → refresh data on re-focus
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (!document.hidden) setTimeout(ensureFresh, 350);
+      if (!document.hidden) scheduleEnsureFresh(350);
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [ensureFresh]);
+  }, [scheduleEnsureFresh]);
 
   // Network recovery → refresh data
   useEffect(() => {
-    const handleOnline = () => setTimeout(ensureFresh, 500);
+    const handleOnline = () => scheduleEnsureFresh(500);
     window.addEventListener('online', handleOnline);
     return () => window.removeEventListener('online', handleOnline);
-  }, [ensureFresh]);
+  }, [scheduleEnsureFresh]);
 
   // Custom notification event (used by child components)
   useEffect(() => {
@@ -46,7 +91,7 @@ export function useAppEventListeners({
   useEffect(() => {
     const handleStart = () => handleStartBot();
     const handleStop = () => handleStopBot();
-    const handleRefresh = () => ensureFresh();
+    const handleRefresh = () => runEnsureFresh();
 
     window.addEventListener('keyboard-start', handleStart);
     window.addEventListener('keyboard-stop', handleStop);
@@ -57,5 +102,5 @@ export function useAppEventListeners({
       window.removeEventListener('keyboard-stop', handleStop);
       window.removeEventListener('keyboard-refresh', handleRefresh);
     };
-  }, [handleStartBot, handleStopBot, ensureFresh]);
+  }, [handleStartBot, handleStopBot, runEnsureFresh]);
 }

@@ -865,6 +865,42 @@ const mmmService = {
     const { data } = await api.post(`${BASE_URL}/session/${sessionId}/pin-trigger`, body);
     return data; // caller must handle rejection (Promise rejects on non-2xx)
   },
+
+  // =========================================================================
+  // Reverse Mode Control
+  // =========================================================================
+
+  /**
+   * Enable reverse mode for a session.
+   * Resets slots/positions for a new activation window.
+   * @param {string} sessionId
+   */
+  async enableReverseMode(sessionId) {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/reverse/enable`);
+    return data;
+  },
+
+  /**
+   * Disable reverse mode for a session.
+   * Does NOT close open reverse positions — use closeAllReversePositions for that.
+   * @param {string} sessionId
+   * @param {string} [reason]
+   */
+  async disableReverseMode(sessionId, reason = 'manual_ui_disable') {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/reverse/disable`, { reason });
+    return data;
+  },
+
+  /**
+   * Close all open reverse positions for a session.
+   * Sends real buy orders. Confirm with the user before calling.
+   * @param {string} sessionId
+   * @param {string} [reason]
+   */
+  async closeAllReversePositions(sessionId, reason = 'manual_ui_close_all') {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/reverse/close`, { reason });
+    return data;
+  },
 };
 
 export default mmmService;

@@ -468,7 +468,10 @@ def quick_execute_strategy():
     """
     Create and execute a strategy in one step.
     Used by the Strategy Builder workflow for immediate execution.
-    
+
+    Uses the same batch execution mechanism as /api/options/batch_add to avoid
+    event-loop lifecycle issues that caused failures on 4+ leg strategies.
+
     Request:
         {
             strategy_type: "long_straddle" | "iron_condor" | ...,
@@ -476,36 +479,37 @@ def quick_execute_strategy():
             underlying: "BTC",
             expiry: "DDMMYYYY",
             legs: [
-                {symbol: "...", option_type: "call", strike: 95000, side: "buy", quantity: 1},
-                {symbol: "...", option_type: "put", strike: 93000, side: "sell", quantity: 2}
+                {product_symbol: "C-BTC-95000-130426", option_type: "call",
+                 strike: 95000, side: "buy", size: 1, limit_price: "100.5"},
+                ...
             ],
             execution_mode: "parallel" | "sequential",
             order_type: "market" | "limit"
         }
     """
+    import asyncio
+
     data = request.get_json()
-    
+
     if not data:
         return jsonify({'error': 'No data provided'}), 400
-    
+
     # Extract parameters
     strategy_type = data.get('strategy_type', 'custom')
     name = data.get('name', f'Quick {strategy_type}')
     underlying = data.get('underlying', 'BTC')
     expiry = data.get('expiry')
     legs = data.get('legs', [])
-    execution_mode = data.get('execution_mode', 'parallel')
     order_type = data.get('order_type', 'limit')
-    
+
     if not expiry:
         return jsonify({'error': 'expiry required'}), 400
-    
+
     if not legs or len(legs) == 0:
         return jsonify({'error': 'legs required'}), 400
-    
+
+    # Step 1: Create the strategy in DB for position tracking
     manager = StrategyManager()
-    
-    # Step 1: Create the strategy
     strategy = manager.create_custom_strategy(
         name=name,
         underlying=underlying,
@@ -513,31 +517,139 @@ def quick_execute_strategy():
         legs=legs,
         strategy_type=strategy_type
     )
-    
+
     if not strategy:
         return jsonify({'error': 'Failed to create strategy'}), 400
-    
-    # Step 2: Execute the strategy
-    result = run_async(
-        manager.execute_strategy(
-            strategy_id=str(strategy.id),
-            execution_mode=execution_mode,
-            order_type=order_type
+
+    # Step 2: Execute via the reliable batch order mechanism.
+    # This uses the dedicated persistent asyncio loop (_run_async) and the
+    # shared UnifiedAPIClient — the same path that batch_add uses — instead
+    # of the LegExecutor which suffers event-loop lifecycle issues when
+    # asyncio.run() creates a fresh loop on each request.
+    try:
+        from webui.backend.routes.options.options_client import (
+            _run_async, get_unified_client, with_timeout,
         )
+        from webui.backend.routes.options.order_executor import (
+            place_smart_order, ORDER_TYPE_MAKER_FIRST, ORDER_TYPE_MARKET_ONLY,
+        )
+    except ImportError as ie:
+        log.error(f"quick_execute: import failed: {ie}")
+        return jsonify({'error': f'Backend import error: {ie}'}), 500
+
+    client = get_unified_client()
+    order_preference = ORDER_TYPE_MARKET_ONLY if order_type == 'market' else ORDER_TYPE_MAKER_FIRST
+
+    # Build per-leg order descriptors.  The frontend sends product_symbol
+    # (already in Delta Exchange format) and an optional limit_price.
+    orders = []
+    for i, leg_data in enumerate(legs):
+        # product_symbol takes priority; fall back to the symbol generated
+        # by create_custom_strategy if the frontend omitted it.
+        symbol = (
+            leg_data.get('product_symbol')
+            or (strategy.legs[i].symbol if i < len(strategy.legs) else None)
+        )
+        if not symbol:
+            return jsonify({'error': f'Leg {i + 1}: missing product_symbol'}), 400
+
+        size = int(leg_data.get('size') or leg_data.get('quantity') or 1)
+        side = leg_data.get('side', '').lower()
+        if side not in ('buy', 'sell'):
+            return jsonify({'error': f'Leg {i + 1}: invalid side "{side}"'}), 400
+
+        # Parse limit_price from frontend (may be a string)
+        raw_lp = leg_data.get('limit_price')
+        try:
+            limit_price = float(raw_lp) if raw_lp is not None else None
+            if limit_price is not None and limit_price <= 0:
+                limit_price = None  # Let place_smart_order discover price
+        except (ValueError, TypeError):
+            limit_price = None
+
+        orders.append({
+            'symbol': symbol,
+            'size': size,
+            'side': side,
+            'limit_price': limit_price,
+        })
+
+    async def _place_one(order, idx):
+        """Place a single leg order with timeout."""
+        try:
+            result = await with_timeout(
+                place_smart_order(
+                    client=client,
+                    symbol=order['symbol'],
+                    size=order['size'],
+                    side=order['side'],
+                    order_preference=order_preference,
+                    limit_price=order['limit_price'],
+                ),
+                timeout_seconds=30,
+            )
+            fill_price = (
+                result.get('fill_price')
+                or result.get('average_fill_price')
+                or result.get('limit_price')
+            )
+            log.info(
+                f"quick_execute leg {idx + 1}: {order['symbol']} "
+                f"{order['side']} {order['size']} → filled @ {fill_price}"
+            )
+            return {
+                'success': True,
+                'symbol': order['symbol'],
+                'size': order['size'],
+                'side': order['side'],
+                'fill_price': fill_price,
+                'order_id': result.get('id'),
+                'index': idx,
+            }
+        except Exception as e:
+            log.error(
+                f"quick_execute leg {idx + 1} failed: "
+                f"{order['symbol']} {order['side']} {order['size']} — {e}"
+            )
+            return {
+                'success': False,
+                'symbol': order['symbol'],
+                'size': order['size'],
+                'side': order['side'],
+                'error': str(e),
+                'index': idx,
+            }
+
+    async def _execute_all():
+        tasks = [_place_one(order, i) for i, order in enumerate(orders)]
+        return await asyncio.gather(*tasks, return_exceptions=False)
+
+    leg_results = _run_async(_execute_all())
+
+    successful = sum(1 for r in leg_results if r.get('success'))
+    failed = len(leg_results) - successful
+
+    log.info(
+        f"quick_execute: {successful}/{len(orders)} legs filled "
+        f"for strategy '{name}'"
     )
-    
-    if not result.get('success'):
-        return jsonify({
-            'error': result.get('error', 'Execution failed'),
-            'strategy': strategy.to_dict()
-        }), 400
-    
+
     return jsonify({
-        'success': True,
+        'success': successful > 0,
+        'legs_filled': successful,
+        'legs_total': len(orders),
         'strategy': strategy.to_dict(),
-        'execution': result,
-        'message': f'Strategy executed with {len(legs)} legs in {execution_mode} mode'
-    })
+        'execution': {
+            'legs_filled': successful,
+            'legs_total': len(orders),
+            'leg_results': leg_results,
+        },
+        'message': (
+            f'Strategy executed: {successful}/{len(orders)} legs placed'
+            if successful == len(orders)
+            else f'Partial fill: {successful}/{len(orders)} legs placed'
+        ),
+    }), 200 if successful > 0 else 400
 
 
 # ==================== P&L Endpoints ====================

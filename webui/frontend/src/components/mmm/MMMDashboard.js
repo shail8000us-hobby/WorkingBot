@@ -16,7 +16,7 @@
  * Updated: Phase 3-7 integration
  */
 
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -4216,6 +4216,9 @@ const MMMDashboard = () => {
   // Full session object for detail view
   const [fullSession, setFullSession] = useState(null);
   const [fetchError, setFetchError] = useState(null);  // H-15 fix
+  const fullSessionFetchInFlightRef = useRef(false);
+  const fullSessionFetchQueuedRef = useRef(false);
+  const lastFullSessionFetchTsRef = useRef(0);
 
   // Live price subscription: subscribe CE/PE active strikes to options_ticker_update.
   // Must be declared AFTER fullSession useState — deps array is evaluated immediately.
@@ -4265,33 +4268,63 @@ const MMMDashboard = () => {
   }, []);
 
   // Fetch full session details when selected
-  const fetchFullSession = useCallback(async () => {
+  const fetchFullSession = useCallback(async (force = false) => {
     if (!selectedSessionId) return;
+    if (fullSessionFetchInFlightRef.current) {
+      fullSessionFetchQueuedRef.current = true;
+      return;
+    }
+
+    fullSessionFetchInFlightRef.current = true;
+    let bypassThrottle = force;
+
     try {
-      const result = await mmmService.getSession(selectedSessionId);
-      if (result.success) {
-        setFullSession(result.session);
-        setFetchError(null);  // H-15: clear error on success
-      }
-    } catch (err) {
-      // If 404, the session was deleted — clear selection & localStorage
-      if (err.status === 404 || err?.details?.error?.includes('not found')) {
-        setFullSession(null);
-        setFetchError(null);
-        selectSession(null);
-        localStorage.removeItem('mmm_selectedSessionId');
-        return;
-      }
-      // H-15 fix: Surface non-404 errors to user
-      setFetchError(err.message || 'Failed to fetch session data');
-      console.error('Failed to fetch full session:', err);
+      do {
+        fullSessionFetchQueuedRef.current = false;
+
+        const now = Date.now();
+        if (!bypassThrottle && (now - lastFullSessionFetchTsRef.current) < 800) {
+          break;
+        }
+        lastFullSessionFetchTsRef.current = now;
+
+        try {
+          const result = await mmmService.getSession(selectedSessionId);
+          if (result.success) {
+            setFullSession(result.session);
+            setFetchError(null);  // H-15: clear error on success
+          }
+        } catch (err) {
+          // If 404, the session was deleted — clear selection & localStorage
+          if (err.status === 404 || err?.details?.error?.includes('not found')) {
+            setFullSession(null);
+            setFetchError(null);
+            selectSession(null);
+            localStorage.removeItem('mmm_selectedSessionId');
+            return;
+          }
+          // H-15 fix: Surface non-404 errors to user
+          setFetchError(err.message || 'Failed to fetch session data');
+          console.error('Failed to fetch full session:', err);
+        }
+
+        // If a burst queued additional refresh requests while awaiting,
+        // immediately run one more pass without throttle.
+        bypassThrottle = true;
+      } while (fullSessionFetchQueuedRef.current);
+    } finally {
+      fullSessionFetchInFlightRef.current = false;
+      fullSessionFetchQueuedRef.current = false;
     }
   }, [selectedSessionId, selectSession]);
 
   // On session switch: clear stale data immediately, then fetch new session
   useEffect(() => {
     setFullSession(null);
-    if (selectedSessionId) fetchFullSession();
+    fullSessionFetchQueuedRef.current = false;
+    fullSessionFetchInFlightRef.current = false;
+    lastFullSessionFetchTsRef.current = 0;
+    if (selectedSessionId) fetchFullSession(true);
   }, [selectedSessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Poll full session details — pauses when tab is hidden
@@ -4302,7 +4335,7 @@ const MMMDashboard = () => {
   useEffect(() => {
     if (!socket || !selectedSessionId) return;
     const handler = (data) => {
-      if (data?.session_id === selectedSessionId) fetchFullSession();
+      if (data?.session_id === selectedSessionId) fetchFullSession(true);
     };
     socket.on('mmm_active_strike_changed', handler);
     return () => socket.off('mmm_active_strike_changed', handler);
@@ -4319,14 +4352,14 @@ const MMMDashboard = () => {
     const onCompleted = (data) => {
       fetchSessions(false);
       if (data?.session_id === selectedSessionId) {
-        fetchFullSession();
+        fetchFullSession(true);
         setSnackbar({ open: true, message: 'Exit All complete — all positions closed.', severity: 'success' });
       }
     };
     const onPartial = (data) => {
       fetchSessions(false);
       if (data?.session_id === selectedSessionId) {
-        fetchFullSession();
+        fetchFullSession(true);
         const failed = data?.failed_positions || [];
         setSnackbar({
           open: true,
@@ -4496,7 +4529,14 @@ const MMMDashboard = () => {
 
   // Categorize sessions
   const activeSessionsAll = useMemo(
-    () => sessions.filter((s) => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY', 'EXITING'].includes(s.status)),
+    () => sessions
+      .filter((s) => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'STARTING', 'PARTIAL_ENTRY', 'EXITING'].includes(s.status))
+      .sort((a, b) => {
+        // Sort by expiry_time ascending: closest expiry at top, farthest at bottom
+        const tA = a.expiry_time ? new Date(a.expiry_time.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(a.expiry_time) ? a.expiry_time : a.expiry_time + 'Z').getTime() : Infinity;
+        const tB = b.expiry_time ? new Date(b.expiry_time.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(b.expiry_time) ? b.expiry_time : b.expiry_time + 'Z').getTime() : Infinity;
+        return tA - tB;
+      }),
     [sessions]
   );
   const idleSessionsAll = useMemo(

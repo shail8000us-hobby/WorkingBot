@@ -46,7 +46,7 @@ TREND_DOWN = 'TREND_DOWN'
 TREND_TIER_NONE = 0       # No trend detected
 TREND_TIER_ALERT = 1      # Alert + lot reduction
 TREND_TIER_GUARD = 2      # Block aggressor-side sells
-TREND_TIER_BLOCK = 3      # Block ALL sells
+TREND_TIER_BLOCK = 3      # Block dangerous-side sells; safe side always allowed
 TREND_TIER_WIND_DOWN = 4  # Auto-trigger wind-down
 
 # Aggregate regime actions
@@ -803,15 +803,16 @@ def _compute_regime_action(session: Dict) -> str:
         session['_trend_wind_down_triggered'] = True
         return ACTION_BLOCK_ALL_SELLS
 
-    # Tier 3: block dangerous side; allow safe-side if trend_boost_enabled
+    # Tier 3: block dangerous side only — safe side always allowed regardless of trend_boost_enabled.
+    # CE is the aggressor in TREND_UP (spot rising → calls go ITM); PE is safe → never block PE here.
+    # PE is the aggressor in TREND_DOWN (spot falling → puts go ITM); CE is safe → never block CE here.
+    # trend_boost_enabled controls lot-size boosting in the engine (separate feature) — not blocking.
     if trend_tier >= TREND_TIER_BLOCK:
-        if params.get('trend_boost_enabled', False):
-            # Trend Boost: only block the dangerous side, allow safe-side sells
-            if trend_regime == TREND_UP:
-                return ACTION_BLOCK_CE_SELLS
-            if trend_regime == TREND_DOWN:
-                return ACTION_BLOCK_PE_SELLS
-        return ACTION_BLOCK_ALL_SELLS
+        if trend_regime == TREND_UP:
+            return ACTION_BLOCK_CE_SELLS
+        if trend_regime == TREND_DOWN:
+            return ACTION_BLOCK_PE_SELLS
+        return ACTION_BLOCK_ALL_SELLS  # fallback: direction unclear
 
     # Tier 2: block aggressor-side sells only
     if trend_tier >= TREND_TIER_GUARD:

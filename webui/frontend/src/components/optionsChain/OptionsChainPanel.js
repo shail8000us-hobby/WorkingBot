@@ -10,7 +10,7 @@
  * Updated: January 5, 2026 - Added strategy leg selection mode
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -354,8 +354,30 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
   // Open positions map: { [symbol]: { side, size, pnl } }
   const [openPositions, setOpenPositions] = useState({});
 
+  // Overlap/coalescing guards for high-frequency fetches
+  const openPositionsInFlightRef = useRef(false);
+  const openPositionsPendingRef = useRef(false);
+  const chainDataInFlightRef = useRef(false);
+  const chainDataPendingRef = useRef(false);
+  const manualRefreshInFlightRef = useRef(false);
+
+  // Keep latest selection available to stable callbacks
+  const underlyingRef = useRef(underlying);
+  const expiryRef = useRef(expiry);
+
+  useEffect(() => {
+    underlyingRef.current = underlying;
+    expiryRef.current = expiry;
+  }, [underlying, expiry]);
+
   // Fetch open positions to highlight used strikes on the chain
   const fetchOpenPositions = useCallback(async () => {
+    if (openPositionsInFlightRef.current) {
+      openPositionsPendingRef.current = true;
+      return;
+    }
+
+    openPositionsInFlightRef.current = true;
     try {
       const map = await optionsChainAPI.getOpenPositions();
       // Only overwrite if we got real data — never replace a populated map with an
@@ -365,6 +387,14 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
     } catch (e) {
       console.warn('[OptionsChainPanel] Failed to fetch open positions:', e);
       // Keep existing positions on error — do NOT clear them
+    } finally {
+      openPositionsInFlightRef.current = false;
+      if (openPositionsPendingRef.current) {
+        openPositionsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchOpenPositions();
+        });
+      }
     }
   }, []);
 
@@ -382,21 +412,38 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
 
   // Fetch chain data when expiry changes - DEFINED EARLY to avoid initialization errors
   const fetchChainData = useCallback(async () => {
-    if (!expiry) return;
+    const currentUnderlying = underlyingRef.current;
+    const currentExpiry = expiryRef.current;
+
+    if (!currentExpiry) return;
+
+    if (chainDataInFlightRef.current) {
+      chainDataPendingRef.current = true;
+      return;
+    }
+
+    chainDataInFlightRef.current = true;
 
     try {
       setLoading(true);
       setError(null);
 
-      const data = await optionsChainAPI.getChainData(underlying, expiry);
+      const data = await optionsChainAPI.getChainData(currentUnderlying, currentExpiry);
       setChainData(data);
       setLastUpdated(new Date());
     } catch (err) {
       setError(`Failed to fetch chain data: ${err.message}`);
     } finally {
       setLoading(false);
+      chainDataInFlightRef.current = false;
+      if (chainDataPendingRef.current) {
+        chainDataPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchChainData();
+        });
+      }
     }
-  }, [underlying, expiry]);
+  }, []);
 
   // Fetch expirations when underlying changes
   useEffect(() => {
@@ -424,7 +471,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
 
   useEffect(() => {
     fetchChainData();
-  }, [fetchChainData]);
+  }, [underlying, expiry, fetchChainData]);
 
   // Execute builder strategy using quick-execute endpoint
   const handleExecuteBuilderStrategy = useCallback(async (strategyData) => {
@@ -502,8 +549,15 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
 
   // Handle refresh button
   const handleRefresh = useCallback(async () => {
-    await optionsChainAPI.refresh(underlying, expiry);
-    await fetchChainData();
+    if (manualRefreshInFlightRef.current) return;
+
+    manualRefreshInFlightRef.current = true;
+    try {
+      await optionsChainAPI.refresh(underlying, expiry);
+      await fetchChainData();
+    } finally {
+      manualRefreshInFlightRef.current = false;
+    }
   }, [underlying, expiry, fetchChainData]);
 
   // Handle trade button/cell click from ChainTable
@@ -843,6 +897,7 @@ const OptionsChainPanel = ({ strategyParams, buildYourOwnMode = false }) => {
                 onUpdateLeg={handleUpdateBuilderLeg}
                 onRemoveLeg={handleRemoveBuilderLeg}
                 onClearAll={handleClearBuilderLegs}
+                onSetLegs={setBuilderLegs}
                 onExecute={handleExecuteBuilderStrategy}
                 executing={executing}
               />

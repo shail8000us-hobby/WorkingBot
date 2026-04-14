@@ -1,5 +1,25 @@
 [
   {
+    "id": "1776088312899",
+    "title": "webUI restart",
+    "work": "./scripts/deploy_webui.sh",
+    "completed": false,
+    "pinned": false,
+    "createdAt": "2026-04-13T19:21:52.899712",
+    "updatedAt": "2026-04-13T19:21:52.899712",
+    "text": "webUI restart\n./scripts/deploy_webui.sh"
+  },
+  {
+    "id": "1775913387664",
+    "title": "fileserver",
+    "work": "pkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py",
+    "completed": false,
+    "pinned": false,
+    "createdAt": "2026-04-11T18:46:27.664002",
+    "updatedAt": "2026-04-11T18:46:27.664002",
+    "text": "fileserver\npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py"
+  },
+  {
     "id": "1775898385643",
     "title": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
     "work": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -15",
@@ -50,13 +70,13 @@
     "pinned": false
   },
   {
-    "id": "1775913387664",
-    "title": "fileserver",
-    "work": "pkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py",
+    "id": "1776088407291",
+    "title": "frontend",
+    "work": "cd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -20",
     "completed": false,
     "pinned": false,
-    "createdAt": "2026-04-11T18:46:27.664002",
-    "updatedAt": "2026-04-11T18:46:27.664002",
-    "text": "fileserver\npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py\n\nor \npkill -f 'python3.*fileserver.py' 2>/dev/null; sleep 1; python3 /Users/ssr/Projects/WorkingBot/fileserver.py"
+    "createdAt": "2026-04-13T19:23:27.291613",
+    "updatedAt": "2026-04-13T19:23:27.291613",
+    "text": "frontend\ncd /Users/ssr/Projects/WorkingBot/webui/frontend && npm run build 2>&1 | tail -20"
   }
 ]

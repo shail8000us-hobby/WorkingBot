@@ -86,10 +86,18 @@ export const InstanceProvider = ({ children }) => {
 
   // Refs for cache management
   const cacheTimestamps = useRef({});
+  const loadInstancesInFlightRef = useRef(false);
+  const loadInstancesPendingRef = useRef(false);
   const CACHE_TTL = 30000; // 30 seconds
 
   // Load instances from API
   const loadInstances = useCallback(async () => {
+    if (loadInstancesInFlightRef.current) {
+      loadInstancesPendingRef.current = true;
+      return;
+    }
+
+    loadInstancesInFlightRef.current = true;
     try {
       // Try v6.0 instances API first
       let response = await fetch('/api/instances');
@@ -168,6 +176,13 @@ export const InstanceProvider = ({ children }) => {
       console.error('Failed to load instances:', err);
     } finally {
       setLoading(false);
+      loadInstancesInFlightRef.current = false;
+      if (loadInstancesPendingRef.current) {
+        loadInstancesPendingRef.current = false;
+        Promise.resolve().then(() => {
+          loadInstances();
+        });
+      }
     }
   }, []);
 

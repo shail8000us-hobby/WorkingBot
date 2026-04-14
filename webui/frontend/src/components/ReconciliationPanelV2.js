@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   Box,
   Paper,
@@ -213,8 +213,16 @@ const HistoricalInsightsCard = () => {
   const [trends, setTrends] = React.useState(null);
   const [loading, setLoading] = React.useState(true);
   const [selectedPeriod, setSelectedPeriod] = React.useState('last_24h');
+  const fetchInFlightRef = React.useRef(false);
+  const pendingFetchRef = React.useRef(false);
 
   const fetchData = React.useCallback(async () => {
+    if (fetchInFlightRef.current) {
+      pendingFetchRef.current = true;
+      return;
+    }
+
+    fetchInFlightRef.current = true;
     try {
       setLoading(true);
       const [insightsData, trendsData] = await Promise.all([
@@ -227,6 +235,13 @@ const HistoricalInsightsCard = () => {
       console.error('Failed to load insights:', err);
     } finally {
       setLoading(false);
+      fetchInFlightRef.current = false;
+      if (pendingFetchRef.current) {
+        pendingFetchRef.current = false;
+        Promise.resolve().then(() => {
+          fetchData();
+        });
+      }
     }
   }, [selectedPeriod]);
 
@@ -608,6 +623,11 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
   const [running, setRunning] = useState(false);
   const [clearing, setClearing] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
+  const statusInFlightRef = useRef(false);
+  const statusPendingRef = useRef(false);
+  const recordsInFlightRef = useRef(false);
+  const recordsPendingRef = useRef(false);
+  const refreshAllTimerRef = useRef(null);
 
   const counters = status?.counters || {};
   const totalOrders = counters.total_orders || 0;
@@ -615,6 +635,12 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
   const manualOrders = counters.manual_orders || 0;
 
   const refreshStatus = useCallback(async () => {
+    if (statusInFlightRef.current) {
+      statusPendingRef.current = true;
+      return;
+    }
+
+    statusInFlightRef.current = true;
     try {
       setLoadingStatus(true);
       const data = await apiClient.get('/api/recon/status');
@@ -625,10 +651,23 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
       setError(err.message);
     } finally {
       setLoadingStatus(false);
+      statusInFlightRef.current = false;
+      if (statusPendingRef.current) {
+        statusPendingRef.current = false;
+        Promise.resolve().then(() => {
+          refreshStatus();
+        });
+      }
     }
   }, []);
 
   const fetchRecords = useCallback(async () => {
+    if (recordsInFlightRef.current) {
+      recordsPendingRef.current = true;
+      return;
+    }
+
+    recordsInFlightRef.current = true;
     try {
       setTableLoading(true);
       const params = {
@@ -649,8 +688,26 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
       setError(err.message);
     } finally {
       setTableLoading(false);
+      recordsInFlightRef.current = false;
+      if (recordsPendingRef.current) {
+        recordsPendingRef.current = false;
+        Promise.resolve().then(() => {
+          fetchRecords();
+        });
+      }
     }
   }, [selectedFilter, debouncedSearch, page, rowsPerPage]);
+
+  const scheduleRefreshAll = useCallback((delayMs = 250) => {
+    if (refreshAllTimerRef.current) {
+      return;
+    }
+    refreshAllTimerRef.current = setTimeout(() => {
+      refreshAllTimerRef.current = null;
+      refreshStatus();
+      fetchRecords();
+    }, delayMs);
+  }, [refreshStatus, fetchRecords]);
 
   const handleRunNow = async () => {
     try {
@@ -782,12 +839,20 @@ const ReconciliationPanelV2 = ({ featureFlags = {} }) => {
   useEffect(() => {
     if (!socket) return;
     const handleUpdate = () => {
-      refreshStatus();
-      fetchRecords();
+      scheduleRefreshAll();
     };
     socket.on('reconciliation_update', handleUpdate);
     return () => socket.off('reconciliation_update', handleUpdate);
-  }, [socket, refreshStatus, fetchRecords]);
+  }, [socket, scheduleRefreshAll]);
+
+  useEffect(() => {
+    return () => {
+      if (refreshAllTimerRef.current) {
+        clearTimeout(refreshAllTimerRef.current);
+        refreshAllTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (loadingStatus && !status) {
     return (

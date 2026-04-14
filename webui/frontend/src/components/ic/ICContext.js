@@ -19,15 +19,19 @@ import React, {
 } from 'react';
 import icService from './icService';
 import useVisibilityAwarePolling from '../../hooks/useVisibilityAwarePolling';
+import { readWarmJSON, setWarmJSON } from '../../utils/dataWarmCache';
 
 // =============================================================================
 // Initial State
 // =============================================================================
 
+const warmSessionsPayload = readWarmJSON('/api/ic/sessions?active_only=false');
+const warmSessions = warmSessionsPayload?.success ? (warmSessionsPayload.sessions || []) : [];
+
 const initialState = {
-  sessions: [],
+  sessions: warmSessions,
   selectedSessionId: localStorage.getItem('ic_selectedSessionId') || null,
-  loading: true,
+  loading: warmSessions.length === 0,
   error: null,
   connectionStatus: 'connected',
   lastUpdate: null,
@@ -112,6 +116,8 @@ export function ICProvider({ children, socket }) {
     try {
       const result = await icService.getSessions();
       if (result.success) {
+        setWarmJSON('/api/ic/sessions?active_only=false', result, { ttlMs: 12000 });
+
         const sessions = result.sessions || [];
         const currentJson = JSON.stringify(sessions);
         if (currentJson !== lastSessionsJson.current) {

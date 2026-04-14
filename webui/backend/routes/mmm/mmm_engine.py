@@ -658,21 +658,7 @@ class MMMEngine:
             constraint_msg = f"{constraint_msg}; {exp_msg}" if constraint_msg else exp_msg
         # ── END Split Ledger ──────────────────────────────────────────────────
 
-        # ── IMP-3: Asymmetry 5:1 lot reduction ───────────────────────────────
-        # When ratio >= 5:1, check_asymmetry sets _asymmetry_lot_reduction_pct
-        # on the session. Apply it only when selling the heavy side.
-        asym_reduction = session.get('_asymmetry_lot_reduction_pct', 1.0)
-        asym_heavy_side = session.get('_asymmetry_heavy_side', '')
-        if asym_reduction < 1.0 and hedge_side == asym_heavy_side:
-            original_lots = lots_to_sell
-            lots_to_sell = max(math.ceil(lots_to_sell * asym_reduction), 1)
-            if lots_to_sell < original_lots:
-                asym_msg = (
-                    f"Asymmetry 5:1 reduction: {original_lots} → "
-                    f"{lots_to_sell} ({int((1 - asym_reduction) * 100)}% reduction on heavy side)"
-                )
-                constraint_msg = f"{constraint_msg}; {asym_msg}" if constraint_msg else asym_msg
-        # ── END IMP-3 ─────────────────────────────────────────────────────
+        # IMP-3: Asymmetry is warn-only — no lot reduction applied here.
 
         # ── IMP-4: Strike-shift OTM lot scaling ──────────────────────────
         # When selling after a strike shift, scale lots based on how close the

@@ -35,20 +35,40 @@ const useVisibilityAwarePolling = (
     const timeoutRef = useRef(null);
     const isPausedRef = useRef(false);
     const wasHiddenRef = useRef(false);
+    const inFlightRef = useRef(false);
+    const pendingFetchRef = useRef(false);
     // Keep a ref to the latest fetchFn so the interval closure always calls the current one
     const fetchFnRef = useRef(fetchFn);
     fetchFnRef.current = fetchFn;
 
     // Perform fetch using the ref (no dependency on fetchFn identity)
     const performFetch = useCallback(async () => {
+        if (inFlightRef.current) {
+            pendingFetchRef.current = true;
+            return;
+        }
+
         if (typeof fetchFnRef.current === 'function') {
+            inFlightRef.current = true;
             try {
                 await fetchFnRef.current();
             } catch (err) {
                 // Silently handle — individual fetch functions log their own errors
+            } finally {
+                inFlightRef.current = false;
+
+                // Coalesce bursty intervals/events into one trailing fetch.
+                if (pendingFetchRef.current && !isPausedRef.current && enabled && !document.hidden) {
+                    pendingFetchRef.current = false;
+                    Promise.resolve().then(() => {
+                        performFetch();
+                    });
+                } else {
+                    pendingFetchRef.current = false;
+                }
             }
         }
-    }, []);
+    }, [enabled]);
 
     // Start polling at a given interval
     const startPolling = useCallback((interval) => {
@@ -68,6 +88,7 @@ const useVisibilityAwarePolling = (
             clearTimeout(timeoutRef.current);
             timeoutRef.current = null;
         }
+        pendingFetchRef.current = false;
     }, []);
 
     // Manual refresh

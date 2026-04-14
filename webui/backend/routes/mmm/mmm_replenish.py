@@ -103,12 +103,21 @@ def check_replenish_eligibility(
     # Gate 8  (cooldown):               REMOVED — unhedged cannot wait for timer.
     # Gate 9  (near expiry):            REMOVED — staying unhedged near expiry
     #                                             is always worse.
-    # Gate 10: open side must have active lots.  total_lots = active + frozen;
-    # if open side is all frozen (mid-close), replenishing creates a dangling
-    # leg once the frozen side fully closes.
+    # Gate 10: open side must have something to hedge.
+    # Normal path: check active_lots only (frozen lots mid-close may not persist).
+    # OCS emergency: frozen lots are real open positions — if active=0 but
+    # total_lots > 0 (frozen), restoring the hedge is still justified.
+    # Blocking here would leave a straddle unhedged because one side has
+    # frozen-only exposure, which is strictly worse than the alternative.
     open_active = session.get(open_side, {}).get('active_lots', 0)
     if open_active <= 0:
-        return False, 'open_side_has_no_lots'
+        if ocs_emergency:
+            open_total = session.get(open_side, {}).get('total_lots', 0)
+            if open_total <= 0:
+                return False, 'open_side_has_no_lots'
+            # open_total > 0: frozen lots present — real exposure → allow
+        else:
+            return False, 'open_side_has_no_lots'
 
     # Gate 11 (lot velocity): REMOVED — hedging is more important than
     #                                    respecting velocity limits.
@@ -143,9 +152,14 @@ def determine_replenish_lots(
     if mode == 'initial':
         lots = params.get('initial_lots', 10)
     else:
-        # Default: match_active
+        # Default: match_active — use active_lots; fall back to total_lots when
+        # active_lots=0 but frozen lots remain (OCS emergency with frozen
+        # exposure).  Frozen lots are real open positions, so the hedge size
+        # must reflect total exposure, not just the active portion.
         open_state = session.get(open_side, {})
         lots = open_state.get('active_lots', 0)
+        if lots == 0:
+            lots = open_state.get('total_lots', 0)
 
     # Clamp to max_lots_per_side
     lots = min(lots, max_lots)

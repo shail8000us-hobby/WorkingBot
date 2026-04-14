@@ -129,7 +129,7 @@ class AsyncDeltaClient:
         api_secret: str,
         base_url: str = "https://api.india.delta.exchange",
         testnet: bool = False,
-        max_connections: int = 10,
+        max_connections: int = 100,
         timeout: float = 10.0
     ):
         """
@@ -148,8 +148,10 @@ class AsyncDeltaClient:
         self.base_url = base_url if not testnet else "https://cdn-ind.testnet.deltaex.org"
         self.timeout = timeout
         
-        # HTTP client with connection pooling
-        limits = httpx.Limits(max_connections=max_connections, max_keepalive_connections=5)
+        # HTTP client with connection pooling.
+        # Delta Exchange allows 10,000 units per 5-minute window (each call costs 3 units).
+        # max_keepalive_connections matches max_connections so idle connections stay warm.
+        limits = httpx.Limits(max_connections=max_connections, max_keepalive_connections=max_connections)
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             limits=limits,

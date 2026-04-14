@@ -47,9 +47,9 @@ C-WS-13: _whipsaw_last_checked_idx=None first run → set to history length, no 
 C-AS-1: Both sides 0 lots → no events, flags cleared
 C-AS-2: Equal sides → no events, flags cleared
 C-AS-3: ratio 3:1 → warning (continue), session flags cleared
-C-AS-4: ratio 5:1 → alert (warn), _asymmetry_lot_reduction_pct/heavy_side set
-C-AS-5: ratio 7:1 with hard_block_enabled=True → block_heavy_side_sells, flags cleared
-C-AS-6: ratio 7:1 with hard_block_enabled=False → falls to 5:1 tier
+C-AS-4: ratio 5:1 → alert (warn), no enforcement flags set (warn-only)
+C-AS-5: ratio 7:1 → critical (warn), no enforcement flags set (warn-only)
+C-AS-6: ratio 7:1 with asymmetry_7to1_hard_block=False → same warn result (param no longer read)
 C-AS-7: ratio < 3:1 → no event, flags cleared
 C-AS-8: PE > CE → heavy_side='pe'
 
@@ -489,8 +489,11 @@ class TestCheckAsymmetry:
         events = safety.check_asymmetry(sess)
         assert len(events) == 1
         assert events[0]['level'] == 'alert'
-        assert sess['_asymmetry_lot_reduction_pct'] == 0.5
-        assert sess['_asymmetry_heavy_side'] == 'ce'
+        assert events[0]['action'] == 'warn'
+        assert events[0]['details']['heavy_side'] == 'ce'
+        # Warn-only: enforcement flags are never set
+        assert '_asymmetry_lot_reduction_pct' not in sess
+        assert '_asymmetry_heavy_side' not in sess
 
     @pytest.mark.sealed
     def test_c_as_5_ratio_7to1_hard_block(self, safety):
@@ -499,22 +502,28 @@ class TestCheckAsymmetry:
         sess['pe']['total_lots'] = 1
         events = safety.check_asymmetry(sess)
         assert len(events) == 1
-        assert events[0]['action'] == 'block_heavy_side_sells'
+        assert events[0]['level'] == 'critical'
+        assert events[0]['action'] == 'warn'
         assert events[0]['details']['heavy_side'] == 'ce'
-        # Hard block clears 5:1 flags
+        # Warn-only: no enforcement flags set
         assert '_asymmetry_lot_reduction_pct' not in sess
         assert '_asymmetry_heavy_side' not in sess
 
     @pytest.mark.sealed
     def test_c_as_6_ratio_7to1_hard_block_disabled_falls_to_5to1(self, safety):
+        # asymmetry_7to1_hard_block param is no longer read — all tiers are warn-only.
+        # 7:1 ratio always produces a critical warn regardless of this param.
         sess = _session()
         sess['params']['asymmetry_7to1_hard_block'] = False
         sess['ce']['total_lots'] = 7
         sess['pe']['total_lots'] = 1
         events = safety.check_asymmetry(sess)
         assert len(events) == 1
-        assert events[0]['action'] == 'warn'  # 5:1 tier
-        assert '_asymmetry_lot_reduction_pct' in sess
+        assert events[0]['level'] == 'critical'
+        assert events[0]['action'] == 'warn'
+        # Warn-only: no enforcement flags set regardless of param
+        assert '_asymmetry_lot_reduction_pct' not in sess
+        assert '_asymmetry_heavy_side' not in sess
 
     @pytest.mark.sealed
     def test_c_as_7_below_3to1_clears_flags(self, safety):

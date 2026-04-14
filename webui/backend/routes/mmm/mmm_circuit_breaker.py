@@ -52,6 +52,10 @@ RESET_TIMEOUT = 30.0
 # After this many successive OPEN→HALF_OPEN probe failures, emit a safety event
 CONSECUTIVE_OPEN_ALERT_THRESHOLD = 3
 
+# M-3 FIX: After this many consecutive OPEN episodes without recovery,
+# recommend session PAUSE to prevent zombie unmonitored state
+AUTO_PAUSE_CONSECUTIVE_OPENS = 5
+
 # Sliding window settings
 SLIDING_WINDOW_SIZE = 10  # Track last N requests
 SLIDING_WINDOW_SECONDS = 60.0  # Consider requests within this time window
@@ -222,6 +226,21 @@ class CircuitBreaker:
         return (
             self._state == CircuitState.OPEN
             and self._consecutive_opens >= CONSECUTIVE_OPEN_ALERT_THRESHOLD
+        )
+
+    @property
+    def should_auto_pause(self) -> bool:
+        """
+        M-3 FIX: True if circuit has been OPEN too many consecutive times
+        without recovery — session should be PAUSED to prevent zombie state.
+
+        A zombie session stays RUNNING with an OPEN circuit breaker indefinitely.
+        Partial beats stop at depth > 2, so positions are effectively unmonitored.
+        Auto-pause gives the operator visibility and prevents silent risk.
+        """
+        return (
+            self._state == CircuitState.OPEN
+            and self._consecutive_opens >= AUTO_PAUSE_CONSECUTIVE_OPENS
         )
 
     @property

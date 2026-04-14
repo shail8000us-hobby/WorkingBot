@@ -55,6 +55,102 @@ def _D(x) -> Decimal:
 
 _LOT_DECIMAL = _D(LOT_SIZE_BTC)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# § Dynamic Trigger Helpers
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _compute_dynamic_trigger(monitor, session: dict, sid: str) -> float:
+    """
+    Compute the dynamic roll trigger from the FRESH ATM straddle price at the
+    current spot, and update session['_straddle_dynamic_trigger_pts'].
+
+    Uses preview_atm_straddle() (synchronous, chain cache — no REST call per beat)
+    to get CE_mid + PE_mid at the current ATM strike (closest to current spot).
+    This value naturally shrinks as theta decays and does NOT inflate from the
+    intrinsic value of the existing ITM/OTM position legs.
+
+    WHY fresh ATM, not existing position prices:
+    For a short straddle with existing legs at strike K and spot at S:
+        existing_CE_mid + existing_PE_mid  ≈  |S - K| + time_value  ≥  |S - K|
+    This means |spot - K| < existing_CE + existing_PE always (time_value > 0),
+    so the roll condition spot_move ≥ trigger can NEVER be satisfied.
+    Fresh ATM premiums (at current spot's ATM strike) do not carry intrinsic
+    value relative to the current spot, so the condition CAN be satisfied.
+
+    Returns the updated dynamic trigger pts, or 0.0 if unavailable
+    (caller falls back to fixed trigger in that case).
+    """
+    params = session.get('params', {})
+    if not params.get('straddle_dynamic_trigger_enabled', True):
+        return 0.0
+
+    expiry = params.get('expiry', '')
+    if not expiry:
+        return 0.0
+
+    try:
+        preview = monitor.initializer.preview_atm_straddle(expiry)
+    except Exception as e:
+        log.debug(f"[{sid}] [STRADDLE_ROLL] Dynamic trigger: preview_atm_straddle failed: {e}")
+        return 0.0
+
+    if not preview or not preview.get('success'):
+        log.debug(
+            f"[{sid}] [STRADDLE_ROLL] Dynamic trigger: ATM preview unavailable "
+            f"({preview.get('error', '?') if preview else 'None'}) — keeping prior value"
+        )
+        return 0.0
+
+    ce_mid = preview.get('ce', {}).get('mid_price', 0)
+    pe_mid = preview.get('pe', {}).get('mid_price', 0)
+    atm_strike = preview.get('atm_strike', 0)
+
+    if not (ce_mid > 0 and pe_mid > 0):
+        log.debug(
+            f"[{sid}] [STRADDLE_ROLL] Dynamic trigger: invalid ATM prices "
+            f"(CE_mid={ce_mid}, PE_mid={pe_mid}) — keeping prior value"
+        )
+        return 0.0
+
+    raw_pts = ce_mid + pe_mid
+    min_floor = float(params.get('straddle_min_trigger_pts', 200))
+    effective_pts = max(raw_pts, min_floor)
+
+    old_pts = session.get('_straddle_dynamic_trigger_pts', 0)
+    session['_straddle_dynamic_trigger_pts'] = round(effective_pts, 2)
+
+    if abs(effective_pts - old_pts) > 5:  # only log on meaningful change
+        floor_note = f' [floor={min_floor:.0f}]' if effective_pts == min_floor else ''
+        log.info(
+            f"[{sid}] [STRADDLE_ROLL] Dynamic trigger: "
+            f"{old_pts:.0f} → {effective_pts:.0f}pts "
+            f"(fresh ATM={atm_strike:.0f}: CE_mid={ce_mid:.2f} + PE_mid={pe_mid:.2f}{floor_note})"
+        )
+
+    return effective_pts
+
+
+def _get_effective_trigger_pts(session: dict, params: dict) -> float:
+    """
+    Return the effective roll trigger distance in points.
+
+    Dynamic mode (straddle_dynamic_trigger_enabled=True, default):
+        Use _straddle_dynamic_trigger_pts (current straddle mark, updated each heartbeat).
+        Floored at straddle_min_trigger_pts (default 200 pts).
+
+    Fixed mode (straddle_dynamic_trigger_enabled=False):
+        Use _straddle_roll_trigger_pts (entry premium at last roll — original behaviour).
+
+    Falls back to the fixed trigger if the dynamic value is not yet populated.
+    """
+    if params.get('straddle_dynamic_trigger_enabled', True):
+        dynamic_pts = session.get('_straddle_dynamic_trigger_pts', 0)
+        if dynamic_pts > 0:
+            return float(dynamic_pts)
+        # Dynamic not yet computed (first heartbeat); fall through to fixed
+    return float(session.get('_straddle_roll_trigger_pts', 0))
+
+
 # ── Half-roll breadcrumb states ─────────────────────────────────────────────────
 HALF_ROLL_NONE                  = None
 HALF_ROLL_CE_CLOSED_PE_OPEN     = 'ce_closed_pe_open'
@@ -300,7 +396,8 @@ def _check_pure_roll_gates(
     normal_cooldown = elapsed_secs >= straddle_roll_cooldown_mins * 60
     _g7_atm = session.get('ce', {}).get('active_strike', 0)
     _g7_spot_move = abs(spot - _g7_atm) if _g7_atm > 0 else 0
-    _g7_trigger = session.get('_straddle_roll_trigger_pts', 0) or (
+    # Gate 7 uses the effective trigger (dynamic or fixed) for emergency bypass
+    _g7_trigger = _get_effective_trigger_pts(session, params) or (
         straddle_roll_trigger_pct / 100.0 * spot if spot > 0 else 0
     )
     emergency_bypass = (
@@ -310,30 +407,38 @@ def _check_pure_roll_gates(
     if not (normal_cooldown or emergency_bypass):
         return False, 'cooldown_not_elapsed', {}
 
-    # ── Gate 8 — Distance trigger (premium-points based) ─────────────────────
+    # ── Gate 8 — Distance trigger ─────────────────────────────────────────────
+    # Dynamic mode (default): trigger = current straddle mark (CE mid + PE mid),
+    #   floored at straddle_min_trigger_pts.  Shrinks with theta decay.
+    # Fixed mode: trigger = entry premium collected at last roll.
     current_atm_strike = session.get('ce', {}).get('active_strike', 0)
     if not current_atm_strike or current_atm_strike <= 0:
         return False, 'invalid_atm_strike', {}
 
     spot_move_pts = abs(spot - current_atm_strike)
 
-    trigger_pts = session.get('_straddle_roll_trigger_pts', 0)
+    trigger_pts = _get_effective_trigger_pts(session, params)
     if trigger_pts <= 0:
-        # Fallback 1: compute live from active positions
-        _ce_lots = sum(p.get('lots', 0) for p in ce_positions)
-        _pe_lots = sum(p.get('lots', 0) for p in pe_positions)
-        _ce_avg = (
-            sum(float(p.get('entry_premium', 0)) * p.get('lots', 0) for p in ce_positions) / _ce_lots
-        ) if _ce_lots > 0 else 0
-        _pe_avg = (
-            sum(float(p.get('entry_premium', 0)) * p.get('lots', 0) for p in pe_positions) / _pe_lots
-        ) if _pe_lots > 0 else 0
-        trigger_pts = _ce_avg + _pe_avg
-        if trigger_pts > 0:
-            session['_straddle_roll_trigger_pts'] = round(trigger_pts, 2)
-            log.info(f"[{sid}] [STRADDLE_ROLL] Gate 8 fallback: healed trigger_pts={trigger_pts:.2f}pts from positions")
+        # Dynamic value not yet populated or dynamic disabled: fall back to fixed trigger.
+        # Heal from entry_premium on positions if _straddle_roll_trigger_pts is also missing.
+        fixed_pts = session.get('_straddle_roll_trigger_pts', 0)
+        if fixed_pts <= 0:
+            _ce_lots = sum(p.get('lots', 0) for p in ce_positions)
+            _pe_lots = sum(p.get('lots', 0) for p in pe_positions)
+            _ce_avg = (
+                sum(float(p.get('entry_premium', 0)) * p.get('lots', 0) for p in ce_positions) / _ce_lots
+            ) if _ce_lots > 0 else 0
+            _pe_avg = (
+                sum(float(p.get('entry_premium', 0)) * p.get('lots', 0) for p in pe_positions) / _pe_lots
+            ) if _pe_lots > 0 else 0
+            fixed_pts = _ce_avg + _pe_avg
+            if fixed_pts > 0:
+                session['_straddle_roll_trigger_pts'] = round(fixed_pts, 2)
+                log.info(f"[{sid}] [STRADDLE_ROLL] Gate 8 fallback: healed trigger_pts={fixed_pts:.2f}pts from positions")
+        if fixed_pts > 0:
+            trigger_pts = fixed_pts
         else:
-            # Fallback 2: pct-based floor (last resort)
+            # Last resort: pct-based floor
             pct_fallback = straddle_roll_trigger_pct / 100.0 * spot if spot > 0 else 0
             if pct_fallback > 0:
                 trigger_pts = pct_fallback
@@ -344,9 +449,14 @@ def _check_pure_roll_gates(
             else:
                 return False, 'no_trigger_pts', {}
 
+    dynamic_label = (
+        'dynamic' if params.get('straddle_dynamic_trigger_enabled', True)
+        and session.get('_straddle_dynamic_trigger_pts', 0) > 0
+        else 'fixed'
+    )
     if spot_move_pts < trigger_pts:
         return False, (
-            f'distance_below_trigger ({spot_move_pts:.0f} < {trigger_pts:.0f} pts)'
+            f'distance_below_trigger ({spot_move_pts:.0f} < {trigger_pts:.0f} pts [{dynamic_label}])'
         ), {}
 
     # ── Gate 10 — Loss abort ──────────────────────────────────────────────────
@@ -418,7 +528,7 @@ async def _execute_4_leg_roll(
         log.warning(f"[{sid}] [STRADDLE_ROLL] Gate 9: ATM preview failure: {roll_preview.get('error', '?')}")
         return False
 
-    # Price freshness check
+    # Price freshness check (preview_atm_straddle uses chain cache — no WS timestamp)
     preview_timestamp = roll_preview.get('timestamp')
     if preview_timestamp:
         age_seconds = (datetime.now(timezone.utc) - preview_timestamp).total_seconds()
@@ -428,9 +538,7 @@ async def _execute_4_leg_roll(
                 f"[{sid}] [STRADDLE_ROLL] Gate 9: preview too stale ({age_seconds:.1f}s) — skipping"
             )
             return False
-    else:
-        log.warning(f"[{sid}] [STRADDLE_ROLL] Gate 9: preview missing timestamp — skipping")
-        return False
+    # No timestamp = chain-cache preview; freshness is guaranteed by chain service — proceed
 
     new_atm_strike  = roll_preview.get('atm_strike', 0)
     new_ce_premium  = roll_preview.get('ce', {}).get('mid_price', 0)
@@ -443,9 +551,9 @@ async def _execute_4_leg_roll(
 
     # Same-strike guard
     if new_atm_strike == old_atm_strike:
-        log.info(
-            f"[{sid}] [STRADDLE_ROLL] Roll skipped: new ATM ({new_atm_strike:.0f}) == "
-            f"old ATM ({old_atm_strike:.0f}) — spot hasn't crossed a strike boundary"
+        log.warning(
+            f"[{sid}] [STRADDLE_ROLL] Gate 9 same-strike: new ATM ({new_atm_strike:.0f}) == "
+            f"old ATM ({old_atm_strike:.0f}) — spot hasn't crossed a strike boundary (spot={spot:.0f})"
         )
         return False
 
@@ -460,8 +568,8 @@ async def _execute_4_leg_roll(
     original_credit = session.get('_straddle_initial_credit', 0)
     min_credit_pct = params.get('straddle_roll_min_credit_pct', 0.30)
     if original_credit > 0 and effective_credit < min_credit_pct * original_credit:
-        log.info(
-            f"[{sid}] [STRADDLE_ROLL] Gate 9: new ATM credit ${effective_credit:.4f} "
+        log.warning(
+            f"[{sid}] [STRADDLE_ROLL] Gate 9 min-credit: new ATM credit ${effective_credit:.4f} "
             f"< {min_credit_pct:.0%} of original ${original_credit:.4f} — skipping"
         )
         return False
@@ -643,6 +751,8 @@ async def _execute_4_leg_roll(
 
     new_trigger_pts = ce_fill_dec + pe_fill_dec
     session['_straddle_roll_trigger_pts'] = float(round(new_trigger_pts, 2))
+    # Reset dynamic trigger so it is recomputed fresh on next heartbeat from new entry
+    session.pop('_straddle_dynamic_trigger_pts', None)
 
     log.info(
         f"[{sid}] [STRADDLE_ROLL] Roll #{roll_count+1} complete: "
@@ -830,22 +940,24 @@ async def execute_pure_straddle_roll(
         return False
 
     try:
-        session['_straddle_roll_in_progress'] = True
-
         # Fetch live spot
         spot = await monitor._fetch_spot_price()
         if not spot or spot <= 0:
             return False
 
-        # Run sync gates
+        # Update dynamic trigger from live WS mark prices (sync, reads WS cache)
+        _compute_dynamic_trigger(monitor, session, sid)
+
+        # Run sync gates (Gate 0 checks _straddle_roll_in_progress — must NOT be set yet)
         can_roll, reason, ctx = _check_pure_roll_gates(
             monitor, session, sid, spot, minutes_to_expiry
         )
         if not can_roll:
-            if reason and reason not in ('max_rolls_exhausted', 'distance_below_trigger',
-                                         'cooldown_not_elapsed', 'no_roll_mode'):
-                log.debug(f"[{sid}] [STRADDLE_ROLL] Roll blocked: {reason}")
+            log.warning(f"[{sid}] [STRADDLE_ROLL] Roll blocked: {reason} | spot={spot:.0f} atm={session.get('ce',{}).get('active_strike',0):.0f} dyn_trig={session.get('_straddle_dynamic_trigger_pts',0):.0f} fix_trig={session.get('_straddle_roll_trigger_pts',0):.0f} tte={minutes_to_expiry:.0f}min")
             return False
+
+        # All gates passed — mark roll in progress to block concurrent beats
+        session['_straddle_roll_in_progress'] = True
 
         roll_count   = ctx['roll_count']
         trigger_pts  = ctx['trigger_pts']

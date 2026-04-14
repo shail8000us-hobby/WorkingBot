@@ -133,12 +133,14 @@ This means the strangle trigger evaluation (Step 6) and `_process_adjustment` ar
 
 | Field | Set by | Meaning |
 |-------|--------|---------|
-| `_straddle_roll_trigger_pts` | Startup + post-roll | Primary roll trigger in BTC points (CE_fill + PE_fill). If 0, falls back to pct. |
-| `_straddle_initial_credit` | Session start | Total credit at first entry. Used by loss-abort gate (Gate 10). Never reset. |
+| `_straddle_dynamic_trigger_pts` | Each heartbeat | **Primary trigger** — live CE_mid + PE_mid from WS cache. Shrinks with theta. Cleared after each roll so fresh decay tracking begins. |
+| `_straddle_roll_trigger_pts` | Startup + post-roll | **Fixed fallback trigger** — CE_fill + PE_fill at last roll entry. Used when dynamic trigger unavailable. |
+| `_straddle_initial_credit` | Session start | Total credit at first entry. Used by loss-abort gate (Gate 10). **Never reset.** |
 | `_straddle_roll_count` | Each roll | Rolls fired so far. Checked against `straddle_roll_max_per_session`. |
+| `_straddle_last_roll_at` | Each roll | ISO timestamp of last roll. Used for cooldown gate. |
 | `_straddle_roll_blocked` | Gate 6 | True when roll count exhausted. Auto-clears if max raised via hot-reload. |
 | `_straddle_entry_iv` | First heartbeat | IV at entry. Used for IV spike soft warning. Cleared after each roll. |
-| `_half_roll_state` | Roll execution | Breadcrumb if roll was interrupted mid-way. Startup detects and blocks. |
+| `_straddle_half_roll_state` | Roll execution | Breadcrumb if roll was interrupted mid-way. Startup detects and blocks. |
 | `_straddle_roll_in_progress` | Roll lock | True while 4-leg execution is running. Prevents concurrent rolls. |
 | `_price_guard_last_loss_estimate` | Heartbeat | Last known estimated loss. Read by price guard (never written by guard). |
 
@@ -151,10 +153,12 @@ This means the strangle trigger evaluation (Step 6) and `_process_adjustment` ar
 | `max_loss_amount` | **REQUIRED** | No | Hard stop threshold. Must be explicit at creation. |
 | `initial_lots` | **REQUIRED** | No | Lots per side. Must be explicit at creation. |
 | `straddle_roll_max_per_session` | **REQUIRED** | Yes | 0 = hard-stop-only mode (no rolls). |
+| `straddle_dynamic_trigger_enabled` | True | Yes | **Use live CE+PE mid sum as trigger (default ON).** Shrinks naturally with theta. |
+| `straddle_min_trigger_pts` | 200 | Yes | Hard floor for dynamic trigger. Prevents noise-firing near expiry. |
 | `straddle_roll_cooldown_mins` | 15 | Yes | Min gap between rolls. |
-| `straddle_roll_emergency_mult` | 2.0 | Yes | Bypass cooldown at N× trigger distance. |
+| `straddle_roll_emergency_mult` | 2.0 | Yes | Bypass cooldown when spot_move ≥ N× trigger distance. |
 | `straddle_roll_max_spread_pct` | 15.0 | Yes | Block roll if bid-ask spread too wide. |
-| `straddle_roll_trigger_pct` | 1.0 | Yes | **Fallback only** — used when trigger_pts not computable. |
+| `straddle_roll_trigger_pct` | 1.0 | Yes | **Last-resort fallback only** — used only when both dynamic and fixed triggers are unavailable. |
 | `price_guard_enabled` | True | Yes | Real-time 5s WS guard. |
 | `price_guard_buffer_pts` | 50 | Yes | Pre-alert before trigger. |
 | `auto_close_mins` | 10 | Yes | Close all N min before expiry. |
@@ -167,17 +171,18 @@ This means the strangle trigger evaluation (Step 6) and `_process_adjustment` ar
 
 ## 9. Roll Execution — 4-Leg Sequence
 
-Inside `_execute_straddle_roll_inner()` in `mmm_straddle_roll_pure.py`:
+Inside `_execute_4_leg_roll()` in `mmm_straddle_roll_pure.py`:
 1. Close ITM leg (limit order)
 2. Close OTM leg (limit order)
-3. [Optional: re-fetch ATM if spot moved > 25% of trigger during closes]
+3. [Optional: re-fetch ATM if spot moved during closes]
 4. Sell new CE at ATM (limit order)
 5. Sell new PE at ATM (limit order)
-6. Update `_straddle_roll_trigger_pts = CE_fill + PE_fill`
-7. Reset: `_regime_trend`, `_regime_tier`, `_whipsaw_score`, `_straddle_entry_iv`, `_adaptive_current_interval`
-8. Telegram: Roll #N notification
+6. Update `_straddle_roll_trigger_pts = CE_fill + PE_fill` (fixed fallback for next period)
+7. **Clear `_straddle_dynamic_trigger_pts`** so fresh theta decay tracking begins from new entry
+8. Reset: `_regime_trend`, `_regime_tier`, `_straddle_entry_iv`, `_adaptive_interval`
+9. Telegram: Roll #N notification
 
-**Half-roll detection:** If steps 1–5 fail mid-sequence, `_half_roll_state` is set. On next startup, `execute_pure_straddle_roll()` detects it, fires Telegram CRITICAL, and blocks the session. Manual recovery required.
+**Half-roll detection:** If steps 1–5 fail mid-sequence, `_straddle_half_roll_state` is set. On next startup, `execute_pure_straddle_roll()` detects it, fires Telegram CRITICAL, and blocks the session. Manual recovery required.
 
 ---
 
@@ -185,16 +190,19 @@ Inside `_execute_straddle_roll_inner()` in `mmm_straddle_roll_pure.py`:
 
 | Gate | Condition | Blocks if... |
 |------|-----------|-------------|
-| 1 | Preset guard | `_preset_source != STRADDLE_ROLL` |
-| 2 | Half-roll breadcrumb | `_half_roll_state` is set from prior interrupted roll |
-| 3 | Margin | Margin tier is RED or CRITICAL |
-| 4 | Cooldown | Last roll < `straddle_roll_cooldown_mins` ago (unless emergency mult) |
-| 5 | IV spike | IV > 2× entry IV → **logs warning only, does NOT block** (softened) |
+| 0 | In-progress lock | Roll already running (`_straddle_roll_in_progress`) |
+| 1 | Master switch | `straddle_roll_enabled` is False |
+| 1.5 | Session status | Status not RUNNING or ACTIVE |
+| 2 | Strategy identity | `strategy_type != STRADDLE_ROLL` |
+| 2.5 | Both legs present | CE or PE has no active positions |
+| 3 | Time to expiry | `minutes_to_expiry < straddle_roll_min_time_to_expiry` (90 min) |
+| 4 | Margin safety | Margin tier is RED or CRITICAL |
+| 5 | IV spike | IV > 2× entry IV → **logs warning only, does NOT block** |
 | 6 | Max rolls | `roll_count ≥ straddle_roll_max_per_session`. Auto-clears if max raised. |
-| 7 | Loss abort | Session loss > `straddle_roll_loss_abort_mult × _straddle_initial_credit` |
-| 8 | Trigger pts | `spot_move < _straddle_roll_trigger_pts` (primary roll condition) |
-| 9 | ATM preview | Fresh ATM preview required; checks: stale data, same-strike, spread too wide |
-| 10 | Loss abort (belt) | Belt-and-suspenders: redundant hard-stop check before executing orders |
+| 7 | Cooldown | Last roll < `straddle_roll_cooldown_mins` ago (bypassed at `emergency_mult × trigger`) |
+| 8 | **Distance trigger** | `spot_move < effective_trigger_pts`. Effective = **dynamic** (CE_mid + PE_mid, floored at 200 pts) → fallback to fixed → fallback to pct. |
+| 9 | ATM preview (inside executor) | Fresh ATM preview required; checks: staleness, same-strike, credit floor, spread |
+| 10 | Loss abort (belt) | Belt-and-suspenders: `total_loss > loss_abort_mult × initial_credit` |
 
 ---
 
@@ -238,14 +246,36 @@ All other 18 groups are **greyed out / locked** with 🔒 badge. They cannot be 
 
 ---
 
-## 14. Relation to STRADDLE_WITH_ADJUSTMENT
+## 14. Dynamic Trigger — Design & Fallback Chain
+
+**Why dynamic:** The old fixed trigger (`CE_fill + PE_fill` at entry, e.g. 1196 pts) is frozen for the entire holding period. After theta decay the position only has `current_mark` pts of cushion, not the original 1196. Rolling at the original distance means the straddle runs too far ITM before a roll fires.
+
+**New design (added 2026-04-13):** Each heartbeat, `_compute_dynamic_trigger()` reads the live WS bid/ask mid for both the active CE and PE legs. `effective_trigger = CE_mid + PE_mid`, floored at `straddle_min_trigger_pts` (default 200) to prevent noise-fire near expiry.
+
+**Fallback chain** (in order, all handled inside `_get_effective_trigger_pts()`):
+1. **Dynamic** (`_straddle_dynamic_trigger_pts`) — if `straddle_dynamic_trigger_enabled=True` and WS prices are fresh
+2. **Fixed** (`_straddle_roll_trigger_pts`) — entry premium at last roll; set on every roll completion
+3. **Healed fixed** — re-derived from `entry_premium` on current positions if `_straddle_roll_trigger_pts` is 0
+4. **Pct fallback** (`straddle_roll_trigger_pct × spot`) — absolute last resort; should never be reached in normal operation
+
+**Price source — MUST be fresh ATM, NOT existing position prices:** Using the existing position's mid prices at the old ATM strike is mathematically broken:
+```
+existing_CE_mid + existing_PE_mid = |spot - K| + time_value  >  |spot - K|  always
+```
+This means `spot_move < trigger` forever (time_value never goes to zero before `straddle_roll_min_time_to_expiry` blocks the roll). The correct source is `preview_atm_straddle()` — the fresh ATM premiums at the current spot's nearest strike. Fresh ATM premiums shrink with theta and are not inflated by intrinsic value. (Bug fixed 2026-04-13.)
+
+**Post-roll reset:** After a successful roll, `_straddle_dynamic_trigger_pts` is cleared from the session dict. The next heartbeat recomputes it fresh from the new ATM entry, so theta decay tracking starts from zero on the new straddle.
+
+---
+
+## 15. Relation to STRADDLE_WITH_ADJUSTMENT
 
 | Aspect | STRADDLE_ROLL | STRADDLE_WITH_ADJUSTMENT |
 |--------|--------------|-------------------------|
 | `_preset_source` | `STRADDLE_ROLL` | `STRADDLE_WITH_ADJUSTMENT` |
 | Implementation file | `mmm_straddle_roll_pure.py` | `mmm_straddle_adjustment.py` |
 | MMM adjustment engine | Never runs | Runs between rolls |
-| Roll trigger | Premium-points (`_straddle_roll_trigger_pts`) | Percentage (`straddle_roll_trigger_pct`) |
+| Roll trigger | **Dynamic**: live CE_mid + PE_mid (floored at 200 pts). Fixed (`_straddle_roll_trigger_pts`) used as fallback. | Percentage (`straddle_roll_trigger_pct`) |
 | Hard stop orders | Market (taker) | Limit (mid-price) |
 | Wind-down | Disabled | Enabled |
 | Position growth | Locked to initial_lots | Can grow via adjustments |
@@ -255,7 +285,7 @@ These two strategies are **mutually exclusive**. A session has exactly one `_pre
 
 ---
 
-## 15. Source of Truth
+## 16. Source of Truth
 
 For all detailed logic, quant reasoning, fix plans, and implementation order:
 
