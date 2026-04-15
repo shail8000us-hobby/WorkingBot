@@ -104,6 +104,7 @@ import LogPanel from '../optionsChain/LogPanel';
 import PendingOrdersPanel from './PendingOrdersPanel';
 import ScalingStrategyPanel from './ScalingStrategyPanel';
 import PortfolioSummaryStrip from './PortfolioSummaryStrip';
+import OptionsPositionsPropDeskHeader from './OptionsPositionsPropDeskHeader';
 import AddPositionDialog from './AddPositionDialog';
 import BatchOrderPanel from './BatchOrderPanel';
 import ConditionalExitPanel from './ConditionalExitPanel';
@@ -3507,6 +3508,79 @@ const OptionsPanel = () => {
     );
   }
 
+  // UI LAYOUT: Options Positions toolbar/header moved to render just above the
+  // PortfolioSummaryStrip (per annotated screenshot request).
+  const optionsPositionsToolbar = (
+    <>
+      <OptionsPositionsPropDeskHeader
+        status={status}
+        positions={positions}
+        positionsCount={positions.length}
+        customOrderCount={customOrder.length}
+        hiddenCount={hiddenPositions.length}
+        payoffSelectedCount={selectedPositionsForPayoff.length}
+        onResetOrder={resetOrder}
+        onClearHidden={() => setHiddenPositions([])}
+        turboMode={turboMode}
+        onToggleTurbo={() => setTurboMode(!turboMode)}
+        showAdjust={positions.length > 0 && !turboMode}
+        onAdjust={() => setAdjustmentPanelOpen(true)}
+        pollInterval={pollInterval}
+        onTogglePollInterval={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
+        uniqueExpiries={uniqueExpiries}
+        selectedExpiries={selectedExpiries}
+        onClearExpirySelection={clearExpirySelection}
+        onToggleExpirySelection={toggleExpirySelection}
+        getExpiryCode={getExpiryCode}
+        indexPrices={indexPrices}
+        scalingCollapsed={scalingStrategyCollapsed}
+        onToggleScaling={() => {
+          const next = !scalingStrategyCollapsed;
+          setScalingStrategyCollapsed(next);
+          localStorage.setItem('options_scaling_strategy_collapsed', JSON.stringify(next));
+        }}
+        maxLossCollapsed={expiryMaxLossCollapsed}
+        onToggleMaxLoss={() => setExpiryMaxLossCollapsed((prev) => !prev)}
+        onOpenSoundSettings={() => setSoundSettingsOpen(true)}
+        onRefresh={handleRefresh}
+        refreshing={refreshing}
+      />
+
+      {/* Per-Expiry Max Loss — toggled via Row 2 chip */}
+      {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
+        <Collapse in={!expiryMaxLossCollapsed}>
+          <Box sx={{ mb: 1 }}>
+            <ExpiryMaxLossPanel
+              uniqueExpiries={uniqueExpiries}
+              expiryPnlMap={expiryPnlMap}
+              expiryMaxLossSettings={expiryMaxLossSettings}
+              onSettingsUpdate={handleExpiryMaxLossUpdate}
+            />
+          </Box>
+        </Collapse>
+      )}
+
+      {/* Position Scaling Strategy — toggled via Row 2 chip */}
+      <ScalingStrategyPanel
+        scalingStrategy={scalingStrategy}
+        setScalingStrategy={setScalingStrategy}
+        scalingParams={scalingParams}
+        setScalingParams={setScalingParams}
+        indexPrices={indexPrices}
+        scalingStrategyCollapsed={scalingStrategyCollapsed}
+        setScalingStrategyCollapsed={setScalingStrategyCollapsed}
+        hideHeader
+      />
+
+      {/* Order Result Alert */}
+      <Collapse in={!!orderResult}>
+        <Alert severity={orderResult?.type || 'info'} sx={{ mb: 2 }} onClose={() => setOrderResult(null)}>
+          {orderResult?.message}
+        </Alert>
+      </Collapse>
+    </>
+  );
+
   return (
     <div className="animate-fade-slide-up">
       {/* ARCH-2: Extracted AutoLoopBanner component */}
@@ -3525,253 +3599,6 @@ const OptionsPanel = () => {
 
       <Card sx={{ bgcolor: 'background.paper', borderRadius: 2, width: '100%' }}>
         <CardContent sx={{ p: 1.5, '&:last-child': { pb: 1.5 } }}>
-          {/* ═══ Row 1: Header — title, status, active badges, actions ═══ */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
-              <Typography variant="subtitle1" fontWeight="600" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                <ShowChartIcon fontSize="small" /> Options Positions
-              </Typography>
-              {status && (
-                <Chip
-                  icon={status.trading_allowed ? <CheckCircleIcon /> : <BlockIcon />}
-                  label={status.guardian_signal}
-                  color={status.trading_allowed ? 'success' : 'error'}
-                  size="small"
-                />
-              )}
-              <Chip label={`${positions.length} positions`} size="small" variant="outlined" />
-              {/* Active-state badges — only visible when relevant */}
-              {customOrder.length > 0 && (
-                <Chip
-                  icon={<DragIcon />}
-                  label="Custom Order"
-                  size="small"
-                  color="primary"
-                  variant="filled"
-                  sx={{ fontWeight: 'bold' }}
-                  onDelete={resetOrder}
-                  deleteIcon={
-                    <Tooltip title="Reset to default sort order">
-                      <CloseIcon sx={{ fontSize: '0.9rem !important' }} />
-                    </Tooltip>
-                  }
-                />
-              )}
-              {hiddenPositions.length > 0 && (
-                <Chip
-                  label={`👁 ${hiddenPositions.length} hidden`}
-                  size="small"
-                  color="warning"
-                  variant="outlined"
-                  onClick={() => setHiddenPositions([])}
-                  onDelete={() => setHiddenPositions([])}
-                />
-              )}
-              {selectedPositionsForPayoff.length > 0 && (
-                <Chip
-                  size="small"
-                  label={`🎯 ${selectedPositionsForPayoff.length} for Payoff`}
-                  color="primary"
-                  variant="outlined"
-                />
-              )}
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-              <Tooltip title={turboMode ? "Exit Turbo Mode" : "Turbo Mode - Ultra-fast expiry day trading"}>
-                <Button
-                  size="small"
-                  variant={turboMode ? 'contained' : 'outlined'}
-                  color={turboMode ? 'error' : 'warning'}
-                  onClick={() => setTurboMode(!turboMode)}
-                  sx={{ fontWeight: 'bold' }}
-                  startIcon={turboMode ? '⚡' : null}
-                >
-                  {turboMode ? '⚡ TURBO' : 'Turbo'}
-                </Button>
-              </Tooltip>
-              {positions.length > 0 && !turboMode && (
-                <Tooltip title="Adjust positions - Add/close with live payoff preview">
-                  <Button
-                    size="small"
-                    variant="outlined"
-                    color="secondary"
-                    startIcon={<AdjustIcon />}
-                    onClick={() => setAdjustmentPanelOpen(true)}
-                    sx={{ fontSize: '0.7rem', py: 0.25 }}
-                  >
-                    Adjust
-                  </Button>
-                </Tooltip>
-              )}
-              <Tooltip title="Change polling interval">
-                <Button
-                  size="small"
-                  variant={pollInterval === 1000 ? 'contained' : 'outlined'}
-                  color={pollInterval === 1000 ? 'primary' : 'inherit'}
-                  onClick={() => setPollInterval(pollInterval === 5000 ? 1000 : 5000)}
-                  sx={{ fontSize: '0.7rem', py: 0.25 }}
-                >
-                  ⏱ {pollInterval / 1000}s
-                </Button>
-              </Tooltip>
-              <Tooltip
-                title={
-                  <Box sx={{ p: 0.5 }}>
-                    <Typography variant="caption" fontWeight="bold" sx={{ display: 'block', mb: 0.5 }}>⌨️ Keyboard Shortcuts</Typography>
-                    <Typography variant="caption" component="div">B = Buy &nbsp;|&nbsp; S = Sell &nbsp;|&nbsp; C = Close</Typography>
-                    <Typography variant="caption" component="div">R = Refresh &nbsp;|&nbsp; Esc = Cancel</Typography>
-                    <Typography variant="caption" component="div">↑/↓ = Navigate rows</Typography>
-                  </Box>
-                }
-                arrow
-                placement="bottom-end"
-              >
-                <IconButton size="small" sx={{ color: 'text.secondary' }}>
-                  <HelpOutlineIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Sound Settings">
-                <IconButton onClick={() => setSoundSettingsOpen(true)} size="small" color="primary">
-                  <VolumeIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Refresh">
-                <IconButton onClick={handleRefresh} disabled={refreshing} size="small">
-                  {refreshing ? <CircularProgress size={18} /> : <RefreshIcon fontSize="small" />}
-                </IconButton>
-              </Tooltip>
-            </Box>
-          </Box>
-
-          {/* ═══ Row 2: Expiry filter + spot prices + section toggles ═══ */}
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5, flexWrap: 'wrap', gap: 0.5 }}>
-            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', alignItems: 'center' }}>
-              {uniqueExpiries.length > 1 && (
-                <>
-                  <Typography variant="caption" color="text.secondary" sx={{ fontSize: '0.7rem' }}>📅</Typography>
-                  <Chip
-                    label={selectedExpiries.length === 0 ? "All" : `All (${selectedExpiries.length})`}
-                    size="small"
-                    onClick={clearExpirySelection}
-                    color={selectedExpiries.length === 0 ? 'primary' : 'default'}
-                    variant={selectedExpiries.length === 0 ? 'filled' : 'outlined'}
-                    sx={{ fontWeight: selectedExpiries.length === 0 ? 'bold' : 'normal' }}
-                  />
-                  {uniqueExpiries.map((expiry) => {
-                    const day = expiry.substring(0, 2);
-                    const month = expiry.substring(2, 4);
-                    const year = '20' + expiry.substring(4, 6);
-                    const formattedDate = `${day}/${month}/${year}`;
-                    const posCount = positions.filter(
-                      (p) => getExpiryCode(p.product_symbol) === expiry
-                    ).length;
-                    const isSelected = selectedExpiries.includes(expiry);
-                    return (
-                      <Chip
-                        key={expiry}
-                        label={`${formattedDate} (${posCount})`}
-                        size="small"
-                        onClick={() => toggleExpirySelection(expiry)}
-                        color={isSelected ? 'primary' : 'default'}
-                        variant={isSelected ? 'filled' : 'outlined'}
-                        sx={{ fontWeight: isSelected ? 'bold' : 'normal' }}
-                      />
-                    );
-                  })}
-                </>
-              )}
-            </Box>
-            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
-              {/* Compact spot prices */}
-              {indexPrices.BTC > 0 && (
-                <Typography variant="caption" sx={{ color: '#3b82f6', fontWeight: 600, fontSize: '0.72rem', px: 0.75, py: 0.2, bgcolor: '#3b82f615', borderRadius: 1, border: '1px solid #3b82f6' }}>
-                  BTC ${indexPrices.BTC.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </Typography>
-              )}
-              {indexPrices.ETH > 0 && (
-                <Typography variant="caption" sx={{ color: '#a855f7', fontWeight: 600, fontSize: '0.72rem', px: 0.75, py: 0.2, bgcolor: '#a855f715', borderRadius: 1, border: '1px solid #a855f7' }}>
-                  ETH ${indexPrices.ETH.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </Typography>
-              )}
-              {/* Section toggles */}
-              {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
-                <Chip
-                  label="🛡️ Max Loss"
-                  size="small"
-                  variant={expiryMaxLossCollapsed ? 'outlined' : 'filled'}
-                  color={expiryMaxLossCollapsed ? 'default' : 'primary'}
-                  onClick={() => setExpiryMaxLossCollapsed(prev => !prev)}
-                  icon={expiryMaxLossCollapsed
-                    ? <ExpandMoreIcon sx={{ fontSize: '0.75rem !important' }} />
-                    : <ExpandLessIcon sx={{ fontSize: '0.75rem !important' }} />}
-                  sx={{ height: 22, fontSize: '0.65rem' }}
-                />
-              )}
-              <Chip
-                label="📐 Scaling"
-                size="small"
-                variant={scalingStrategyCollapsed ? 'outlined' : 'filled'}
-                color={scalingStrategyCollapsed ? 'default' : 'primary'}
-                onClick={() => {
-                  const next = !scalingStrategyCollapsed;
-                  setScalingStrategyCollapsed(next);
-                  localStorage.setItem('options_scaling_strategy_collapsed', JSON.stringify(next));
-                }}
-                icon={scalingStrategyCollapsed
-                  ? <ExpandMoreIcon sx={{ fontSize: '0.75rem !important' }} />
-                  : <ExpandLessIcon sx={{ fontSize: '0.75rem !important' }} />}
-                sx={{ height: 22, fontSize: '0.65rem' }}
-              />
-            </Box>
-          </Box>
-
-          {/* Phase 4: Turbo Mode — compact inline alert */}
-          {turboMode && (
-            <Alert severity="warning" sx={{ mb: 1, py: 0.25 }} icon={false}>
-              <Typography variant="caption" fontWeight="bold">
-                ⚡ TURBO — <kbd>↑↓</kbd> Nav • <kbd>B</kbd> Buy • <kbd>S</kbd> Sell • <kbd>C</kbd> Close • <kbd>ESC</kbd> Cancel
-              </Typography>
-            </Alert>
-          )}
-
-          {/* Per-Expiry Max Loss — toggled via Row 2 chip */}
-          {positions.length > 0 && uniqueExpiries.length > 0 && !turboMode && (
-            <Collapse in={!expiryMaxLossCollapsed}>
-              <Box sx={{ mb: 1 }}>
-                <ExpiryMaxLossPanel
-                  uniqueExpiries={uniqueExpiries}
-                  expiryPnlMap={expiryPnlMap}
-                  expiryMaxLossSettings={expiryMaxLossSettings}
-                  onSettingsUpdate={handleExpiryMaxLossUpdate}
-                />
-              </Box>
-            </Collapse>
-          )}
-
-          {/* Position Scaling Strategy — toggled via Row 2 chip */}
-          <ScalingStrategyPanel
-            scalingStrategy={scalingStrategy}
-            setScalingStrategy={setScalingStrategy}
-            scalingParams={scalingParams}
-            setScalingParams={setScalingParams}
-            indexPrices={indexPrices}
-            scalingStrategyCollapsed={scalingStrategyCollapsed}
-            setScalingStrategyCollapsed={setScalingStrategyCollapsed}
-            hideHeader
-          />
-
-          {/* Order Result Alert */}
-          <Collapse in={!!orderResult}>
-            <Alert
-              severity={orderResult?.type || 'info'}
-              sx={{ mb: 2 }}
-              onClose={() => setOrderResult(null)}
-            >
-              {orderResult?.message}
-            </Alert>
-          </Collapse>
-
           {/* Futures Positions Panel - JAN 17, 2026 */}
           <FuturesPanel pollInterval={pollInterval} />
 
@@ -3797,6 +3624,8 @@ const OptionsPanel = () => {
               Guardian signal is {status.guardian_signal}. Close and add operations are blocked.
             </Alert>
           )}
+
+          {optionsPositionsToolbar}
 
           {/* Phase 3: Sticky Portfolio Summary Strip — extracted component */}
           <PortfolioSummaryStrip
@@ -4770,58 +4599,78 @@ const OptionsPanel = () => {
             </Box>
           )}
 
-          <BatchOrderPanel
-            positions={positions}
-            selectedStrikes={selectedStrikes}
-            status={status}
-            orderQuantity={orderQuantity}
-            setOrderQuantity={setOrderQuantity}
-            multiplierMode={multiplierMode}
-            setMultiplierMode={setMultiplierMode}
-            executionMode={executionMode}
-            setExecutionMode={setExecutionMode}
-            batchOrderResults={batchOrderResults}
-            setBatchOrderResults={setBatchOrderResults}
-            batchExecuting={batchExecuting}
-            autoLoopEnabled={autoLoopEnabled}
-            setAutoLoopEnabled={setAutoLoopEnabled}
-            autoLoopRounds={autoLoopRounds}
-            setAutoLoopRounds={setAutoLoopRounds}
-            autoLoopRunning={autoLoopRunning}
-            autoLoopCurrentRound={autoLoopCurrentRound}
-            autoLoopProgress={autoLoopProgress}
-            autoLoopError={autoLoopError}
-            expiryLoopState={expiryLoopState}
-            anyExpiryLoopRunning={anyExpiryLoopRunning}
-            selectedExpiriesForLoop={selectedExpiriesForLoop}
-            batchConfirmDialog={batchConfirmDialog}
-            setBatchConfirmDialog={setBatchConfirmDialog}
-            pendingBatchOrders={pendingBatchOrders}
-            setPendingBatchOrders={setPendingBatchOrders}
-            getSelectedPositions={getSelectedPositions}
-            getPositionsGCD={getPositionsGCD}
-            calculateBatchOrders={calculateBatchOrders}
-            executeBatchOrders={executeBatchOrders}
-            executeBatch={executeBatch}
-            executeAutoLoop={executeAutoLoop}
-            autoLoopConfirmDialog={autoLoopConfirmDialog}
-            setAutoLoopConfirmDialog={setAutoLoopConfirmDialog}
-            doStartAutoLoop={_doStartAutoLoop}
-            stopAutoLoop={stopAutoLoop}
-            startAllExpiryLoops={startAllExpiryLoops}
-            executeExpiryAutoLoop={executeExpiryAutoLoop}
-            stopExpiryAutoLoop={stopExpiryAutoLoop}
-            clearAutoLoopError={clearAutoLoopError}
-            clearExpiryLoopError={clearExpiryLoopError}
-            onBulkApplyBatchQty={(qty) => {
-              // Option 4: write qty into batchQuantities for every currently-selected row
-              const updates = {};
-              Object.keys(selectedStrikes).forEach((symbol) => {
-                if (selectedStrikes[symbol]) updates[symbol] = qty;
-              });
-              setBatchQuantities((prev) => ({ ...prev, ...updates }));
-            }}
-          />
+          {/* Payoff Diagram — moved above Batch Order panel */}
+          {positions.length > 0 && !turboMode && (
+            <Box sx={{ mt: 2 }}>
+              <PayoffErrorBoundary>
+                <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
+                  <OptionsPayoffDiagram
+                    positions={sortedPositions}
+                    selectedPositions={selectedPositionsForPayoff}
+                    futuresPositions={visibleFuturesPositions}
+                    indexPrices={indexPrices}
+                    manualPnL={manualPnL}
+                    onManualPnLChange={setManualPnL}
+                    batchOrderSection={
+                      <BatchOrderPanel
+                        positions={positions}
+                        selectedStrikes={selectedStrikes}
+                        status={status}
+                        compactSpacing
+                        orderQuantity={orderQuantity}
+                        setOrderQuantity={setOrderQuantity}
+                        multiplierMode={multiplierMode}
+                        setMultiplierMode={setMultiplierMode}
+                        executionMode={executionMode}
+                        setExecutionMode={setExecutionMode}
+                        batchOrderResults={batchOrderResults}
+                        setBatchOrderResults={setBatchOrderResults}
+                        batchExecuting={batchExecuting}
+                        autoLoopEnabled={autoLoopEnabled}
+                        setAutoLoopEnabled={setAutoLoopEnabled}
+                        autoLoopRounds={autoLoopRounds}
+                        setAutoLoopRounds={setAutoLoopRounds}
+                        autoLoopRunning={autoLoopRunning}
+                        autoLoopCurrentRound={autoLoopCurrentRound}
+                        autoLoopProgress={autoLoopProgress}
+                        autoLoopError={autoLoopError}
+                        expiryLoopState={expiryLoopState}
+                        anyExpiryLoopRunning={anyExpiryLoopRunning}
+                        selectedExpiriesForLoop={selectedExpiriesForLoop}
+                        batchConfirmDialog={batchConfirmDialog}
+                        setBatchConfirmDialog={setBatchConfirmDialog}
+                        pendingBatchOrders={pendingBatchOrders}
+                        setPendingBatchOrders={setPendingBatchOrders}
+                        getSelectedPositions={getSelectedPositions}
+                        getPositionsGCD={getPositionsGCD}
+                        calculateBatchOrders={calculateBatchOrders}
+                        executeBatchOrders={executeBatchOrders}
+                        executeBatch={executeBatch}
+                        executeAutoLoop={executeAutoLoop}
+                        autoLoopConfirmDialog={autoLoopConfirmDialog}
+                        setAutoLoopConfirmDialog={setAutoLoopConfirmDialog}
+                        doStartAutoLoop={_doStartAutoLoop}
+                        stopAutoLoop={stopAutoLoop}
+                        startAllExpiryLoops={startAllExpiryLoops}
+                        executeExpiryAutoLoop={executeExpiryAutoLoop}
+                        stopExpiryAutoLoop={stopExpiryAutoLoop}
+                        clearAutoLoopError={clearAutoLoopError}
+                        clearExpiryLoopError={clearExpiryLoopError}
+                        onBulkApplyBatchQty={(qty) => {
+                          // Option 4: write qty into batchQuantities for every currently-selected row
+                          const updates = {};
+                          Object.keys(selectedStrikes).forEach((symbol) => {
+                            if (selectedStrikes[symbol]) updates[symbol] = qty;
+                          });
+                          setBatchQuantities((prev) => ({ ...prev, ...updates }));
+                        }}
+                      />
+                    }
+                  />
+                </Suspense>
+              </PayoffErrorBoundary>
+            </Box>
+          )}
 
           <ConditionalExitPanel
             selectedStrikes={selectedStrikes}
@@ -4844,18 +4693,40 @@ const OptionsPanel = () => {
             )
           }
 
-          {/* F4: PnL Attribution Panel — collapsed by default, self-contained */}
-          <PnLAttributionPanel />
+          {/* Institutional analytics deck: equal 1/3 + 1/3 + 1/3 layout */}
+          <Box
+            sx={{
+              mt: 0.5,
+              mb: 1,
+              display: 'grid',
+              gap: 1.1,
+              alignItems: 'stretch',
+              gridTemplateColumns: {
+                xs: '1fr',
+                lg: 'repeat(3, minmax(0, 1fr))',
+              },
+            }}
+          >
+            <Box sx={{ minWidth: 0 }}>
+              <PnLAttributionPanel />
+            </Box>
 
-          {/* F7: Vol Term Structure — needs positions + spot */}
-          {positions.length > 0 && (
-            <VolTermStructurePanel positions={positions} spotPrice={btcPrice || 0} />
-          )}
+            <Box sx={{ minWidth: 0 }}>
+              {positions.length > 0 ? (
+                <VolTermStructurePanel positions={positions} spotPrice={btcPrice || 0} />
+              ) : (
+                <Box sx={{ height: '100%' }} />
+              )}
+            </Box>
 
-          {/* F8: Vol Smile — needs positions + spot */}
-          {positions.length > 0 && (
-            <VolSmilePanel positions={positions} spotPrice={btcPrice || 0} />
-          )}
+            <Box sx={{ minWidth: 0 }}>
+              {positions.length > 0 ? (
+                <VolSmilePanel positions={positions} spotPrice={btcPrice || 0} />
+              ) : (
+                <Box sx={{ height: '100%' }} />
+              )}
+            </Box>
+          </Box>
         </CardContent >
       </Card >
 
@@ -4878,26 +4749,6 @@ const OptionsPanel = () => {
           fetchPositions();
         }}
       />
-
-      {/* Payoff Diagram */}
-      {
-        positions.length > 0 && !turboMode && (
-          <Box sx={{ mt: 2 }}>
-            <PayoffErrorBoundary>
-              <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
-                <OptionsPayoffDiagram
-                  positions={sortedPositions}
-                  selectedPositions={selectedPositionsForPayoff}
-                  futuresPositions={visibleFuturesPositions}
-                  indexPrices={indexPrices}
-                  manualPnL={manualPnL}
-                  onManualPnLChange={setManualPnL}
-                />
-              </Suspense>
-            </PayoffErrorBoundary>
-          </Box>
-        )
-      }
 
       {/* Options Trading Activity Monitor */}
       {

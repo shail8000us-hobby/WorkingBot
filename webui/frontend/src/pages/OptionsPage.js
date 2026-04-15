@@ -7,17 +7,9 @@ import AutoHedgeConfigCard from '../components/options/AutoHedgeConfigCard';
 const OptionsPage = React.memo(function OptionsPage() {
   return (
     <div className="grid gap-1">
-      <CollapsibleCard
-        id="options-panel"
-        title="📈 Options Trading"
-        subtitle="Manage positions - Close/add existing"
-        accent="violet"
-        defaultOpen={true}
-      >
-        <EnhancedErrorBoundary componentName="OptionsPanel">
-          <OptionsPanel />
-        </EnhancedErrorBoundary>
-      </CollapsibleCard>
+      <EnhancedErrorBoundary componentName="OptionsPanel">
+        <OptionsPanel />
+      </EnhancedErrorBoundary>
 
       <CollapsibleCard
         id="auto-hedge-config"

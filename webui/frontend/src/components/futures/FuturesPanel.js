@@ -14,8 +14,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   Box,
-  Card,
-  CardContent,
   Typography,
   Chip,
   IconButton,
@@ -39,10 +37,6 @@ import {
   DialogContentText,
   DialogActions,
   Checkbox,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Divider,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -133,36 +127,6 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
     localStorage.setItem('futures_asset_groups_collapsed', JSON.stringify(assetGroupsCollapsed));
   }, [assetGroupsCollapsed]);
 
-  // Day 4 Enhancement: Group positions by underlying asset (BTC, ETH, etc)
-  const groupedPositions = useMemo(() => {
-    const groups = {};
-
-    positions.forEach(pos => {
-      // Extract asset from symbol (e.g., "BTCUSD" -> "BTC", "BTC-USDT" -> "BTC")
-      const symbol = pos.product_symbol || '';
-      let asset = 'OTHER';
-
-      if (symbol.includes('BTC')) asset = 'BTC';
-      else if (symbol.includes('ETH')) asset = 'ETH';
-      else if (symbol.includes('SOL')) asset = 'SOL';
-      else if (symbol.includes('AVAX')) asset = 'AVAX';
-
-      if (!groups[asset]) {
-        groups[asset] = [];
-      }
-      groups[asset].push(pos);
-    });
-
-    return groups;
-  }, [positions]);
-
-  // Toggle asset group collapsed state
-  const toggleAssetGroup = (asset) => {
-    setAssetGroupsCollapsed(prev => ({
-      ...prev,
-      [asset]: !prev[asset]
-    }));
-  };
 
   // Toggle futures position visibility
   const toggleFuturesPositionVisibility = useCallback((productSymbol) => {
@@ -497,15 +461,30 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <FuturesIcon sx={{ color: 'primary.main' }} />
           <Typography variant="subtitle1" sx={{ fontWeight: 'bold', color: 'text.primary' }}>
-            Futures Positions ({positions.length})
+            Futures Positions
           </Typography>
           {positions.length > 0 && (
-            <Chip
-              label="Live"
-              size="small"
-              color="info"
-              sx={{ animation: 'pulse 1.5s infinite' }}
-            />
+            <>
+              <Chip
+                label="Live"
+                size="small"
+                color="info"
+                sx={{ animation: 'pulse 1.5s infinite' }}
+              />
+              <Chip
+                label={`${positions.length} position${positions.length > 1 ? 's' : ''}`}
+                size="small"
+                color="primary"
+                variant="outlined"
+              />
+              <Chip
+                icon={summary.total_unrealized_pnl >= 0 ? <TrendingUp /> : <TrendingDown />}
+                label={`Total: ${summary.total_unrealized_pnl >= 0 ? '+' : ''}$${(Number(summary.total_unrealized_pnl) || 0).toFixed(2)}`}
+                size="small"
+                color={summary.total_unrealized_pnl >= 0 ? 'success' : 'error'}
+                sx={{ fontWeight: 'bold' }}
+              />
+            </>
           )}
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -528,22 +507,6 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
             </Tooltip>
           )}
 
-          {/* Summary PnL */}
-          {positions.length > 0 && (
-            <Chip
-              icon={summary.total_unrealized_pnl >= 0 ? <TrendingUp /> : <TrendingDown />}
-              label={formatPnL(summary.total_unrealized_pnl).text}
-              size="small"
-              sx={{
-                bgcolor:
-                  summary.total_unrealized_pnl >= 0
-                    ? 'rgba(16, 185, 129, 0.2)'
-                    : 'rgba(239, 68, 68, 0.2)',
-                color: summary.total_unrealized_pnl >= 0 ? '#10b981' : '#ef4444',
-                fontWeight: 'bold',
-              }}
-            />
-          )}
           <Tooltip title="Refresh">
             <IconButton
               size="small"
@@ -607,300 +570,260 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
             return null;
           })()}
 
-          {/* Day 4 Enhancement: Positions Grouped by Asset */}
-          {!loading && positions.length > 0 && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              {Object.entries(groupedPositions).map(([asset, assetPositions]) => {
-                const totalPnl = assetPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0), 0);
-                const isCollapsed = assetGroupsCollapsed[asset] || false;
+          {/* Positions Flat Table */}
+          {!loading && positions.length > 0 && (() => {
+            return (
+              <Box sx={{ mt: 1 }}>
+                <TableContainer
+                  component={Paper}
+                  sx={{ bgcolor: 'background.paper', borderRadius: 0 }}
+                >
+                  <Table size="small">
+                    <TableHead>
+                      <TableRow sx={{ bgcolor: 'rgba(14, 165, 233, 0.1)' }}>
+                        <TableCell padding="checkbox" width="40px">
+                          <Tooltip title="Select/deselect all for payoff graph">
+                            <Checkbox
+                              checked={positions.length > 0 && positions.every(p => selectedFuturesForPayoff.includes(p.product_symbol))}
+                              indeterminate={
+                                positions.some(p => selectedFuturesForPayoff.includes(p.product_symbol)) &&
+                                positions.some(p => !selectedFuturesForPayoff.includes(p.product_symbol))
+                              }
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedFuturesForPayoff(prev => [...new Set([...prev, ...positions.map(p => p.product_symbol)])]);
+                                } else {
+                                  setSelectedFuturesForPayoff(prev => prev.filter(s => !positions.find(p => p.product_symbol === s)));
+                                }
+                              }}
+                              sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                            />
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell sx={{ fontWeight: 'bold' }}>Symbol</TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                          Side
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Size
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Entry
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Mark
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold', minWidth: 120 }}>
+                          <Tooltip title="Position leverage - Safe: <3x, Medium: 3-5x, High: >5x">
+                            <span>Leverage</span>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Liq. Price
+                        </TableCell>
+                        <TableCell align="left" sx={{ fontWeight: 'bold', minWidth: 150 }}>
+                          <Tooltip title="Distance to liquidation - Red <10%, Orange 10-20%, Green >20%">
+                            <span>Liq. Distance</span>
+                          </Tooltip>
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Unrealized PnL
+                        </TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 'bold' }}>
+                          Margin
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                          Max Loss
+                        </TableCell>
+                        <TableCell align="center" sx={{ fontWeight: 'bold' }}>
+                          Actions
+                        </TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {positions.map((pos) => {
+                        const pnl = formatPnL(pos.unrealized_pnl);
+                        const productId = pos.product_id;
+                        const hasMaxLoss = maxLossSettings[productId]?.enabled;
+                        const maxLossValue = maxLossSettings[productId]?.max_loss || '';
+                        const isSelected = selectedFuturesForPayoff.includes(pos.product_symbol);
 
-                return (
-                  <Accordion
-                    key={asset}
-                    expanded={!isCollapsed}
-                    onChange={() => toggleAssetGroup(asset)}
-                    sx={{ bgcolor: 'background.paper', borderRadius: 1 }}
-                  >
-                    <AccordionSummary
-                      expandIcon={<ExpandMoreIcon />}
-                      sx={{
-                        bgcolor: 'rgba(14, 165, 233, 0.05)',
-                        '&:hover': { bgcolor: 'rgba(14, 165, 233, 0.1)' }
-                      }}
-                    >
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                        <Typography variant="h6" sx={{ fontWeight: 'bold' }}>
-                          {asset}
-                        </Typography>
-                        <Chip
-                          label={`${assetPositions.length} position${assetPositions.length > 1 ? 's' : ''}`}
-                          size="small"
-                          color="primary"
-                          variant="outlined"
-                        />
-                        <Chip
-                          icon={totalPnl >= 0 ? <TrendingUp /> : <TrendingDown />}
-                          label={`Total: ${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`}
-                          size="small"
-                          color={totalPnl >= 0 ? 'success' : 'error'}
-                          sx={{ fontWeight: 'bold' }}
-                        />
-                      </Box>
-                    </AccordionSummary>
-                    <AccordionDetails sx={{ p: 0 }}>
-                      <TableContainer
-                        component={Paper}
-                        sx={{ bgcolor: 'background.paper', borderRadius: 0 }}
-                      >
-                        <Table size="small">
-                          <TableHead>
-                            <TableRow sx={{ bgcolor: 'rgba(14, 165, 233, 0.1)' }}>
-                              <TableCell padding="checkbox" width="40px">
-                                <Tooltip title="Select/deselect all for payoff graph">
-                                  <Checkbox
-                                    checked={assetPositions.every(p => selectedFuturesForPayoff.includes(p.product_symbol))}
-                                    indeterminate={
-                                      assetPositions.some(p => selectedFuturesForPayoff.includes(p.product_symbol)) &&
-                                      assetPositions.some(p => !selectedFuturesForPayoff.includes(p.product_symbol))
-                                    }
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setSelectedFuturesForPayoff(prev => [...new Set([...prev, ...assetPositions.map(p => p.product_symbol)])]);
-                                      } else {
-                                        setSelectedFuturesForPayoff(prev => prev.filter(s => !assetPositions.find(p => p.product_symbol === s)));
-                                      }
-                                    }}
-                                    sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                        return (
+                          <TableRow
+                            key={`${pos.symbol}-${pos.product_id}`}
+                            sx={{ '&:hover': { bgcolor: 'action.hover' } }}
+                          >
+                            <TableCell padding="checkbox">
+                              <Tooltip title={isSelected ? 'Selected for payoff graph' : 'Click to include in payoff graph'}>
+                                <Checkbox
+                                  checked={isSelected}
+                                  onChange={() => toggleFuturesPositionVisibility(pos.product_symbol)}
+                                  sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
+                                />
+                              </Tooltip>
+                            </TableCell>
+                            <TableCell>
+                              <Typography
+                                variant="body2"
+                                sx={{ fontFamily: 'monospace', fontWeight: 600 }}
+                              >
+                                {pos.symbol}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              <Chip
+                                label={pos.side?.toUpperCase()}
+                                size="small"
+                                color={pos.side === 'long' ? 'success' : 'error'}
+                                sx={{ fontWeight: 'bold', minWidth: 55 }}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                                {Math.abs(pos.size)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                {formatPrice(pos.entry_price)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                {formatPrice(pos.mark_price)}
+                              </Typography>
+                            </TableCell>
+
+                            {/* Day 4 Enhancement: Leverage Indicator */}
+                            <TableCell align="center">
+                              <LeverageIndicator
+                                leverage={pos.leverage || 1}
+                                size="small"
+                              />
+                            </TableCell>
+
+                            <TableCell align="right">
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontFamily: 'monospace',
+                                  color: 'warning.main',
+                                }}
+                              >
+                                {formatPrice(pos.liquidation_price)}
+                              </Typography>
+                            </TableCell>
+
+                            {/* Day 4 Enhancement: Liquidation Proximity Bar */}
+                            <TableCell align="left">
+                              <LiquidationProximity
+                                currentPrice={pos.mark_price}
+                                liquidationPrice={pos.liquidation_price}
+                                side={pos.size > 0 ? 'long' : 'short'}
+                                showLabel={false}
+                              />
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontWeight: 'bold',
+                                  color: pnl.color,
+                                  fontFamily: 'monospace',
+                                }}
+                              >
+                                {pnl.text}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="right">
+                              <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
+                                ${pos.margin?.toFixed(4)}
+                              </Typography>
+                            </TableCell>
+                            <TableCell align="center">
+                              {hasMaxLoss ? (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <Chip
+                                    icon={<WarningIcon />}
+                                    label={`$${maxLossValue}`}
+                                    size="small"
+                                    color="warning"
+                                    onDelete={() => disableMaxLoss(productId)}
                                   />
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell sx={{ fontWeight: 'bold' }}>Symbol</TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 'bold' }}>
-                                Side
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Size
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Entry
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Mark
-                              </TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 'bold', minWidth: 120 }}>
-                                <Tooltip title="Position leverage - Safe: <3x, Medium: 3-5x, High: >5x">
-                                  <span>Leverage</span>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Liq. Price
-                              </TableCell>
-                              <TableCell align="left" sx={{ fontWeight: 'bold', minWidth: 150 }}>
-                                <Tooltip title="Distance to liquidation - Red <10%, Orange 10-20%, Green >20%">
-                                  <span>Liq. Distance</span>
-                                </Tooltip>
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Unrealized PnL
-                              </TableCell>
-                              <TableCell align="right" sx={{ fontWeight: 'bold' }}>
-                                Margin
-                              </TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 'bold' }}>
-                                Max Loss
-                              </TableCell>
-                              <TableCell align="center" sx={{ fontWeight: 'bold' }}>
-                                Actions
-                              </TableCell>
-                            </TableRow>
-                          </TableHead>
-                          <TableBody>
-                            {assetPositions.map((pos) => {
-                              const pnl = formatPnL(pos.unrealized_pnl);
-                              const productId = pos.product_id;
-                              const hasMaxLoss = maxLossSettings[productId]?.enabled;
-                              const maxLossValue = maxLossSettings[productId]?.max_loss || '';
-                              const isSelected = selectedFuturesForPayoff.includes(pos.product_symbol);
-
-                              return (
-                                <TableRow
-                                  key={`${pos.symbol}-${pos.product_id}`}
-                                  sx={{ '&:hover': { bgcolor: 'action.hover' } }}
-                                >
-                                  <TableCell padding="checkbox">
-                                    <Tooltip title={isSelected ? 'Selected for payoff graph' : 'Click to include in payoff graph'}>
-                                      <Checkbox
-                                        checked={isSelected}
-                                        onChange={() => toggleFuturesPositionVisibility(pos.product_symbol)}
-                                        sx={{ color: '#3b82f6', '&.Mui-checked': { color: '#3b82f6' } }}
-                                      />
-                                    </Tooltip>
-                                  </TableCell>
-                                  <TableCell>
-                                    <Typography
-                                      variant="body2"
-                                      sx={{ fontFamily: 'monospace', fontWeight: 600 }}
-                                    >
-                                      {pos.symbol}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="center">
-                                    <Chip
-                                      label={pos.side?.toUpperCase()}
+                                </Box>
+                              ) : (
+                                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                                  <TextField
+                                    size="small"
+                                    type="number"
+                                    placeholder="Max Loss"
+                                    value={maxLossInput[productId] || ''}
+                                    onChange={(e) => handleMaxLossChange(productId, e.target.value)}
+                                    sx={{ width: 90 }}
+                                    InputProps={{
+                                      startAdornment: (
+                                        <InputAdornment position="start">$</InputAdornment>
+                                      ),
+                                    }}
+                                    inputProps={{ min: 0, step: 1 }}
+                                  />
+                                  <Tooltip title="Activate Max Loss">
+                                    <IconButton
                                       size="small"
-                                      color={pos.side === 'long' ? 'success' : 'error'}
-                                      sx={{ fontWeight: 'bold', minWidth: 55 }}
-                                    />
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                                      {Math.abs(pos.size)}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                      {formatPrice(pos.entry_price)}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                      {formatPrice(pos.mark_price)}
-                                    </Typography>
-                                  </TableCell>
-
-                                  {/* Day 4 Enhancement: Leverage Indicator */}
-                                  <TableCell align="center">
-                                    <LeverageIndicator
-                                      leverage={pos.leverage || 1}
-                                      size="small"
-                                    />
-                                  </TableCell>
-
-                                  <TableCell align="right">
-                                    <Typography
-                                      variant="body2"
-                                      sx={{
-                                        fontFamily: 'monospace',
-                                        color: 'warning.main',
+                                      color="warning"
+                                      onClick={() => {
+                                        const value = maxLossInput[productId];
+                                        if (value && parseFloat(value) > 0) {
+                                          activateMaxLoss(productId, value);
+                                        }
                                       }}
+                                      disabled={
+                                        !maxLossInput[productId] ||
+                                        parseFloat(maxLossInput[productId]) <= 0
+                                      }
                                     >
-                                      {formatPrice(pos.liquidation_price)}
-                                    </Typography>
-                                  </TableCell>
-
-                                  {/* Day 4 Enhancement: Liquidation Proximity Bar */}
-                                  <TableCell align="left">
-                                    <LiquidationProximity
-                                      currentPrice={pos.mark_price}
-                                      liquidationPrice={pos.liquidation_price}
-                                      side={pos.size > 0 ? 'long' : 'short'}
-                                      showLabel={false}
-                                    />
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography
-                                      variant="body2"
-                                      sx={{
-                                        fontWeight: 'bold',
-                                        color: pnl.color,
-                                        fontFamily: 'monospace',
-                                      }}
-                                    >
-                                      {pnl.text}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontFamily: 'monospace' }}>
-                                      ${pos.margin?.toFixed(4)}
-                                    </Typography>
-                                  </TableCell>
-                                  <TableCell align="center">
-                                    {hasMaxLoss ? (
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <Chip
-                                          icon={<WarningIcon />}
-                                          label={`$${maxLossValue}`}
-                                          size="small"
-                                          color="warning"
-                                          onDelete={() => disableMaxLoss(productId)}
-                                        />
-                                      </Box>
-                                    ) : (
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                                        <TextField
-                                          size="small"
-                                          type="number"
-                                          placeholder="Max Loss"
-                                          value={maxLossInput[productId] || ''}
-                                          onChange={(e) => handleMaxLossChange(productId, e.target.value)}
-                                          sx={{ width: 90 }}
-                                          InputProps={{
-                                            startAdornment: (
-                                              <InputAdornment position="start">$</InputAdornment>
-                                            ),
-                                          }}
-                                          inputProps={{ min: 0, step: 1 }}
-                                        />
-                                        <Tooltip title="Activate Max Loss">
-                                          <IconButton
-                                            size="small"
-                                            color="warning"
-                                            onClick={() => {
-                                              const value = maxLossInput[productId];
-                                              if (value && parseFloat(value) > 0) {
-                                                activateMaxLoss(productId, value);
-                                              }
-                                            }}
-                                            disabled={
-                                              !maxLossInput[productId] ||
-                                              parseFloat(maxLossInput[productId]) <= 0
-                                            }
-                                          >
-                                            <WarningIcon fontSize="small" />
-                                          </IconButton>
-                                        </Tooltip>
-                                      </Box>
-                                    )}
-                                  </TableCell>
-                                  <TableCell align="center">
-                                    <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-                                      <Tooltip title="Buy">
-                                        <IconButton
-                                          size="small"
-                                          color="success"
-                                          onClick={() => handleOpenTrade(pos, 'buy')}
-                                        >
-                                          <BuyIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                      <Tooltip title="Sell">
-                                        <IconButton
-                                          size="small"
-                                          color="error"
-                                          onClick={() => handleOpenTrade(pos, 'sell')}
-                                        >
-                                          <SellIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                      <Tooltip title="Close Position">
-                                        <IconButton size="small" onClick={() => handleClosePosition(pos)}>
-                                          <CloseIcon fontSize="small" />
-                                        </IconButton>
-                                      </Tooltip>
-                                    </Box>
-                                  </TableCell>
-                                </TableRow>
-                              );
-                            })}
-                          </TableBody>
-                        </Table>
-                      </TableContainer>
-                    </AccordionDetails>
-                  </Accordion>
-                );
-              })}
-            </Box>
-          )}
+                                      <WarningIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                </Box>
+                              )}
+                            </TableCell>
+                            <TableCell align="center">
+                              <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+                                <Tooltip title="Buy">
+                                  <IconButton
+                                    size="small"
+                                    color="success"
+                                    onClick={() => handleOpenTrade(pos, 'buy')}
+                                  >
+                                    <BuyIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Sell">
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleOpenTrade(pos, 'sell')}
+                                  >
+                                    <SellIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                                <Tooltip title="Close Position">
+                                  <IconButton size="small" onClick={() => handleClosePosition(pos)}>
+                                    <CloseIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              </Box>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            );
+          })()}
 
           {/* Pending Orders */}
           {!loading && orders.length > 0 && (
@@ -1054,7 +977,7 @@ const FuturesPanel = ({ pollInterval = 15000 }) => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </Box >
   );
 };
 

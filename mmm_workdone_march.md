@@ -4441,3 +4441,18 @@ Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift
 **Tests**: 1339 passed, 0 failures.
 
 **Files changed**: `mmm_strategy_dispatch.py`, `mmm_monitor.py`, `mmm_activity.py`
+
+
+## 2026-04-15 — Fix: Gamma Cap Blocking Hedge in Dangerous Mode
+
+**Problem**: In DANGEROUS MODE with CE at 400/400 position cap, an adjustment was triggered (CE breached trigger, hedging with PE). The §5.5.1 projected gamma check then blocked the PE hedge with "Gamma Cap Blocked: PE adjustment would push projected portfolio gamma ($33147) past hard limit". This left the portfolio unhedged — the opposite of what dangerous mode is for.
+
+**Root cause**: `_process_adjustment` §5.5.1 (`mmm_monitor.py` ~line 4720) checked `blocked` from `check_projected_gamma()` and returned early with no awareness of `_dangerous_mode_adj`. Every other safety gate in the adjustment path (BLOCK_ALL_SELLS, regime pause, cooldown, consecutive direction limiter, margin YELLOW, reversal cooldown) already has a dangerous mode bypass. The gamma cap check was the only missing one.
+
+**Fix** (`mmm_monitor.py` §5.5.1, ~line 4720): When `blocked=True`, check `_dangerous_mode_adj`. If dangerous mode is active, log a `dangerous_mode_bypass` activity (matching all other bypass log entries) and fall through to execution. If not dangerous mode, proceed with the existing block (log + emit_safety + return).
+
+**Why this is correct**: In dangerous mode the hedge is reactive — market moved, trigger fired, operator must rebalance. Unhedged exposure from a blocked hedge is more dangerous than gamma cap breach. The operator explicitly accepted all risk by enabling dangerous mode.
+
+**Tests**: 33 gamma-related sealed tests passed, 0 failures.
+
+**Files changed**: `mmm_monitor.py`

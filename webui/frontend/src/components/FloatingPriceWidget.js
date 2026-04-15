@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Box, Typography, IconButton } from '@mui/material';
+import { Box, Typography, Chip } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import { Minimize2 } from 'lucide-react';
 import useMarketPrices from '../hooks/useMarketPrices';
 import SealedBadge from './common/SealedBadge';
@@ -44,6 +45,13 @@ const formatSessionLabel = (sessionKey) => {
 };
 
 const STORAGE_KEY = 'floatingPriceWidget_sessionRef';
+const WIDGET_WIDTH = 262;
+const WIDGET_MIN_HEIGHT = 214;
+const ACCENT_BLUE = '#60a5fa';
+const ACCENT_CYAN = '#22d3ee';
+const ACCENT_PURPLE = '#a855f7';
+const ACCENT_GREEN = '#34d399';
+const ACCENT_RED = '#f87171';
 
 const loadSessionRef = () => {
   try {
@@ -60,10 +68,10 @@ const saveSessionRef = (data) => {
 };
 
 const FloatingPriceWidget = () => {
-  const [position, setPosition] = useState({
-    x: window.innerWidth - 280,
-    y: window.innerHeight - 200,
-  });
+  const [position, setPosition] = useState(() => ({
+    x: Math.max(8, window.innerWidth - WIDGET_WIDTH - 16),
+    y: Math.max(8, window.innerHeight - WIDGET_MIN_HEIGHT - 16),
+  }));
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const widgetRef = useRef(null);
@@ -172,8 +180,8 @@ const FloatingPriceWidget = () => {
       const newY = e.clientY - dragOffset.y;
 
       // Keep within viewport bounds
-      const maxX = window.innerWidth - 250;
-      const maxY = window.innerHeight - 150;
+      const maxX = window.innerWidth - WIDGET_WIDTH;
+      const maxY = window.innerHeight - WIDGET_MIN_HEIGHT;
 
       setPosition({
         x: Math.max(0, Math.min(newX, maxX)),
@@ -204,9 +212,9 @@ const FloatingPriceWidget = () => {
   };
 
   const getChangeColor = (change) => {
-    if (change > 0) return '#10b981';
-    if (change < 0) return '#ef4444';
-    return '#64748b';
+    if (change > 0) return ACCENT_GREEN;
+    if (change < 0) return ACCENT_RED;
+    return '#94a3b8';
   };
 
   // Compute session-based deltas
@@ -223,16 +231,21 @@ const FloatingPriceWidget = () => {
         position: 'fixed',
         left: `${position.x}px`,
         top: `${position.y}px`,
-        width: '250px',
-        backgroundColor: 'rgba(15, 23, 42, 0.95)',
-        border: '1px solid rgba(148, 163, 184, 0.2)',
-        borderRadius: '12px',
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.4)',
+        width: `${WIDGET_WIDTH}px`,
+        borderRadius: 1.4,
+        border: `1px solid ${alpha('#64748b', 0.35)}`,
+        bgcolor: alpha('#020617', 0.92),
+        backgroundImage: `linear-gradient(180deg, ${alpha('#0f172a', 0.9)} 0%, ${alpha('#020617', 0.96)} 100%)`,
+        boxShadow: `
+          inset 0 1px 0 ${alpha('#e2e8f0', 0.06)},
+          0 6px 16px ${alpha('#000', 0.42)}
+        `,
         zIndex: 9999,
         cursor: isDragging ? 'grabbing' : 'default',
         backdropFilter: 'blur(10px)',
         overflow: 'hidden',
         userSelect: 'none',
+        transition: 'box-shadow 180ms ease, border-color 180ms ease, transform 180ms ease',
       }}
     >
       {/* Drag Handle */}
@@ -242,9 +255,10 @@ const FloatingPriceWidget = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '8px 12px',
-          backgroundColor: 'rgba(30, 41, 59, 0.8)',
-          borderBottom: '1px solid rgba(148, 163, 184, 0.1)',
+          px: 1.1,
+          py: 0.8,
+          bgcolor: alpha('#0f172a', 0.42),
+          borderBottom: `1px solid ${alpha('#94a3b8', 0.12)}`,
           cursor: 'grab',
           '&:active': {
             cursor: 'grabbing',
@@ -254,11 +268,11 @@ const FloatingPriceWidget = () => {
         <Box>
           <Typography
             sx={{
-              fontSize: '11px',
-              fontWeight: 600,
-              color: '#94a3b8',
+              fontSize: '0.6rem',
+              fontWeight: 900,
+              color: alpha('#cbd5e1', 0.92),
               textTransform: 'uppercase',
-              letterSpacing: '0.5px',
+              letterSpacing: '0.07em',
             }}
           >
             Live Prices {lastUpdate && `• ${lastUpdate.toLocaleTimeString()}`}
@@ -266,9 +280,11 @@ const FloatingPriceWidget = () => {
           {sessionLabel && (
             <Typography
               sx={{
-                fontSize: '9px',
-                color: '#64748b',
+                fontSize: '0.56rem',
+                color: alpha('#94a3b8', 0.8),
                 mt: '1px',
+                fontWeight: 700,
+                letterSpacing: '0.02em',
               }}
             >
               {sessionLabel}
@@ -281,7 +297,8 @@ const FloatingPriceWidget = () => {
               width: 6,
               height: 6,
               borderRadius: '50%',
-              backgroundColor: wsConnected ? '#10b981' : '#64748b',
+              backgroundColor: wsConnected ? ACCENT_GREEN : '#64748b',
+              boxShadow: wsConnected ? `0 0 6px ${alpha(ACCENT_GREEN, 0.45)}` : 'none',
               animation: wsConnected ? 'pulse 2s ease-in-out infinite' : 'none',
               '@keyframes pulse': {
                 '0%, 100%': { opacity: 1 },
@@ -289,32 +306,65 @@ const FloatingPriceWidget = () => {
               },
             }}
           />
-          <Typography sx={{ fontSize: '9px', color: '#64748b', textTransform: 'uppercase' }}>
-            {source}
-          </Typography>
-          <Minimize2 size={14} color="#64748b" />
+          <Chip
+            size="small"
+            label={String(source || 'feed').toUpperCase()}
+            sx={{
+              height: 16,
+              borderRadius: 0.8,
+              fontSize: '0.54rem',
+              fontWeight: 800,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              bgcolor: alpha('#0f172a', 0.2),
+              color: alpha('#bfdbfe', 0.82),
+              border: `1px solid ${alpha('#64748b', 0.28)}`,
+              '& .MuiChip-label': { px: 0.55 },
+            }}
+          />
+          <Box
+            sx={{
+              width: 18,
+              height: 18,
+              borderRadius: 0.8,
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              bgcolor: alpha('#0b1220', 0.32),
+              border: `1px solid ${alpha('#64748b', 0.28)}`,
+            }}
+          >
+            <Minimize2 size={11} color={alpha('#94a3b8', 0.9)} />
+          </Box>
         </Box>
       </Box>
 
       {/* Price Display */}
-      <Box sx={{ padding: '16px' }}>
+      <Box sx={{ p: 0.9, display: 'grid', gap: 0 }}>
         {/* BTC */}
-        <Box sx={{ marginBottom: '16px' }}>
+        <Box
+          sx={{
+            px: 0.2,
+            py: 0.62,
+            borderBottom: `1px solid ${alpha('#64748b', 0.22)}`,
+          }}
+        >
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: '4px',
+              mb: 0.3,
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Typography
                 sx={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  fontFamily: 'monospace',
+                  fontSize: '0.71rem',
+                  fontWeight: 900,
+                  color: alpha('#e2e8f0', 0.95),
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  letterSpacing: '0.05em',
                 }}
               >
                 BTC SPOT
@@ -325,47 +375,61 @@ const FloatingPriceWidget = () => {
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography
               sx={{
-                fontSize: '24px',
-                fontWeight: 700,
-                color: '#0ea5e9',
-                fontFamily: 'monospace',
+                fontSize: '1.56rem',
+                fontWeight: 900,
+                color: '#38bdf8',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                lineHeight: 1.05,
+                letterSpacing: '-0.01em',
               }}
             >
               ${formatPrice(btcPrice)}
             </Typography>
             {btcRef !== null && (
-              <Typography
+              <Box
                 sx={{
-                  fontSize: '12px',
-                  fontWeight: 600,
+                  px: 0.5,
+                  py: 0.12,
+                  borderRadius: 0.7,
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
                   color: getChangeColor(btcAbsChange),
-                  fontFamily: 'monospace',
+                  bgcolor: alpha(getChangeColor(btcAbsChange), 0.06),
+                  border: `1px solid ${alpha(getChangeColor(btcAbsChange), 0.2)}`,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  lineHeight: 1.25,
                 }}
               >
                 {btcAbsChange >= 0 ? '+' : ''}{btcAbsChange.toFixed(0)}{' '}
                 ({btcPctChange >= 0 ? '+' : ''}{btcPctChange.toFixed(2)}%)
-              </Typography>
+              </Box>
             )}
           </Box>
         </Box>
 
         {/* ETH */}
-        <Box>
+        <Box
+          sx={{
+            px: 0.2,
+            py: 0.62,
+          }}
+        >
           <Box
             sx={{
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'space-between',
-              marginBottom: '4px',
+              mb: 0.3,
             }}
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
               <Typography
                 sx={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: '#e2e8f0',
-                  fontFamily: 'monospace',
+                  fontSize: '0.71rem',
+                  fontWeight: 900,
+                  color: alpha('#e2e8f0', 0.95),
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  letterSpacing: '0.05em',
                 }}
               >
                 ETH SPOT
@@ -376,26 +440,34 @@ const FloatingPriceWidget = () => {
           <Box sx={{ display: 'flex', alignItems: 'baseline', gap: '8px', flexWrap: 'wrap' }}>
             <Typography
               sx={{
-                fontSize: '24px',
-                fontWeight: 700,
-                color: '#8b5cf6',
-                fontFamily: 'monospace',
+                fontSize: '1.56rem',
+                fontWeight: 900,
+                color: '#a78bfa',
+                fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                lineHeight: 1.05,
+                letterSpacing: '-0.01em',
               }}
             >
               ${formatPrice(ethPrice)}
             </Typography>
             {ethRef !== null && (
-              <Typography
+              <Box
                 sx={{
-                  fontSize: '12px',
-                  fontWeight: 600,
+                  px: 0.5,
+                  py: 0.12,
+                  borderRadius: 0.7,
+                  fontSize: '0.62rem',
+                  fontWeight: 800,
                   color: getChangeColor(ethAbsChange),
-                  fontFamily: 'monospace',
+                  bgcolor: alpha(getChangeColor(ethAbsChange), 0.06),
+                  border: `1px solid ${alpha(getChangeColor(ethAbsChange), 0.2)}`,
+                  fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                  lineHeight: 1.25,
                 }}
               >
                 {ethAbsChange >= 0 ? '+' : ''}{ethAbsChange.toFixed(2)}{' '}
                 ({ethPctChange >= 0 ? '+' : ''}{ethPctChange.toFixed(2)}%)
-              </Typography>
+              </Box>
             )}
           </Box>
         </Box>

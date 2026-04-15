@@ -28,9 +28,16 @@ import {
   Box, Typography, Paper, Chip, IconButton, Switch, FormControlLabel, Slider,
   TextField, Button, ClickAwayListener,
 } from '@mui/material';
+import { alpha } from '@mui/material/styles';
 import ZoomInIcon from '@mui/icons-material/ZoomIn';
 import ZoomOutIcon from '@mui/icons-material/ZoomOut';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
+import MonetizationOnOutlinedIcon from '@mui/icons-material/MonetizationOnOutlined';
+import WarningAmberRoundedIcon from '@mui/icons-material/WarningAmberRounded';
+import TrackChangesRoundedIcon from '@mui/icons-material/TrackChangesRounded';
+import CompareArrowsRoundedIcon from '@mui/icons-material/CompareArrowsRounded';
+import CasinoRoundedIcon from '@mui/icons-material/CasinoRounded';
+import EditNoteRoundedIcon from '@mui/icons-material/EditNoteRounded';
 import AlertsPanel from './AlertsPanel';
 import PayoffAlertDialog from './PayoffAlertDialog';
 import PayoffControls from './PayoffControls';
@@ -53,6 +60,7 @@ const OptionsPayoffDiagram = ({
   indexPrices = { BTC: 0, ETH: 0 },
   manualPnL = 0,
   onManualPnLChange,
+  batchOrderSection = null,
 }) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
@@ -465,6 +473,143 @@ const OptionsPayoffDiagram = ({
     : profitPct;
   const displayBreakevensResolved = displayBreakevens !== null ? displayBreakevens : breakevens;
 
+  const hasRewardRisk = isFinite(displayMaxProfit) && isFinite(displayMaxLoss) && displayMaxLoss !== 0;
+  const rewardRiskRatio = hasRewardRisk ? Math.abs(displayMaxProfit / displayMaxLoss) : null;
+  const rrIsFavorable = hasRewardRisk ? displayMaxProfit > Math.abs(displayMaxLoss) : false;
+  const rrIsUnfavorable = hasRewardRisk ? displayMaxProfit < Math.abs(displayMaxLoss) : false;
+  const rrStatusTone = rrIsFavorable ? 'success' : rrIsUnfavorable ? 'danger' : 'neutral';
+  const rrStatusLabel = rrIsFavorable ? 'Fav' : rrIsUnfavorable ? 'Unfav' : 'Neutral';
+  const popTone = probabilityOfProfit >= 50 ? 'success' : 'danger';
+  const popStatusLabel = probabilityOfProfit >= 50 ? 'Fav' : 'Unfav';
+  const profitCapLabel = isFinite(displayMaxProfit) && displayMaxProfit > 0 ? 'Capped' : 'Unlimited';
+  const lossCapLabel = isFinite(displayMaxLoss) && displayMaxLoss < 0 ? 'Capped' : 'Unlimited';
+
+  const tonePalette = {
+    success: {
+      border: alpha('#10b981', 0.45),
+      bg: alpha('#10b981', 0.12),
+      label: alpha('#cbd5e1', 0.92),
+      value: '#34d399',
+      chipBg: alpha('#10b981', 0.2),
+      chipText: '#6ee7b7',
+    },
+    danger: {
+      border: alpha('#ef4444', 0.45),
+      bg: alpha('#ef4444', 0.12),
+      label: alpha('#cbd5e1', 0.92),
+      value: '#f87171',
+      chipBg: alpha('#ef4444', 0.2),
+      chipText: '#fca5a5',
+    },
+    warning: {
+      border: alpha('#f59e0b', 0.45),
+      bg: alpha('#f59e0b', 0.12),
+      label: alpha('#cbd5e1', 0.92),
+      value: '#fbbf24',
+      chipBg: alpha('#f59e0b', 0.2),
+      chipText: '#fcd34d',
+    },
+    info: {
+      border: alpha('#3b82f6', 0.45),
+      bg: alpha('#3b82f6', 0.12),
+      label: alpha('#cbd5e1', 0.92),
+      value: '#60a5fa',
+      chipBg: alpha('#3b82f6', 0.2),
+      chipText: '#93c5fd',
+    },
+    neutral: {
+      border: alpha('#64748b', 0.5),
+      bg: alpha('#475569', 0.14),
+      label: alpha('#cbd5e1', 0.88),
+      value: alpha('#cbd5e1', 0.95),
+      chipBg: alpha('#64748b', 0.22),
+      chipText: alpha('#cbd5e1', 0.9),
+    },
+    indigo: {
+      border: alpha('#818cf8', 0.5),
+      bg: alpha('#6366f1', 0.16),
+      label: alpha('#cbd5e1', 0.92),
+      value: '#a5b4fc',
+      chipBg: alpha('#818cf8', 0.22),
+      chipText: '#c7d2fe',
+    },
+  };
+
+  const metricLabelSx = {
+    fontSize: '0.68rem',
+    fontWeight: 900,
+    letterSpacing: '0.06em',
+    textTransform: 'uppercase',
+    lineHeight: 1,
+    whiteSpace: 'nowrap',
+  };
+
+  const metricValueSx = (color) => ({
+    color,
+    fontSize: '1.03rem',
+    fontWeight: 900,
+    lineHeight: 1,
+    fontVariantNumeric: 'tabular-nums',
+    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+    whiteSpace: 'nowrap',
+  });
+
+  const metricMetaSx = {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 0.5,
+    minWidth: 0,
+  };
+
+  const metricIconWrapSx = (tone = 'neutral') => ({
+    width: 20,
+    height: 20,
+    borderRadius: '50%',
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    bgcolor: tonePalette[tone]?.chipBg || tonePalette.neutral.chipBg,
+    border: `1px solid ${tonePalette[tone]?.border || tonePalette.neutral.border}`,
+    flexShrink: 0,
+  });
+
+  const metricIconSx = (tone = 'neutral') => ({
+    fontSize: 13,
+    color: tonePalette[tone]?.value || tonePalette.neutral.value,
+  });
+
+  const metricPillSx = (tone = 'neutral') => {
+    const palette = tonePalette[tone] || tonePalette.neutral;
+    return {
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 0.9,
+      px: 1.35,
+      py: 0.85,
+      minHeight: 44,
+      borderRadius: 999,
+      border: `1px solid ${palette.border}`,
+      bgcolor: alpha('#020617', 0.42),
+      backgroundImage: `linear-gradient(180deg, ${alpha(palette.value, 0.16)} 0%, ${alpha('#020617', 0.28)} 100%)`,
+      boxShadow: `
+        inset 0 1px 0 ${alpha('#e2e8f0', 0.1)},
+        0 0 0 1px ${alpha(palette.value, 0.18)},
+        0 0 16px ${alpha(palette.value, 0.22)}
+      `,
+      transition: 'border-color 160ms ease, background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease',
+      scrollSnapAlign: 'start',
+      '&:hover': {
+        transform: 'translateY(-2px)',
+        borderColor: alpha(palette.border, 0.95),
+        boxShadow: `
+          inset 0 1px 0 ${alpha('#e2e8f0', 0.12)},
+          0 0 0 1px ${alpha(palette.value, 0.3)},
+          0 0 24px ${alpha(palette.value, 0.32)}
+        `,
+      },
+    };
+  };
+
   // Custom Tooltip - Sensibull Style
   const CustomTooltip = ({ active, payload, label }) => {
     if (!active || !payload || !payload.length) return null;
@@ -656,9 +801,9 @@ const OptionsPayoffDiagram = ({
 
 
   return (
-    <Paper sx={{ p: 2, bgcolor: 'background.paper' }}>
+    <Paper sx={{ p: 2, bgcolor: 'background.paper', display: 'flex', flexDirection: 'column' }}>
       {/* Positions Used in Payoff - Show at top */}
-      <Box sx={{ mb: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
+      <Box sx={{ order: 2, mb: 1, p: 2, bgcolor: 'action.hover', borderRadius: 1, border: '1px solid', borderColor: 'divider' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: showPositionsSection ? 1.5 : 0 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="subtitle2" fontWeight="bold" sx={{ color: 'primary.main' }}>
@@ -789,181 +934,268 @@ const OptionsPayoffDiagram = ({
         )}
       </Box>
 
-      {/* Compact Metrics Strip - Sensibull Style */}
+      {/* Compact Metrics Strip - Unified component style */}
       <Box
         sx={{
           mb: 2,
           display: 'flex',
-          flexWrap: 'wrap',
-          gap: 1.5,
-          p: 1.5,
-          bgcolor: 'rgba(17, 24, 39, 0.6)',
-          borderRadius: 2,
-          border: '1px solid rgba(75, 85, 99, 0.3)',
+          alignItems: 'center',
+          flexWrap: { xs: 'wrap', xl: 'nowrap' },
+          gap: 1.1,
+          p: 1.45,
+          bgcolor: alpha('#020617', 0.86),
+          backgroundImage: `
+            radial-gradient(circle at 8% 0%, ${alpha('#38bdf8', 0.2)} 0%, transparent 38%),
+            radial-gradient(circle at 92% 0%, ${alpha('#a78bfa', 0.2)} 0%, transparent 40%),
+            linear-gradient(180deg, ${alpha('#0f172a', 0.9)} 0%, ${alpha('#020617', 0.95)} 100%)
+          `,
+          borderRadius: 2.3,
+          border: `1px solid ${alpha('#60a5fa', 0.45)}`,
+          boxShadow: `
+            inset 0 1px 0 ${alpha('#e2e8f0', 0.12)},
+            0 0 0 1px ${alpha('#60a5fa', 0.18)},
+            0 14px 30px ${alpha('#000', 0.5)},
+            0 0 24px ${alpha('#60a5fa', 0.16)}
+          `,
+          overflowX: 'auto',
+          scrollSnapType: 'x proximity',
         }}
       >
         {/* Profit Potential */}
-        <Box sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          py: 0.75,
-          borderRadius: 1.5,
-          bgcolor: 'rgba(16,185,129,0.1)',
-          border: '1px solid rgba(16,185,129,0.3)',
-          minWidth: 'fit-content',
-        }}>
-          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-            💰 Max Profit
+        <Box sx={metricPillSx('success')}>
+          <Box sx={metricMetaSx}>
+            <Box sx={metricIconWrapSx('success')}>
+              <MonetizationOnOutlinedIcon sx={metricIconSx('success')} />
+            </Box>
+            <Typography variant="caption" sx={{ ...metricLabelSx, color: tonePalette.success.label }}>
+              Max Profit
+            </Typography>
+          </Box>
+          <Typography sx={metricValueSx(tonePalette.success.value)}>
+            {isFinite(displayMaxProfit) && displayMaxProfit > 0
+              ? `+$${displayMaxProfit.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '∞'}
           </Typography>
-          <Typography variant="body2" fontWeight="bold" sx={{ color: '#10b981' }}>
-            {isFinite(displayMaxProfit) && displayMaxProfit > 0 ? `+$${displayMaxProfit.toFixed(2)}` : '♾️'}
-          </Typography>
+          <Chip
+            size="small"
+            label={profitCapLabel}
+            sx={{
+              height: 20,
+              fontSize: '0.65rem',
+              fontWeight: 800,
+              borderRadius: 999,
+              bgcolor: tonePalette.success.chipBg,
+              color: tonePalette.success.chipText,
+              border: `1px solid ${alpha('#10b981', 0.42)}`,
+            }}
+          />
         </Box>
 
         {/* Risk Exposure */}
-        <Box sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          py: 0.75,
-          borderRadius: 1.5,
-          bgcolor: 'rgba(239,68,68,0.1)',
-          border: '1px solid rgba(239,68,68,0.3)',
-          minWidth: 'fit-content',
-        }}>
-          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-            ⚠️ Max Loss
+        <Box sx={metricPillSx('danger')}>
+          <Box sx={metricMetaSx}>
+            <Box sx={metricIconWrapSx('danger')}>
+              <WarningAmberRoundedIcon sx={metricIconSx('danger')} />
+            </Box>
+            <Typography variant="caption" sx={{ ...metricLabelSx, color: tonePalette.danger.label }}>
+              Max Loss
+            </Typography>
+          </Box>
+          <Typography sx={metricValueSx(tonePalette.danger.value)}>
+            {isFinite(displayMaxLoss) && displayMaxLoss < 0
+              ? `$${displayMaxLoss.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : '∞'}
           </Typography>
-          <Typography variant="body2" fontWeight="bold" sx={{ color: '#ef4444' }}>
-            {isFinite(displayMaxLoss) && displayMaxLoss < 0 ? `$${displayMaxLoss.toFixed(2)}` : '♾️'}
-          </Typography>
+          <Chip
+            size="small"
+            label={lossCapLabel}
+            sx={{
+              height: 20,
+              fontSize: '0.65rem',
+              fontWeight: 800,
+              borderRadius: 999,
+              bgcolor: tonePalette.danger.chipBg,
+              color: tonePalette.danger.chipText,
+              border: `1px solid ${alpha('#ef4444', 0.42)}`,
+            }}
+          />
         </Box>
 
         {/* Breakeven Points - Always expanded inline */}
         <Box
           sx={{
-            display: 'flex',
+            ...metricPillSx('warning'),
             alignItems: 'center',
-            gap: 1,
-            px: 1.5,
-            py: 0.75,
-            borderRadius: 1.5,
-            bgcolor: 'rgba(251,191,36,0.1)',
-            border: '1px solid rgba(251,191,36,0.3)',
             flexWrap: 'wrap',
+            rowGap: 0.45,
+            maxWidth: '100%',
           }}
         >
-          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-            🎯 Breakeven
-          </Typography>
+          <Box sx={metricMetaSx}>
+            <Box sx={metricIconWrapSx('warning')}>
+              <TrackChangesRoundedIcon sx={metricIconSx('warning')} />
+            </Box>
+            <Typography variant="caption" sx={{ ...metricLabelSx, color: tonePalette.warning.label }}>
+              Breakeven
+            </Typography>
+          </Box>
           {displayBreakevensResolved.length > 0 ? (
-            <Box sx={{ display: 'flex', gap: 0.75, alignItems: 'center', flexWrap: 'wrap' }}>
+            <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
               {displayBreakevensResolved.map((be, idx) => {
                 const bePercent = ((be / spotPrice - 1) * 100).toFixed(1);
                 const sign = bePercent >= 0 ? '+' : '';
                 return (
-                  <Typography key={idx} variant="body2" fontWeight="bold" sx={{ color: '#fbbf24' }}>
-                    ${be.toLocaleString()}
-                    <Typography component="span" variant="caption" sx={{ color: 'rgba(251,191,36,0.7)', ml: 0.25 }}>
-                      ({sign}{bePercent}%)
-                    </Typography>
-                  </Typography>
+                  <Chip
+                    key={idx}
+                    size="small"
+                    label={`$${be.toLocaleString()} (${sign}${bePercent}%)`}
+                    sx={{
+                      height: 21,
+                      fontSize: '0.69rem',
+                      fontWeight: 800,
+                      borderRadius: 999,
+                      bgcolor: tonePalette.warning.chipBg,
+                      color: tonePalette.warning.chipText,
+                      border: `1px solid ${alpha('#f59e0b', 0.35)}`,
+                    }}
+                  />
                 );
               })}
             </Box>
           ) : (
-            <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
+            <Typography sx={metricValueSx(alpha('#94a3b8', 0.92))}>N/A</Typography>
           )}
         </Box>
 
         {/* Reward/Risk Ratio */}
-        <Box sx={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 1,
-          px: 1.5,
-          py: 0.75,
-          borderRadius: 1.5,
-          bgcolor: 'rgba(59,130,246,0.1)',
-          border: '1px solid rgba(59,130,246,0.3)',
-          minWidth: 'fit-content',
-        }}>
-          <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-            ⚖️ R:R
-          </Typography>
-          {isFinite(displayMaxProfit) && isFinite(displayMaxLoss) && displayMaxLoss !== 0 ? (
+        <Box sx={metricPillSx('info')}>
+          <Box sx={metricMetaSx}>
+            <Box sx={metricIconWrapSx('info')}>
+              <CompareArrowsRoundedIcon sx={metricIconSx('info')} />
+            </Box>
+            <Typography variant="caption" sx={{ ...metricLabelSx, color: tonePalette.info.label }}>
+              R:R
+            </Typography>
+          </Box>
+          {hasRewardRisk ? (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
-              <Typography variant="body2" fontWeight="bold" sx={{ color: '#3b82f6' }}>
-                {Math.abs(displayMaxProfit / displayMaxLoss).toFixed(2)}:1
+              <Typography sx={metricValueSx(tonePalette.info.value)}>
+                {rewardRiskRatio.toFixed(2)}:1
               </Typography>
-              <Box sx={{
-                px: 0.75,
-                py: 0.25,
-                borderRadius: 0.5,
-                bgcolor: displayMaxProfit > Math.abs(displayMaxLoss) ? 'rgba(16,185,129,0.2)' : displayMaxProfit < Math.abs(displayMaxLoss) ? 'rgba(239,68,68,0.2)' : 'rgba(156,163,175,0.2)'
-              }}>
-                <Typography variant="caption" fontWeight="600" sx={{
-                  color: displayMaxProfit > Math.abs(displayMaxLoss) ? '#10b981' : displayMaxProfit < Math.abs(displayMaxLoss) ? '#ef4444' : '#9ca3af',
-                  fontSize: '0.65rem'
-                }}>
-                  {displayMaxProfit > Math.abs(displayMaxLoss) ? '✓ Fav' : displayMaxProfit < Math.abs(displayMaxLoss) ? '⚠ Unfav' : '○'}
-                </Typography>
-              </Box>
+              <Chip
+                size="small"
+                label={rrStatusLabel}
+                sx={{
+                  height: 20,
+                  fontSize: '0.66rem',
+                  fontWeight: 800,
+                  borderRadius: 999,
+                  bgcolor: tonePalette[rrStatusTone].chipBg,
+                  color: tonePalette[rrStatusTone].chipText,
+                  border: `1px solid ${tonePalette[rrStatusTone].border}`,
+                }}
+              />
             </Box>
           ) : (
-            <Typography variant="body2" sx={{ color: '#9ca3af' }}>N/A</Typography>
+            <Typography sx={metricValueSx(alpha('#94a3b8', 0.92))}>N/A</Typography>
           )}
         </Box>
 
         {/* B4: Probability of Profit (PoP) */}
         {probabilityOfProfit !== null && probabilityOfProfit !== undefined && (
-          <Box sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 1,
-            px: 1.5,
-            py: 0.75,
-            borderRadius: 1.5,
-            bgcolor: probabilityOfProfit >= 50 ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-            border: `1px solid ${probabilityOfProfit >= 50 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}`,
-            minWidth: 'fit-content',
-          }}>
-            <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-              🎲 PoP
-            </Typography>
-            <Typography variant="body2" fontWeight="bold" sx={{
-              color: probabilityOfProfit >= 50 ? '#10b981' : '#ef4444',
-            }}>
+          <Box sx={metricPillSx(popTone)}>
+            <Box sx={metricMetaSx}>
+              <Box sx={metricIconWrapSx(popTone)}>
+                <CasinoRoundedIcon sx={metricIconSx(popTone)} />
+              </Box>
+              <Typography
+                variant="caption"
+                sx={{
+                  ...metricLabelSx,
+                  color: probabilityOfProfit >= 50 ? tonePalette.success.label : tonePalette.danger.label,
+                }}
+              >
+                PoP
+              </Typography>
+            </Box>
+            <Typography sx={metricValueSx(popTone === 'success' ? tonePalette.success.value : tonePalette.danger.value)}>
               {probabilityOfProfit.toFixed(1)}%
             </Typography>
+            <Chip
+              size="small"
+              label={popStatusLabel}
+              sx={{
+                height: 20,
+                fontSize: '0.66rem',
+                fontWeight: 800,
+                borderRadius: 999,
+                bgcolor: tonePalette[popTone].chipBg,
+                color: tonePalette[popTone].chipText,
+                border: `1px solid ${tonePalette[popTone].border}`,
+              }}
+            />
           </Box>
         )}
 
         {/* Manual PnL offset control */}
         {onManualPnLChange && (
-          <Box sx={{ position: 'relative', ml: 'auto' }}>
+          <Box sx={{ position: 'relative', ml: { xs: 0, md: 'auto' } }}>
             <Box
               onClick={() => {
                 setManualPnLInput(manualPnL === 0 ? '' : String(manualPnL));
                 setManualPnLOpen(true);
               }}
               sx={{
-                display: 'flex', alignItems: 'center', gap: 1,
-                px: 1.5, py: 0.75, borderRadius: 1.5, cursor: 'pointer',
-                bgcolor: manualPnL !== 0 ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.06)',
-                border: `1px solid ${manualPnL !== 0 ? 'rgba(99,102,241,0.5)' : 'rgba(99,102,241,0.25)'}`,
-                '&:hover': { bgcolor: 'rgba(99,102,241,0.18)' },
+                ...metricPillSx(manualPnL !== 0 ? 'indigo' : 'neutral'),
+                cursor: 'pointer',
+                '&:hover': {
+                  ...metricPillSx(manualPnL !== 0 ? 'indigo' : 'neutral')['&:hover'],
+                  bgcolor: manualPnL !== 0 ? alpha('#6366f1', 0.2) : alpha('#475569', 0.2),
+                },
+              }}
+              role="button"
+              tabIndex={0}
+              aria-label="Open manual PnL offset editor"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setManualPnLInput(manualPnL === 0 ? '' : String(manualPnL));
+                  setManualPnLOpen(true);
+                }
               }}
             >
-              <Typography variant="caption" sx={{ color: 'rgba(156,163,175,0.9)', fontWeight: 500 }}>
-                ✏️ Manual PnL
+              <Box sx={metricMetaSx}>
+                <Box sx={metricIconWrapSx(manualPnL !== 0 ? 'indigo' : 'neutral')}>
+                  <EditNoteRoundedIcon sx={metricIconSx(manualPnL !== 0 ? 'indigo' : 'neutral')} />
+                </Box>
+                <Typography
+                  variant="caption"
+                  sx={{
+                    ...metricLabelSx,
+                    color: manualPnL !== 0 ? tonePalette.indigo.label : tonePalette.neutral.label,
+                  }}
+                >
+                  Manual PnL
+                </Typography>
+              </Box>
+              <Typography sx={metricValueSx(manualPnL !== 0 ? tonePalette.indigo.value : tonePalette.neutral.value)}>
+                {manualPnL !== 0
+                  ? `${manualPnL > 0 ? '+' : ''}$${manualPnL.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  : 'Off'}
               </Typography>
-              <Typography variant="body2" fontWeight="bold" sx={{ color: manualPnL !== 0 ? '#818cf8' : '#6b7280' }}>
-                {manualPnL !== 0 ? `${manualPnL > 0 ? '+' : ''}$${manualPnL.toFixed(2)}` : 'Off'}
-              </Typography>
+              <Chip
+                size="small"
+                label={manualPnL !== 0 ? 'Active' : 'Off'}
+                sx={{
+                  height: 20,
+                  fontSize: '0.65rem',
+                  fontWeight: 800,
+                  borderRadius: 999,
+                  bgcolor: manualPnL !== 0 ? tonePalette.indigo.chipBg : tonePalette.neutral.chipBg,
+                  color: manualPnL !== 0 ? tonePalette.indigo.chipText : tonePalette.neutral.chipText,
+                  border: `1px solid ${manualPnL !== 0 ? alpha('#818cf8', 0.45) : alpha('#64748b', 0.42)}`,
+                }}
+              />
             </Box>
             {manualPnLOpen && (
               <ClickAwayListener onClickAway={() => setManualPnLOpen(false)}>
@@ -1579,13 +1811,23 @@ const OptionsPayoffDiagram = ({
         nearestExpiry={nearestExpiry}
       />
 
+      {/* Batch Order section (injected from OptionsPanel) */}
+      {batchOrderSection && (
+        <Box sx={{ order: 1 }}>
+          {batchOrderSection}
+        </Box>
+      )}
+
       {/* Alerts Panel - Manage Price Notifications */}
-      <AlertsPanel
-        spotPrice={chartData?.spotPrice}
-        alerts={activeAlerts}
-        onRefresh={fetchAlerts}
-        expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
-      />
+      <Box sx={{ order: 3 }}>
+        <AlertsPanel
+          spotPrice={chartData?.spotPrice}
+          alerts={activeAlerts}
+          onRefresh={fetchAlerts}
+          expiryDate={chartData?.nearestExpiry ? new Date(chartData.nearestExpiry).toISOString().split('T')[0] : null}
+          compactSpacing
+        />
+      </Box>
 
       {/* Alert Creation Dialog - Extracted Component */}
       <PayoffAlertDialog

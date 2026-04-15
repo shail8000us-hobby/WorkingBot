@@ -21,6 +21,13 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid,
   Tooltip as RechartTooltip, Legend, ResponsiveContainer,
 } from 'recharts';
+import { alpha } from '@mui/material/styles';
+
+const ACCENT = '#38bdf8';
+const NUMERIC_FONT = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace';
+const CARD_MIN_HEIGHT = 318;
+const CHART_HEIGHT = 180;
+const FOOTER_MIN_HEIGHT = 34;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,7 +120,7 @@ const CustomDot = ({ cx, cy, payload, color }) => (
 );
 
 export default function VolTermStructurePanel({ positions, spotPrice }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   const termData = useMemo(
     () => computeTermStructure(positions, spotPrice),
@@ -136,10 +143,20 @@ export default function VolTermStructurePanel({ positions, spotPrice }) {
   if (!positions?.length) return null;
 
   const headerContent = (
-    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <ShowChartIcon sx={{ fontSize: '1rem', color: '#94a3b8' }} />
-        <Typography variant="subtitle2" sx={{ color: '#e2e8f0', fontWeight: 600 }}>
+    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 0.7, minHeight: 30 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8, flexWrap: 'wrap', rowGap: 0.45 }}>
+        <ShowChartIcon sx={{ fontSize: '1rem', color: alpha(ACCENT, 0.92) }} />
+        <Typography
+          variant="subtitle2"
+          sx={{
+            color: '#e2e8f0',
+            fontWeight: 800,
+            textTransform: 'uppercase',
+            letterSpacing: '0.06em',
+            fontSize: '0.74rem',
+            lineHeight: 1,
+          }}
+        >
           Vol Structure
         </Typography>
         {termLabel && (
@@ -147,37 +164,67 @@ export default function VolTermStructurePanel({ positions, spotPrice }) {
             label={termLabel.label}
             size="small"
             sx={{
-              bgcolor: termLabel.isBackwardation ? 'rgba(239,68,68,0.2)' : 'rgba(16,185,129,0.2)',
-              color: termLabel.isBackwardation ? '#ef4444' : '#10b981',
-              fontSize: '0.65rem',
-              height: 18,
+              bgcolor: termLabel.isBackwardation ? alpha('#ef4444', 0.16) : alpha('#10b981', 0.17),
+              color: termLabel.isBackwardation ? '#f87171' : '#34d399',
+              border: `1px solid ${termLabel.isBackwardation ? alpha('#ef4444', 0.45) : alpha('#10b981', 0.45)}`,
+              fontSize: '0.63rem',
+              height: 21,
+              fontWeight: 800,
+              '& .MuiChip-label': { px: 0.85, fontFamily: NUMERIC_FONT },
             }}
           />
         )}
         {termLabel && (
-          <Typography variant="caption" sx={{ color: '#64748b' }}>
+          <Typography
+            variant="caption"
+            sx={{
+              color: alpha('#94a3b8', 0.85),
+              fontSize: '0.64rem',
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
             {termLabel.spread}
           </Typography>
         )}
       </Box>
-      <IconButton size="small" onClick={() => setCollapsed(c => !c)} sx={{ color: '#94a3b8' }}>
+      <IconButton size="small" onClick={() => setCollapsed(c => !c)} sx={{ color: '#94a3b8', p: 0.45 }}>
         {collapsed ? <ExpandMoreIcon /> : <ExpandLessIcon />}
       </IconButton>
     </Box>
   );
 
   return (
-    <Paper sx={{ p: 1.5, bgcolor: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(71, 85, 105, 0.3)', mb: 1 }}>
+    <Paper
+      sx={{
+        p: 1.25,
+        bgcolor: alpha('#0b1220', 0.92),
+        border: `1px solid ${alpha(ACCENT, 0.28)}`,
+        borderRadius: 2.2,
+        mb: 1,
+        height: '100%',
+        minHeight: CARD_MIN_HEIGHT,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        backgroundImage: `
+          radial-gradient(circle at 96% 0%, ${alpha(ACCENT, 0.12)} 0%, transparent 34%),
+          linear-gradient(180deg, ${alpha('#0f172a', 0.82)} 0%, ${alpha('#0b1220', 0.94)} 100%)
+        `,
+        boxShadow: `0 12px 26px ${alpha('#000', 0.45)}`,
+      }}
+    >
       {headerContent}
       {!collapsed && (
-        <Box sx={{ mt: 1.5 }}>
+        <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 0.85, flex: 1 }}>
           {termData.length < 2 ? (
-            <Typography variant="caption" sx={{ color: '#64748b' }}>
+            <Typography variant="caption" sx={{ color: alpha('#94a3b8', 0.8), fontSize: '0.7rem' }}>
               Need at least 2 expiries with ATM positions to plot term structure.
             </Typography>
           ) : (
-            <ResponsiveContainer width="100%" height={160}>
-              <LineChart data={termData} margin={{ top: 15, right: 20, bottom: 5, left: 10 }}>
+            <ResponsiveContainer width="100%" height={CHART_HEIGHT}>
+              <LineChart data={termData} margin={{ top: 10, right: 20, bottom: 5, left: 10 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis
                   dataKey="label"
@@ -194,11 +241,17 @@ export default function VolTermStructurePanel({ positions, spotPrice }) {
                   width={42}
                 />
                 <RechartTooltip
-                  contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 6 }}
-                  labelStyle={{ color: '#e2e8f0', fontWeight: 600 }}
+                  contentStyle={{
+                    background: 'rgba(10, 15, 28, 0.96)',
+                    border: `1px solid ${alpha(ACCENT, 0.35)}`,
+                    borderRadius: 8,
+                    boxShadow: '0 10px 30px rgba(0,0,0,0.45)',
+                  }}
+                  labelStyle={{ color: '#e2e8f0', fontWeight: 700, letterSpacing: '0.03em' }}
+                  itemStyle={{ color: '#e2e8f0', fontWeight: 700, fontSize: 12, fontFamily: NUMERIC_FONT }}
                   formatter={(val, name) => [`${val?.toFixed(2)}%`, name]}
                 />
-                <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
+                <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8', paddingTop: 6 }} />
                 <Line
                   type="monotone" dataKey="atmIV" name="ATM IV"
                   stroke="#e2e8f0" strokeWidth={2.5}
@@ -221,8 +274,21 @@ export default function VolTermStructurePanel({ positions, spotPrice }) {
               </LineChart>
             </ResponsiveContainer>
           )}
-          <Typography variant="caption" sx={{ color: '#475569', display: 'block', mt: 0.5 }}>
-            ATM = positions within 5% of spot ${spotPrice?.toLocaleString()}. {termData.length} expiries.
+          <Typography
+            variant="caption"
+            sx={{
+              color: alpha('#94a3b8', 0.8),
+              display: 'flex',
+              alignItems: 'center',
+              mt: 'auto',
+              pt: 0.55,
+              minHeight: FOOTER_MIN_HEIGHT,
+              borderTop: `1px dashed ${alpha('#475569', 0.45)}`,
+              fontSize: '0.65rem',
+              fontVariantNumeric: 'tabular-nums',
+            }}
+          >
+            ATM band ±5% around spot ${spotPrice?.toLocaleString()}. {termData.length} expiries.
           </Typography>
         </Box>
       )}

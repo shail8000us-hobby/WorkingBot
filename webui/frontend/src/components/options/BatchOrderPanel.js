@@ -33,6 +33,14 @@ import {
   PlayArrow as PlayArrowIcon,
   Remove as RemoveIcon,
 } from '@mui/icons-material';
+import { alpha } from '@mui/material/styles';
+
+const ACCENT_BLUE = '#60a5fa';
+const ACCENT_CYAN = '#22d3ee';
+const ACCENT_GOLD = '#fbbf24';
+const ACCENT_PURPLE = '#a855f7';
+const ACCENT_GREEN = '#34d399';
+const ACCENT_RED = '#f87171';
 
 const BatchOrderPanel = React.memo(function BatchOrderPanel({
   // Data
@@ -85,11 +93,48 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   stopExpiryAutoLoop,
   clearAutoLoopError,
   clearExpiryLoopError,
+  compactSpacing = false,
 }) {
   // Option 4 — Bulk apply qty to all selected rows
   const [bulkApplyQty, setBulkApplyQty] = useState('');
 
   const selectedCount = Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length;
+
+  const modeButtonSx = (isActive, activeColor) => ({
+    borderRadius: 0,
+    minWidth: 54,
+    px: 1,
+    fontSize: '0.7rem',
+    fontWeight: 800,
+    letterSpacing: '0.04em',
+    textTransform: 'none',
+    py: 0.3,
+    bgcolor: isActive ? alpha(activeColor, 0.95) : 'transparent',
+    color: isActive ? '#0b1220' : alpha(activeColor, 0.92),
+    borderColor: 'transparent',
+    '&:hover': {
+      bgcolor: isActive ? activeColor : alpha(activeColor, 0.13),
+      borderColor: 'transparent',
+    },
+  });
+
+  const execButtonSx = (isActive, activeColor, textColor = '#fff') => ({
+    borderRadius: 0,
+    minWidth: 76,
+    px: 1,
+    fontSize: '0.72rem',
+    fontWeight: 900,
+    letterSpacing: '0.03em',
+    textTransform: 'none',
+    py: 0.38,
+    bgcolor: isActive ? alpha(activeColor, 0.95) : 'transparent',
+    color: isActive ? textColor : alpha(activeColor, 0.92),
+    borderColor: 'transparent',
+    '&:hover': {
+      bgcolor: isActive ? activeColor : alpha(activeColor, 0.13),
+      borderColor: 'transparent',
+    },
+  });
 
   if (!positions || positions.length === 0) return null;
 
@@ -100,11 +145,22 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           ================================================================ */}
       <Box
         sx={{
-          mt: 2,
-          p: 2,
-          bgcolor: 'rgba(59, 130, 246, 0.1)',
-          borderRadius: 1,
-          border: '1px solid rgba(59, 130, 246, 0.3)',
+          mt: compactSpacing ? 1 : 2,
+          p: 1.45,
+          borderRadius: 2.2,
+          border: `1px solid ${alpha(ACCENT_BLUE, 0.42)}`,
+          backgroundImage: `
+            radial-gradient(circle at 10% 0%, ${alpha(ACCENT_BLUE, 0.18)} 0%, transparent 36%),
+            radial-gradient(circle at 92% 0%, ${alpha(ACCENT_PURPLE, 0.14)} 0%, transparent 40%),
+            linear-gradient(180deg, ${alpha('#0f172a', 0.9)} 0%, ${alpha('#070b14', 0.94)} 100%)
+          `,
+          boxShadow: [
+            `inset 0 1px 0 ${alpha('#e2e8f0', 0.1)}`,
+            `0 0 0 1px ${alpha(ACCENT_BLUE, 0.14)}`,
+            `0 14px 30px ${alpha('#000', 0.5)}`,
+            `0 0 24px ${alpha(ACCENT_BLUE, 0.16)}`,
+          ].join(', '),
+          backdropFilter: 'blur(10px)',
         }}
       >
         <Box
@@ -112,13 +168,21 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 2,
+            flexWrap: { xs: 'wrap', xl: 'nowrap' },
+            gap: 1.2,
           }}
         >
           {/* Left: Selection info and bulk ratio controls */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
-            <Typography variant="body2" fontWeight="bold">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.1, flexWrap: 'wrap' }}>
+            <Typography
+              variant="subtitle2"
+              sx={{
+                color: alpha('#e2e8f0', 0.97),
+                fontWeight: 900,
+                letterSpacing: '0.04em',
+                textTransform: 'none',
+              }}
+            >
               Batch Order
             </Typography>
             <SealedBadge />
@@ -126,11 +190,31 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               label={`${selectedCount} selected`}
               size="small"
               color={selectedCount > 0 ? 'primary' : 'default'}
+              sx={{
+                height: 23,
+                borderRadius: 999,
+                fontWeight: 800,
+                letterSpacing: '0.03em',
+                bgcolor: selectedCount > 0 ? alpha(ACCENT_BLUE, 0.2) : alpha('#64748b', 0.25),
+                color: selectedCount > 0 ? '#dbeafe' : alpha('#e2e8f0', 0.75),
+                border: `1px solid ${selectedCount > 0 ? alpha(ACCENT_BLUE, 0.5) : alpha('#64748b', 0.35)}`,
+              }}
             />
 
             {/* Option 4 — Bulk apply: set one qty and push to all selected rows instantly */}
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ whiteSpace: 'nowrap' }}>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 0.55,
+                px: 1.05,
+                py: 0.45,
+                borderRadius: 999,
+                border: `1px solid ${alpha('#64748b', 0.4)}`,
+                bgcolor: alpha('#0b1220', 0.4),
+              }}
+            >
+              <Typography variant="caption" sx={{ whiteSpace: 'nowrap', color: alpha('#94a3b8', 0.9), fontWeight: 700 }}>
                 Set selected rows:
               </Typography>
               <TextField
@@ -149,8 +233,20 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   }
                 }}
                 sx={{
-                  width: 60,
-                  '& .MuiInputBase-input': { textAlign: 'center', padding: '3px 6px', fontSize: '0.8rem' },
+                  width: 68,
+                  '& .MuiInputBase-input': {
+                    textAlign: 'center',
+                    padding: '4px 6px',
+                    fontSize: '0.8rem',
+                    fontWeight: 800,
+                    color: '#e2e8f0',
+                  },
+                  '& .MuiOutlinedInput-root': {
+                    borderRadius: 999,
+                    bgcolor: alpha('#020617', 0.5),
+                    '& fieldset': { borderColor: alpha('#64748b', 0.45) },
+                    '&:hover fieldset': { borderColor: alpha(ACCENT_BLUE, 0.55) },
+                  },
                 }}
               />
               <Button
@@ -164,7 +260,19 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     setBulkApplyQty('');
                   }
                 }}
-                sx={{ fontSize: '0.7rem', py: '3px', px: 1, minWidth: 0, whiteSpace: 'nowrap' }}
+                sx={{
+                  fontSize: '0.68rem',
+                  py: '4px',
+                  px: 1.1,
+                  minWidth: 0,
+                  whiteSpace: 'nowrap',
+                  borderRadius: 999,
+                  fontWeight: 800,
+                  textTransform: 'none',
+                  bgcolor: alpha(ACCENT_BLUE, 0.95),
+                  color: '#04111f',
+                  '&:hover': { bgcolor: ACCENT_BLUE },
+                }}
               >
                 Apply to {selectedCount}
               </Button>
@@ -172,11 +280,11 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           </Box>
 
           {/* Center: Quantity Control */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="body2" color="text.secondary">
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.9 }}>
+            <Typography variant="body2" sx={{ color: alpha('#cbd5e1', 0.88), fontWeight: 700 }}>
               Quantity (lots)
             </Typography>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.55 }}>
               <IconButton
                 size="small"
                 onClick={() =>
@@ -188,8 +296,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   })
                 }
                 sx={{
-                  bgcolor: 'rgba(255,255,255,0.1)',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  bgcolor: alpha('#0b1220', 0.6),
+                  border: `1px solid ${alpha('#64748b', 0.5)}`,
+                  color: alpha('#e2e8f0', 0.9),
+                  '&:hover': { bgcolor: alpha(ACCENT_BLUE, 0.16), borderColor: alpha(ACCENT_BLUE, 0.55) },
                 }}
               >
                 <RemoveIcon fontSize="small" />
@@ -218,9 +328,11 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 size="small"
                 inputProps={{ style: { textAlign: 'center', width: 60, padding: '4px 6px' } }}
                 sx={{
-                  bgcolor: 'rgba(255,255,255,0.1)',
-                  borderRadius: 1,
-                  '& .MuiOutlinedInput-notchedOutline': { borderColor: 'rgba(255,255,255,0.2)' },
+                  bgcolor: alpha('#0b1220', 0.6),
+                  borderRadius: 999,
+                  '& .MuiInputBase-input': { color: '#e2e8f0', fontWeight: 800 },
+                  '& .MuiOutlinedInput-notchedOutline': { borderColor: alpha('#64748b', 0.5) },
+                  '& .MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline': { borderColor: alpha(ACCENT_BLUE, 0.55) },
                 }}
               />
               <IconButton
@@ -234,8 +346,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   })
                 }
                 sx={{
-                  bgcolor: 'rgba(255,255,255,0.1)',
-                  '&:hover': { bgcolor: 'rgba(255,255,255,0.2)' },
+                  bgcolor: alpha('#0b1220', 0.6),
+                  border: `1px solid ${alpha('#64748b', 0.5)}`,
+                  color: alpha('#e2e8f0', 0.9),
+                  '&:hover': { bgcolor: alpha(ACCENT_BLUE, 0.16), borderColor: alpha(ACCENT_BLUE, 0.55) },
                 }}
               >
                 <AddIcon fontSize="small" />
@@ -256,8 +370,8 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                       : `GCD-based multiplier (GCD=${getPositionsGCD(getSelectedPositions())}). ${orderQuantity > 0 ? 'ADD to' : 'EXIT'} positions proportionally.`
               }
             >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography variant="caption" color={multiplierMode ? "text.secondary" : "warning.main"}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.9 }}>
+                  <Typography variant="caption" color={multiplierMode ? "text.secondary" : "warning.main"} sx={{ fontWeight: 700 }}>
                   {multiplierMode === 'batch'
                     ? '(per-row qty)'
                     : multiplierMode
@@ -267,34 +381,17 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 <Box
                   sx={{
                     display: 'flex',
-                    borderRadius: 1,
+                    borderRadius: 999,
                     overflow: 'hidden',
-                    border: '1px solid rgba(255,255,255,0.2)',
+                    border: `1px solid ${alpha('#64748b', 0.45)}`,
+                    bgcolor: alpha('#0b1220', 0.45),
                   }}
                 >
                   <Button
                     size="small"
                     variant={multiplierMode === 'normal' ? 'contained' : 'outlined'}
                     onClick={() => setMultiplierMode(prev => prev === 'normal' ? null : 'normal')}
-                    sx={{
-                      borderRadius: 0,
-                      minWidth: 55,
-                      fontSize: '0.7rem',
-                      py: 0.25,
-                      bgcolor:
-                        multiplierMode === 'normal'
-                          ? 'rgba(59, 130, 246, 0.8)'
-                          : 'transparent',
-                      color: multiplierMode === 'normal' ? '#fff' : 'rgba(59, 130, 246, 0.8)',
-                      borderColor: 'transparent',
-                      '&:hover': {
-                        bgcolor:
-                          multiplierMode === 'normal'
-                            ? 'rgba(59, 130, 246, 1)'
-                            : 'rgba(59, 130, 246, 0.1)',
-                        borderColor: 'transparent',
-                      },
-                    }}
+                    sx={modeButtonSx(multiplierMode === 'normal', ACCENT_BLUE)}
                   >
                     Normal
                   </Button>
@@ -302,23 +399,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     size="small"
                     variant={multiplierMode === 'gcd' ? 'contained' : 'outlined'}
                     onClick={() => setMultiplierMode(prev => prev === 'gcd' ? null : 'gcd')}
-                    sx={{
-                      borderRadius: 0,
-                      minWidth: 45,
-                      fontSize: '0.7rem',
-                      py: 0.25,
-                      bgcolor:
-                        multiplierMode === 'gcd' ? 'rgba(251, 191, 36, 0.8)' : 'transparent',
-                      color: multiplierMode === 'gcd' ? '#000' : 'rgba(251, 191, 36, 0.8)',
-                      borderColor: 'transparent',
-                      '&:hover': {
-                        bgcolor:
-                          multiplierMode === 'gcd'
-                            ? 'rgba(251, 191, 36, 1)'
-                            : 'rgba(251, 191, 36, 0.1)',
-                        borderColor: 'transparent',
-                      },
-                    }}
+                    sx={modeButtonSx(multiplierMode === 'gcd', ACCENT_GOLD)}
                   >
                     GCD
                   </Button>
@@ -326,23 +407,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     size="small"
                     variant={multiplierMode === 'fixed' ? 'contained' : 'outlined'}
                     onClick={() => setMultiplierMode(prev => prev === 'fixed' ? null : 'fixed')}
-                    sx={{
-                      borderRadius: 0,
-                      minWidth: 50,
-                      fontSize: '0.7rem',
-                      py: 0.25,
-                      bgcolor:
-                        multiplierMode === 'fixed' ? 'rgba(16, 185, 129, 0.8)' : 'transparent',
-                      color: multiplierMode === 'fixed' ? '#fff' : 'rgba(16, 185, 129, 0.8)',
-                      borderColor: 'transparent',
-                      '&:hover': {
-                        bgcolor:
-                          multiplierMode === 'fixed'
-                            ? 'rgba(16, 185, 129, 1)'
-                            : 'rgba(16, 185, 129, 0.1)',
-                        borderColor: 'transparent',
-                      },
-                    }}
+                    sx={modeButtonSx(multiplierMode === 'fixed', ACCENT_GREEN)}
                   >
                     Fixed
                   </Button>
@@ -350,23 +415,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                     size="small"
                     variant={multiplierMode === 'batch' ? 'contained' : 'outlined'}
                     onClick={() => setMultiplierMode(prev => prev === 'batch' ? null : 'batch')}
-                    sx={{
-                      borderRadius: 0,
-                      minWidth: 50,
-                      fontSize: '0.7rem',
-                      py: 0.25,
-                      bgcolor:
-                        multiplierMode === 'batch' ? 'rgba(168, 85, 247, 0.8)' : 'transparent',
-                      color: multiplierMode === 'batch' ? '#fff' : 'rgba(168, 85, 247, 0.8)',
-                      borderColor: 'transparent',
-                      '&:hover': {
-                        bgcolor:
-                          multiplierMode === 'batch'
-                            ? 'rgba(168, 85, 247, 1)'
-                            : 'rgba(168, 85, 247, 0.1)',
-                        borderColor: 'transparent',
-                      },
-                    }}
+                    sx={modeButtonSx(multiplierMode === 'batch', ACCENT_PURPLE)}
                   >
                     Batch
                   </Button>
@@ -381,9 +430,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               <Box
                 sx={{
                   display: 'flex',
-                  borderRadius: 1,
+                  borderRadius: 999,
                   overflow: 'hidden',
-                  border: '1px solid rgba(255,255,255,0.2)',
+                  border: `1px solid ${alpha('#64748b', 0.45)}`,
+                  bgcolor: alpha('#0b1220', 0.45),
                   flexWrap: 'wrap',
                 }}
               >
@@ -391,23 +441,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   variant={executionMode === 'immediate' ? 'contained' : 'outlined'}
                   onClick={() => setExecutionMode('immediate')}
-                  sx={{
-                    borderRadius: 0,
-                    minWidth: 70,
-                    bgcolor:
-                      executionMode === 'immediate'
-                        ? 'rgba(239, 68, 68, 0.8)'
-                        : 'transparent',
-                    color: executionMode === 'immediate' ? '#fff' : 'rgba(239, 68, 68, 0.8)',
-                    borderColor: 'transparent',
-                    '&:hover': {
-                      bgcolor:
-                        executionMode === 'immediate'
-                          ? 'rgba(239, 68, 68, 1)'
-                          : 'rgba(239, 68, 68, 0.1)',
-                      borderColor: 'transparent',
-                    },
-                  }}
+                  sx={execButtonSx(executionMode === 'immediate', '#ef4444')}
                 >
                   🚀 Market
                 </Button>
@@ -415,21 +449,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   variant={executionMode === 'smart' ? 'contained' : 'outlined'}
                   onClick={() => setExecutionMode('smart')}
-                  sx={{
-                    borderRadius: 0,
-                    minWidth: 70,
-                    bgcolor:
-                      executionMode === 'smart' ? 'rgba(16, 185, 129, 0.8)' : 'transparent',
-                    color: executionMode === 'smart' ? '#fff' : 'rgba(16, 185, 129, 0.8)',
-                    borderColor: 'transparent',
-                    '&:hover': {
-                      bgcolor:
-                        executionMode === 'smart'
-                          ? 'rgba(16, 185, 129, 1)'
-                          : 'rgba(16, 185, 129, 0.1)',
-                      borderColor: 'transparent',
-                    },
-                  }}
+                  sx={execButtonSx(executionMode === 'smart', '#10b981')}
                 >
                   🧠 Smart
                 </Button>
@@ -437,21 +457,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   variant={executionMode === 'ssr_standard' ? 'contained' : 'outlined'}
                   onClick={() => setExecutionMode('ssr_standard')}
-                  sx={{
-                    borderRadius: 0,
-                    minWidth: 60,
-                    bgcolor:
-                      executionMode === 'ssr_standard' ? 'rgba(255, 152, 0, 0.8)' : 'transparent',
-                    color: executionMode === 'ssr_standard' ? '#fff' : 'rgba(255, 152, 0, 0.8)',
-                    borderColor: 'transparent',
-                    '&:hover': {
-                      bgcolor:
-                        executionMode === 'ssr_standard'
-                          ? 'rgba(255, 152, 0, 1)'
-                          : 'rgba(255, 152, 0, 0.1)',
-                      borderColor: 'transparent',
-                    },
-                  }}
+                  sx={execButtonSx(executionMode === 'ssr_standard', '#f59e0b')}
                 >
                   🏎️ SSR
                 </Button>
@@ -459,21 +465,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   variant={executionMode === 'ssr_aggressive' ? 'contained' : 'outlined'}
                   onClick={() => setExecutionMode('ssr_aggressive')}
-                  sx={{
-                    borderRadius: 0,
-                    minWidth: 70,
-                    bgcolor:
-                      executionMode === 'ssr_aggressive' ? 'rgba(76, 175, 80, 0.8)' : 'transparent',
-                    color: executionMode === 'ssr_aggressive' ? '#fff' : 'rgba(76, 175, 80, 0.8)',
-                    borderColor: 'transparent',
-                    '&:hover': {
-                      bgcolor:
-                        executionMode === 'ssr_aggressive'
-                          ? 'rgba(76, 175, 80, 1)'
-                          : 'rgba(76, 175, 80, 0.1)',
-                      borderColor: 'transparent',
-                    },
-                  }}
+                  sx={execButtonSx(executionMode === 'ssr_aggressive', '#22c55e')}
                 >
                   🔥 Aggro
                 </Button>
@@ -481,21 +473,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   variant={executionMode === 'ssr_conservative' ? 'contained' : 'outlined'}
                   onClick={() => setExecutionMode('ssr_conservative')}
-                  sx={{
-                    borderRadius: 0,
-                    minWidth: 60,
-                    bgcolor:
-                      executionMode === 'ssr_conservative' ? 'rgba(3, 169, 244, 0.8)' : 'transparent',
-                    color: executionMode === 'ssr_conservative' ? '#fff' : 'rgba(3, 169, 244, 0.8)',
-                    borderColor: 'transparent',
-                    '&:hover': {
-                      bgcolor:
-                        executionMode === 'ssr_conservative'
-                          ? 'rgba(3, 169, 244, 1)'
-                          : 'rgba(3, 169, 244, 0.1)',
-                      borderColor: 'transparent',
-                    },
-                  }}
+                  sx={execButtonSx(executionMode === 'ssr_conservative', '#0ea5e9')}
                 >
                   🛡️ Safe
                 </Button>
@@ -504,17 +482,17 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           </Box>
 
           {/* Right: Execute Button and Auto-Loop Controls */}
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.05 }}>
             {/* Auto-Loop Toggle with Label */}
             <Box sx={{
               display: 'flex',
               alignItems: 'center',
               gap: 0.5,
-              px: 1.5,
+              px: 1.1,
               py: 0.5,
-              borderRadius: '8px',
-              bgcolor: autoLoopEnabled ? 'rgba(251, 191, 36, 0.15)' : 'transparent',
-              border: autoLoopEnabled ? '1px solid rgba(251, 191, 36, 0.4)' : '1px solid transparent',
+              borderRadius: 999,
+              bgcolor: autoLoopEnabled ? alpha(ACCENT_GOLD, 0.16) : alpha('#0b1220', 0.45),
+              border: `1px solid ${autoLoopEnabled ? alpha(ACCENT_GOLD, 0.5) : alpha('#64748b', 0.35)}`,
             }}>
               <Tooltip title="Enable Auto-Loop: Bot places batch orders → waits for ALL fills → repeats. Perfect for low-liquidity options where you can't punch large quantities at once.">
                 <Checkbox
@@ -523,8 +501,8 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   size="small"
                   disabled={autoLoopRunning}
                   sx={{
-                    color: 'rgba(251, 191, 36, 0.6)',
-                    '&.Mui-checked': { color: 'rgba(251, 191, 36, 1)' },
+                    color: alpha(ACCENT_GOLD, 0.65),
+                    '&.Mui-checked': { color: ACCENT_GOLD },
                     p: 0.5,
                   }}
                 />
@@ -532,7 +510,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
               <Typography
                 variant="caption"
                 sx={{
-                  color: autoLoopEnabled ? '#fbbf24' : 'rgba(148, 163, 184, 0.8)',
+                  color: autoLoopEnabled ? ACCENT_GOLD : alpha('#94a3b8', 0.88),
                   fontWeight: autoLoopEnabled ? 600 : 400,
                   mr: 0.5,
                 }}
@@ -552,8 +530,9 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                       width: 60,
                       '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem', fontWeight: 'bold' },
                       '& .MuiOutlinedInput-root': {
-                        bgcolor: 'rgba(0,0,0,0.3)',
-                        '& fieldset': { borderColor: 'rgba(251, 191, 36, 0.4)' },
+                        borderRadius: 999,
+                        bgcolor: alpha('#020617', 0.55),
+                        '& fieldset': { borderColor: alpha(ACCENT_GOLD, 0.45) },
                       },
                     }}
                   />
@@ -574,6 +553,9 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 sx={{
                   minWidth: 160,
                   fontWeight: 'bold',
+                  borderRadius: 999,
+                  bgcolor: alpha(ACCENT_RED, 0.95),
+                  '&:hover': { bgcolor: ACCENT_RED },
                   animation: 'pulse 1.5s infinite',
                   '@keyframes pulse': {
                     '0%, 100%': { opacity: 1 },
@@ -598,9 +580,10 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                 sx={{
                   minWidth: 180,
                   fontWeight: 'bold',
-                  bgcolor: 'rgba(251, 191, 36, 0.9)',
-                  color: '#000',
-                  '&:hover': { bgcolor: 'rgba(251, 191, 36, 1)' },
+                  borderRadius: 999,
+                  bgcolor: alpha(ACCENT_GOLD, 0.95),
+                  color: '#04111f',
+                  '&:hover': { bgcolor: ACCENT_GOLD },
                   '&:disabled': { bgcolor: 'rgba(100, 100, 100, 0.3)', color: 'rgba(150,150,150,0.5)' },
                 }}
               >
@@ -624,7 +607,7 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   calculateBatchOrders().length === 0 ||
                   !status?.trading_allowed
                 }
-                sx={{ minWidth: 160, fontWeight: 'bold' }}
+                sx={{ minWidth: 160, fontWeight: 'bold', borderRadius: 999 }}
               >
                 {batchExecuting
                   ? 'Executing...'

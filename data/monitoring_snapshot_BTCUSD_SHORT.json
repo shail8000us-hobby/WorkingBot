@@ -1,8 +1,8 @@
 {
-  "timestamp": 1776186678.1720572,
+  "timestamp": 1776252687.16397,
   "mode": "SHORT",
   "symbol": "BTCUSD",
-  "uptime": 125906.92313718796,
+  "uptime": 191915.91505122185,
   "state": {
     "open_tranches": [
       {
@@ -52,7 +52,7 @@
       "total_closed": 37,
       "avg_entry_price": 71750.0,
       "total_size": 10,
-      "oldest_position_age": 98478.28673291206,
+      "oldest_position_age": 164487.1158130169,
       "has_pending_buy": false,
       "has_pending_sell": true
     },
@@ -84,10 +84,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 62404,
+        "processed_count": 90902,
         "error_count": 0,
-        "avg_processing_time_ms": 6.163464555284008,
-        "max_processing_time_ms": 507.91291694622487,
+        "avg_processing_time_ms": 0.42529831174761057,
+        "max_processing_time_ms": 27.357792016118765,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -95,10 +95,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 24380,
+        "processed_count": 36902,
         "error_count": 0,
-        "avg_processing_time_ms": 0.40011833887547255,
-        "max_processing_time_ms": 31.38049994595349,
+        "avg_processing_time_ms": 0.038690841756761074,
+        "max_processing_time_ms": 0.41629199404269457,
         "error_rate": 0.0
       }
     },
@@ -116,8 +116,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 74764.0,
-      "price_age_seconds": 3.442408800125122,
+      "price": 73975.5,
+      "price_age_seconds": 3.288381814956665,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -127,11 +127,11 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 25013,
+        "total_updates": 38082,
         "websocket_updates": 0,
-        "rest_api_updates": 3,
-        "stale_warnings": 1,
-        "critical_warnings": 0
+        "rest_api_updates": 6,
+        "stale_warnings": 4,
+        "critical_warnings": 1
       }
     },
     "recent_decisions": [],

@@ -4718,14 +4718,26 @@ class MMMMonitor:
                 session, new_strike_gamma, lots, spot_price
             )
             if blocked:
-                log_activity('gamma_projection_blocked',
-                            f'🚫 Gamma Cap Blocked: {hedge.upper()} adjustment would push projected '
-                            f'portfolio gamma (${projected_dollar_gamma:.0f}) past hard limit',
-                            sid, 'warning',
-                            {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma})
-                emit_safety(sid, 'gamma_cap_block', 'alert',
-                           f'Gamma Cap Limit Reached (Projected ${projected_dollar_gamma:.0f})')
-                return
+                if _dangerous_mode_adj:
+                    # Dangerous mode: bypass gamma cap block — hedge is reactive
+                    # (market moved, trigger fired) and unhedged exposure is more
+                    # dangerous than exceeding the gamma cap. Operator accepted risk.
+                    log_activity('dangerous_mode_bypass',
+                                f'⚠️ DANGEROUS MODE: gamma cap bypass — {hedge.upper()} adjustment '
+                                f'projected gamma (${projected_dollar_gamma:.0f}) exceeds hard limit, '
+                                f'proceeding (reactive hedge)',
+                                sid, 'warning',
+                                {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma,
+                                 'dangerous_mode': True})
+                else:
+                    log_activity('gamma_projection_blocked',
+                                f'🚫 Gamma Cap Blocked: {hedge.upper()} adjustment would push projected '
+                                f'portfolio gamma (${projected_dollar_gamma:.0f}) past hard limit',
+                                sid, 'warning',
+                                {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma})
+                    emit_safety(sid, 'gamma_cap_block', 'alert',
+                               f'Gamma Cap Limit Reached (Projected ${projected_dollar_gamma:.0f})')
+                    return
         except Exception as e:
             log.warning(f"[{sid}] Failed to fetch greek gamma for projection check: {e}")
 

@@ -43,7 +43,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import SendIcon from '@mui/icons-material/Send';
 
-const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
+const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate, compactSpacing = false }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
@@ -234,7 +234,7 @@ const AlertsPanel = ({ spotPrice = 0, alerts = [], onRefresh, expiryDate }) => {
     const triggeredAlerts = alerts.filter(a => a.status === 'triggered');
 
     return (
-        <Paper sx={{ mt: 2, overflow: 'hidden', border: '1px solid rgba(255,193,7,0.3)', bgcolor: 'rgba(255,193,7,0.02)' }}>
+        <Paper sx={{ mt: compactSpacing ? 1 : 2, overflow: 'hidden', border: '1px solid rgba(255,193,7,0.3)', bgcolor: 'rgba(255,193,7,0.02)' }}>
             {/* Header */}
             <Box
                 sx={{
