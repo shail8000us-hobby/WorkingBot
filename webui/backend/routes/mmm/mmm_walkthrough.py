@@ -281,14 +281,31 @@ def generate_heartbeat_walkthrough(
             details.append(f'')
 
             if not reversal_info or not reversal_info.get('is_reversal', False):
-                # Standard loss formula
+                # Standard loss formula — use the PRE-adjustment trigger snapshot.
+                # The session is passed post-adjustment so trigger_snapshot has been
+                # ratcheted; adjustment_info carries the pre-adjustment value.
                 agg_state = session.get(agg_key, {})
-                # Note: trigger_val is the PRE-update value; after adjustment it changes
-                details.append(
-                    f'Standard Loss = (${ce_now:.2f} - trigger) × active_lots × {LOT_SIZE_BTC}'
-                    if aggressor == 'CE' else
-                    f'Standard Loss = (${pe_now:.2f} - trigger) × active_lots × {LOT_SIZE_BTC}'
-                )
+                agg_active_lots = agg_state.get('active_lots', 0)
+                agg_now = ce_now if aggressor == 'CE' else pe_now
+                pre_adj_trigger = adjustment_info.get('pre_adj_trigger', 0)
+                frozen_positions = agg_state.get('frozen_positions', [])
+                frozen_lots_total = sum(p.get('lots', 0) for p in frozen_positions if not p.get('_being_closed'))
+                if pre_adj_trigger > 0:
+                    active_component = (agg_now - pre_adj_trigger) * agg_active_lots * LOT_SIZE_BTC
+                    if frozen_lots_total > 0:
+                        details.append(
+                            f'Standard Loss = (${agg_now:.2f} - ${pre_adj_trigger:.2f}) × {agg_active_lots} lots × {LOT_SIZE_BTC}'
+                            f' + frozen ({frozen_lots_total} lots at old strikes)'
+                        )
+                    else:
+                        details.append(
+                            f'Standard Loss = (${agg_now:.2f} - ${pre_adj_trigger:.2f}) × {agg_active_lots} lots × {LOT_SIZE_BTC}'
+                            f' = ${active_component:.4f} BTC'
+                        )
+                else:
+                    details.append(
+                        f'Standard Loss = (current − trigger_snapshot) × lots × {LOT_SIZE_BTC}'
+                    )
                 details.append(f'Loss to cover = ${loss:.4f} BTC')
 
             # Shift check
@@ -318,11 +335,20 @@ def generate_heartbeat_walkthrough(
             if hedge_prem_used > 0 and loss > 0:
                 buffer_pct = params.get('premium_buffer_pct', 0.05)
                 raw = loss / (hedge_prem_used * LOT_SIZE_BTC) * (1 + buffer_pct)
+                base_lots = max(math.ceil(raw), 1)
+                constraint_msg_lots = adjustment_info.get('constraint_msg', '')
                 details.append(f'')
-                details.append(
-                    f'Lots = ⌈ ${loss:.4f} / (${hedge_prem_used:.2f} × {LOT_SIZE_BTC}) '
-                    f'× (1 + {buffer_pct:.0%}) ⌉ = ⌈{raw:.2f}⌉ = {lots_sold}'
-                )
+                if base_lots == lots_sold or not constraint_msg_lots:
+                    details.append(
+                        f'Lots = ⌈ ${loss:.4f} / (${hedge_prem_used:.2f} × {LOT_SIZE_BTC}) '
+                        f'× (1 + {buffer_pct:.0%}) ⌉ = ⌈{raw:.2f}⌉ = {lots_sold}'
+                    )
+                else:
+                    details.append(
+                        f'Lots = ⌈ ${loss:.4f} / (${hedge_prem_used:.2f} × {LOT_SIZE_BTC}) '
+                        f'× (1 + {buffer_pct:.0%}) ⌉ = ⌈{raw:.2f}⌉ = {base_lots}'
+                    )
+                    details.append(f'After multipliers: {constraint_msg_lots} → {lots_sold} lots')
 
             details.append(
                 f'Execute: SELL {lots_sold} {hedge} @ {adj_strike:,.0f} at ${fill_price:.2f}'

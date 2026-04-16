@@ -24,8 +24,9 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-PROJECT_ROOT = Path(__file__).parent
+PROJECT_ROOT = Path(__file__).parent.parent  # scripts/ -> WorkingBot/
 LOG_DIR = PROJECT_ROOT / 'logs'
+BOT_LOG_DIR = PROJECT_ROOT / 'bot' / 'logs'
 DATA_DIR = PROJECT_ROOT / 'data'
 
 # Retention Policy (in days)
@@ -34,6 +35,10 @@ LOG_RETENTION_DAYS = 2
 DATABASE_RETENTION_DAYS = 2
 BACKUP_RETENTION_DAYS = 7
 CACHE_RETENTION_DAYS = 1
+
+# Size-based cap: truncate any single active log file that exceeds this (MB)
+# Active logs can never be cleaned by mtime since they're always freshly written.
+MAX_ACTIVE_LOG_MB = 500
 
 # Cleanup interval (seconds)
 CLEANUP_INTERVAL = 3600  # Run every hour
@@ -73,25 +78,49 @@ class AutoDataCleanup:
         }
         
     def cleanup_old_logs(self) -> Dict:
-        """Remove old log files"""
+        """Remove old log files and truncate oversized active logs."""
         cutoff = datetime.now() - timedelta(days=LOG_RETENTION_DAYS)
-        stats = {'removed': 0, 'size_freed_mb': 0}
-        
-        logger.info(f"🧹 Cleaning logs older than {LOG_RETENTION_DAYS} days...")
-        
-        for log_file in LOG_DIR.glob('*.log*'):
-            if log_file.is_file():
+        stats = {'removed': 0, 'truncated': 0, 'size_freed_mb': 0}
+
+        log_dirs = [d for d in [LOG_DIR, BOT_LOG_DIR] if d.exists()]
+
+        logger.info(f"🧹 Cleaning logs older than {LOG_RETENTION_DAYS} days "
+                    f"(size cap {MAX_ACTIVE_LOG_MB}MB for active logs)...")
+
+        for log_dir in log_dirs:
+            for log_file in log_dir.glob('**/*'):
+                if not log_file.is_file():
+                    continue
+                # Only process log and zip files
+                if not any(log_file.name.endswith(ext) for ext in
+                           ('.log', '.log.gz', '.log.zip', '.zip')):
+                    continue
+
+                size_mb = log_file.stat().st_size / (1024 * 1024)
                 mtime = datetime.fromtimestamp(log_file.stat().st_mtime)
-                if mtime < cutoff:
-                    size_mb = log_file.stat().st_size / (1024 * 1024)
-                    try:
+
+                try:
+                    if mtime < cutoff:
+                        # File not touched in retention window — delete
                         log_file.unlink()
                         stats['removed'] += 1
                         stats['size_freed_mb'] += size_mb
-                        logger.info(f"  ✅ Removed: {log_file.name} ({size_mb:.2f}MB)")
-                    except Exception as e:
-                        logger.error(f"  ❌ Failed to remove {log_file.name}: {e}")
-        
+                        logger.info(f"  ✅ Deleted (old): {log_file.name} ({size_mb:.2f}MB)")
+                    elif size_mb > MAX_ACTIVE_LOG_MB:
+                        # Active but oversized — truncate in-place so running
+                        # processes keep their file descriptor intact
+                        with open(log_file, 'w'):
+                            pass
+                        stats['truncated'] += 1
+                        stats['size_freed_mb'] += size_mb
+                        logger.info(f"  ✅ Truncated (oversized): {log_file.name} "
+                                    f"({size_mb:.2f}MB → 0MB)")
+                except Exception as e:
+                    logger.error(f"  ❌ Failed on {log_file.name}: {e}")
+
+        logger.info(f"   Deleted: {stats['removed']} files, "
+                    f"Truncated: {stats['truncated']} files, "
+                    f"Freed: {stats['size_freed_mb']:.2f}MB")
         return stats
     
     def cleanup_database_records(self) -> Dict:

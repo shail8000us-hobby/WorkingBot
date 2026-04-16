@@ -4535,3 +4535,51 @@ Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift
 **Files changed**: `mmm_api.py`, `MMMDashboard.js`, `tests/test_sealed_mmm_reduce_strike.py` (new)
 
 **Auto-LIFO semantics unchanged** — only active lots, existing behavior preserved.
+
+---
+
+## 2026-04-16 — Forensic Analysis: First Adjustment Aggressiveness (`mmm17apr26-3`)
+
+- **Scope (no code changes):** Investigated why the first adjustment looked aggressive for session `mmm17apr26-3` (Straddle + Adj), using code + DB/session forensics only.
+- **Files reviewed:**
+  - `webui/backend/routes/mmm/mmm_monitor.py`
+  - `webui/backend/routes/mmm/mmm_engine.py`
+  - `webui/backend/routes/mmm/mmm_trigger.py`
+  - `webui/backend/routes/mmm/mmm_breakeven_engine.py`
+  - `webui/backend/routes/mmm/mmm_gamma_detector.py`
+  - `webui/backend/routes/mmm/mmm_walkthrough.py`
+  - `webui/backend/routes/mmm/mmm_dte_presets.py`
+- **Data forensics performed:**
+  - Queried `webui/backend/data/mmm_sessions.db` (`mmm_sessions`, `position_audit_log`, `session_event_log`) for session-level evidence.
+  - Confirmed first adjustment audit row: `SELL 5 PE @ 74400 @ $482.00`, `loss_covered_usd=$0.74`.
+  - Confirmed hot-reload changes before trigger: `min_trigger_move 50→20`, `max_lots_per_side 5→50`.
+  - Confirmed breakeven state transition immediately before first adjustment: `SAFE→WARNING`, multiplier `1.0617x`.
+- **Root-cause conclusion captured:**
+  - Base lot math from loss/hedge-premium yields ~`1.66` → base `2` lots.
+  - Engine then applies sequential multipliers with per-step `ceil` (`calculate_lots_to_sell`), including breakeven + gamma-severity, which can staircase `2 → 3 → 5`.
+  - Combined cap (`max_combined_lot_multiplier`) did not clamp this case; raised side cap (`max_lots_per_side=50`) allowed execution.
+  - Walkthrough text can appear mathematically inconsistent (`⌈1.66⌉ = 5`) because it prints base formula + final sold lots while omitting internal multiplier steps.
+
+---
+
+## 2026-04-16 — Session Forensic Audit Report (`mmm16apr26-2`) [No Code Changes]
+
+- **Scope:** Deep post-session forensic analysis only (no strategy/backend/frontend code modified).
+- **Report created:** `MMM_SESSION_FORENSIC_AUDIT_mmm16apr26-2.md`
+- **Evidence correlated:**
+  - `mmm_sessions.db` (`mmm_sessions`, `position_audit_log`, `session_event_log`, `mmm_analytics`, `performance_sessions`)
+  - `mmm_activity_log.json` + `.bak` (merged 253 unique session events)
+- **Key forensic findings recorded:**
+  - 31 confirmed exchange fills vs 30 `position_audit_log` rows (missing replenish audit row for `order_id=1275862757`)
+  - 2 intent rows without terminal status in `session_event_log` (`1275945116`, `1276102923`)
+  - Repeated late-session blocker loop: `shift_no_strike` / cap saturation / dangerous-mode bypass churn
+  - Execution slowness clusters with >60s intent→confirm outliers and repricing events
+- **Outcome:** Full markdown forensic dossier delivered with trade timeline, issue table, bottleneck analysis, profitability opportunities, scorecard, and prioritized fixes/research list.
+
+---
+
+## 2026-04-16 — Fix walkthrough calculation display bugs
+
+- **`mmm_monitor.py`**: Capture `_pre_adj_trigger` (aggressor's trigger_snapshot value at active strike) immediately before `calculate_standard_loss` runs in the standard-adjustment `else` branch. Store it in `_hb_wt['adjustment']['pre_adj_trigger']`. The trigger gets ratcheted post-fill by `update_trigger_snapshots`, so reading it here gives the actual pre-adjustment baseline the loss formula used.
+- **`mmm_walkthrough.py` — Standard Loss formula**: Was showing literal text "trigger" and "active_lots" (unsubstituted template strings). Now substitutes the actual `pre_adj_trigger` value and `agg_active_lots`. When there are no frozen positions (common case), also shows the computed active component `= $X.XXXX BTC` so the number is verifiable. When frozen positions exist, notes the count. Falls back to generic label when `pre_adj_trigger` is 0 (shift_fallback path).
+- **`mmm_walkthrough.py` — Lots formula**: Was showing `⌈1.66⌉ = 5` which is mathematically wrong (ceil(1.66)=2). Fix: compute `base_lots = max(ceil(raw), 1)`. If `base_lots == lots_sold` (no multipliers active), display is unchanged. If they differ, show the base result first (`= {base_lots}`) then a second line `After multipliers: {constraint_msg} → {lots_sold} lots` using the `constraint_msg` already stored in `adjustment_info`. This exposes the multiplier chain (gamma-aware, breakeven, trend boost, etc.) that the engine applies inside `calculate_lots_to_sell`.

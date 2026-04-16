@@ -302,7 +302,17 @@ def bot_start():
                 success, message = get_pm2_adapter().start_process(_instance_to_pm2_process(instance_name))
             else:
                 success, message = get_pm2_adapter().start_bot(mode)
-            
+
+            if success:
+                # Also ensure guardian is running alongside the bot
+                try:
+                    subprocess.run(
+                        ['launchctl', 'start', 'com.gridbot.production.guardian'],
+                        capture_output=True, text=True, timeout=10
+                    )
+                except Exception as e:
+                    log.warning(f"Guardian auto-start failed (non-fatal): {e}")
+
             return jsonify({
                 'success': success,
                 'message': message,

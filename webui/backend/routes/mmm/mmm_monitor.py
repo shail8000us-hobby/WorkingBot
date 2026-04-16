@@ -4435,6 +4435,12 @@ class MMMMonitor:
                 activate_cooldown(session)
         else:
             # Standard or continuation — include frozen position losses
+            # Capture pre-adjustment trigger for walkthrough display BEFORE
+            # calculate_standard_loss reads it (it gets updated post-fill).
+            _agg_state_pre = session.get(aggressor, {})
+            _pre_adj_trigger = _agg_state_pre.get('trigger_snapshot', {}).get(
+                strike_key(_agg_state_pre.get('active_strike', 0)), 0
+            )
             loss, _std_incomplete = self._engine.calculate_standard_loss(
                 session, aggressor, premium_now,
                 fetch_premium_fn=self._make_fetch_fn(),
@@ -4798,6 +4804,7 @@ class MMMMonitor:
                 'adj_type': adj_type,
                 'constraint_msg': constraint_msg,
                 'hedge_premium': hedge_premium,
+                'pre_adj_trigger': _pre_adj_trigger,
                 'adjustment_number': session.get('adjustment_count', 0),
             }
 
