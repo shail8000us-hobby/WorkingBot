@@ -216,3 +216,4 @@ webui/backend/logs/
 # Claw Code local artifacts
 .claude/settings.local.json
 .claude/sessions/
+.claw/
