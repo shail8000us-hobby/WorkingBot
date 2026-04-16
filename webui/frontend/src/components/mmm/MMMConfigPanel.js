@@ -547,6 +547,12 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
       setError('No session ID');
       return;
     }
+    if (!selection?.ce_symbol || !selection?.pe_symbol ||
+        selection?.ce_strike == null || selection?.pe_strike == null ||
+        selection?.ce_premium == null || selection?.pe_premium == null) {
+      setError('Both CE and PE selections are required before initialization.');
+      return;
+    }
     // SAFETY: Catch expiry mismatch before sending to backend
     if (sessionExpiry && selectedExpiry !== sessionExpiry) {
       setError(
@@ -664,6 +670,25 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
     return null;
   }
 
+  const expiryMismatch = Boolean(sessionExpiry && selectedExpiry && selectedExpiry !== sessionExpiry);
+  const hasBothPreviewLegs = Boolean(selectedCe && selectedPe);
+  const canInitFresh = hasBothPreviewLegs && !!selectedExpiry && lots > 0 && !loading && !expiryMismatch;
+  const importFieldsFilled = [
+    importData.ce_strike,
+    importData.ce_fill_price,
+    importData.ce_symbol,
+    importData.pe_strike,
+    importData.pe_fill_price,
+    importData.pe_symbol,
+  ].every((value) => String(value ?? '').trim() !== '');
+  const importNumbersValid = [
+    importData.ce_strike,
+    importData.ce_fill_price,
+    importData.pe_strike,
+    importData.pe_fill_price,
+  ].every((value) => Number.isFinite(Number(value)) && Number(value) > 0);
+  const canInitImport = importFieldsFilled && importNumbersValid && !!selectedExpiry && lots > 0 && !loading && !expiryMismatch;
+
   // ----- Import field handler -----
   // Auto-generate symbols when strike changes and expiry is set
   const generateSymbol = (type, strike, expiry) => {
@@ -705,6 +730,11 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
       {success && (
         <Alert severity="success" sx={{ mb: 2 }} onClose={() => setSuccess(null)}>
           {success}
+        </Alert>
+      )}
+      {expiryMismatch && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          Selected expiry does not match the session expiry. Initialization is locked to <strong>{sessionExpiry}</strong>.
         </Alert>
       )}
 
@@ -931,7 +961,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
               </Box>
 
               {/* Summary before confirm */}
-              {selectedCe && selectedPe && (
+              {hasBothPreviewLegs && (
                 <Paper
                   sx={{
                     mt: 2, p: 2,
@@ -966,7 +996,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
                     variant="contained"
                     color="success"
                     onClick={handleInitFresh}
-                    disabled={loading}
+                    disabled={!canInitFresh}
                     startIcon={loading ? <CircularProgress size={16} /> : <CheckIcon />}
                     sx={{ mt: 2 }}
                     fullWidth
@@ -974,6 +1004,11 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
                     {loading ? 'Initializing...' : 'Confirm & Initialize'}
                   </Button>
                 </Paper>
+              )}
+              {preview && !hasBothPreviewLegs && (
+                <Alert severity="warning" sx={{ mt: 2 }}>
+                  Both CE and PE legs are required before initialization.
+                </Alert>
               )}
             </Box>
           )}
@@ -1078,7 +1113,7 @@ const MMMConfigPanel = ({ sessionId, sessionStatus, initialMode, onInitialized, 
             variant="contained"
             color="success"
             onClick={handleInitImport}
-            disabled={loading}
+            disabled={!canInitImport}
             startIcon={loading ? <CircularProgress size={16} /> : <CheckIcon />}
             fullWidth
           >

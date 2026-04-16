@@ -838,33 +838,16 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     // lot_velocity, regime params). Operators need access to tune these as their position scales.
   ]);
 
-  // STRADDLE_ROLL pure: stricter lock set. Only core, expiry, straddleRoll are active.
-  // Everything else is either disabled in the preset or incompatible with the pure roll logic.
-  const STRADDLE_ROLL_LOCKED_GROUPS = new Set([
-    // ── Preset-disabled ──
-    'windDown',           // wind_down_enabled=False in preset
-    'positionLifecycle',  // harvest_enabled=False; recycling breaks symmetric straddle structure
-    'balanceControl',     // CE/PE rebalancing is strangle-only
-    'favorableScaleUp',   // scale_enabled=False in preset
-    'reverseMode',        // incompatible with pure roll strategy
-    'perpHedge',          // perp_hedge_enabled=False in preset
-    // ── Strangle-specific / N/A ──
-    'triggers',           // leg shift params — pure straddle rolls both legs atomically
-    'safety',             // whipsaw/ITM guard calibrated for strangle; straddle expects ATM on every roll
-    'regimeControls',     // straddle rolls on premium-points, not regime direction
-    'consecutiveDir',     // no directional selling in pure straddle
-    'autoReplenish',      // re-opens one leg only = naked; straddle rolls both together
-    'adaptiveTuning',     // adaptive_mode locked to 'preset'
-    'adaptive',           // adaptive heartbeat interval not used in pure straddle
-    // ── Conflicts with roll mechanism ──
-    'atmShield',          // retreats to OTM; pure straddle ROLLS instead — direct conflict
-    'lotVelocity',        // velocity cap can block 4-leg roll execution
-    // ── Monitoring tools not relevant to symmetric straddle ──
-    'marginGuardian',     // defaults correct for straddle; no operator action needed
-    'gammaDetector',      // calibrated for strangle P&L shape, not symmetric straddle
-    'breakevenEngine',    // strangle-specific zone logic; straddle breakeven = ±total_premium
-    'closeAt5Watcher',    // straddle exits via auto_close_mins expiry guard, not close-at-5
-  ]);
+  // STRADDLE_ROLL pure: ONLY these groups are editable. Everything else is hard-locked.
+  const STRADDLE_ROLL_EDITABLE_GROUPS = new Set(['core', 'expiry', 'straddleRoll']);
+  const STRADDLE_ROLL_LOCKED_GROUPS = new Set(
+    Object.keys(PARAM_GROUPS).filter((groupKey) => !STRADDLE_ROLL_EDITABLE_GROUPS.has(groupKey))
+  );
+
+  const isSectionLocked = (sectionKey) => (
+    (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(sectionKey)) ||
+    (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(sectionKey))
+  );
 
   // Build a flat set of ALL params that belong to the current strategy's locked groups.
   // Used to filter My Controls so only applicable params are shown.
@@ -881,6 +864,16 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     });
     return s;
   })();
+
+  useEffect(() => {
+    if (!activeSection || activeSection === '_pinned') return;
+    const locked =
+      (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(activeSection)) ||
+      (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(activeSection));
+    if (locked) {
+      setActiveSection(null);
+    }
+  }, [activeSection, isShortStraddle, isStraddleRoll]);
 
   // Pinned / Favorites — persisted to backend so they survive builds and cache clears
   const [pinned, setPinned] = useState(new Set());
@@ -1252,7 +1245,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
     const isHot = info.hot_reload;
     const description = info.description || paramName;
 
-    if (forbiddenParams.has(paramName)) {
+    if (forbiddenParams.has(paramName) || lockedGroupParams.has(paramName)) {
       return null;
     }
 
@@ -1628,6 +1621,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                   // Search against: param key, description (backend), PARAM_TOOLTIPS (frontend rich text)
                   const sectionMatches = {};
                   Object.entries(PARAM_GROUPS).forEach(([sectionKey, group]) => {
+                    if (isSectionLocked(sectionKey)) return;
                     const allParams = group.params
                       ? group.params
                       : (group.sections || []).flatMap(s => s.params);
@@ -1791,7 +1785,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                     const count = flattenGroupParamNames(group).filter((p) => !forbiddenParams.has(p)).length;
                     if (count === 0) return null;
                     const isActive = activeSection === key;
-                    const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
+                    const isLocked = isSectionLocked(key);
                     return (
                       <Box
                         key={key}
@@ -2061,7 +2055,7 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
                       const meta = CATEGORY_META[cat];
                       const count = flattenGroupParamNames(group).filter((p) => !forbiddenParams.has(p)).length;
                       if (count === 0) return;
-                      const isLocked = (isShortStraddle && STRADDLE_LOCKED_GROUPS.has(key)) || (isStraddleRoll && STRADDLE_ROLL_LOCKED_GROUPS.has(key));
+                      const isLocked = isSectionLocked(key);
 
                       // Category divider row
                       if (cat !== lastCat) {

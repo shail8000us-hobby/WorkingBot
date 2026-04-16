@@ -56,6 +56,19 @@ function fmt(v, decimals = 2) {
   return n.toFixed(decimals);
 }
 
+const REVERSE_SUPPORTED_STRATEGIES = new Set(['0DTE', '5DTE', 'SHORT_WINDOW']);
+
+function resolveStrategyType(session) {
+  const raw = String(
+    session?.strategy_type ||
+    session?.params?.strategy_type ||
+    session?.params?._preset_source ||
+    session?.params?.dte_category ||
+    '0DTE'
+  ).toUpperCase();
+  return raw === 'SHORT_STRADDLE' ? 'STRADDLE_WITH_ADJUSTMENT' : raw;
+}
+
 function fmtPnl(v) {
   if (v == null) return '—';
   const n = parseFloat(v);
@@ -200,6 +213,16 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
   const sessionId = session?.session_id;
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState(null);
+  const strategyType = resolveStrategyType(session);
+  const reverseSupportedByStrategy = REVERSE_SUPPORTED_STRATEGIES.has(strategyType);
+
+  if (!reverseSupportedByStrategy) {
+    return (
+      <Alert severity="info" sx={{ mt: 1 }}>
+        Reverse Mode is not available for <strong>{strategyType}</strong> sessions.
+      </Alert>
+    );
+  }
 
   // Pull reverse state from heartbeat (live) with storage fallback
   const params = session?.params || {};

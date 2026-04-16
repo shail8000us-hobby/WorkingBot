@@ -4456,3 +4456,82 @@ Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift
 **Tests**: 33 gamma-related sealed tests passed, 0 failures.
 
 **Files changed**: `mmm_monitor.py`
+
+## 2026-04-16 — MMM frontend strategy-gating hardening (reverse + settings + init safety)
+
+- `webui/frontend/src/components/mmm/MMMDashboard.js`
+  - Added strategy-aware Reverse Mode tab gating with `REVERSE_SUPPORTED_STRATEGIES = {0DTE, 5DTE, SHORT_WINDOW}`.
+  - Reverse tab now renders only when both conditions are true: `session.params.reverse_enabled` and strategy support.
+  - Added safety effect to auto-switch away from Reverse tab if it becomes invalid while selected.
+
+- `webui/frontend/src/components/mmm/MMMReverseModePanel.js`
+  - Added panel-level strategy guard to prevent reverse controls from rendering on unsupported strategies.
+  - Unsupported strategies now show a clear informational message instead of actionable controls.
+
+- `webui/frontend/src/components/mmm/MMMSettingsDialog.js`
+  - Tightened `STRADDLE_ROLL` lock model to strict whitelist (`core`, `expiry`, `straddleRoll` only editable).
+  - Added shared `isSectionLocked()` helper and applied it consistently to sidebar cards, section rendering, and search results.
+  - Locked params are now filtered out in render paths so they cannot appear/edit via alternate UI paths.
+  - Added active-section auto-fallback when strategy/lock state changes and current section becomes invalid.
+
+- `webui/frontend/src/components/mmm/MMMConfigPanel.js`
+  - Added stricter init guards: CE/PE completeness checks, required numeric checks, and expiry mismatch locking.
+  - Init actions now stay disabled until form state is valid (`canInitFresh`, `canInitImport`).
+  - Added operator-facing warnings for expiry mismatch and incomplete CE/PE preview legs.
+
+- Validation
+  - VS Code diagnostics checked for all modified frontend files: no errors.
+  - No backend/MMM execution logic changed in this session; updates are UI guardrails only.
+
+---
+
+## 2026-04-16 — Reduce Position: Strike-Specific Parity for Frozen/Shifted Lots
+
+**Plan executed**: Phases 1–5 of the frozen-strike parity + side-effect hardening plan.
+
+### Phase 1 — Backend candidate building (mmm_api.py)
+
+**Root cause of the bug**: The strike-specific path in `reduce_position()` read from `adjustment_fills` (a derived, active-only view) and `original_lots` — which cannot see `status='shifted'` (frozen) positions. Operator attempting to reduce a frozen/shifted strike would get `no fills found at strike X` even though lots were clearly open there.
+
+**Fix**: Extracted `_build_strike_close_records(side_state, target_strike, lots_requested)` — a module-level helper that:
+- Reads from `positions[]` (canonical source, Fix #23) with auto-migration for old sessions
+- Includes `status in ('active', 'shifted')` — frozen/shifted lots are now reachable
+- Excludes `_being_closed=True` positions (in-flight concurrent close)
+- Returns close records with `_pos_id` for ID-based removal (`apply_lifo_removals` Fix #23)
+- Clamps requested lots against `strike_available` with non-fatal `clamp_error` message
+- Returns `inflight_lots` count so callers can classify the error (race vs missing data)
+
+### Phase 2 — Side-effect hardening (mmm_api.py)
+
+1. **Concurrency conflict**: When `_being_closed` excludes all lots at the strike, error message explicitly says "N lots in-flight — retry after concurrent close completes" vs silent "no fills found". Outcome classified as `'inflight_conflict'` in `side_outcomes`.
+2. **Strike availability metadata**: Response now includes `strike_availability: {side: {strike, available, inflight}}` when `strike_param` is provided — lets frontend set accurate lot caps.
+3. **side='both' partial success**: Added `side_outcomes: {side: 'success'|'partial'|'failed'|'inflight_conflict'|'no_lots_at_strike'}` per side in the response envelope.
+
+### Phase 3 — Frontend MMMReduceModal UX (MMMDashboard.js)
+
+1. **Lot cap semantics**: Added `getStrikeLots(sideKey, targetStrike)` — computes available lots from `positions[]` (active+shifted, excl. `_being_closed`), falling back to derived views. Used for `maxLots` in specific-strike mode instead of `active_lots`. For side='both', cap is `min(ce_avail, pe_avail)` at that strike.
+2. **Result rendering**:
+   - **Full failure**: single consolidated error block with bulleted list — eliminated duplicate error text (was: `error` state + `result.errors[]` both rendered separately).
+   - **Partial success**: success/warning header + fill rows + secondary warning block for failed portions only.
+   - **side='both'**: per-side outcome summary showing ✓/⚠/✗ per side.
+3. **Helper text**: Added caption under "Specific Strike" toggle explaining it can close active or frozen/shifted lots.
+4. **Button enablement**: specific-strike mode with no lots (`active_lots=0` but shifted lots exist) no longer wrongly disabled — guard is now `strikeMode === 'lifo' && maxLots === 0` (LIFO only).
+
+### Phase 4 — Tests (test_sealed_mmm_reduce_strike.py — NEW FILE)
+
+14 new sealed tests covering:
+- `test_a*`: shifted-only strike reducible; `_pos_id` present in records
+- `test_b*`: mixed active+shifted at same strike; original position type included
+- `test_c*`: `_being_closed` excluded; all-inflight → fatal error with lot count
+- `test_d*`: lot clamping (clamp_error); exact match (no clamp); no lots at strike
+- `test_e*`: LIFO order (non-originals newest-first, originals last)
+- `test_f*`: closed positions never included
+- `test_g*`: old-format side_state auto-migrated
+
+### Phase 5 — Verification
+
+**Test result**: 1400 passed, 1 pre-existing failure (`test_activity_registry_covers_literal_log_types` — unrelated, was failing before this session).
+
+**Files changed**: `mmm_api.py`, `MMMDashboard.js`, `tests/test_sealed_mmm_reduce_strike.py` (new)
+
+**Auto-LIFO semantics unchanged** — only active lots, existing behavior preserved.

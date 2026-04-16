@@ -229,6 +229,7 @@ const STRATEGY_META = {
 };
 
 const STRATEGY_ORDER = ['0DTE', '5DTE', 'SHORT_WINDOW', 'STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_ROLL'];
+const REVERSE_SUPPORTED_STRATEGIES = new Set(['0DTE', '5DTE', 'SHORT_WINDOW']);
 
 const STRATEGY_SHORTCUTS = STRATEGY_ORDER.map((key) => ({
   key,
@@ -1944,11 +1945,12 @@ const MMMReduceModal = ({ open, session, onClose }) => {
   const [specificStrike, setSpecificStrike] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);   // last API result
-  const [error, setError] = useState('');
+  const [networkError, setNetworkError] = useState('');  // pre-submit errors only
 
   if (!session) return null;
 
-  // Collect unique strikes per side for the dropdown
+  // Collect unique strikes per side for the dropdown.
+  // Includes frozen/shifted strikes so operator can target them specifically.
   const getStrikes = (sideKey) => {
     const s = session[sideKey] || {};
     const strikes = new Set();
@@ -1959,9 +1961,36 @@ const MMMReduceModal = ({ open, session, onClose }) => {
     return Array.from(strikes).sort((a, b) => a - b);
   };
 
-  const maxLots = side === 'both'
-    ? Math.min(session.ce?.active_lots || 0, session.pe?.active_lots || 0)
-    : (session[side]?.active_lots || 0);
+  // Compute reducible lots at a specific strike for a side.
+  // Counts active+shifted positions, excluding in-flight (_being_closed).
+  const getStrikeLots = (sideKey, targetStrike) => {
+    if (!targetStrike) return 0;
+    const s = session[sideKey] || {};
+    const positions = s.positions || [];
+    if (positions.length === 0) {
+      // Fallback: derive from adjustment_fills + frozen_positions views
+      let count = 0;
+      (s.adjustment_fills || []).forEach(f => {
+        if (Math.abs(Number(f.strike) - Number(targetStrike)) < 1 && !f._being_closed)
+          count += f.lots || 0;
+      });
+      (s.frozen_positions || []).forEach(f => {
+        if (Math.abs(Number(f.strike) - Number(targetStrike)) < 1 && !f._being_closed)
+          count += f.lots || 0;
+      });
+      // also check original position
+      if (Math.abs(Number(s.original_strike || 0) - Number(targetStrike)) < 1)
+        count += s.original_lots || 0;
+      return count;
+    }
+    return positions
+      .filter(p =>
+        (p.status === 'active' || p.status === 'shifted') &&
+        Math.abs(Number(p.strike) - Number(targetStrike)) < 1 &&
+        !p._being_closed
+      )
+      .reduce((acc, p) => acc + (p.lots || 0), 0);
+  };
 
   const ceStrikes = getStrikes('ce');
   const peStrikes = getStrikes('pe');
@@ -1969,10 +1998,30 @@ const MMMReduceModal = ({ open, session, onClose }) => {
     ? [...new Set([...ceStrikes, ...peStrikes])].sort((a, b) => a - b)
     : (side === 'ce' ? ceStrikes : peStrikes);
 
+  // Lot cap depends on mode and strike selection
+  const getMaxLots = () => {
+    if (strikeMode === 'specific' && specificStrike) {
+      if (side === 'both') {
+        return Math.min(
+          getStrikeLots('ce', specificStrike),
+          getStrikeLots('pe', specificStrike)
+        );
+      }
+      return getStrikeLots(side, specificStrike);
+    }
+    // LIFO mode: cap by active_lots only (shifted lots not closeable via LIFO)
+    if (side === 'both') {
+      return Math.min(session.ce?.active_lots || 0, session.pe?.active_lots || 0);
+    }
+    return session[side]?.active_lots || 0;
+  };
+
+  const maxLots = getMaxLots();
+
   const handleClose = () => {
     if (loading) return;
     setResult(null);
-    setError('');
+    setNetworkError('');
     setLots(1);
     setSide('ce');
     setStrikeMode('lifo');
@@ -1982,23 +2031,26 @@ const MMMReduceModal = ({ open, session, onClose }) => {
 
   const handleSubmit = async () => {
     setLoading(true);
-    setError('');
+    setNetworkError('');
     setResult(null);
     try {
       const strike = strikeMode === 'specific' && specificStrike ? Number(specificStrike) : null;
       const res = await mmmService.reducePosition(session.session_id, side, lots, strike);
       setResult(res);
-      if (!res.success && !res.results?.length) {
-        setError(res.error || (res.errors || []).join('; ') || 'Reduction failed');
-      }
     } catch (e) {
-      setError(e?.response?.data?.error || e.message || 'Network error');
+      setNetworkError(e?.response?.data?.error || e.message || 'Network error');
     } finally {
       setLoading(false);
     }
   };
 
   const isDone = result != null;
+  const hasSuccess = (result?.results?.length || 0) > 0;
+  const isPartial = hasSuccess && (result?.errors?.length || 0) > 0;
+  const isFullFailure = isDone && !hasSuccess;
+
+  // For side='both' partial success: classify per-side outcomes
+  const sideOutcomes = result?.side_outcomes || {};
 
   return (
     <Dialog open={open} onClose={handleClose} maxWidth="xs" fullWidth>
@@ -2010,25 +2062,51 @@ const MMMReduceModal = ({ open, session, onClose }) => {
         {isDone ? (
           /* ---- Result view ---- */
           <Box>
-            {result.results?.length > 0 ? (
-              <Alert severity="success" sx={{ mb: 1.5 }}>
-                Reduced successfully. Realized P&L: <strong>${(result.total_realized_pnl || 0).toFixed(2)}</strong>
+            {isFullFailure ? (
+              /* Full failure: single consolidated error block */
+              <Alert severity="error" sx={{ mb: 1.5 }}>
+                <strong>No lots were reduced.</strong>
+                {result.errors?.length > 0 && (
+                  <Box component="ul" sx={{ m: 0, pl: 2, mt: 0.5 }}>
+                    {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+                  </Box>
+                )}
               </Alert>
             ) : (
-              <Alert severity="error" sx={{ mb: 1.5 }}>
-                {error || 'No lots were reduced.'}
-              </Alert>
+              <>
+                {/* Partial or full success */}
+                <Alert severity={isPartial ? 'warning' : 'success'} sx={{ mb: 1.5 }}>
+                  {isPartial
+                    ? <>Partially reduced. Realized P&L: <strong>${(result.total_realized_pnl || 0).toFixed(2)}</strong></>
+                    : <>Reduced successfully. Realized P&L: <strong>${(result.total_realized_pnl || 0).toFixed(2)}</strong></>
+                  }
+                </Alert>
+                {result.results?.map((r, i) => (
+                  <Box key={i} sx={{ mb: 0.5, fontFamily: 'monospace', fontSize: '0.85rem' }}>
+                    {r.side} @ {Number(r.strike).toLocaleString()}: {r.lots} lots
+                    — fill ${r.fill_price?.toFixed(2)}, P&L ${r.realized_pnl?.toFixed(2)}
+                  </Box>
+                ))}
+                {/* Show errors only for failed portions (partial success) */}
+                {result.errors?.length > 0 && (
+                  <Alert severity="warning" sx={{ mt: 1 }}>
+                    <strong>Some lots not reduced:</strong>
+                    <Box component="ul" sx={{ m: 0, pl: 2, mt: 0.5 }}>
+                      {result.errors.map((e, i) => <li key={i}>{e}</li>)}
+                    </Box>
+                  </Alert>
+                )}
+              </>
             )}
-            {result.results?.map((r, i) => (
-              <Box key={i} sx={{ mb: 0.5, fontFamily: 'monospace', fontSize: '0.85rem' }}>
-                {r.side} @ {Number(r.strike).toLocaleString()}: {r.lots} lots
-                — fill ${r.fill_price?.toFixed(2)}, P&L ${r.realized_pnl?.toFixed(2)}
+            {/* Per-side outcome summary for side='both' */}
+            {Object.keys(sideOutcomes).length > 1 && (
+              <Box sx={{ mt: 1, fontSize: '0.8rem', color: 'text.secondary' }}>
+                {Object.entries(sideOutcomes).map(([sk, outcome]) => (
+                  <Box key={sk}>
+                    {sk.toUpperCase()}: {outcome === 'success' ? '✓ closed' : outcome === 'partial' ? '⚠ partial' : '✗ failed'}
+                  </Box>
+                ))}
               </Box>
-            ))}
-            {result.errors?.length > 0 && (
-              <Alert severity="warning" sx={{ mt: 1 }}>
-                {result.errors.join('; ')}
-              </Alert>
             )}
           </Box>
         ) : (
@@ -2062,19 +2140,6 @@ const MMMReduceModal = ({ open, session, onClose }) => {
               </ToggleButtonGroup>
             </Box>
 
-            {/* Lots input */}
-            <TextField
-              label={`Lots to buy back ${maxLots > 0 ? `(max ${maxLots})` : ''}`}
-              type="number"
-              value={lots}
-              onChange={e => setLots(Math.max(1, Math.min(maxLots, parseInt(e.target.value) || 1)))}
-              inputProps={{ min: 1, max: maxLots }}
-              size="small"
-              fullWidth
-              error={lots > maxLots}
-              helperText={lots > maxLots ? `Max available: ${maxLots}` : ''}
-            />
-
             {/* Strike mode */}
             <Box>
               <Typography variant="caption" color="text.secondary" sx={{ mb: 0.5, display: 'block' }}>
@@ -2083,7 +2148,7 @@ const MMMReduceModal = ({ open, session, onClose }) => {
               <ToggleButtonGroup
                 value={strikeMode}
                 exclusive
-                onChange={(_, v) => { if (v) setStrikeMode(v); }}
+                onChange={(_, v) => { if (v) { setStrikeMode(v); setLots(1); setSpecificStrike(''); } }}
                 size="small"
                 sx={{ width: '100%' }}
               >
@@ -2094,6 +2159,11 @@ const MMMReduceModal = ({ open, session, onClose }) => {
                   Specific Strike
                 </ToggleButton>
               </ToggleButtonGroup>
+              {strikeMode === 'specific' && (
+                <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+                  Can close active or frozen/shifted lots at the selected strike.
+                </Typography>
+              )}
             </Box>
 
             {strikeMode === 'specific' && (
@@ -2102,7 +2172,7 @@ const MMMReduceModal = ({ open, session, onClose }) => {
                 <Select
                   value={specificStrike}
                   label="Strike"
-                  onChange={e => setSpecificStrike(e.target.value)}
+                  onChange={e => { setSpecificStrike(e.target.value); setLots(1); }}
                 >
                   {availableStrikes.map(s => (
                     <MenuItem key={s} value={s}>{Number(s).toLocaleString()}</MenuItem>
@@ -2111,7 +2181,21 @@ const MMMReduceModal = ({ open, session, onClose }) => {
               </FormControl>
             )}
 
-            {error && <Alert severity="error">{error}</Alert>}
+            {/* Lots input */}
+            <TextField
+              label={`Lots to buy back ${maxLots > 0 ? `(max ${maxLots})` : ''}`}
+              type="number"
+              value={lots}
+              onChange={e => setLots(Math.max(1, Math.min(maxLots || 9999, parseInt(e.target.value) || 1)))}
+              inputProps={{ min: 1, max: maxLots || undefined }}
+              size="small"
+              fullWidth
+              disabled={strikeMode === 'specific' && !specificStrike}
+              error={maxLots > 0 && lots > maxLots}
+              helperText={maxLots > 0 && lots > maxLots ? `Max available: ${maxLots}` : ''}
+            />
+
+            {networkError && <Alert severity="error">{networkError}</Alert>}
           </Box>
         )}
       </DialogContent>
@@ -2125,7 +2209,13 @@ const MMMReduceModal = ({ open, session, onClose }) => {
             variant="contained"
             color="warning"
             onClick={handleSubmit}
-            disabled={loading || lots < 1 || lots > maxLots || maxLots === 0 || (strikeMode === 'specific' && !specificStrike)}
+            disabled={
+              loading ||
+              lots < 1 ||
+              (maxLots > 0 && lots > maxLots) ||
+              (strikeMode === 'lifo' && maxLots === 0) ||
+              (strikeMode === 'specific' && !specificStrike)
+            }
             startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <ContentCutIcon />}
           >
             {loading ? 'Executing...' : `Buy Back ${lots} Lot${lots !== 1 ? 's' : ''}`}
@@ -2841,6 +2931,17 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
     return metrics;
   }, [session, heartbeat]);
 
+  const strategyType = resolveSessionStrategyType(session);
+  const reverseEnabledForSession = Boolean(session?.params?.reverse_enabled);
+  const reverseSupportedByStrategy = REVERSE_SUPPORTED_STRATEGIES.has(strategyType);
+  const showReverseModeTab = reverseEnabledForSession && reverseSupportedByStrategy;
+
+  useEffect(() => {
+    if (!showReverseModeTab && detailTab === 18) {
+      setDetailTab(0);
+    }
+  }, [showReverseModeTab, detailTab]);
+
   if (!session) {
     return (
       <Box sx={{ p: 4, textAlign: 'center' }}>
@@ -2855,7 +2956,6 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const pe = session.pe || {};
   const status = session.strategy_status || session.status || 'IDLE';
   const isLive = ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status);
-  const strategyType = resolveSessionStrategyType(session);
   const isStraddleStrategy = ['STRADDLE_WITH_ADJUSTMENT', 'STRADDLE_ROLL'].includes(strategyType);
 
   // P&L calculations — H-14 fix: use ?? 0 to prevent NaN when backend returns null
@@ -2953,7 +3053,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <Tab label="Performance" />
         <Tab label="Audit" />
         <Tab label="Exec Log" />
-        <Tab label="Reverse Mode" />
+        {showReverseModeTab && <Tab label="Reverse Mode" />}
       </Tabs>
 
       {/* Tab 0: Overview — Professional KPI Dashboard */}
@@ -3987,7 +4087,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
       )}
 
       {/* Tab 18: Reverse Mode — Controlled premium harvesting overlay */}
-      {detailTab === 18 && (
+      {showReverseModeTab && detailTab === 18 && (
         <Box>
           <MMMReverseModePanel session={session} heartbeat={heartbeat} />
         </Box>
