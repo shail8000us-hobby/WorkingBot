@@ -12,13 +12,13 @@ instances:
     product_id: 27
     grid:
       geometry:
-        reference: 68500
+        reference: 73500
         lower: 66000
-        upper: 72000
+        upper: 76002
         step: 500
       limits:
         max_open_positions: 20
-        lot_size: 5
+        lot_size: 1
         max_open_orders: 20
         max_qty_per_order: 5
       behavior:

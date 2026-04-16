@@ -3778,6 +3778,107 @@ def list_monitors():
 # Manual Position Reduction
 # =============================================================================
 
+def _build_strike_close_records(
+    side_state: dict,
+    target_strike: float,
+    lots_requested: int,
+) -> dict:
+    """
+    Build close records for a specific-strike manual reduce.
+
+    Reads from positions[] (canonical source, Fix #23). Includes active and
+    shifted positions at the target strike; excludes in-flight (_being_closed).
+
+    Returns a dict with:
+        close_records   : list of {lots, premium, strike, source, _pos_id}
+        lots_to_close   : int — clamped requested lots
+        strike_available: int — total reducible lots at strike
+        inflight_lots   : int — lots excluded due to _being_closed
+        clamp_error     : str|None — informational message if lots were clamped
+        error           : str|None — fatal error (no lots available)
+    """
+    from .mmm_state import _migrate_side_to_positions
+
+    if 'positions' not in side_state:
+        _migrate_side_to_positions(side_state)
+
+    all_positions = side_state.get('positions', [])
+    inflight_lots = 0
+    strike_positions = []
+    for pos in all_positions:
+        if pos.get('status') not in ('active', 'shifted'):
+            continue
+        if abs(float(pos.get('strike', 0)) - target_strike) >= 1:
+            continue
+        if pos.get('_being_closed'):
+            inflight_lots += pos.get('lots', 0)
+            continue
+        if pos.get('lots', 0) > 0:
+            strike_positions.append(pos)
+
+    strike_available = sum(p.get('lots', 0) for p in strike_positions)
+
+    if strike_available <= 0 and inflight_lots > 0:
+        return {
+            'close_records': [],
+            'lots_to_close': 0,
+            'strike_available': 0,
+            'inflight_lots': inflight_lots,
+            'clamp_error': None,
+            'error': (
+                f'{inflight_lots} lots currently in-flight (being closed) '
+                f'— retry after concurrent close completes'
+            ),
+        }
+    if strike_available <= 0:
+        return {
+            'close_records': [],
+            'lots_to_close': 0,
+            'strike_available': 0,
+            'inflight_lots': 0,
+            'clamp_error': None,
+            'error': 'no open lots at strike (active or frozen/shifted)',
+        }
+
+    lots_to_close = min(lots_requested, strike_available)
+    clamp_error = None
+    if lots_requested > strike_available:
+        clamp_error = (
+            f'requested {lots_requested} but only {strike_available} reducible lots '
+            f'(clamped to {lots_to_close})'
+        )
+
+    # Build close records newest-first (LIFO intent): non-originals reversed, then originals
+    non_orig = [p for p in strike_positions if p.get('type') != 'original']
+    orig_list = [p for p in strike_positions if p.get('type') == 'original']
+    ordered = list(reversed(non_orig)) + orig_list
+
+    close_records = []
+    remaining = lots_to_close
+    for pos in ordered:
+        if remaining <= 0:
+            break
+        take = min(remaining, pos.get('lots', 0))
+        if take > 0:
+            close_records.append({
+                'lots': take,
+                'premium': pos.get('entry_premium', pos.get('premium', 0)),
+                'strike': float(pos.get('strike', target_strike)),
+                'source': pos.get('type', 'adjustment'),
+                '_pos_id': pos['id'],
+            })
+            remaining -= take
+
+    return {
+        'close_records': close_records,
+        'lots_to_close': lots_to_close,
+        'strike_available': strike_available,
+        'inflight_lots': inflight_lots,
+        'clamp_error': clamp_error,
+        'error': None,
+    }
+
+
 @mmm_bp.route('/session/<session_id>/reduce-position', methods=['POST'])
 def reduce_position(session_id: str):
     """
@@ -3842,77 +3943,53 @@ def reduce_position(session_id: str):
         results = []
         errors = []
         total_realized = 0.0
+        side_outcomes = {}        # {side_key: 'success'|'partial'|'failed'|'skipped'}
+        strike_availability = {}  # {side_key: {available, inflight}} — set when strike_param
 
         async def _do_reduce():
             nonlocal total_realized
+            nonlocal side_outcomes, strike_availability
             for side_key in sides_to_process:
                 side_state = session.get(side_key, {})
-                active_lots = side_state.get('active_lots', 0)
                 option_type = 'call' if side_key == 'ce' else 'put'
-
-                if active_lots <= 0:
-                    errors.append(f'{side_key.upper()}: no open lots to reduce')
-                    continue
-
-                max_lots = active_lots
-                lots_to_close = min(lots_param, max_lots)
-
-                if lots_to_close <= 0:
-                    errors.append(f'{side_key.upper()}: requested {lots_param} > available {max_lots}')
-                    continue
 
                 # --- Build close records (LIFO or specific strike) ---
                 if strike_param:
-                    # User specified a strike: target that strike only
-                    active_strike = side_state.get('active_strike', 0)
-                    orig_strike = side_state.get('original_strike') or active_strike
                     target_strike = float(strike_param)
+                    _sr = _build_strike_close_records(side_state, target_strike, lots_param)
 
-                    # Find matching fills at that strike
-                    close_records = []
-                    remaining = lots_to_close
+                    # Populate availability metadata for response
+                    strike_availability[side_key] = {
+                        'strike': int(target_strike),
+                        'available': _sr['strike_available'],
+                        'inflight': _sr['inflight_lots'],
+                    }
 
-                    adj_fills = list(side_state.get('adjustment_fills', []))
-                    for i in range(len(adj_fills) - 1, -1, -1):
-                        if remaining <= 0:
-                            break
-                        fill = adj_fills[i]
-                        fill_strike = fill.get('strike') or active_strike
-                        if abs(float(fill_strike) - target_strike) < 1:
-                            take = min(remaining, fill.get('lots', 0))
-                            if take > 0:
-                                close_records.append({
-                                    'lots': take,
-                                    'premium': fill.get('premium', 0),
-                                    'strike': fill_strike,
-                                    'source': 'adjustment',
-                                    'fill_index': i,
-                                })
-                                remaining -= take
-
-                    if remaining > 0 and abs(orig_strike - target_strike) < 1:
-                        orig_lots = side_state.get('original_lots', 0)
-                        take = min(remaining, orig_lots)
-                        if take > 0:
-                            close_records.append({
-                                'lots': take,
-                                'premium': side_state.get('original_premium', 0),
-                                'strike': orig_strike,
-                                'source': 'original',
-                                'fill_index': -1,
-                            })
-                            remaining -= take
-
-                    if not close_records:
-                        errors.append(
-                            f'{side_key.upper()}: no fills found at strike {target_strike}'
+                    if _sr['error']:
+                        outcome = (
+                            'inflight_conflict' if _sr['inflight_lots'] > 0
+                            else 'no_lots_at_strike'
                         )
+                        errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["error"]}')
+                        side_outcomes[side_key] = outcome
                         continue
+
+                    if _sr['clamp_error']:
+                        errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["clamp_error"]}')
+
+                    close_records = _sr['close_records']
+                    lots_to_close = _sr['lots_to_close']
                 else:
+                    # LIFO auto mode — only active positions (existing semantics preserved)
+                    active_lots = side_state.get('active_lots', 0)
+                    if active_lots <= 0:
+                        errors.append(f'{side_key.upper()}: no open lots to reduce')
+                        continue
+                    lots_to_close = min(lots_param, active_lots)
                     close_records = get_lifo_close_fills(side_state, lots_to_close)
 
                 if not close_records:
-                    errors.append(f'{side_key.upper()}: no LIFO records found')
+                    errors.append(f'{side_key.upper()}: no close records found')
                     continue
 
                 # --- Group by actual strike, place one order per strike ---
@@ -3924,6 +4001,7 @@ def reduce_position(session_id: str):
                     by_strike[rec_strike]['wp_sum'] += rec.get('premium', 0) * rec['lots']
 
                 side_any_failed = False
+                side_fills_before = len(results)
                 for strike_val, group in by_strike.items():
                     group_lots = group['lots']
                     symbol = initializer.build_symbol(
@@ -4058,6 +4136,16 @@ def reduce_position(session_id: str):
                         pass
                     # ── END TRADE AUDIT ──────────────────────────────────────────
 
+                # Track per-side outcome for side='both' clarity
+                side_filled = len(results) - side_fills_before
+                if side_filled > 0 and not side_any_failed:
+                    side_outcomes[side_key] = 'success'
+                elif side_filled > 0 and side_any_failed:
+                    side_outcomes[side_key] = 'partial'
+                elif side_any_failed:
+                    side_outcomes[side_key] = 'failed'
+                # else: side was skipped (error added above before reaching here)
+
         _run_async(_do_reduce())
 
         # --- Reset trigger snapshots with fresh live premiums ---
@@ -4132,6 +4220,8 @@ def reduce_position(session_id: str):
             'results': results,
             'total_realized_pnl': round(total_realized, 2),
             'errors': errors,
+            'side_outcomes': side_outcomes,         # {side: 'success'|'partial'|'failed'|'inflight_conflict'|'no_lots_at_strike'}
+            'strike_availability': strike_availability,  # {side: {strike, available, inflight}} when strike_param set
         })
 
     except Exception as e:

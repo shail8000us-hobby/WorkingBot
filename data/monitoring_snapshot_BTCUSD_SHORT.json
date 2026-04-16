@@ -1,40 +1,49 @@
 {
-  "timestamp": 1776252687.16397,
+  "timestamp": 1776323139.958092,
   "mode": "SHORT",
   "symbol": "BTCUSD",
-  "uptime": 191915.91505122185,
+  "uptime": 60698.78748893738,
   "state": {
     "open_tranches": [
       {
-        "position_id": "8489164c-3d18-408e-a317-533abc191c70",
-        "entry_price": 71500.0,
-        "tp_price": 71000.0,
-        "size": 5,
-        "correlation_id": "fill-917ac73fa15b466bafd3c6939704de1b-1776088199058",
-        "timestamp": 1776088199.885013,
-        "entry_order_id": "8489164c-3d18-408e-a317-533abc191c70"
+        "position_id": "c8963ab7-b32f-4590-942f-58dbad249923",
+        "entry_price": 74000.0,
+        "tp_price": 73500.0,
+        "size": 1,
+        "correlation_id": "fill-a704a0e63867430fa68dab86b5cae3e1-1776262477498",
+        "timestamp": 1776262478.199189,
+        "entry_order_id": "c8963ab7-b32f-4590-942f-58dbad249923"
       },
       {
-        "position_id": "07ed8e64-f970-4ebc-b8b4-f8ae0bc43ccc",
-        "entry_price": 72000.0,
-        "tp_price": 71500.0,
-        "size": 5,
-        "correlation_id": "fill-0df9868b3a774a0e932663f309c14d2b-1776091592517",
-        "timestamp": 1776091593.199727,
-        "entry_order_id": "07ed8e64-f970-4ebc-b8b4-f8ae0bc43ccc"
+        "position_id": "306e24ef-78dd-459f-bc91-7132dfc17a34",
+        "entry_price": 74500.0,
+        "tp_price": 74000.0,
+        "size": 1,
+        "correlation_id": "fill-dfa152523dc940f89aa1f62bc3c120b2-1776279930275",
+        "timestamp": 1776279931.139416,
+        "entry_order_id": "306e24ef-78dd-459f-bc91-7132dfc17a34"
+      },
+      {
+        "position_id": "6f334d54-23d1-4a25-bf1c-7899dd0cd891",
+        "entry_price": 75000.0,
+        "tp_price": 74500.0,
+        "size": 1,
+        "correlation_id": "fill-104fd8ae5eb24c0a8ec8ea3ab85a33fb-1776306729894",
+        "timestamp": 1776306730.7660391,
+        "entry_order_id": "6f334d54-23d1-4a25-bf1c-7899dd0cd891"
       }
     ],
     "pending_buy": null,
     "pending_sell": {
-      "order_id": 1271360524,
-      "price": 72000.0,
-      "size": 5,
-      "timestamp": 1776088209.573615
+      "order_id": 1275813970,
+      "price": 75500.0,
+      "size": 1,
+      "timestamp": 1776306735.033708
     },
     "last_buy_order_time": 0,
-    "last_sell_order_time": 1776088209.573617,
-    "total_positions_opened": 40,
-    "total_positions_closed": 37,
+    "last_sell_order_time": 1776306735.03371,
+    "total_positions_opened": 45,
+    "total_positions_closed": 41,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
       "total_recoveries": 0,
@@ -47,31 +56,39 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 2,
-      "total_opened": 40,
-      "total_closed": 37,
-      "avg_entry_price": 71750.0,
-      "total_size": 10,
-      "oldest_position_age": 164487.1158130169,
+      "open_count": 3,
+      "total_opened": 45,
+      "total_closed": 41,
+      "avg_entry_price": 74500.0,
+      "total_size": 3,
+      "oldest_position_age": 60661.75428891182,
       "has_pending_buy": false,
       "has_pending_sell": true
     },
     "orders": {
-      "active_orders": 3,
-      "total_placed": 3,
-      "total_cancelled": 0,
+      "active_orders": 11,
+      "total_placed": 13,
+      "total_cancelled": 2,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
-        1271359472,
-        1271360524,
-        1271497613
+        1275070686,
+        1275071337,
+        1275071406,
+        1275537365,
+        1275537555,
+        1275575337,
+        1275621523,
+        1275670351,
+        1275722261,
+        1275813898,
+        1275813970
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 2,
-      "total_completed": 2,
+      "total_started": 7,
+      "total_completed": 7,
       "total_failed": 0,
       "total_compensated": 0,
       "success_rate": 1.0,
@@ -84,10 +101,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 90902,
+        "processed_count": 38684,
         "error_count": 0,
-        "avg_processing_time_ms": 0.42529831174761057,
-        "max_processing_time_ms": 27.357792016118765,
+        "avg_processing_time_ms": 0.04852291429415345,
+        "max_processing_time_ms": 0.4825000651180744,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -95,29 +112,29 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 36902,
+        "processed_count": 11708,
         "error_count": 0,
-        "avg_processing_time_ms": 0.038690841756761074,
-        "max_processing_time_ms": 0.41629199404269457,
+        "avg_processing_time_ms": 0.12000502087175846,
+        "max_processing_time_ms": 7.368125021457672,
         "error_rate": 0.0
       }
     },
-    "fills_processed": 2,
-    "sagas_completed": 2,
+    "fills_processed": 7,
+    "sagas_completed": 7,
     "sagas_failed": 0
   },
   "grid_config": {
     "lower": 66000.0,
-    "upper": 72000.0,
+    "upper": 76002.0,
     "step": 500.0,
-    "ref": 68500.0,
+    "ref": 73500.0,
     "tp_offset": 500
   },
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 73975.5,
-      "price_age_seconds": 3.288381814956665,
+      "price": 75000.0,
+      "price_age_seconds": 1.0656158924102783,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -127,14 +144,29 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 38082,
+        "total_updates": 12077,
         "websocket_updates": 0,
-        "rest_api_updates": 6,
-        "stale_warnings": 4,
-        "critical_warnings": 1
+        "rest_api_updates": 2,
+        "stale_warnings": 0,
+        "critical_warnings": 0
       }
     },
-    "recent_decisions": [],
+    "recent_decisions": [
+      {
+        "type": "SELL",
+        "target_price": 75000.0,
+        "current_price": 74515.0,
+        "price_age": null,
+        "grid_aligned": true,
+        "capacity_available": true,
+        "volatility_safe": true,
+        "approved": false,
+        "reasons": [
+          "Grid level placement (SHORT mode)"
+        ],
+        "timestamp": 1776298820.4856699
+      }
+    ],
     "anomalies": []
   }
 }
