@@ -217,3 +217,18 @@ webui/backend/logs/
 .claude/settings.local.json
 .claude/sessions/
 .claw/
+
+# Claude Code worktrees (temporary AI dev branches — never track)
+.claude/worktrees/
+
+# Legacy backup file extensions (should never be committed)
+*.json_backup
+*.base_plan_backup
+*.bak_feb*
+*.bak_jan*
+*.bak_mar*
+**/.backups/
+
+# SQLite DB files in code paths (should only live in data/)
+webui/backend/routes/**/*.db
+webui/backend/routes/**/*.db-*
