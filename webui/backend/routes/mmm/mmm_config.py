@@ -200,6 +200,8 @@ PARAM_RULES = {
     'replenish_retry_max':             {'type': int,   'min': 1,    'max': 10,    'hot': True},
     'replenish_retry_delay_sec':       {'type': float, 'min': 0.5,  'max': 30.0,  'hot': True},
     'replenish_max_reprice_attempts':  {'type': int,   'min': 0,    'max': 5,     'hot': True},
+    # FIX-2.1: DTE-aware repricing timeout (seconds). Scaled down in EMERGENCY gamma or low DTE.
+    'reprice_base_timeout_s':          {'type': int,   'min': 10,   'max': 120,   'hot': True},
     'replenish_shield_hold_secs':      {'type': int,   'min': 60,   'max': 3600,  'hot': True},
     # ATM Shield — Close & Retreat
     'atm_shield_enabled':              {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -394,6 +396,7 @@ _ADJUSTMENT_ENGINE_ONLY_PARAMS = {
     'replenish_retry_max',
     'replenish_retry_delay_sec',
     'replenish_max_reprice_attempts',
+    'reprice_base_timeout_s',
     'breakeven_control_enabled',
     'breakeven_warning_pct',
     'breakeven_danger_pct',

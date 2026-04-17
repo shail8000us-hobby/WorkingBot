@@ -216,6 +216,13 @@ class MMMMonitor:
         from .mmm_fill_sync import FillSyncer
         self._fill_syncer = FillSyncer(self)
 
+        # FIX-3.3: Warning cooldown dict — prevents duplicate safety_warning / bypass
+        # floods from overwhelming the operator and masking genuinely new signals.
+        # Key: warning_key string. Value: (last_emitted_beat, suppress_count).
+        # Cooldown: WARNING_COOLDOWN_BEATS beats of suppression after first emit.
+        self._warning_cooldown: dict = {}
+        self._warning_beat_counter: int = 0
+
         # Lazy-loaded
         self._executor = None
         self._initializer = None
@@ -1310,6 +1317,84 @@ class MMMMonitor:
             self._loop = None
 
     # =========================================================================
+    # §3.5: Warning Deduplication (FIX-3.3)
+    # =========================================================================
+
+    # Number of beats a warning key is suppressed after first emission.
+    _WARNING_COOLDOWN_BEATS = 10
+
+    def _should_emit_warning(self, warning_key: str) -> bool:
+        """
+        Return True if this warning_key should be emitted this beat.
+        Suppresses repeat identical warnings for _WARNING_COOLDOWN_BEATS beats.
+        Always emits the first occurrence. Logs suppressed count when cooldown expires.
+        """
+        try:
+            now_beat = self._warning_beat_counter
+            entry = self._warning_cooldown.get(warning_key)
+            if entry is None:
+                # First occurrence — emit and start cooldown
+                self._warning_cooldown[warning_key] = (now_beat, 0)
+                return True
+            last_beat, suppressed = entry
+            if now_beat - last_beat >= self._WARNING_COOLDOWN_BEATS:
+                # Cooldown expired — re-emit (log suppressed count if any)
+                if suppressed:
+                    log.info(
+                        f"[{self.session_id}] Warning '{warning_key}' re-emitting "
+                        f"after {suppressed} suppressed occurrence(s)"
+                    )
+                self._warning_cooldown[warning_key] = (now_beat, 0)
+                return True
+            # Still in cooldown — suppress and count
+            self._warning_cooldown[warning_key] = (last_beat, suppressed + 1)
+            return False
+        except Exception:
+            return True  # fail open — never suppress a warning on error
+
+    def _compute_fill_timeout(self, session: dict) -> int:
+        """
+        FIX-2.1: DTE/gamma-aware fill-wait timeout for smart_execute().
+
+        Scales the operator-configured reprice_base_timeout_s (default 60s)
+        down when urgency is high:
+          - EMERGENCY gamma      → 20s cap (fastest reprice cycle)
+          - DTE < 1 hour         → 30s cap
+          - DTE < 2 hours        → 45s cap
+          - Otherwise            → base (operator value, default 60s)
+
+        The caller passes the result as fill_timeout= to smart_execute().
+        This does NOT change what price is offered — only how quickly we reprice.
+        """
+        try:
+            params = session.get('params', {})
+            base = int(params.get('reprice_base_timeout_s', 60))
+
+            gamma_regime = session.get('_gamma_regime', 'NORMAL')
+            if gamma_regime == 'EMERGENCY':
+                return min(base, 20)
+
+            # Compute seconds remaining to expiry
+            import datetime as _dt
+            expiry_hour = int(params.get('expiry_hour_utc', 12))  # default matches mmm_state.py
+            expiry_min = int(params.get('expiry_minute_utc', 0))
+            now_utc = _dt.datetime.utcnow()
+            expiry_today = now_utc.replace(
+                hour=expiry_hour, minute=expiry_min, second=0, microsecond=0
+            )
+            if expiry_today <= now_utc:
+                # Already past expiry time today — treat as near-expiry
+                return min(base, 20)
+            dte_seconds = (expiry_today - now_utc).total_seconds()
+            if dte_seconds < 3600:   # < 1 hour
+                return min(base, 30)
+            if dte_seconds < 7200:   # < 2 hours
+                return min(base, 45)
+            return base
+        except Exception:
+            return 60  # fail safe — use standard timeout on any error
+
+    # =========================================================================
     # §4: Single Heartbeat
     # =========================================================================
 
@@ -1347,6 +1432,8 @@ class MMMMonitor:
         # read will be picked up on the next cycle anyway.
 
         session['last_heartbeat'] = datetime.now(timezone.utc).isoformat()
+        # FIX-3.3: Advance beat counter (used for warning cooldown tracking)
+        self._warning_beat_counter += 1
         # NOTE: error_count is reset at the END of a successful heartbeat,
         # not here at the start. This ensures consecutive errors accumulate.
 
@@ -1489,10 +1576,13 @@ class MMMMonitor:
                     f"[{sid}] MARGIN FORCE STOP: {margin_result.get('consecutive_critical', 0)} "
                     f"consecutive CRITICAL beats — stopping session now"
                 )
-                session['stop_reason'] = (
+                _margin_stop_reason = (
                     f"Margin consecutive CRITICAL x{margin_result.get('consecutive_critical', 0)}"
                 )
-                self.stop()
+                session['stop_reason'] = _margin_stop_reason
+                # FIX-1.3: pass reason so _stopped_reason is set correctly (used by
+                # performance scorer and exit quality classifier)
+                self.stop(_margin_stop_reason)
                 return
             if margin_result['tier'] in (TIER_RED, TIER_CRITICAL):
                 # RED/CRITICAL: emergency close already handled inside _check_margin_guardian
@@ -2383,11 +2473,55 @@ class MMMMonitor:
         # and margin-YELLOW blocks. max_loss hard stop, ITM guard, and
         # auto-close near expiry remain fully active regardless.
         _dangerous_mode = params.get('dangerous_mode', False)
+
+        # ── STRADDLE_WITH_ADJUSTMENT regime bypass flag ───────────────────────
+        # In a short straddle the adjustment IS the hedge — stopping it when
+        # gamma is elevated is worse than continuing.  FORCE_REDUCE, PAUSE,
+        # BLOCK_ALL_SELLS, and directional BLOCK_CE/PE_SELLS are bypassed for
+        # this strategy.  max_loss hard stop and auto-close near expiry are
+        # still active regardless.
+        _is_straddle_adj = _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
         if _dangerous_mode:
-            log.warning(
-                f"[{sid}] ⚠️ DANGEROUS MODE ACTIVE — all safety gates bypassed. "
-                f"Only max_loss, ITM guard, and auto-close near expiry are enforced."
+            # FIX-3.2: Hard interlock — block bypass when EMERGENCY gamma AND cap reached
+            # simultaneously. 31 bypasses under these dual conditions in mmm16apr26-2
+            # directly contributed to late-session risk escalation.
+            # EMERGENCY gamma means position is at maximum risk; cap means no room to
+            # add more lots safely. Bypassing safety gates in this state has no upside.
+            _gamma_r = session.get('_gamma_regime', 'NORMAL')
+            _max_per_side = params.get('max_lots_per_side', 100)
+            _ce_active = session.get('ce', {}).get('active_lots', 0)
+            _pe_active = session.get('pe', {}).get('active_lots', 0)
+            _cap_reached = (
+                _ce_active >= _max_per_side or _pe_active >= _max_per_side
             )
+            if _gamma_r == 'EMERGENCY' and _cap_reached:
+                _dangerous_mode = False
+                log.warning(
+                    f"[{sid}] ⛔ DANGEROUS MODE BLOCKED: gamma_regime=EMERGENCY "
+                    f"AND cap reached (CE={_ce_active}, PE={_pe_active}, "
+                    f"max={_max_per_side}). Bypass disallowed — safety gates active."
+                )
+                log_activity(
+                    'dangerous_mode_blocked',
+                    f'⛔ DANGEROUS MODE BLOCKED: EMERGENCY gamma + cap reached '
+                    f'(CE={_ce_active}L, PE={_pe_active}L, max={_max_per_side}L). '
+                    f'Safety gates remain active.',
+                    sid, 'error',
+                    {'gamma_regime': _gamma_r, 'ce_active': _ce_active,
+                     'pe_active': _pe_active, 'max_per_side': _max_per_side},
+                )
+                emit_safety(
+                    sid, 'dangerous_mode_blocked', 'critical',
+                    f'⛔ Dangerous mode auto-blocked: EMERGENCY gamma + lot cap reached. '
+                    f'Safety gates enforced.',
+                    {'gamma_regime': _gamma_r, 'ce_lots': _ce_active,
+                     'pe_lots': _pe_active, 'cap': _max_per_side},
+                )
+            else:
+                log.warning(
+                    f"[{sid}] ⚠️ DANGEROUS MODE ACTIVE — all safety gates bypassed. "
+                    f"Only max_loss, ITM guard, and auto-close near expiry are enforced."
+                )
 
         # Handle safety actions
         _skip_to_pnl = False  # Flag: skip triggers/adjustments but finish heartbeat
@@ -2422,11 +2556,25 @@ class MMMMonitor:
                 return
             elif _dangerous_mode:
                 # Dangerous mode: bypass stop_adjustments (whipsaw, velocity, asymmetry, guardrails)
-                log_activity('dangerous_mode_bypass',
-                             f'⚠️ DANGEROUS MODE: safety gate bypassed — {reason}',
-                             sid, 'warning',
-                             {'reason': reason, 'action_type': action_type,
-                              'dangerous_mode': True})
+                # FIX-3.3: deduplicate — same reason logged at most once per cooldown window
+                if self._should_emit_warning(f'dm_bypass_safety:{reason}'):
+                    log_activity('dangerous_mode_bypass',
+                                 f'⚠️ DANGEROUS MODE: safety gate bypassed — {reason}',
+                                 sid, 'warning',
+                                 {'reason': reason, 'action_type': action_type,
+                                  'dangerous_mode': True})
+            elif _is_straddle_adj:
+                # STRADDLE_WITH_ADJUSTMENT: stop_adjustments guards (whipsaw, lot_velocity,
+                # position_cap, trailing_stop) are bypassed — for a short straddle the
+                # adjustment IS the hedge.  Blocking it makes the position more dangerous,
+                # not less.  max_loss (auto_close) and session stop are still enforced above.
+                if self._should_emit_warning(f'straddle_adj_bypass_safety:{reason}'):
+                    log_activity('itm_guard_bypassed',
+                                 f'ℹ️ STRADDLE+ADJ: safety gate bypassed — {reason} '
+                                 f'(adjustment is the hedge, must proceed)',
+                                 sid, 'warning',
+                                 {'reason': reason, 'action_type': action_type,
+                                  'straddle_adj_bypass': True})
             else:
                 # stop_adjustments: block new adjustments but keep heartbeat
                 # running so close-at-5 continues AND peak_pnl decays
@@ -2584,13 +2732,21 @@ class MMMMonitor:
                 # Handle FORCE_REDUCE (gamma emergency — Priority 2)
                 # NOTE: only PAUSEs and warns — does NOT auto-wind-down
                 if regime_action == ACTION_FORCE_REDUCE:
-                    if _dangerous_mode:
-                        log_activity('dangerous_mode_bypass',
-                                    f'⚠️ DANGEROUS MODE: gamma emergency FORCE_REDUCE bypassed '
-                                    f'($Γ={session.get("_portfolio_dollar_gamma", 0):.2f})',
-                                    sid, 'warning',
-                                    {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0),
-                                     'dangerous_mode': True})
+                    if _dangerous_mode or _is_straddle_adj:
+                        # FIX-3.3: deduplicate per cooldown window
+                        _bypass_key = 'straddle_adj_bypass_force_reduce' if _is_straddle_adj else 'dm_bypass_force_reduce'
+                        _bypass_msg = (
+                            f'ℹ️ STRADDLE+ADJ: gamma emergency FORCE_REDUCE bypassed — '
+                            f'adjustments must continue ($Γ={session.get("_portfolio_dollar_gamma", 0):.2f})'
+                            if _is_straddle_adj else
+                            f'⚠️ DANGEROUS MODE: gamma emergency FORCE_REDUCE bypassed '
+                            f'($Γ={session.get("_portfolio_dollar_gamma", 0):.2f})'
+                        )
+                        _bypass_type = 'itm_guard_bypassed' if _is_straddle_adj else 'dangerous_mode_bypass'
+                        if self._should_emit_warning(_bypass_key):
+                            log_activity(_bypass_type, _bypass_msg, sid, 'warning',
+                                        {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0),
+                                         'straddle_adj_bypass': _is_straddle_adj})
                     else:
                         log_activity('regime_emergency',
                                     f'GAMMA EMERGENCY: $Gamma={session.get("_portfolio_dollar_gamma", 0):.2f} '
@@ -2612,13 +2768,20 @@ class MMMMonitor:
                     vol_r = session.get('_vol_regime', 'NORMAL')
                     trend_r = session.get('_trend_regime', 'NORMAL')
                     trend_tier = session.get('_trend_tier', 0)
-                    if _dangerous_mode:
-                        log_activity('dangerous_mode_bypass',
-                                    f'⚠️ DANGEROUS MODE: regime PAUSE bypassed '
-                                    f'(vol={vol_r}, trend={trend_r})',
-                                    sid, 'warning',
-                                    {'vol_regime': vol_r, 'trend_regime': trend_r,
-                                     'dangerous_mode': True})
+                    if _dangerous_mode or _is_straddle_adj:
+                        # FIX-3.3: deduplicate
+                        _bypass_key = f'straddle_adj_bypass_pause:{vol_r}:{trend_r}' if _is_straddle_adj else f'dm_bypass_pause:{vol_r}:{trend_r}'
+                        _bypass_msg = (
+                            f'ℹ️ STRADDLE+ADJ: regime PAUSE bypassed — adjustments must continue '
+                            f'(vol={vol_r}, trend={trend_r})'
+                            if _is_straddle_adj else
+                            f'⚠️ DANGEROUS MODE: regime PAUSE bypassed '
+                            f'(vol={vol_r}, trend={trend_r})'
+                        )
+                        if self._should_emit_warning(_bypass_key):
+                            log_activity('itm_guard_bypassed', _bypass_msg, sid, 'warning',
+                                        {'vol_regime': vol_r, 'trend_regime': trend_r,
+                                         'straddle_adj_bypass': _is_straddle_adj})
                     else:
                         log_activity('regime_pause',
                                     f'Regime PAUSE: session paused by regime controls '
@@ -2644,12 +2807,18 @@ class MMMMonitor:
                 # Proactive wind-down (every heartbeat regardless of trigger) was
                 # intentionally removed — it caused unintended position erosion.
                 if not _skip_to_pnl and regime_action == ACTION_BLOCK_ALL_SELLS:
-                    if _dangerous_mode:
-                        log_activity('dangerous_mode_bypass',
-                                    f'⚠️ DANGEROUS MODE: BLOCK_ALL_SELLS regime bypassed — '
-                                    f'trigger evaluation continuing',
-                                    sid, 'warning',
-                                    {'regime_action': str(regime_action), 'dangerous_mode': True})
+                    if _dangerous_mode or _is_straddle_adj:
+                        # FIX-3.3: deduplicate
+                        _bypass_key = 'straddle_adj_bypass_block_all_sells' if _is_straddle_adj else 'dm_bypass_block_all_sells'
+                        _bypass_msg = (
+                            'ℹ️ STRADDLE+ADJ: BLOCK_ALL_SELLS bypassed — trigger evaluation continuing'
+                            if _is_straddle_adj else
+                            '⚠️ DANGEROUS MODE: BLOCK_ALL_SELLS regime bypassed — trigger evaluation continuing'
+                        )
+                        if self._should_emit_warning(_bypass_key):
+                            log_activity('itm_guard_bypassed', _bypass_msg, sid, 'warning',
+                                        {'regime_action': str(regime_action),
+                                         'straddle_adj_bypass': _is_straddle_adj})
                     elif is_wind_down_active(session):
                         # Wind-down is active — don't skip trigger evaluation.
                         # The OUTCOME_CE/PE path will call _process_wind_down_buyback()
@@ -2670,7 +2839,10 @@ class MMMMonitor:
                 session['_regime_action'] = ACTION_NORMAL
         # ────────────────── END Regime Controls ──────────────────
 
-        # Auto-resume if session was paused by regime/gamma and regime has now normalized
+        # Auto-resume if session was paused by regime/gamma and regime has now normalized.
+        # For STRADDLE_WITH_ADJUSTMENT: also auto-resume immediately if paused by a regime/gamma
+        # block — those blocks are bypassed for this strategy going forward, so a prior pause
+        # from before the bypass should not keep the session stuck.
         if self._paused and not _skip_to_pnl:
             _pause_reason = session.get('_paused_reason', '')
             _was_regime_pause = (
@@ -2679,7 +2851,7 @@ class MMMMonitor:
             )
             if _was_regime_pause:
                 _current_regime_action = session.get('_regime_action', ACTION_NORMAL)
-                if _current_regime_action not in (ACTION_PAUSE, ACTION_FORCE_REDUCE):
+                if _current_regime_action not in (ACTION_PAUSE, ACTION_FORCE_REDUCE) or _is_straddle_adj:
                     log_activity(
                         'regime_auto_resume',
                         f'✅ Regime normalized — auto-resuming session (was paused: {_pause_reason})',
@@ -2815,20 +2987,27 @@ class MMMMonitor:
 
         # Step 5: Cooldown check (§14.3)
         if not _skip_to_pnl and is_cooldown_active(session):
-            if _dangerous_mode:
-                # Dangerous mode: bypass reversal cooldown — log once then continue
-                if not session.get('_cooldown_block_logged'):
-                    log_activity('dangerous_mode_bypass',
-                                 f'⚠️ DANGEROUS MODE: reversal cooldown bypassed '
-                                 f'(until {str(session.get("cooldown_until", "?"))[:19]})',
-                                 sid, 'warning',
+            if _dangerous_mode or _is_straddle_adj:
+                # Dangerous mode / STRADDLE+ADJ: bypass reversal cooldown.
+                # For straddle: "reversal" means spot bounced back — the other leg
+                # just became the aggressor and MUST be hedged immediately.
+                # Holding off for a cooldown window leaves the straddle unbalanced.
+                # FIX-3.3: use monitor-level cooldown instead of session flag
+                _cd_key = 'straddle_adj_bypass_cooldown' if _is_straddle_adj else 'dm_bypass_cooldown'
+                _cd_msg = ('ℹ️ STRADDLE+ADJ: reversal cooldown bypassed — must hedge immediately'
+                           if _is_straddle_adj else
+                           f'⚠️ DANGEROUS MODE: reversal cooldown bypassed '
+                           f'(until {str(session.get("cooldown_until", "?"))[:19]})')
+                _cd_type = 'itm_guard_bypassed' if _is_straddle_adj else 'dangerous_mode_bypass'
+                if self._should_emit_warning(_cd_key):
+                    log_activity(_cd_type, _cd_msg, sid, 'warning',
                                  {'cooldown_until': session.get('cooldown_until'),
-                                  'dangerous_mode': True})
-                    session['_cooldown_block_logged'] = True
+                                  'straddle_adj_bypass': _is_straddle_adj,
+                                  'dangerous_mode': _dangerous_mode})
+                session.pop('_cooldown_block_logged', None)
                 # Clear cooldown so it doesn't block _process_adjustment either
                 session['cooldown_active'] = False
                 session['cooldown_until'] = None
-                session.pop('_cooldown_block_logged', None)
             else:
                 # Log once per cooldown activation so the activity log shows WHY
                 # force-heartbeat or a normal beat produced no hedge.
@@ -2891,7 +3070,10 @@ class MMMMonitor:
         # Fix A1 (March 12 incident): proactive shift previously ran BEFORE safety
         # checks, bypassing lot_velocity, asymmetry, margin tier, and regime blocks.
         # Now gated behind _skip_to_pnl so all safety mechanisms are respected.
-        if not _skip_to_pnl and session.get('params', {}).get('proactive_shift_enabled', True):
+        # STRADDLE_WITH_ADJUSTMENT: proactive shift is disabled. Both legs are opened
+        # at the original ATM strike intentionally — proactive shifting would move one
+        # leg to a new (lower-premium) OTM strike, breaking the straddle structure.
+        if not _skip_to_pnl and not _is_straddle_adj and session.get('params', {}).get('proactive_shift_enabled', True):
             session.pop('_proactive_shifted_ce', None)
             session.pop('_proactive_shifted_pe', None)
             await self._proactive_shift_scan(ce_now, pe_now)
@@ -3077,13 +3259,16 @@ class MMMMonitor:
                 _ws_factor = 1.5
             else:
                 _ws_factor = 1.0
-            if _ws_factor > 1.0:
+            if _ws_factor > 1.0 and not _is_straddle_adj:
                 # Always use the raw config param as base for whipsaw widening.
                 # _effective_min_trigger_move may already carry theta-acceleration
                 # (applied earlier in the heartbeat near expiry).  Multiplying that
                 # value again compounds the two factors multiplicatively (4× intended
                 # in the worst case).  Instead: compute each widening independently
                 # and take the max so whichever adjustment is larger prevails.
+                # STRADDLE_WITH_ADJUSTMENT: bypassed — whipsaw widens triggers, meaning
+                # adjustments fire less often.  For straddle, under-adjusting in a
+                # whipsaw market compounds the loss on both legs simultaneously.
                 _raw_trigger = _ws_params.get('min_trigger_move', 10.0)
                 _ws_widened = _raw_trigger * _ws_factor
                 _theta_widened = session.get('_effective_min_trigger_move', _raw_trigger)
@@ -3192,6 +3377,19 @@ class MMMMonitor:
                 regime_action = session.get('_regime_action', ACTION_NORMAL)
                 blocked, block_reason = self._regime_engine.should_block_sell(session, hedge)
 
+                # STRADDLE_WITH_ADJUSTMENT: directional regime blocks (BLOCK_CE/PE_SELLS)
+                # are bypassed — the hedge sell MUST execute to balance the straddle.
+                # Gamma warnings are still visible in the activity log and UI.
+                if blocked and _is_straddle_adj:
+                    if self._should_emit_warning(f'straddle_adj_bypass_sell:{hedge}'):
+                        log_activity('itm_guard_bypassed',
+                                    f'ℹ️ STRADDLE+ADJ: regime sell-block ({block_reason}) bypassed '
+                                    f'for {hedge.upper()} — adjustment must proceed',
+                                    sid, 'warning',
+                                    {'hedge': hedge, 'block_reason': block_reason,
+                                     'straddle_adj_bypass': True})
+                    blocked = False
+
                 # ── Tier D: Delta Rescue ──────────────────────────────────────
                 # Near expiry, the algo MUST hedge when a trigger fires.  A
                 # forced hedge sell cannot be blocked by gamma regime — the
@@ -3281,12 +3479,14 @@ class MMMMonitor:
                         )
                     elif _dangerous_mode:
                         # YELLOW tier + dangerous mode: bypass the sell block, proceed to adjustment
-                        log_activity('dangerous_mode_bypass',
-                                    f'⚠️ DANGEROUS MODE: margin YELLOW sell-block bypassed '
-                                    f'({margin_util:.1f}%, tier: {margin_tier})',
-                                    sid, 'warning',
-                                    {'margin_tier': margin_tier, 'utilization': margin_util,
-                                     'dangerous_mode': True})
+                        # FIX-3.3: deduplicate per tier+utilization bucket
+                        if self._should_emit_warning(f'dm_bypass_margin:{margin_tier}'):
+                            log_activity('dangerous_mode_bypass',
+                                        f'⚠️ DANGEROUS MODE: margin YELLOW sell-block bypassed '
+                                        f'({margin_util:.1f}%, tier: {margin_tier})',
+                                        sid, 'warning',
+                                        {'margin_tier': margin_tier, 'utilization': margin_util,
+                                         'dangerous_mode': True})
                         # Fall through to adjustment (no `else` branch taken)
                     else:
                         # YELLOW tier: just block new sells
@@ -3937,6 +4137,7 @@ class MMMMonitor:
                     reduce_only=True,
                     max_reprice_attempts=_reprice_max,
                     session_id=sid,
+                    fill_timeout=self._compute_fill_timeout(self.session),
                 )
 
                 if not result.get('success'):
@@ -4296,6 +4497,7 @@ class MMMMonitor:
         # hedge side is already "heavy" causes compounding loss with no benefit.
         # The asymmetry guard still applies to speculative sells (scale-up, replenish).
         _dangerous_mode_adj = params.get('dangerous_mode', False)
+        _straddle_adj = _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
 
         # §9: Check for reversal
         # FM1 fix: Consecutive reversal-skip circuit breaker.
@@ -4322,6 +4524,11 @@ class MMMMonitor:
             )
         else:
             is_reversal = detect_reversal(session, aggressor)
+
+        # Default 0: overwritten by the standard (else) path below.
+        # Must be initialized here so the reversal path (first_reversal) doesn't
+        # reach line ~5050 with _pre_adj_trigger unbound → UnboundLocalError crash.
+        _pre_adj_trigger = 0
 
         if is_reversal:
             record_reversal(session, session.get('last_aggressor', 'NONE'), aggressor)
@@ -4361,9 +4568,22 @@ class MMMMonitor:
             # §9: If ACTIVE-STRIKE adjustments still profitable, skip.
             # FM2 fix: pass active_strike_pnl as the gate — frozen profits
             # at old strikes must not block hedging of the active position.
+            # STRADDLE_WITH_ADJUSTMENT: reversal skip is disabled — in a straddle,
+            # when the aggressor switches, the other leg must be hedged immediately
+            # regardless of whether the current active-strike P&L is positive.
+            # Skipping leaves one leg unhedged in a live trending/reversal move.
             skip, skip_reason = should_skip_reversal_adjustment(
                 session, active_strike_pnl, adj_pnl
             )
+            if skip and _straddle_adj:
+                log_activity('itm_guard_bypassed',
+                             f'ℹ️ STRADDLE+ADJ: reversal skip bypassed '
+                             f'(active=${active_strike_pnl:.2f}) — hedge must fire',
+                             sid, 'warning',
+                             {'aggressor': aggressor.upper(),
+                              'active_strike_pnl': active_strike_pnl,
+                              'straddle_adj_bypass': True})
+                skip = False
             if skip:
                 log.info(f"[{sid}] {skip_reason}")
                 log_activity('reversal_skip',
@@ -4439,7 +4659,7 @@ class MMMMonitor:
             # calculate_standard_loss reads it (it gets updated post-fill).
             _agg_state_pre = session.get(aggressor, {})
             _pre_adj_trigger = _agg_state_pre.get('trigger_snapshot', {}).get(
-                strike_key(_agg_state_pre.get('active_strike', 0)), 0
+                _strike_key(_agg_state_pre.get('active_strike', 0)), 0
             )
             loss, _std_incomplete = self._engine.calculate_standard_loss(
                 session, aggressor, premium_now,
@@ -4536,7 +4756,14 @@ class MMMMonitor:
         # §5.4: Calculate lots to sell
         # ITM Guard: NEVER sell ITM options for adjustment (unless disabled by user).
         # CE is ITM when strike <= spot. PE is ITM when strike >= spot.
-        itm_guard_on = session.get('params', {}).get('itm_guard_enabled', True)
+        # Exception: STRADDLE_WITH_ADJUSTMENT runs both legs at the original ATM strike.
+        # As expiry nears and spot drifts, one leg goes ITM while retaining strong premium.
+        # Blocking it here causes a deadlock (no OTM strike has enough premium). The ITM
+        # state is expected and intentional for this strategy — guard must not fire.
+        itm_guard_on = (
+            session.get('params', {}).get('itm_guard_enabled', True)
+            and _session_strategy_type(session) != STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        )
         hedge_strike = session.get(hedge, {}).get('active_strike', 0)
         if hedge_strike:
             spot_price = await self._fetch_spot_price()
@@ -4601,9 +4828,12 @@ class MMMMonitor:
         )
 
         # ── Adaptive Whipsaw Guard: lot reduction at RESTRICT+ ────────────
+        # STRADDLE_WITH_ADJUSTMENT: bypassed — whipsaw conditions in a straddle
+        # mean price is bouncing, exactly when both legs need full-size hedging.
+        # Halving lots leaves the straddle systematically under-hedged.
         _ws_score = session.get('_whipsaw_score', 0)
         _ws_restrict = session.get('params', {}).get('whipsaw_restrict_score', 3)
-        if _ws_score >= _ws_restrict and lots > 1:
+        if _ws_score >= _ws_restrict and lots > 1 and not _straddle_adj:
             _ws_orig_lots = lots
             lots = max(1, int(lots * 0.5))
             constraint_msg = (constraint_msg or '') + f' [whipsaw lot reduction {_ws_orig_lots}→{lots}]'
@@ -4613,8 +4843,11 @@ class MMMMonitor:
             )
 
         # ── IMP-5: Consecutive same-direction adjustment limiter ──────────
-        # Dangerous mode: skip the limiter entirely — operator accepts the risk.
-        if not _dangerous_mode_adj:
+        # Dangerous mode / STRADDLE_WITH_ADJUSTMENT: skip the limiter entirely.
+        # For straddle: a trending market legitimately drives consecutive same-direction
+        # sells (e.g. BTC keeps rallying → CE keeps triggering → keep selling PE hedge).
+        # Blocking after N iterations orphans the hedge in exactly the scenario that needs it.
+        if not _dangerous_mode_adj and not _straddle_adj:
             lots, constraint_msg = self._apply_consecutive_dir_limit(
                 session, aggressor, lots, constraint_msg
             )
@@ -4735,6 +4968,21 @@ class MMMMonitor:
                                 sid, 'warning',
                                 {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma,
                                  'dangerous_mode': True})
+                elif _straddle_adj:
+                    # STRADDLE_WITH_ADJUSTMENT: gamma cap bypass — in a short straddle,
+                    # the gamma of the straddle itself is large by definition (both legs
+                    # at-the-money).  The projected-gamma check will ALWAYS block new
+                    # hedge lots because the existing straddle already saturates the cap.
+                    # The hedge sell is reactive — unhedged straddle exposure is more
+                    # dangerous than the incremental gamma from a few hedge lots.
+                    if self._should_emit_warning(f'straddle_adj_bypass_gamma_cap:{hedge}'):
+                        log_activity('itm_guard_bypassed',
+                                    f'ℹ️ STRADDLE+ADJ: gamma cap bypass — {hedge.upper()} adjustment '
+                                    f'projected gamma (${projected_dollar_gamma:.0f}) exceeds hard limit, '
+                                    f'proceeding (reactive hedge must fire)',
+                                    sid, 'warning',
+                                    {'hedge': hedge.upper(), 'projected_gamma': projected_dollar_gamma,
+                                     'straddle_adj_bypass': True})
                 else:
                     log_activity('gamma_projection_blocked',
                                 f'🚫 Gamma Cap Blocked: {hedge.upper()} adjustment would push projected '
@@ -5173,31 +5421,91 @@ class MMMMonitor:
 
         if not new_strike_info:
             shift_threshold = session.get('params', {}).get('shift_threshold', 50.0)
-            log.warning(
-                f"[{sid}] SHIFT FAILED: No OTM {side.upper()} strike with "
-                f"premium >= ${shift_threshold:.0f} found. "
-                f"Skipping adjustment — will retry next heartbeat."
-            )
-            log_activity('shift_no_strike',
-                        f'⚠️ Strike Shift Failed: No {side.upper()} strike with premium '
-                        f'>= ${shift_threshold:.0f} found. Adjustment skipped — '
-                        f'will not sell at decayed strike {old_strike} (${hedge_premium:.2f}). '
-                        f'Retrying next heartbeat.',
-                        sid, 'warning',
-                        {
-                            'side': side.upper(),
-                            'current_strike': old_strike,
-                            'current_premium': hedge_premium,
-                            'shift_threshold': shift_threshold,
-                            'reason': 'no_suitable_strike_skip',
-                        })
-            emit_safety(
-                sid, 'no_strike', 'alert',
-                f"No suitable strike found for {side.upper()} shift "
-                f"(need premium >= ${shift_threshold:.0f}). "
-                f"Activating fallback — selling at decayed strike {old_strike} "
-                f"(${hedge_premium:.2f}).",
-            )
+
+            # FIX-3.1: Strike shift starvation counter — track consecutive misses per side.
+            # Levels: L1 ≥3 (relax min_premium hint), L2 ≥6 (safety warning), L3 ≥10 (critical alert).
+            if '_shift_starv_count' not in session:
+                session['_shift_starv_count'] = {}
+            _starv = session['_shift_starv_count']
+            _starv[side] = _starv.get(side, 0) + 1
+            _miss_count = _starv[side]
+
+            _starv_details = {
+                'side': side.upper(),
+                'consecutive_misses': _miss_count,
+                'current_strike': old_strike,
+                'current_premium': hedge_premium,
+                'shift_threshold': shift_threshold,
+                'reason': 'no_suitable_strike_skip',
+            }
+
+            # Emit escalating alerts only at exact threshold crossings, then every 5 beats
+            # after L3 first fires. Using exact crossings (== N) and periodic repeats for L3
+            # prevents flooding the activity log and UI on long starvation runs.
+            # L1 (==3): log only. L2 (==6): UI warning. L3 (==10, then every 5): UI critical.
+            if _miss_count == 10 or (_miss_count > 10 and (_miss_count - 10) % 5 == 0):
+                # L3 — critical: exchange may be thin; operator attention required.
+                # Fires at 10, then at 15, 20, 25... (every 5 beats) to keep operator informed.
+                log.error(
+                    f"[{sid}] SHIFT STARVATION L3 ({_miss_count}x): No OTM {side.upper()} "
+                    f"strike >= ${shift_threshold:.0f} for {_miss_count} consecutive beats. "
+                    f"Chain may be thin or threshold too high."
+                )
+                emit_safety(
+                    sid, f'shift_starvation_{side}', 'critical',
+                    f"SHIFT STARVATION: {side.upper()} strike scan failed {_miss_count}x "
+                    f"in a row (need >= ${shift_threshold:.0f}). Chain may be thin — "
+                    f"consider lowering shift_threshold or shift_target_premium.",
+                )
+                log_activity('shift_starvation_critical',
+                            f'🚨 Shift Starvation L3 ({_miss_count}x): {side.upper()} — '
+                            f'no strike >= ${shift_threshold:.0f} for {_miss_count} consecutive beats.',
+                            sid, 'error', _starv_details)
+            elif _miss_count == 6:
+                # L2 — fires exactly once at the crossing; no repeat until L3.
+                log.warning(
+                    f"[{sid}] SHIFT STARVATION L2 ({_miss_count}x): No OTM {side.upper()} "
+                    f"strike >= ${shift_threshold:.0f} — {_miss_count} consecutive misses."
+                )
+                emit_safety(
+                    sid, f'shift_starvation_{side}', 'warning',
+                    f"Shift starvation ({_miss_count}x): No {side.upper()} strike >= "
+                    f"${shift_threshold:.0f}. Consider lowering shift_threshold.",
+                )
+                log_activity('shift_starvation_warning',
+                            f'⚠️ Shift Starvation L2 ({_miss_count}x): {side.upper()} — '
+                            f'no strike >= ${shift_threshold:.0f}.',
+                            sid, 'warning', _starv_details)
+            elif _miss_count == 3:
+                # L1 — fires exactly once at the crossing; log only, no UI alert.
+                log.warning(
+                    f"[{sid}] SHIFT STARVATION L1 ({_miss_count}x): No OTM {side.upper()} "
+                    f"strike >= ${shift_threshold:.0f} — {_miss_count} consecutive misses."
+                )
+                log_activity('shift_starvation_info',
+                            f'⚠️ Shift Starvation L1 ({_miss_count}x): {side.upper()} — '
+                            f'no strike >= ${shift_threshold:.0f}.',
+                            sid, 'warning', _starv_details)
+            else:
+                # Beats 1, 2, 4, 5, 7, 8, 9 — normal per-miss warning, no escalation
+                log.warning(
+                    f"[{sid}] SHIFT FAILED: No OTM {side.upper()} strike with "
+                    f"premium >= ${shift_threshold:.0f} found (miss #{_miss_count}). "
+                    f"Skipping adjustment — will retry next heartbeat."
+                )
+                log_activity('shift_no_strike',
+                            f'⚠️ Strike Shift Failed: No {side.upper()} strike with premium '
+                            f'>= ${shift_threshold:.0f} found. Adjustment skipped — '
+                            f'will not sell at decayed strike {old_strike} (${hedge_premium:.2f}). '
+                            f'Retrying next heartbeat.',
+                            sid, 'warning', _starv_details)
+                emit_safety(
+                    sid, 'no_strike', 'alert',
+                    f"No suitable strike found for {side.upper()} shift "
+                    f"(need premium >= ${shift_threshold:.0f}). "
+                    f"Activating fallback — selling at decayed strike {old_strike} "
+                    f"(${hedge_premium:.2f}).",
+                )
             # Fallback: sell at the current (decayed) active strike so hedging is not
             # skipped indefinitely. Two gates:
             #   1. shift_fallback_enabled (default True) — master switch
@@ -5488,6 +5796,7 @@ class MMMMonitor:
             size=lots,
             max_reprice_attempts=_reprice_max,
             session_id=sid,
+            fill_timeout=self._compute_fill_timeout(self.session),
         )
 
         # Update pending registry with real order ID
@@ -5585,6 +5894,8 @@ class MMMMonitor:
                 session['adjustment_count'] = session.get('adjustment_count', 0) + 1
                 session['shift_count'] = session.get('shift_count', 0) + 1
                 session['_last_shift_time'] = time.time()  # AUDIT CONFLICT-7: cooldown tracking
+                # FIX-3.1: Reset starvation counter on successful shift
+                session.setdefault('_shift_starv_count', {})[side] = 0
                 session['total_premium_collected'] = (
                     session.get('total_premium_collected', 0) + premium_collected
                 )
@@ -5855,8 +6166,13 @@ class MMMMonitor:
 
         hedge_strike = session.get(side, {}).get('active_strike', 0)
 
-        # ITM Guard check (same as normal adjustment)
-        itm_guard_on = session.get('params', {}).get('itm_guard_enabled', True)
+        # ITM Guard check (same as normal adjustment).
+        # STRADDLE_WITH_ADJUSTMENT is exempt: the straddle leg will naturally be ITM
+        # as spot drifts from ATM — blocking the fallback here orphans the hedge entirely.
+        itm_guard_on = (
+            session.get('params', {}).get('itm_guard_enabled', True)
+            and _session_strategy_type(session) != STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        )
         if hedge_strike:
             spot_price = await self._fetch_spot_price()
             if spot_price > 0:
@@ -6155,10 +6471,12 @@ class MMMMonitor:
         except Exception:
             pass
 
+        _fill_to = self._compute_fill_timeout(self.session)
         ce_result = await self.executor.smart_execute(
             symbol=ce_symbol, side='sell', size=lots,
             max_reprice_attempts=_reprice_max,
             session_id=sid,
+            fill_timeout=_fill_to,
         )
 
         try:
@@ -6204,6 +6522,7 @@ class MMMMonitor:
             symbol=pe_symbol, side='sell', size=lots,
             max_reprice_attempts=_reprice_max,
             session_id=sid,
+            fill_timeout=_fill_to,
         )
 
         try:
@@ -6803,6 +7122,7 @@ class MMMMonitor:
                 symbol=symbol, side='sell', size=lots_to_sell,
                 max_reprice_attempts=_reprice_max,
                 session_id=sid,
+                fill_timeout=self._compute_fill_timeout(self.session),
             )
 
             if _result.get('success'):
@@ -6978,6 +7298,7 @@ class MMMMonitor:
         # Trade audit (fire-and-forget)
         try:
             from .mmm_audit_log import get_audit_log
+            _replenish_order_id = str(_exec_result.get('order_id', ''))
             get_audit_log().enqueue_trade(
                 session_id=sid,
                 action='SELL',
@@ -6987,11 +7308,20 @@ class MMMMonitor:
                 quantity_filled=filled_lots,
                 premium=fill_price,
                 event_type='REPLENISH',
+                remark=(
+                    f'Auto-replenish {closed_side.upper()} {filled_lots}L @ {strike} '
+                    f'(${fill_price:.2f}) — hedge restored'
+                ),
+                order_id=_replenish_order_id,
                 adj_type='replenish',
                 mechanism='replenish',
+                idempotency_key=(
+                    f'{sid}:{_replenish_order_id}:SELL'
+                    if _replenish_order_id else ''
+                ),
             )
         except Exception:
-            pass
+            log.exception('[%s] Replenish trade audit enqueue failed', sid)
 
         session['updated_at'] = now
 
@@ -7840,6 +8170,7 @@ class MMMMonitor:
                     reduce_only=True,
                     max_reprice_attempts=_reprice_max,
                     session_id=sid,
+                    fill_timeout=self._compute_fill_timeout(self.session),
                 )
 
         # Close active lots (original + adjustment) at active strike
@@ -10540,15 +10871,16 @@ def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
     _start_violations = validate_session_for_strategy(session, _strategy_type)
     if _start_violations:
         _start_msg = '; '.join(_start_violations)
-        log.warning(
-            f"[{session_id}] Strategy validation (monitor_start) failed: {_start_msg}"
+        # Upgrade from warning to error — violations must not be ignored at start time.
+        log.error(
+            f"[{session_id}] Strategy validation (monitor_start) BLOCKED: {_start_msg}"
         )
         try:
             log_activity(
                 'strategy_validation',
-                f'⚠️ Strategy validation (monitor_start): {_start_msg}',
+                f'🚫 Monitor start BLOCKED — strategy invariant violated: {_start_msg}',
                 session_id,
-                'warning',
+                'error',
                 {
                     'strategy_type': _strategy_type,
                     'context': 'monitor_start',
@@ -10561,8 +10893,8 @@ def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
             emit_safety(
                 session_id,
                 'strategy_invariant',
-                'warning',
-                f'Strategy invariant warning (monitor_start): {_start_msg}',
+                'critical',
+                f'Monitor start BLOCKED: strategy invariant violated — {_start_msg}',
                 {
                     'strategy_type': _strategy_type,
                     'context': 'monitor_start',
@@ -10571,6 +10903,13 @@ def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
             )
         except Exception:
             pass
+        # PREFLIGHT GATE: raise so all callers are forced to handle this.
+        # The API endpoints are wrapped in try/except Exception → 400/500 response.
+        # Background thread callers (retry-partial-entry) will log and die,
+        # which is safer than running a monitor on a structurally invalid session.
+        raise ValueError(
+            f'[{session_id}] Monitor start blocked — strategy invariant violated: {_start_msg}'
+        )
 
     # Check-then-stop under lock to prevent TOCTOU race
     with _monitors_lock:

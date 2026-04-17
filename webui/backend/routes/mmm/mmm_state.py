@@ -685,6 +685,7 @@ DEFAULT_PARAMS = {
     'replenish_retry_max': 3,              # fast-path retries within one _process_replenish call
     'replenish_retry_delay_sec': 2,        # seconds between retry attempts
     'replenish_max_reprice_attempts': 2,   # reprice cycles per smart_execute call (cap per retry)
+    'reprice_base_timeout_s': 60,          # FIX-2.1: base fill-wait before repricing (DTE/gamma-scaled)
 
     # ── Straddle Roll ──
     'straddle_roll_enabled':            False,  # off by default; preset enables it

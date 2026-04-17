@@ -4583,3 +4583,195 @@ Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift
 - **`mmm_monitor.py`**: Capture `_pre_adj_trigger` (aggressor's trigger_snapshot value at active strike) immediately before `calculate_standard_loss` runs in the standard-adjustment `else` branch. Store it in `_hb_wt['adjustment']['pre_adj_trigger']`. The trigger gets ratcheted post-fill by `update_trigger_snapshots`, so reading it here gives the actual pre-adjustment baseline the loss formula used.
 - **`mmm_walkthrough.py` — Standard Loss formula**: Was showing literal text "trigger" and "active_lots" (unsubstituted template strings). Now substitutes the actual `pre_adj_trigger` value and `agg_active_lots`. When there are no frozen positions (common case), also shows the computed active component `= $X.XXXX BTC` so the number is verifiable. When frozen positions exist, notes the count. Falls back to generic label when `pre_adj_trigger` is 0 (shift_fallback path).
 - **`mmm_walkthrough.py` — Lots formula**: Was showing `⌈1.66⌉ = 5` which is mathematically wrong (ceil(1.66)=2). Fix: compute `base_lots = max(ceil(raw), 1)`. If `base_lots == lots_sold` (no multipliers active), display is unchanged. If they differ, show the base result first (`= {base_lots}`) then a second line `After multipliers: {constraint_msg} → {lots_sold} lots` using the `constraint_msg` already stored in `adjustment_info`. This exposes the multiplier chain (gamma-aware, breakeven, trend boost, etc.) that the engine applies inside `calculate_lots_to_sell`.
+
+---
+
+## 2026-04-16 — Forensic Audit Fixes (mmm16apr26-2) — Phase 1/2/3
+
+Based on forensic audit of session `mmm16apr26-2`. Six essential fixes implemented across 5 files. None touch trading strategy logic.
+
+### FIX-1.1 — Missing audit row for replenish fills (`mmm_monitor.py`)
+- **Bug:** `_process_replenish()` called `enqueue_trade()` without the required `remark` positional param → `TypeError` silently swallowed → audit row never written for replenish fills.
+- **Fix:** Added `remark`, `order_id`, and `idempotency_key` to the `enqueue_trade()` call.
+
+### FIX-1.2 — Missing terminal event for cancelled/failed orders (`mmm_executor.py`)
+- **Bug:** When an order went dead (cancelled/rejected by exchange) or all placement attempts failed, no `EXECUTION_INTENT` event was written to `session_event_log`. Intent rows were left permanently open.
+- **Fix:** Added `ORDER_CANCELLED` event on dead-state detection and `ORDER_FAILED` event when all placement retries exhausted.
+
+### FIX-1.3 — stop_reason not persisted to performance_sessions (`mmm_monitor.py`, `mmm_performance.py`)
+- **Bug 1:** Margin force-stop called `self.stop()` with no reason arg → `_stopped_reason` defaulted to `'User requested'`.
+- **Bug 2:** `performance_sessions` table had no `stop_reason` column — it was never stored.
+- **Fix:** Extracted margin stop reason into variable and passed to `stop()`. Added 4 new schema columns (`stop_reason`, `stop_gamma_regime`, `stop_open_lots_ce`, `stop_open_lots_pe`) with `ALTER TABLE` migration. `analyze_session()` now populates all 4 from session state, checking both `_stopped_reason` and `stop_reason` keys.
+
+### FIX-2.1 — DTE/gamma-aware repricing timeout (`mmm_executor.py`, `mmm_monitor.py`, `mmm_state.py`, `mmm_config.py`)
+- **Bug:** `FILL_TIMEOUT = 60` constant was hardcoded. In EMERGENCY gamma or low DTE, 60s repricing cycles are too slow — orders sit live for a full minute before repricing.
+- **Fix:** Added `reprice_base_timeout_s` hot-reload param (default 60, range 10–120). Added `_compute_fill_timeout(session)` method to `MMMMonitor` that scales down: EMERGENCY gamma → 20s cap, DTE < 1h → 30s cap, DTE < 2h → 45s cap. Added `fill_timeout` parameter to `smart_execute()`. Wired to all 6 `smart_execute()` call sites in `mmm_monitor.py`.
+
+### FIX-3.1 — Strike shift starvation counter + progressive alerts (`mmm_monitor.py`, `mmm_activity.py`)
+- **Bug:** Repeated `shift_no_strike` failures emitted identical Telegram alerts every heartbeat with no escalation, creating noise. No tracking of how long the starvation lasted.
+- **Fix:** Added `session['_shift_starv_count'][side]` per-side counter. L1 (≥3 misses): log only, no Telegram. L2 (≥6 misses): `emit_safety` WARNING. L3 (≥10 misses): `emit_safety` CRITICAL. Counter resets to 0 on successful shift. Added 3 new activity types to `mmm_activity.py` (`shift_starvation_info/warning/critical`) in the safety category.
+
+### FIX-3.2 — Dangerous mode hard interlock for EMERGENCY gamma + cap (`mmm_monitor.py`, `mmm_activity.py`)
+- **Bug:** Dangerous mode bypassed all safety gates including gamma emergency blocks. In EMERGENCY gamma with lots at cap, this could lead to unbounded position growth.
+- **Fix:** After resolving `_dangerous_mode`, immediately check: if EMERGENCY gamma AND (CE or PE at `max_lots_per_side`), override `_dangerous_mode = False` and emit safety event. Added `dangerous_mode_blocked` activity type.
+
+### FIX-3.3 — Safety warning deduplication cooldown (`mmm_monitor.py`)
+- **Bug:** Identical `dangerous_mode_bypass` warnings emitted every heartbeat (~30s cadence) during long dangerous-mode sessions, flooding Telegram and activity log.
+- **Fix:** Added `_warning_cooldown` dict and `_warning_beat_counter` to `MMMMonitor.__init__`. Added `_WARNING_COOLDOWN_BEATS = 10` class constant and `_should_emit_warning(key)` method. Applied to 5 dangerous-mode bypass log sites with keys: `dm_bypass_safety:{reason}`, `dm_bypass_force_reduce`, `dm_bypass_pause`, `dm_bypass_block_all_sells`, `dm_bypass_cooldown`, `dm_bypass_margin:{tier}`.
+
+
+## 2026-04-16 — Parallel CE/PE reduce in `reduce_position` endpoint
+
+- **`mmm_api.py`** — Refactored `_do_reduce()` in the `/reduce-position` endpoint to execute CE and PE simultaneously when `side='both'`. Extracted per-side execution logic into `_reduce_one_side(side_key)` coroutine that returns its own results/errors/realized tuple. `_do_reduce()` now calls `asyncio.gather(_reduce_one_side('ce'), _reduce_one_side('pe'))` for `both`, so both exchange orders are placed concurrently instead of sequentially. Single-side paths (`ce` or `pe`) are unchanged. No behavior change for single-side reduces.
+
+
+## 2026-04-17 — Disable ITM Guard for STRADDLE_WITH_ADJUSTMENT
+
+- **`mmm_monitor.py` — `_process_adjustment()` (~line 4680)**: Changed `itm_guard_on` to be `False` for `STRADDLE_WITH_ADJUSTMENT_CATEGORY`. In a short straddle, both CE and PE are sold at the original ATM strike. As spot drifts, one leg goes ITM but retains strong premium. The ITM guard was causing a deadlock: it blocked selling the (now-ITM) ATM strike, then triggered an auto-shift to OTM, which failed because no OTM strike had premium >= threshold, and finally the shift fallback was also blocked by the same guard. Adjustment was completely abandoned.
+- **`mmm_monitor.py` — `_process_shift_fallback()` (~line 6068)**: Same `STRADDLE_WITH_ADJUSTMENT_CATEGORY` exemption added to the ITM guard check in the shift fallback path. Without this, even the fallback path (sell at current decayed strike) was being blocked for ITM legs, orphaning the hedge entirely.
+- **Rationale**: The ITM guard is correct for standard MMM (never add NEW hedge lots at an ITM strike where delta blows out). For STRADDLE_WITH_ADJUSTMENT, the ITM state is expected and intentional — the algo adjusts using the same ATM strike it started with, not picking fresh strikes. Going to OTM would give less premium and is strategically wrong for straddle balancing.
+
+## 2026-04-17 — Bypass all regime blocks for STRADDLE_WITH_ADJUSTMENT
+
+- **`mmm_monitor.py`** — Added `_is_straddle_adj` flag (alongside `_dangerous_mode`) that is `True` when `_session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY`.
+- **Rationale**: In a short straddle the adjustment IS the hedge. Blocking/pausing on gamma emergency, PAUSE, or BLOCK_ALL_SELLS is worse than letting the adjustment run — the straddle leg going unhedged causes larger P&L damage than any gamma metric. Gamma warnings still show in UI/activity log; only the action (pause/block) is suppressed for this strategy.
+- **FORCE_REDUCE block (~line 2714)**: `_is_straddle_adj` added alongside `_dangerous_mode` check — no pause, no `_skip_to_pnl`, logs a bypassed warning instead.
+- **ACTION_PAUSE block (~line 2741)**: Same bypass pattern.
+- **BLOCK_ALL_SELLS block (~line 2797)**: Same bypass — trigger evaluation continues.
+- **`should_block_sell()` in trigger eval (~line 3350)**: After regime engine returns `blocked=True`, immediately overrides to `blocked=False` for straddle+adj with a deduplicated log.
+- **Auto-resume (~line 2830)**: `_is_straddle_adj` added to the auto-resume condition so sessions currently paused by a prior gamma-emergency (before this fix) auto-resume on the next heartbeat without operator intervention.
+- **No change to max_loss hard stop or auto-close near expiry** — those remain active for all strategies.
+
+## 2026-04-17 — Full guard audit: 7 more bypasses for STRADDLE_WITH_ADJUSTMENT
+
+Comprehensive audit of all guards in `mmm_monitor.py` that were written for standard MMM but wrongly apply to `STRADDLE_WITH_ADJUSTMENT`. All changes are in `mmm_monitor.py` only.
+
+### Fix 1 — `stop_adjustments` bypass (~line 2557)
+- `_is_straddle_adj` added alongside `_dangerous_mode` in the `elif` chain for `stop_adjustments` safety events.
+- Covers: whipsaw cooldown, lot_velocity limit, position_cap, trailing_stop.
+- Rationale: for a short straddle the adjustment IS the hedge — blocking it makes the position MORE dangerous, not less. Whipsaw = price bouncing = both legs need constant rebalancing. Lot velocity = market is moving fast = hedge must keep up. Position cap = straddle needs to accumulate hedge lots. Trailing stop = adjustments reduce loss, not cause it.
+- max_loss (`auto_close`) and session `stop` are still enforced — those two branches are above this one.
+
+### Fix 2 — Reversal cooldown bypass (~line 2977)
+- `_is_straddle_adj` added alongside `_dangerous_mode` in cooldown bypass.
+- Rationale: "reversal" in straddle = spot bounced, the other leg just became the aggressor, hedge must fire immediately. Cooldown window would leave the straddle unbalanced for minutes.
+
+### Fix 3 — Reversal skip bypass (`_process_adjustment` ~line 4557)
+- Added `_straddle_adj` local flag in `_process_adjustment()` (alongside existing `_dangerous_mode_adj`).
+- After `should_skip_reversal_adjustment()` returns `skip=True`, immediately override `skip=False` when `_straddle_adj`. Logs a deduplicated warning.
+- Rationale: reversal skip logic ("if active-strike P&L is positive, skip the hedge") doesn't apply to straddles — both legs are at the same strike, so "profitable" on one leg just means the other leg is being squeezed. The hedge must always fire.
+
+### Fix 4 — Whipsaw lot reduction bypass (~line 4789)
+- Added `and not _straddle_adj` to the `if _ws_score >= _ws_restrict and lots > 1` condition.
+- Rationale: whipsaw = price bouncing hard = both straddle legs alternately trigger. Halving lots systematically under-hedges in exactly the scenario that needs full-size hedging.
+
+### Fix 5 — Consecutive direction limit bypass (~line 4800)
+- Added `and not _straddle_adj` to the `if not _dangerous_mode_adj` gate before `_apply_consecutive_dir_limit()`.
+- Rationale: in a trending market the aggressor side fires repeatedly (e.g. BTC keeps rallying → CE keeps triggering → PE hedge sells are needed each time). The consecutive limiter interprets this as suspicious same-direction churn; for straddle it is the normal expected behavior.
+
+### Fix 6 — Proactive shift disabled for straddle (~line 3054)
+- Added `and not _is_straddle_adj` to the Step 5.6 proactive shift gate.
+- Rationale: proactive shift moves a low-premium leg to a new OTM strike. For straddle, both legs are intentionally at the original ATM strike — proactive shift breaks the straddle structure.
+
+### Fix 7 — Whipsaw trigger widening bypass (~line 3240)
+- Added `and not _is_straddle_adj` to the `if _ws_factor > 1.0` block that widens `_effective_min_trigger_move`.
+- Rationale: trigger widening reduces adjustment frequency under whipsaw. For straddle, under-adjusting in a whipsaw market compounds losses on both legs simultaneously.
+
+**Tests:** 1421 passed / 0 failed.
+
+### Fix 8 — Gamma cap projected-gamma bypass (`_process_adjustment` ~line 4954)
+- **Bug:** Inside `_process_adjustment()`, before executing the hedge sell, the algo fetches the new strike's gamma and calls `check_projected_gamma()`. If projected portfolio gamma would exceed `gamma_hard_limit`, the adjustment is blocked with "Gamma Cap Blocked". Only `_dangerous_mode_adj` bypassed this.
+- **Root cause:** For a short straddle, the straddle itself is a large-gamma position by definition (both CE and PE sold ATM). The existing straddle already saturates the gamma cap. Every hedge sell attempt hits the projected-gamma block — adjustments are silently dropped even when all other regime gates are bypassed.
+- **Fix:** Added `elif _straddle_adj:` bypass — logs a deduplicated warning and proceeds. The hedge sell is reactive (trigger fired because spot moved); unhedged straddle exposure is more dangerous than incremental hedge-lot gamma.
+
+## 2026-04-17 — MMM Sealing Audit (Type-1/Type-2) Deep Risk Mapping [Audit-Only]
+
+- **Scope:** Audit-only session focused on seal coverage + high-risk unsealed control paths. No MMM strategy logic or API behavior was modified.
+- **Protocol baseline reviewed:** `mmm_workdone_march.md`, `AI_SEAL.md`, and sealing evidence from `test_sealed_*` coverage/import mappings.
+- **Quantitative inventory (active workspace):**
+  - 768 total backend MMM functions
+  - 43 decorator-sealed
+  - 725 unsealed
+  - Highest unsealed concentration: `mmm_api.py` (98), `mmm_monitor.py` (79), `mmm_websocket.py` (35), `mmm_storage.py` (29), `mmm_executor.py` (22)
+- **High-risk deep reads completed (code archaeology):**
+  - `webui/backend/routes/mmm/mmm_monitor.py`
+  - `webui/backend/routes/mmm/mmm_api.py`
+  - `webui/backend/routes/mmm/mmm_executor.py`
+  - `webui/backend/routes/mmm/mmm_fill_sync.py`
+  - `webui/backend/routes/mmm/mmm_storage.py`
+  - `webui/backend/routes/mmm/mmm_websocket.py`
+  - `webui/backend/routes/mmm/mmm_watchdog.py`
+  - `webui/backend/routes/mmm/mmm_guardian.py`
+  - `webui/backend/routes/mmm/mmm_pending_orders.py`
+- **Type-2 infrastructure hotspots confirmed:**
+  - Heartbeat skip/degraded paths in `_heartbeat_inner()` and `_fetch_premiums_with_fallback()`
+  - Pending-order guard branches (`filled/open/error/stale`) before `_process_adjustment()`
+  - Reconciliation/autocorrect branches in `_reconcile_exchange_positions()`
+  - Emergency control-plane routes in `mmm_api.py` (`stop-all`, `pause-all`, `close-all-positions`, `reset-circuit`, `reconcile`)
+  - Supervisory paths in watchdog/guardian and WS emission health counters
+- **Churn signal (since 2026-03-20) used for roadmap ordering:**
+  - `mmm_monitor.py` (25), `mmm_api.py` (15), `mmm_state.py` (16), `mmm_safety.py` (7), `mmm_executor.py` (6), `mmm_storage.py` (6)
+- **Outcome:** Prepared evidence set for final ranked unsealed-function list, Type-2 required list, and first 10 seal-session roadmap.
+- **Validation note:** Audit-only — no code-path changes, no trading actions, no service restart.
+
+---
+
+## 2026-04-17 — Post-Session Forensic Audit Fixes (session mmm17apr26-6)
+
+Forensic audit of session `mmm17apr26-6` (adopt + monitor + stop, 80s, STRADDLE_WITH_ADJUSTMENT)
+identified 3 confirmed bugs. All 3 fixed in `mmm_api.py`.
+
+**BUG-1 (P1) — Stop reason empty string not rejected** (`mmm_api.py: stop_session`)
+- Root cause: `data.get('reason', 'User stopped')` — default only applies when key is ABSENT.
+  When frontend sends `{"reason": ""}`, the empty string is used, persisting `stop_reason=""`
+  in the DB, destroying forensic traceability.
+- Fix: `reason = (data.get('reason') or '').strip() or 'User stopped'` — strips and falls back.
+
+**BUG-2 (P0) — Strategy invariant violations non-blocking at start** (`mmm_api.py: start_session`)
+- Root cause: `start_session_monitor()` calls `validate_session_for_strategy()` but only logs
+  a warning — the monitor starts regardless. In session mmm17apr26-6, CE active_strike=75000
+  vs PE active_strike=74400 (mismatch) was ignored. The session then ran with `_is_straddle_adj=True`,
+  incorrectly bypassing FORCE_REDUCE even though the straddle was invalid. Portfolio gamma was
+  13875 (emergency limit = 10000) with no de-risk path.
+- Fix: Added PREFLIGHT A in `start_session` (before `storage.update_session` — so no broken RUNNING
+  state is written on failure). Calls `validate_session_for_strategy(session)` and returns HTTP 400
+  with `invariant_violations` list. Operator can pass `force_start=true` in request body to override
+  for emergency/recovery scenarios (logged as warning).
+
+**BUG-3 (P1) — Cap vs adopted lots not checked at start** (`mmm_api.py: start_session`)
+- Root cause: `validate_adoptable()` generates a WARNING (not error) when total_lots > max_lots_per_side,
+  but the start flow never re-checks this. In session mmm17apr26-6, CE had 300 active_lots and PE
+  had 142 active_lots against max_lots_per_side=5. Engine §13.1 position-cap gate: `if current_total +
+  lots_to_sell > max_lots_per_side → lots_to_sell = 5 - 300 = -295 ≤ 0 → return 0`. ALL adjustments
+  silently blocked from heartbeat 1. Operator had to manually PATCH cap 5→500 at 08:46:48.
+- Fix: Added PREFLIGHT B in `start_session` for `entry_mode='adopt'` sessions. Checks
+  `ce.active_lots > max_lots_per_side` and `pe.active_lots > max_lots_per_side`; returns HTTP 400
+  with `cap_violations` list. Operator can pass `force_start=true` to acknowledge and proceed.
+
+**No trading logic changed. No monitor restart. API-only.** Preflights only run on the import/adopt
+code path (not the fresh entry path which has its own guards). Both checks happen before
+`storage.update_session(strategy_status=RUNNING)` so a failed preflight never leaves the session
+in a broken RUNNING state.
+
+## 2026-04-17 — P0 crash fix: UnboundLocalError in _process_adjustment() kills sessions on first_reversal
+
+**Root cause:** In `_process_adjustment()` in `mmm_monitor.py`, the variable `_pre_adj_trigger` was only
+assigned inside the `else` branch (standard/continuation path, line 4661). The `if is_reversal:` path
+(`adj_type='first_reversal'`) never assigned it but both paths fell through to line ~5054 where it
+is used in `self._hb_wt['adjustment']`. Python 3.12+ raises `UnboundLocalError` for this rather than
+a `NameError`, and `UnboundLocalError` is a `NameError` subclass — caught by the unrecoverable-error
+guard → monitor stopped with "Unrecoverable error: UnboundLocalError".
+
+**Evidence:** Sessions mmm17apr26-7 and mmm17apr26-8 (both STRADDLE_WITH_ADJUSTMENT) crashed
+immediately after order_filled for a first-reversal adjustment. Both show identical traceback:
+`cannot access local variable '_pre_adj_trigger' where it is not associated with a value`.
+The straddle bypass (Fix 3 in previous session) specifically enables the reversal path to fire
+for STRADDLE+ADJ — that's why it only manifested today (previously skips prevented first_reversal
+from reaching the fill code).
+
+**Fix:** Added `_pre_adj_trigger = 0` initialization before the `if is_reversal:` block (line 4528).
+The `else` branch still overwrites it with the real snapshot value for standard adjustments.
+Reversal path gets `0` which is correct (no meaningful pre-adj trigger concept for a reversal).
+
+**File changed:** `mmm_workdone_march.md`, `mmm_monitor.py` (one line added)
+**Tests:** 1421 passed / 0 failed

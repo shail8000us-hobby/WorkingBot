@@ -1,11 +1,31 @@
 # CLAUDE.md — Mandatory Rules for This Repository
 
+---
+
+## 0. MANDATORY SELF-CHECK BEFORE WRITING ANY CODE
+
+Before writing any code that touches these files:
+- mmm_monitor.py
+- mmm_engine.py
+- mmm_constants.py
+- Any file in webui/backend/routes/mmm/
+
+You MUST do the following BEFORE writing the code:
+1. State EXACTLY which lines/functions you are modifying
+2. State the current value/behaviour BEFORE your change
+3. State what it will be AFTER your change
+4. If you are not 100% certain about any value — say so explicitly. NEVER guess. NEVER assume. Ask me first.
+
+Reason: This project handles real money. A stale monitor incident on 2026-03-24 placed 560 real SELL orders due to an AI-introduced bug. Wrong code = real financial loss.
+
+---
+
 ## 1. MMM Algo Work Log (MANDATORY)
 
 **Every session that touches any MMM file must:**
 
-1. **READ `mmm_workdone_march.md` at the start** — understand what was changed in prior sessions before touching anything.
-2. **ADD an entry at the end** when the session is complete — format:
+1. **READ `MMM_LAST_3_SESSIONS.md` at the start of every MMM session** — understand what changed in the last 3 sessions before touching anything. Only read `mmm_workdone_march.md` if you are debugging a bug that is older than 3 sessions.
+2. **ADD an entry at the end of `mmm_workdone_march.md`** when the session is complete — format:
    ```
    ## YYYY-MM-DD — <short title>
    - What changed and why (per file/bug/feature)

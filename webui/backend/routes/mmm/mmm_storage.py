@@ -22,6 +22,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timezone
 
 from .mmm_state import derive_strategy_type
+from webui.backend.sealed import sealed
 
 log = logging.getLogger('mmm_storage')
 
@@ -607,6 +608,7 @@ class MMMStorage:
     # CRUD Operations — Identical API to old MMMStorage
     # =========================================================================
 
+    @sealed
     def save_session(self, session: Dict) -> str:
         """
         Save or update a session (full replacement of data_json).
@@ -737,6 +739,7 @@ class MMMStorage:
 
         return session_id
 
+    @sealed
     def get_session(self, session_id: str) -> Optional[Dict]:
         """
         Get a session by ID.
@@ -768,6 +771,7 @@ class MMMStorage:
             conn.close()
 
 
+    @sealed
     def list_sessions(self, active_only: bool = False) -> List[Dict]:
         """
         List all sessions, optionally filtered to active only.
@@ -796,6 +800,7 @@ class MMMStorage:
         finally:
             conn.close()
 
+    @sealed
     def delete_session(self, session_id: str) -> bool:
         """
         Delete a session.

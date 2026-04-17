@@ -1,264 +1,92 @@
-/* ===============================================
-   MOBILE-SPECIFIC STYLES
-   All classes prefixed with .mobile- to avoid desktop collision
-   Optimized for AMOLED displays and touch interaction
-   =============================================== */
-
-.mobile-screen {
-  padding: 12px;
-  padding-bottom: calc(72px + env(safe-area-inset-bottom)); /* bottom nav + safe area */
-  padding-top: env(safe-area-inset-top); /* notch safe area */
-  min-height: 100dvh;
-  overflow-x: hidden;
-  background: #000; /* Pure black for AMOLED power saving */
+/* Fix Desktop tables layout into stacked Mobile cards for MMM and complex dashboards */
+.mobile-override-desktop {
+    padding: 8px !important;
+    overflow-x: hidden !important;
+    width: 100vw !important;
 }
 
-.mobile-card {
-  background: #1a1a2e; /* Slightly lighter than pure black for contrast */
-  border: 1px solid #2a2a3e;
-  border-radius: 12px;
-  padding: 16px;
-  margin-bottom: 12px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); /* Subtle depth on AMOLED */
+/* MUI Grid stacking */
+.mobile-override-desktop .MuiGrid-root {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+    width: 100% !important;
+    margin: 0 !important;
 }
 
-.mobile-btn {
-  width: 100%;
-  min-height: 52px; /* iOS recommended minimum: 44px, we use 52px for better UX */
-  border-radius: 10px;
-  font-size: 16px;
-  font-weight: 600;
-  border: none;
-  cursor: pointer;
-  touch-action: manipulation; /* Prevents double-tap zoom, improves responsiveness */
-  transition: opacity 0.2s ease, transform 0.1s ease;
-  user-select: none; /* Prevent text selection on long press */
-  -webkit-tap-highlight-color: transparent; /* Remove iOS tap highlight */
+/* Force 1 column grids */
+.mobile-override-desktop .lg\:grid-cols-2,
+.mobile-override-desktop .lg\:grid-cols-3,
+.mobile-override-desktop .xl\:grid-cols-4 {
+    display: flex !important;
+    flex-direction: column !important;
 }
 
-.mobile-btn:active {
-  transform: scale(0.98); /* Subtle press feedback */
-  opacity: 0.9;
+/* Stop Flex Rows from breaking mobile width */
+.mobile-override-desktop .MuiBox-root {
+    min-width: 0 !important;
+    overflow-x: auto !important;
+    white-space: normal !important;
 }
 
-.mobile-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+/* Wrap top controls */
+.mobile-override-desktop header,
+.mobile-override-desktop .MuiToolbar-root {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    height: auto !important;
+    padding: 12px 8px !important;
 }
 
-/* Button variants */
-.mobile-btn-danger {
-  background: #c0392b;
-  color: white;
+/* Shrink Modals / Dialogs to 100vw screen */
+.mobile-override-desktop .MuiPaper-root.MuiDialog-paper {
+    margin: 8px !important;
+    width: calc(100vw - 16px) !important;
+    max-width: none !important;
+    max-height: calc(100vh - 120px) !important;
 }
 
-.mobile-btn-warning {
-  background: #e67e22;
-  color: white;
+/* DataGrid overflow touch scrolling */
+.mobile-override-desktop .MuiDataGrid-root,
+.mobile-override-desktop table {
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+    display: block !important; /* Forces tables to be scrollable if too wide */
 }
 
-.mobile-btn-pause {
-  background: #f39c12;
-  color: #1a1a1a;
+/* Adjust font sizes down slightly, avoiding horizontal layout clipping */
+.mobile-override-desktop .MuiTypography-root,
+.mobile-override-desktop span {
+    word-break: break-word !important;
 }
 
-.mobile-btn-success {
-  background: #4caf50;
-  color: white;
+.mobile-override-desktop button {
+    margin-right: 4px !important;
+    margin-bottom: 4px !important;
 }
 
-/* Input styling for mobile */
-.mobile-input {
-  width: 100%;
-  padding: 12px;
-  font-size: 16px;
-  border-radius: 8px;
-  border: none;
-  background: #2a2a3e;
-  color: #fff;
-  margin-bottom: 12px;
+/* Ensure Grid items wrap properly */
+.mobile-override-desktop .MuiGrid-item {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex-basis: 100% !important;
+    padding-left: 0 !important;
+    padding-top: 12px !important;
 }
 
-.mobile-input:focus {
-  outline: none;
-  background: #353548;
-  box-shadow: 0 0 0 2px #4caf50;
+/* Force container margins back */
+.mobile-override-desktop .MuiGrid-container {
+    width: 100% !important;
+    margin-left: 0 !important;
+    margin-top: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
 }
 
-/* Form group styling */
-.mobile-form-group {
-  margin-bottom: 16px;
-}
-
-.mobile-form-group label {
-  display: block;
-  font-size: 12px;
-  color: #aaa;
-  text-transform: uppercase;
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.mobile-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.mobile-kpi-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.mobile-kpi-item {
-  border: 1px solid #2f2f45;
-  border-radius: 8px;
-  padding: 8px;
-  background: rgba(14, 14, 24, 0.5);
-}
-
-.mobile-kpi-label {
-  color: #888;
-  font-size: 11px;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.mobile-kpi-value {
-  color: #fff;
-  font-size: 14px;
-  font-weight: 700;
-  margin-top: 3px;
-}
-
-.mobile-side-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
-}
-
-.mobile-actions-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.mobile-session-strip {
-  display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(150px, 1fr);
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 2px;
-}
-
-.mobile-session-chip {
-  border: 1px solid #2f2f45;
-  border-radius: 10px;
-  background: rgba(13, 13, 22, 0.65);
-  color: #e8e8ef;
-  text-align: left;
-  padding: 10px;
-  min-height: 56px;
-}
-
-.mobile-session-chip-active {
-  border-color: #4caf50;
-  box-shadow: 0 0 0 1px rgba(76, 175, 80, 0.25);
-  background: rgba(76, 175, 80, 0.12);
-}
-
-.mobile-chip-meta {
-  margin-top: 4px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  color: #9aa;
-  font-size: 11px;
-}
-
-.mobile-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 20px;
-  border: 1px solid #555;
-  border-radius: 999px;
-  padding: 0 8px;
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.mobile-activity-item {
-  border: 1px solid #2f2f45;
-  border-radius: 10px;
-  padding: 10px;
-  background: rgba(13, 13, 22, 0.65);
-}
-
-.mobile-activity-item + .mobile-activity-item {
-  margin-top: 8px;
-}
-
-/* Performance: Reduce animations on low-end devices */
-@media (prefers-reduced-motion: reduce) {
-  .mobile-btn {
-    transition: none;
-  }
-  .mobile-btn:active {
-    transform: none;
-  }
-}
-
-/* High contrast mode support */
-@media (prefers-contrast: high) {
-  .mobile-card {
-    border: 2px solid #4a4a6e;
-  }
-  .mobile-btn {
-    border: 2px solid currentColor;
-  }
-}
-
-/* Responsive adjustments for very small screens */
-@media (max-height: 600px) {
-  .mobile-screen {
-    padding-bottom: calc(60px + env(safe-area-inset-bottom));
-  }
-  .mobile-card {
-    margin-bottom: 8px;
-    padding: 12px;
-  }
-}
-
-/* Landscape mode adjustments */
-@media (orientation: landscape) and (max-height: 500px) {
-  .mobile-screen {
-    padding-bottom: 50px;
-  }
-  .mobile-card {
-    padding: 8px 12px;
-    margin-bottom: 6px;
-  }
-  .mobile-btn {
-    min-height: 40px;
-    font-size: 14px;
-  }
-}
-
-@media (min-width: 480px) {
-  .mobile-side-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 360px) {
-  .mobile-actions-grid {
-    grid-template-columns: 1fr;
-  }
+.mobile-override-desktop .MuiPaper-root {
+    margin-bottom: 8px !important;
+    overflow: hidden !important; /* contain content overflow */
 }

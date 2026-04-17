@@ -202,7 +202,18 @@ def classify_exit(session: Dict) -> Tuple[str, float]:
     pe_total_traded = session.get('analytics', {}).get('total_pe_lots_traded', 0)
     total_positions = ce_total_traded + pe_total_traded
 
+    # Check remaining open positions at session end (needed by both branches below)
+    ce_remaining = session.get('ce', {}).get('total_lots', 0)
+    pe_remaining = session.get('pe', {}).get('total_lots', 0)
+    remaining = ce_remaining + pe_remaining
+
     if total_positions == 0:
+        # No trades executed in this session (e.g., adopted/inherited inventory, or
+        # stopped before any orders were placed).
+        # BUG-FIX: previously always returned CLEAN/100% here, even when hundreds of
+        # inherited lots were still open.  Correct: MESSY if open exposure remains.
+        if remaining > 0:
+            return EXIT_MESSY, 0.0
         return EXIT_CLEAN, 100.0
 
     # Graceful closes vs total traded
@@ -210,16 +221,8 @@ def classify_exit(session: Dict) -> Tuple[str, float]:
     # Use lots freed as a better proxy
     harvest_lots = session.get('harvest_lots_freed', 0)
 
-    # Check remaining open positions at session end
-    ce_remaining = session.get('ce', {}).get('total_lots', 0)
-    pe_remaining = session.get('pe', {}).get('total_lots', 0)
-    remaining = ce_remaining + pe_remaining
-
-    if total_positions == 0:
-        pct_closed = 100.0
-    else:
-        closed_lots = total_positions - remaining
-        pct_closed = max(0.0, min(100.0, (closed_lots / total_positions) * 100))
+    closed_lots = total_positions - remaining
+    pct_closed = max(0.0, min(100.0, (closed_lots / total_positions) * 100))
 
     # Check for force close events
     stop_reason = session.get('_stopped_reason', '')
@@ -399,6 +402,16 @@ def analyze_session(session: Dict, collector: Optional[PerformanceCollector] = N
         is_running=is_running,
     )
 
+    # FIX-1.3: capture stop context for post-session analytics
+    _stop_reason = (
+        session.get('_stopped_reason')
+        or session.get('stop_reason')
+        or 'unknown'
+    )
+    _stop_gamma_regime = session.get('_gamma_regime', '')
+    _stop_ce_lots = session.get('ce', {}).get('total_lots', 0)
+    _stop_pe_lots = session.get('pe', {}).get('total_lots', 0)
+
     return {
         'session_id': sid,
         'start_time': start_dt.isoformat(),
@@ -419,6 +432,10 @@ def analyze_session(session: Dict, collector: Optional[PerformanceCollector] = N
         'exit_pct_closed': round(exit_pct_closed, 1),
         'session_score': score,
         'created_at': now.isoformat(),
+        'stop_reason': _stop_reason,
+        'stop_gamma_regime': _stop_gamma_regime,
+        'stop_open_lots_ce': int(_stop_ce_lots),
+        'stop_open_lots_pe': int(_stop_pe_lots),
     }
 
 
@@ -464,9 +481,28 @@ class PerformanceStorage:
                     exit_quality TEXT,
                     exit_pct_closed REAL,
                     session_score REAL,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    stop_reason TEXT,
+                    stop_gamma_regime TEXT,
+                    stop_open_lots_ce INTEGER,
+                    stop_open_lots_pe INTEGER
                 )
             ''')
+            # FIX-1.3: add columns to existing tables that predate this schema.
+            # ALTER TABLE IF NOT EXISTS ... ADD COLUMN is not supported in SQLite <3.35,
+            # so catch the OperationalError for "duplicate column name" gracefully.
+            for _col, _typedef in [
+                ('stop_reason',       'TEXT'),
+                ('stop_gamma_regime', 'TEXT'),
+                ('stop_open_lots_ce', 'INTEGER'),
+                ('stop_open_lots_pe', 'INTEGER'),
+            ]:
+                try:
+                    conn.execute(
+                        f'ALTER TABLE performance_sessions ADD COLUMN {_col} {_typedef}'
+                    )
+                except Exception:
+                    pass  # column already exists
             conn.commit()
             log.info("Performance sessions table ready")
         except Exception as e:
@@ -484,8 +520,9 @@ class PerformanceStorage:
                     total_pnl, realized_pnl, max_drawdown, peak_pnl,
                     entry_pnl, active_pnl, exit_pnl,
                     total_adjustments, good_adjustments, bad_adjustments, adjustment_efficiency,
-                    exit_quality, exit_pct_closed, session_score, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    exit_quality, exit_pct_closed, session_score, created_at,
+                    stop_reason, stop_gamma_regime, stop_open_lots_ce, stop_open_lots_pe
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 record['session_id'], record['start_time'], record['end_time'],
                 record['duration_minutes'], record['total_pnl'], record['realized_pnl'],
@@ -495,6 +532,10 @@ class PerformanceStorage:
                 record['bad_adjustments'], record['adjustment_efficiency'],
                 record['exit_quality'], record['exit_pct_closed'],
                 record['session_score'], record['created_at'],
+                record.get('stop_reason', ''),
+                record.get('stop_gamma_regime', ''),
+                record.get('stop_open_lots_ce'),
+                record.get('stop_open_lots_pe'),
             ))
             conn.commit()
             log.info(f"Saved performance record for {record['session_id']} (score={record['session_score']})")

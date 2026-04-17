@@ -185,6 +185,7 @@ class MMMExecutor:
         use_bid_entry: bool = False,       # Start BUY orders at best_bid (maker, cheaper)
         client_order_id: str = None,       # Optional override; auto-generated if None
         max_buy_price: float = None,       # Hard price cap for BUY orders — abort reprice if exceeded
+        fill_timeout: int = None,          # FIX-2.1: override FILL_TIMEOUT (DTE/gamma-aware, seconds)
     ) -> Dict[str, Any]:
         """
         Place order at mid-price (or bid for buys when use_bid_entry=True),
@@ -229,6 +230,8 @@ class MMMExecutor:
         attempts = 0
         _max_attempts = max_reprice_attempts if max_reprice_attempts is not None else MAX_REPRICE_ATTEMPTS
         _aggressive_from = (_max_attempts // 2) + 1  # Switch to best_bid after halfway
+        # FIX-2.1: Use caller-supplied timeout (DTE/gamma-scaled) or fall back to constant.
+        _fill_timeout = fill_timeout if fill_timeout is not None else FILL_TIMEOUT
 
         # Generate a unique client_order_id for this order if not provided.
         # Format: mmm_{session8}_{side1}_{ts10} — max 32 chars.
@@ -364,6 +367,21 @@ class MMMExecutor:
             _log_activity('order_failed',
                 f"{side.upper()} {symbol}: All {INITIAL_PLACEMENT_RETRIES} placement attempts failed — {last_error}",
                 session_id=session_id, severity='error', details={'symbol': symbol, 'error': last_error})
+            # FIX-1.2: Write terminal event — no ORDER_INTENT was written yet (failed before placement),
+            # but log as ORDER_FAILED so sweep queries can account for it.
+            try:
+                from .mmm_audit_log import get_event_log as _get_el
+                _get_el().enqueue_event(
+                    session_id=session_id or '',
+                    event_category='EXECUTION_INTENT',
+                    event_type='ORDER_FAILED',
+                    remark=f'{side.upper()} {size} lots {symbol} — placement failed after '
+                           f'{INITIAL_PLACEMENT_RETRIES} attempts: {last_error}',
+                    severity='ERROR',
+                    details={'symbol': symbol, 'side': side, 'size': size, 'error': last_error},
+                )
+            except Exception:
+                pass
             return self._failure(last_error, symbol, side, size)
 
         order_id = str(order_result['id'])
@@ -408,9 +426,9 @@ class MMMExecutor:
         while attempts < _max_attempts:
             attempts += 1
 
-            # Wait up to 60 seconds, checking fill status every 3 seconds
+            # Wait up to _fill_timeout seconds (DTE/gamma-scaled via caller), checking every 3s
             filled, fill_data = await self._wait_for_fill(
-                order_id, product_id, timeout=FILL_TIMEOUT,
+                order_id, product_id, timeout=_fill_timeout,
                 rest_client=rest_client,
             )
 
@@ -657,19 +675,36 @@ class MMMExecutor:
                 # ── End partial fill recovery ─────────────────────────────────────
 
                 elapsed = time.time() - start_time
-                log.warning(f"❌ Order {order_id} is dead ({fill_data.get('state', '?')})")
+                _dead_state = fill_data.get('state', 'dead')
+                log.warning(f"❌ Order {order_id} is dead ({_dead_state})")
+                # FIX-1.2: Write terminal event so ORDER_INTENT is never permanently dangling.
+                try:
+                    from .mmm_audit_log import get_event_log as _get_el
+                    _get_el().enqueue_event(
+                        session_id=session_id or '',
+                        event_category='EXECUTION_INTENT',
+                        event_type='ORDER_CANCELLED',
+                        remark=f'{side.upper()} {size} lots {symbol} cancelled by exchange '
+                               f'after {attempts} attempt(s) — state: {_dead_state}',
+                        severity='WARNING',
+                        details={'order_id': order_id, 'state': _dead_state,
+                                 'symbol': symbol, 'side': side, 'size': size,
+                                 'attempts': attempts, 'elapsed_s': round(elapsed, 2)},
+                    )
+                except Exception:
+                    pass
                 return self._failure(
-                    f"Order {fill_data.get('state', 'dead')}",
+                    f"Order {_dead_state}",
                     symbol, side, size,
                     order_id=order_id, attempts=attempts,
                     total_time=round(elapsed, 2),
                 )
 
             # Still open — reprice with fresh quotes
-            log.info(f"⏰ Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{_max_attempts})")
+            log.info(f"⏰ Order {order_id} not filled after {_fill_timeout}s, repricing (attempt {attempts}/{_max_attempts})")
 
             _log_activity('order_repricing',
-                f"Order {order_id} not filled after {FILL_TIMEOUT}s, repricing (attempt {attempts}/{_max_attempts})",
+                f"Order {order_id} not filled after {_fill_timeout}s, repricing (attempt {attempts}/{_max_attempts})",
                 session_id=session_id, severity='warning',
                 details={'order_id': order_id, 'attempt': attempts})
 

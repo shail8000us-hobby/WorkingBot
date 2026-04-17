@@ -76,7 +76,7 @@ const FloatingPriceWidget = React.lazy(() => import('./components/FloatingPriceW
 
 // Mobile pages
 const MobileDashboard = React.lazy(() => import('./mobile/MobileDashboard'));
-const MobileControl = React.lazy(() => import('./mobile/MobileControl'));
+const MobileMMMView = React.lazy(() => import('./mobile/MobileMMMView'));
 const MobileSettingsNav = React.lazy(() => import('./mobile/MobileSettingsNav'));
 const MobileConfig = React.lazy(() => import('./mobile/MobileConfig'));
 const MobileRisk = React.lazy(() => import('./mobile/MobileRisk'));
@@ -428,10 +428,10 @@ function App() {
 
                   {isMobile ? (
                     <>
+                      <Route path="/dashboard" element={<MobileDashboard socket={socket} />} />
                       <Route element={<MobileMMMLayout socket={socket} />}>
-                        <Route path="/dashboard" element={<MobileDashboard socket={socket} />} />
-                        <Route path="/mmm" element={<MobileDashboard socket={socket} />} />
-                        <Route path="/control" element={<MobileControl socket={socket} />} />
+                        <Route path="/mmm" element={<MobileMMMView socket={socket} isMobile={isMobile} />} />
+                        <Route path="/control" element={<Navigate to="/mmm" replace />} />
                         <Route
                           path="/config"
                           element={(

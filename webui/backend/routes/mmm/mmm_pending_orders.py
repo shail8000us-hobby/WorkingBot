@@ -23,6 +23,8 @@ import threading
 from datetime import datetime, timezone
 from typing import Dict, Optional, Any
 
+from webui.backend.sealed import sealed
+
 log = logging.getLogger('mmm_pending_orders')
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -55,6 +57,7 @@ _STALE_SECONDS = 900  # 15 minutes
 _PENDING_SENTINEL_STALE_SECONDS = 90
 
 
+@sealed
 def register_pending(
     session_id: str,
     side: str,
@@ -81,6 +84,7 @@ def register_pending(
         )
 
 
+@sealed
 def clear_pending(session_id: str, side: str) -> None:
     """Clear the pending order for a side (after confirmed fill or confirmed dead)."""
     with _lock:
@@ -91,12 +95,14 @@ def clear_pending(session_id: str, side: str) -> None:
             log.info(f"[{session_id}] Pending order cleared: {side.upper()} order {order_id}")
 
 
+@sealed
 def get_pending(session_id: str, side: str) -> Optional[Dict]:
     """Return the pending order dict for a side, or None."""
     with _lock:
         return (_registry.get(session_id) or {}).get(side)
 
 
+@sealed
 def clear_all(session_id: str) -> None:
     """Clear ALL pending orders for a session (on stop/reset)."""
     with _lock:

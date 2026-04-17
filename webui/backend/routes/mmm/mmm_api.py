@@ -720,6 +720,73 @@ def start_session(session_id: str):
         # =====================================================================
         # Import mode or already-executed: go directly to RUNNING
         # =====================================================================
+
+        # ── PREFLIGHT: read optional override flag ────────────────────────────
+        # force_start=true lets an operator bypass the checks below in emergency
+        # (e.g. to start a recovery/flatten session on a broken inventory).
+        _req_body = request.get_json(silent=True) or {}
+        _force_start = bool(_req_body.get('force_start', False))
+
+        # ── PREFLIGHT A: strategy invariant check ─────────────────────────────
+        # For STRADDLE_WITH_ADJUSTMENT, CE/PE active_strike must be equal.
+        # If violated AND the session starts anyway, FORCE_REDUCE is incorrectly
+        # bypassed (bypass logic checks strategy_type, not invariant validity),
+        # leaving a gamma-emergency session with no de-risk path at all.
+        # Block here BEFORE setting status=RUNNING so no broken state is written.
+        _strat_violations = validate_session_for_strategy(session)
+        if _strat_violations and not _force_start:
+            return jsonify({
+                'success': False,
+                'error': (
+                    f"Strategy invariant violation — cannot start: "
+                    f"{'; '.join(_strat_violations)}. "
+                    f"Fix CE/PE state or pass force_start=true to override."
+                ),
+                'invariant_violations': _strat_violations,
+            }), 400
+        if _strat_violations and _force_start:
+            log.warning(
+                f"[{session_id}] force_start=true: starting with invariant violations: "
+                f"{'; '.join(_strat_violations)}"
+            )
+
+        # ── PREFLIGHT B: cap vs adopted lots ──────────────────────────────────
+        # When entry_mode='adopt', active_lots reflects positions inherited from
+        # the exchange.  If max_lots_per_side < active_lots, the engine's §13.1
+        # position-cap gate returns 0 on every single call — all adjustments are
+        # silently blocked from the first heartbeat.  Force the operator to fix
+        # the cap before the monitor starts (or acknowledge with force_start).
+        if entry_mode == 'adopt':
+            _max_lots = session.get('params', {}).get('max_lots_per_side', 100)
+            _ce_lots = session.get('ce', {}).get('active_lots', 0)
+            _pe_lots = session.get('pe', {}).get('active_lots', 0)
+            _cap_issues = []
+            if _ce_lots > _max_lots:
+                _cap_issues.append(
+                    f"CE active_lots ({_ce_lots}) > max_lots_per_side ({_max_lots})"
+                    f" — all CE adjustments will be blocked"
+                )
+            if _pe_lots > _max_lots:
+                _cap_issues.append(
+                    f"PE active_lots ({_pe_lots}) > max_lots_per_side ({_max_lots})"
+                    f" — all PE adjustments will be blocked"
+                )
+            if _cap_issues and not _force_start:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        f"Cap/lots mismatch on adopted session: {'; '.join(_cap_issues)}. "
+                        f"Update max_lots_per_side before starting, "
+                        f"or pass force_start=true to override."
+                    ),
+                    'cap_violations': _cap_issues,
+                }), 400
+            if _cap_issues and _force_start:
+                log.warning(
+                    f"[{session_id}] force_start=true: starting with cap violations: "
+                    f"{'; '.join(_cap_issues)}"
+                )
+
         old_status = status
         new_status = 'RUNNING'
 
@@ -1585,7 +1652,9 @@ def stop_session(session_id: str):
             }), 400
 
         data = request.get_json(silent=True) or {}
-        reason = data.get('reason', 'User stopped')
+        # FIX: data.get('reason', default) does NOT use default when key is present
+        # but value is "" — strip + fallback to prevent empty stop_reason in DB.
+        reason = (data.get('reason') or '').strip() or 'User stopped'
 
         old_status = status
         new_status = 'STOPPED'
@@ -3946,205 +4015,228 @@ def reduce_position(session_id: str):
         side_outcomes = {}        # {side_key: 'success'|'partial'|'failed'|'skipped'}
         strike_availability = {}  # {side_key: {available, inflight}} — set when strike_param
 
+        async def _reduce_one_side(side_key):
+            """Process one side independently. Returns (side_results, side_errors, side_realized, side_key, outcome, avail)."""
+            side_results = []
+            side_errors = []
+            side_realized = 0.0
+            side_outcome = None
+            side_avail = None
+
+            side_state = session.get(side_key, {})
+            option_type = 'call' if side_key == 'ce' else 'put'
+
+            # --- Build close records (LIFO or specific strike) ---
+            if strike_param:
+                target_strike = float(strike_param)
+                _sr = _build_strike_close_records(side_state, target_strike, lots_param)
+
+                side_avail = {
+                    'strike': int(target_strike),
+                    'available': _sr['strike_available'],
+                    'inflight': _sr['inflight_lots'],
+                }
+
+                if _sr['error']:
+                    outcome = (
+                        'inflight_conflict' if _sr['inflight_lots'] > 0
+                        else 'no_lots_at_strike'
+                    )
+                    side_errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["error"]}')
+                    side_outcome = outcome
+                    return side_results, side_errors, side_realized, side_key, side_outcome, side_avail
+
+                if _sr['clamp_error']:
+                    side_errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["clamp_error"]}')
+
+                close_records = _sr['close_records']
+                lots_to_close = _sr['lots_to_close']
+            else:
+                # LIFO auto mode — only active positions (existing semantics preserved)
+                active_lots = side_state.get('active_lots', 0)
+                if active_lots <= 0:
+                    side_errors.append(f'{side_key.upper()}: no open lots to reduce')
+                    return side_results, side_errors, side_realized, side_key, side_outcome, side_avail
+                lots_to_close = min(lots_param, active_lots)
+                close_records = get_lifo_close_fills(side_state, lots_to_close)
+
+            if not close_records:
+                side_errors.append(f'{side_key.upper()}: no close records found')
+                return side_results, side_errors, side_realized, side_key, side_outcome, side_avail
+
+            # --- Group by actual strike, place one order per strike ---
+            by_strike = defaultdict(lambda: {'lots': 0, 'records': [], 'wp_sum': 0.0})
+            for rec in close_records:
+                rec_strike = rec.get('strike') or side_state.get('active_strike', 0)
+                by_strike[rec_strike]['lots'] += rec['lots']
+                by_strike[rec_strike]['records'].append(rec)
+                by_strike[rec_strike]['wp_sum'] += rec.get('premium', 0) * rec['lots']
+
+            side_any_failed = False
+            for strike_val, group in by_strike.items():
+                group_lots = group['lots']
+                symbol = initializer.build_symbol(
+                    option_type, 'BTC', strike_val, expiry
+                )
+
+                log_activity(
+                    'manual_reduce',
+                    f'✂️ Manual Reduce: BUY {group_lots} {side_key.upper()} @ {strike_val} ({symbol})',
+                    session_id, 'info',
+                    {'side': side_key.upper(), 'strike': strike_val, 'lots': group_lots}
+                )
+
+                exec_result = await executor.smart_execute(
+                    symbol=symbol,
+                    side='buy',
+                    size=group_lots,
+                    reduce_only=True,
+                    session_id=session_id,
+                )
+
+                if not exec_result.get('success'):
+                    err = exec_result.get('error', 'execution failed')
+                    side_errors.append(f'{side_key.upper()} @ {strike_val}: {err}')
+                    log_activity(
+                        'manual_reduce',
+                        f'✂️ Manual Reduce FAILED: {side_key.upper()} @ {strike_val} — {err}',
+                        session_id, 'error',
+                        {'side': side_key.upper(), 'strike': strike_val, 'error': err}
+                    )
+                    side_any_failed = True
+                    continue
+
+                fill_price = exec_result.get('fill_price', 0)
+                avg_entry = apply_lifo_removals(side_state, group['records'])
+                # M-9 fix: guard against None return from apply_lifo_removals
+                if avg_entry is None:
+                    log.warning(f"[{session_id}] avg_entry is None for {side_key} — defaulting to 0")
+                    avg_entry = 0.0
+                session[side_key] = side_state
+
+                group_realized = (avg_entry - fill_price) * group_lots * LOT_SIZE_BTC
+                side_realized += group_realized
+                # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
+                _od = exec_result.get('order_details') or {}
+                _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
+
+                # ── P&L via ledger (single source of truth) ──────
+                _mr_close_oid = str(exec_result.get('order_id', '') or '')
+                from .mmm_pnl_core import record_close as _pnl_mr_rec
+                _pnl_mr_rec(
+                    session=session,
+                    order_id=_mr_close_oid,
+                    symbol=exec_result.get('symbol', ''),
+                    option_side=side_key,
+                    strike=strike_val,
+                    lots=int(group_lots),
+                    entry_premium=float(avg_entry),
+                    close_premium=float(fill_price),
+                    commission=abs(float(_commission)) if _commission else 0.0,
+                    source='manual_reduce',
+                )
+                # ── END P&L via ledger ────────────────────────────
+
+                # Stamp close_order_id for FillSyncer matching
+                _mr_close_coid = str(exec_result.get('client_order_id', '') or '')
+                for _mp in side_state.get('positions', []):
+                    if (_mp.get('status') == 'closed'
+                            and _mp.get('_estimated_pnl_booked') is None):
+                        if _mr_close_oid:
+                            _mp['close_order_id'] = _mr_close_oid
+                        if _mr_close_coid:
+                            _mp['close_client_order_id'] = _mr_close_coid
+                        _mp_entry = float(_mp.get('entry_premium', 0) or 0)
+                        _mp_lots = float(_mp.get('_closed_lots', _mp.get('lots', 0)) or 0)
+                        if _mp_lots > 0 and _mp_entry > 0:
+                            _mp['_estimated_pnl_booked'] = round(
+                                (_mp_entry - fill_price) * _mp_lots * LOT_SIZE_BTC, 8)
+                            _mp['_estimated_commission_booked'] = round(
+                                abs(_commission) * _mp_lots / group_lots, 8) if _commission and group_lots else 0.0
+
+                reduction_record = {
+                    'side': side_key.upper(),
+                    'lots': group_lots,
+                    'strike': strike_val,
+                    'avg_entry_price': round(avg_entry, 4),
+                    'fill_price': round(fill_price, 4),
+                    'realized_pnl': round(group_realized, 2),
+                    'timestamp': datetime.now(timezone.utc).isoformat(),
+                }
+                session.setdefault('manual_reductions', []).append(reduction_record)
+                side_results.append(reduction_record)
+
+                log_activity(
+                    'manual_reduce',
+                    f'✂️ Manual Reduce OK: Bought {group_lots} {side_key.upper()} '
+                    f'@ {strike_val} fill ${fill_price:.2f} '
+                    f'(entry ${avg_entry:.2f}, P&L ${group_realized:.2f})',
+                    session_id, 'success',
+                    reduction_record
+                )
+
+                # ── TRADE AUDIT: manual reduce BUY ───────────────────────────
+                try:
+                    from .mmm_audit_log import get_audit_log as _get_aud
+                    from .mmm_audit_remark import build_trade_remark as _btr
+                    _get_aud().enqueue_trade(
+                        session_id=session_id,
+                        action='BUY',
+                        option_type=side_key.upper(),
+                        strike=int(strike_val),
+                        quantity_requested=group_lots,
+                        quantity_filled=group_lots,
+                        premium=float(fill_price),
+                        event_type='EXIT',
+                        mechanism='operator',
+                        expiry=session.get('params', {}).get('expiry', ''),
+                        spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
+                        whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
+                        margin_tier=str(session.get('_margin_tier', '') or ''),
+                        remark=_btr(
+                            'BUY', 'EXIT',
+                            side=side_key, strike=int(strike_val),
+                            lots=group_lots, premium=float(fill_price),
+                            mechanism='operator',
+                        ),
+                    )
+                except Exception:
+                    pass
+                # ── END TRADE AUDIT ──────────────────────────────────────────
+
+            # Track per-side outcome
+            if len(side_results) > 0 and not side_any_failed:
+                side_outcome = 'success'
+            elif len(side_results) > 0 and side_any_failed:
+                side_outcome = 'partial'
+            elif side_any_failed:
+                side_outcome = 'failed'
+            # else: side was skipped (error added above before reaching here)
+
+            return side_results, side_errors, side_realized, side_key, side_outcome, side_avail
+
         async def _do_reduce():
             nonlocal total_realized
             nonlocal side_outcomes, strike_availability
-            for side_key in sides_to_process:
-                side_state = session.get(side_key, {})
-                option_type = 'call' if side_key == 'ce' else 'put'
 
-                # --- Build close records (LIFO or specific strike) ---
-                if strike_param:
-                    target_strike = float(strike_param)
-                    _sr = _build_strike_close_records(side_state, target_strike, lots_param)
+            # For 'both': fire CE and PE simultaneously via asyncio.gather.
+            # For single side: run directly (no overhead).
+            if side_param == 'both':
+                gathered = await asyncio.gather(
+                    _reduce_one_side('ce'),
+                    _reduce_one_side('pe'),
+                )
+            else:
+                gathered = [await _reduce_one_side(side_param)]
 
-                    # Populate availability metadata for response
-                    strike_availability[side_key] = {
-                        'strike': int(target_strike),
-                        'available': _sr['strike_available'],
-                        'inflight': _sr['inflight_lots'],
-                    }
-
-                    if _sr['error']:
-                        outcome = (
-                            'inflight_conflict' if _sr['inflight_lots'] > 0
-                            else 'no_lots_at_strike'
-                        )
-                        errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["error"]}')
-                        side_outcomes[side_key] = outcome
-                        continue
-
-                    if _sr['clamp_error']:
-                        errors.append(f'{side_key.upper()} @ {int(target_strike)}: {_sr["clamp_error"]}')
-
-                    close_records = _sr['close_records']
-                    lots_to_close = _sr['lots_to_close']
-                else:
-                    # LIFO auto mode — only active positions (existing semantics preserved)
-                    active_lots = side_state.get('active_lots', 0)
-                    if active_lots <= 0:
-                        errors.append(f'{side_key.upper()}: no open lots to reduce')
-                        continue
-                    lots_to_close = min(lots_param, active_lots)
-                    close_records = get_lifo_close_fills(side_state, lots_to_close)
-
-                if not close_records:
-                    errors.append(f'{side_key.upper()}: no close records found')
-                    continue
-
-                # --- Group by actual strike, place one order per strike ---
-                by_strike = defaultdict(lambda: {'lots': 0, 'records': [], 'wp_sum': 0.0})
-                for rec in close_records:
-                    rec_strike = rec.get('strike') or side_state.get('active_strike', 0)
-                    by_strike[rec_strike]['lots'] += rec['lots']
-                    by_strike[rec_strike]['records'].append(rec)
-                    by_strike[rec_strike]['wp_sum'] += rec.get('premium', 0) * rec['lots']
-
-                side_any_failed = False
-                side_fills_before = len(results)
-                for strike_val, group in by_strike.items():
-                    group_lots = group['lots']
-                    symbol = initializer.build_symbol(
-                        option_type, 'BTC', strike_val, expiry
-                    )
-
-                    log_activity(
-                        'manual_reduce',
-                        f'✂️ Manual Reduce: BUY {group_lots} {side_key.upper()} @ {strike_val} ({symbol})',
-                        session_id, 'info',
-                        {'side': side_key.upper(), 'strike': strike_val, 'lots': group_lots}
-                    )
-
-                    result = await executor.smart_execute(
-                        symbol=symbol,
-                        side='buy',
-                        size=group_lots,
-                        reduce_only=True,
-                        session_id=session_id,
-                    )
-
-                    if not result.get('success'):
-                        err = result.get('error', 'execution failed')
-                        errors.append(
-                            f'{side_key.upper()} @ {strike_val}: {err}'
-                        )
-                        log_activity(
-                            'manual_reduce',
-                            f'✂️ Manual Reduce FAILED: {side_key.upper()} @ {strike_val} — {err}',
-                            session_id, 'error',
-                            {'side': side_key.upper(), 'strike': strike_val, 'error': err}
-                        )
-                        side_any_failed = True
-                        continue
-
-                    fill_price = result.get('fill_price', 0)
-                    avg_entry = apply_lifo_removals(side_state, group['records'])
-                    # M-9 fix: guard against None return from apply_lifo_removals
-                    if avg_entry is None:
-                        log.warning(f"[{session_id}] avg_entry is None for {side_key} — defaulting to 0")
-                        avg_entry = 0.0
-                    session[side_key] = side_state
-
-                    group_realized = (avg_entry - fill_price) * group_lots * LOT_SIZE_BTC
-                    total_realized += group_realized
-                    # Record exchange commission (fee) — Delta uses 'paid_commission' for actual fees
-                    _od = result.get('order_details') or {}
-                    _commission = float(_od.get('paid_commission', 0) or _od.get('commission', 0) or 0)
-
-                    # ── P&L via ledger (single source of truth) ──────
-                    _mr_close_oid = str(result.get('order_id', '') or '')
-                    from .mmm_pnl_core import record_close as _pnl_mr_rec
-                    _pnl_mr_rec(
-                        session=session,
-                        order_id=_mr_close_oid,
-                        symbol=result.get('symbol', ''),
-                        option_side=side_key,
-                        strike=strike_val,
-                        lots=int(group_lots),
-                        entry_premium=float(avg_entry),
-                        close_premium=float(fill_price),
-                        commission=abs(float(_commission)) if _commission else 0.0,
-                        source='manual_reduce',
-                    )
-                    # ── END P&L via ledger ────────────────────────────
-
-                    # Stamp close_order_id for FillSyncer matching
-                    _mr_close_coid = str(result.get('client_order_id', '') or '')
-                    for _mp in side_state.get('positions', []):
-                        if (_mp.get('status') == 'closed'
-                                and _mp.get('_estimated_pnl_booked') is None):
-                            if _mr_close_oid:
-                                _mp['close_order_id'] = _mr_close_oid
-                            if _mr_close_coid:
-                                _mp['close_client_order_id'] = _mr_close_coid
-                            _mp_entry = float(_mp.get('entry_premium', 0) or 0)
-                            _mp_lots = float(_mp.get('_closed_lots', _mp.get('lots', 0)) or 0)
-                            if _mp_lots > 0 and _mp_entry > 0:
-                                _mp['_estimated_pnl_booked'] = round(
-                                    (_mp_entry - fill_price) * _mp_lots * LOT_SIZE_BTC, 8)
-                                _mp['_estimated_commission_booked'] = round(
-                                    abs(_commission) * _mp_lots / group_lots, 8) if _commission and group_lots else 0.0
-
-                    reduction_record = {
-                        'side': side_key.upper(),
-                        'lots': group_lots,
-                        'strike': strike_val,
-                        'avg_entry_price': round(avg_entry, 4),
-                        'fill_price': round(fill_price, 4),
-                        'realized_pnl': round(group_realized, 2),
-                        'timestamp': datetime.now(timezone.utc).isoformat(),
-                    }
-                    session.setdefault('manual_reductions', []).append(reduction_record)
-
-                    results.append(reduction_record)
-
-                    log_activity(
-                        'manual_reduce',
-                        f'✂️ Manual Reduce OK: Bought {group_lots} {side_key.upper()} '
-                        f'@ {strike_val} fill ${fill_price:.2f} '
-                        f'(entry ${avg_entry:.2f}, P&L ${group_realized:.2f})',
-                        session_id, 'success',
-                        reduction_record
-                    )
-
-                    # ── TRADE AUDIT: manual reduce BUY ───────────────────────────
-                    try:
-                        from .mmm_audit_log import get_audit_log as _get_aud
-                        from .mmm_audit_remark import build_trade_remark as _btr
-                        _get_aud().enqueue_trade(
-                            session_id=session_id,
-                            action='BUY',
-                            option_type=side_key.upper(),
-                            strike=int(strike_val),
-                            quantity_requested=group_lots,
-                            quantity_filled=group_lots,
-                            premium=float(fill_price),
-                            event_type='EXIT',
-                            mechanism='operator',
-                            expiry=session.get('params', {}).get('expiry', ''),
-                            spot_price_usd=float(session.get('_regime_spot_price', 0) or 0),
-                            whipsaw_state=str(session.get('_whipsaw_state', '') or ''),
-                            margin_tier=str(session.get('_margin_tier', '') or ''),
-                            remark=_btr(
-                                'BUY', 'EXIT',
-                                side=side_key, strike=int(strike_val),
-                                lots=group_lots, premium=float(fill_price),
-                                mechanism='operator',
-                            ),
-                        )
-                    except Exception:
-                        pass
-                    # ── END TRADE AUDIT ──────────────────────────────────────────
-
-                # Track per-side outcome for side='both' clarity
-                side_filled = len(results) - side_fills_before
-                if side_filled > 0 and not side_any_failed:
-                    side_outcomes[side_key] = 'success'
-                elif side_filled > 0 and side_any_failed:
-                    side_outcomes[side_key] = 'partial'
-                elif side_any_failed:
-                    side_outcomes[side_key] = 'failed'
-                # else: side was skipped (error added above before reaching here)
+            for sr, se, sreal, skey, sout, savail in gathered:
+                results.extend(sr)
+                errors.extend(se)
+                total_realized += sreal
+                if sout is not None:
+                    side_outcomes[skey] = sout
+                if savail is not None:
+                    strike_availability[skey] = savail
 
         _run_async(_do_reduce())
 
