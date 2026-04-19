@@ -52,7 +52,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   const [safetyEvents, setSafetyEvents] = useState([]);
   const [pnl, setPnl] = useState(null);
   const [status, setStatus] = useState(null);
-  const [connected, setConnected] = useState(false);
+  const [connected, setConnected] = useState(() => sharedSocket?.connected ?? false);
   const [walkthroughEntries, setWalkthroughEntries] = useState([]);
   const [regimeData, setRegimeData] = useState(null);
   const [perpHedgeEvents, setPerpHedgeEvents] = useState([]);
@@ -153,10 +153,10 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     };
     addListener('mmm_price_tick', onPriceTick);
 
-    // Adjustments
+    // Adjustments — stamp receive time so MMMAdjustmentLog can sort newest-first
     const onAdjustment = (data) => {
       if (!sessionId || data.session_id === sessionId) {
-        setAdjustments((prev) => [...prev.slice(-99), data]);
+        setAdjustments((prev) => [...prev.slice(-99), { ...data, _received_ts: Date.now() }]);
       }
     };
     addListener('mmm_adjustment', onAdjustment);

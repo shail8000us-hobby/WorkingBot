@@ -70,6 +70,7 @@ import {
   LocalFireDepartment as DangerIcon,
   ArrowDropDown as ArrowDropDownIcon,
   HelpOutline as HelpOutlineIcon,
+  PowerOff as PowerOffIcon,
 } from '@mui/icons-material';
 import { useMMM } from './MMMContext';
 import mmmService from './mmmService';
@@ -416,6 +417,22 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
   const status = session.status || 'IDLE';
   const cfg = getStatusConfig(status);
 
+  // Kill switch confirmation dialog state
+  const [killDialogOpen, setKillDialogOpen] = useState(false);
+  const [killSubmitting, setKillSubmitting] = useState(false);
+
+  const handleKillConfirm = async () => {
+    setKillSubmitting(true);
+    setKillDialogOpen(false);
+    await onControl('kill_switch', session.session_id);
+    setKillSubmitting(false);
+  };
+
+  // Hard stop derived values
+  const maxLoss = Number(session?.params?.max_loss_amount ?? session?.max_loss_amount ?? 0);
+  const netPnl  = session.net_pnl ?? 0;
+  const hardStopHit = maxLoss > 0 && netPnl < 0 && Math.abs(netPnl) >= maxLoss;
+
   // Live countdown — ticks every 30s so it stays fresh between polls
   const [expiryInfo, setExpiryInfo] = useState(() => computeExpiryInfo(session.expiry_time));
   useEffect(() => {
@@ -557,6 +574,22 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             )}
           </Box>
         )}
+
+        {/* Hard Stop display */}
+        <Typography
+          variant="caption"
+          sx={{
+            mt: 0.25, display: 'block', fontFamily: 'monospace', fontSize: '0.65rem',
+            fontWeight: hardStopHit ? 700 : 400,
+            color: hardStopHit ? '#f44336' : maxLoss > 0 ? '#ff9800' : 'text.disabled',
+          }}
+        >
+          {hardStopHit
+            ? '⛔ Hard Stop Hit'
+            : maxLoss > 0
+              ? `Hard Stop: $${maxLoss.toLocaleString()}`
+              : 'Hard Stop: Disabled'}
+        </Typography>
 
         {/* Activity counters */}
         {(session.adjustment_count > 0 || session.shift_count > 0 || session.close_at_5_count > 0) && (
@@ -713,7 +746,7 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
               </IconButton>
             </Tooltip>
           )}
-          {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(status) && (
+          {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY'].includes(status) && (
             <Tooltip title="Exit Strategy — close all positions and stop">
               <IconButton
                 size="small"
@@ -725,6 +758,26 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
               >
                 <ContentCutIcon fontSize="small" />
               </IconButton>
+            </Tooltip>
+          )}
+          {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY'].includes(status) && (
+            <Tooltip title="Emergency Kill Switch — square off ALL positions with market orders">
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Emergency Kill Switch"
+                  disabled={killSubmitting}
+                  sx={{
+                    color: '#d50000',
+                    '&:hover': { color: '#ff1744', backgroundColor: 'rgba(213,0,0,0.12)' },
+                  }}
+                  onClick={(e) => { e.stopPropagation(); setKillDialogOpen(true); }}
+                >
+                  {killSubmitting
+                    ? <CircularProgress size={14} sx={{ color: '#d50000' }} />
+                    : <PowerOffIcon fontSize="small" />}
+                </IconButton>
+              </span>
             </Tooltip>
           )}
           {status === 'EXITING' && (
@@ -757,6 +810,47 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
           )}
         </Box>
       </CardContent>
+
+      {/* Emergency Kill Switch confirmation dialog */}
+      <Dialog
+        open={killDialogOpen}
+        onClose={() => setKillDialogOpen(false)}
+        onClick={(e) => e.stopPropagation()}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#d50000', fontWeight: 700 }}>
+          ⛔ Emergency Kill Switch
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Square off <strong>all positions</strong> for session{' '}
+            <code>{session.session_id}</code> using market orders?
+          </Typography>
+          <Typography variant="body2" color="text.secondary">
+            CE: {(session.ce_active_lots || 0) + (session.ce_frozen_lots || 0)} lots
+            &nbsp;·&nbsp;
+            PE: {(session.pe_active_lots || 0) + (session.pe_frozen_lots || 0)} lots
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#ff9800' }}>
+            This cannot be undone. Other sessions are not affected.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setKillDialogOpen(false)} color="inherit" size="small">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleKillConfirm}
+            variant="contained"
+            color="error"
+            size="small"
+            sx={{ fontWeight: 700 }}
+          >
+            Confirm Exit All
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 };
@@ -2859,6 +2953,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
       const res = await mmmService.closeStrike(session.session_id, closeStrikeDlg.side, closeStrikeDlg.strike);
       if (res.success) {
         setCloseStrikeDlg(d => ({ ...d, open: false, loading: false }));
+        onStrikePromoted?.();
       } else {
         setCloseStrikeDlg(d => ({ ...d, loading: false, error: res.error || 'Close failed' }));
       }
@@ -2889,6 +2984,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
       const res = await mmmService.adjustActiveLots(session.session_id, side, delta);
       if (res.success) {
         setAdjustLotsDlg(d => ({ ...d, open: false, loading: false }));
+        onStrikePromoted?.();
       } else {
         setAdjustLotsDlg(d => ({ ...d, loading: false, error: res.error || 'Adjust failed' }));
       }
@@ -3107,7 +3203,9 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
                     {session._straddle_roll_trigger_pts > 0
                       ? ` | Next trigger: ±${Math.round(session._straddle_roll_trigger_pts)} pts`
                       : ''}
-                    {' • Hot-reloadable: change max_per_session in settings to add more rolls'}
+                    {strategyType === 'STRADDLE_ROLL'
+                      ? ' • Hot-reloadable: change max_per_session in Settings → Straddle Roll to add more rolls'
+                      : ' • Hot-reloadable: raise max_per_session via session params (PATCH API)'}
                   </span>
                 }>
                   <Chip
@@ -3141,7 +3239,8 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
               )}
             </Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {['RUNNING', 'PAUSED'].includes(status) && (
+              {/* Dangerous Mode: only for adjustment-engine strategies. STRADDLE_ROLL has no adjustment engine — hide it there. */}
+              {['RUNNING', 'PAUSED'].includes(status) && strategyType !== 'STRADDLE_ROLL' && (
                 <Tooltip title={isDangerousMode
                   ? 'DANGEROUS MODE ON — click to disable and restore all safety gates'
                   : '⚠️ Dangerous Mode — bypass all safety gates except max loss & ITM guard. Use during 0DTE expiry only.'
@@ -4212,10 +4311,21 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
               <strong>Still active:</strong> Max loss hard stop · ITM guard · Auto-close near expiry · Margin ORANGE wind-down
             </Typography>
           </Alert>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: strategyType !== '0DTE' ? 1 : 1.5 }}>
             This mode is intended for use during <strong>0DTE expiry</strong> when the operator is actively monitoring
             and fast algo response is required. You are fully responsible for risk management while this is ON.
           </Typography>
+          {strategyType !== '0DTE' && (
+            <Alert severity="warning" icon={false} sx={{ mb: 1.5, backgroundColor: 'rgba(120,80,0,0.3)', border: '1px solid #f59e0b' }}>
+              <Typography variant="body2" sx={{ fontWeight: 700, color: '#fbbf24' }}>
+                Non-0DTE strategy detected: {strategyType}
+              </Typography>
+              <Typography variant="body2" sx={{ color: '#fde68a', mt: 0.5 }}>
+                Dangerous Mode behavior is undefined for this strategy type. Safety gate bypass was designed for 0DTE expiry conditions.
+                Enabling it on a <strong>{strategyType}</strong> session carries additional risk.
+              </Typography>
+            </Alert>
+          )}
           <Typography variant="body2" sx={{ mb: 1, fontWeight: 600 }}>
             Type <strong style={{ color: '#f44336' }}>CONFIRM</strong> to enable:
           </Typography>
@@ -4478,6 +4588,27 @@ const MMMDashboard = () => {
     };
   }, [socket, selectedSessionId, fetchFullSession, fetchSessions]);
 
+  // Force full-session refresh on manual action events and status changes so the
+  // detail pane updates immediately instead of waiting for the 15s polling interval.
+  useEffect(() => {
+    if (!socket || !selectedSessionId) return;
+    const handler = (data) => {
+      if (data?.session_id === selectedSessionId) fetchFullSession(true);
+    };
+    socket.on('mmm_manual_reduce', handler);
+    socket.on('mmm_manual_injection', handler);
+    socket.on('mmm_strike_closed', handler);
+    socket.on('mmm_trigger_pin_changed', handler);
+    socket.on('mmm_status_change', handler);
+    return () => {
+      socket.off('mmm_manual_reduce', handler);
+      socket.off('mmm_manual_injection', handler);
+      socket.off('mmm_strike_closed', handler);
+      socket.off('mmm_trigger_pin_changed', handler);
+      socket.off('mmm_status_change', handler);
+    };
+  }, [socket, selectedSessionId, fetchFullSession]);
+
   // Session control handler
   const handleControl = useCallback(async (action, sessionId) => {
     try {
@@ -4521,6 +4652,10 @@ const MMMDashboard = () => {
           );
           if (!confirmed) return;
           result = await mmmService.exitAllSession(sessionId);
+          break;
+        }
+        case 'kill_switch': {
+          result = await mmmService.killSwitch(sessionId);
           break;
         }
         case 'delete':
@@ -4692,9 +4827,9 @@ const MMMDashboard = () => {
               )}
             </Tooltip>
           )}
-          {connectionStatus !== 'connected' && (
+          {(connectionStatus !== 'connected' || !wsData.connected) && (
             <Chip
-              label={connectionStatus === 'reconnecting' ? 'Reconnecting...' : 'Disconnected'}
+              label={connectionStatus === 'reconnecting' ? 'Reconnecting...' : !wsData.connected && connectionStatus === 'connected' ? 'WS Disconnected' : 'Disconnected'}
               size="small"
               color={connectionStatus === 'reconnecting' ? 'warning' : 'error'}
             />
@@ -4781,9 +4916,11 @@ const MMMDashboard = () => {
       )}
 
       {/* M-35 fix: Prominent WebSocket disconnected warning */}
-      {connectionStatus !== 'connected' && (
+      {(connectionStatus !== 'connected' || !wsData.connected) && (
         <Alert severity="warning" sx={{ mb: 2 }}>
-          WebSocket disconnected — position data may be stale.
+          {!wsData.connected && connectionStatus === 'connected'
+            ? 'WebSocket stream disconnected — live data may be stale.'
+            : 'WebSocket disconnected — position data may be stale.'}
           {connectionStatus === 'reconnecting' ? ' Reconnecting...' : ''}
         </Alert>
       )}

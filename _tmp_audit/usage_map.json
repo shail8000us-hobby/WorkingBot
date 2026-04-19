@@ -1,0 +1,602 @@
+{
+  "mmm": {
+    "getWalkthrough": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAlgoCalculations.js",
+        "line": 365
+      }
+    ],
+    "getGreeksIV": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMGreeksPanel.js",
+        "line": 86
+      }
+    ],
+    "getChainData": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+        "line": 157
+      }
+    ],
+    "validateSelection": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+        "line": 217
+      }
+    ],
+    "getExchangeMargin": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+        "line": 440
+      }
+    ],
+    "getMarginStatus": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+        "line": 458
+      }
+    ],
+    "updateSessionParams": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+        "line": 480
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+        "line": 1100
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2795
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2808
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+        "line": 97
+      }
+    ],
+    "getSessionPerformance": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMPerformancePanel.js",
+        "line": 76
+      }
+    ],
+    "enableReverseMode": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+        "line": 225
+      }
+    ],
+    "disableReverseMode": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+        "line": 239
+      }
+    ],
+    "closeAllReversePositions": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+        "line": 254
+      }
+    ],
+    "togglePerpHedge": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+        "line": 398
+      }
+    ],
+    "closePerpHedge": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+        "line": 419
+      }
+    ],
+    "getAuditTrades": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 73
+      }
+    ],
+    "getAuditStrikeSummary": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 188
+      }
+    ],
+    "getAuditPnL": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 279
+      }
+    ],
+    "getAuditEvents": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 358
+      }
+    ],
+    "getAuditReconcile": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 444
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+        "line": 574
+      }
+    ],
+    "getExchangePositions": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+        "line": 121
+      }
+    ],
+    "adoptPositions": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+        "line": 282
+      }
+    ],
+    "startSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+        "line": 300
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 438
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 518
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 588
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4602
+      }
+    ],
+    "getExecutionEvents": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMExecutionLogPanel.js",
+        "line": 110
+      }
+    ],
+    "getSessionAnalytics": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAnalyticsTable.js",
+        "line": 45
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAnalyticsSummary.js",
+        "line": 46
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMAnalyticsPanel.js",
+        "line": 106
+      }
+    ],
+    "getActivities": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMActivityFeed.js",
+        "line": 469
+      }
+    ],
+    "getSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+        "line": 925
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4500
+      }
+    ],
+    "getExpiries": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 274
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 1354
+      }
+    ],
+    "getSpotPrice": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 297
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 1355
+      }
+    ],
+    "previewStrikes": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 335
+      }
+    ],
+    "previewAtmStraddle": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 378
+      }
+    ],
+    "initSessionFresh": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 419
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 570
+      }
+    ],
+    "initSessionImport": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 500
+      }
+    ],
+    "executeEntry": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+        "line": 631
+      }
+    ],
+    "pinTrigger": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+        "line": 160
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+        "line": 173
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+        "line": 189
+      }
+    ],
+    "getAggregatePnL": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 130
+      }
+    ],
+    "getDTEPresets": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 1356
+      }
+    ],
+    "createSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 1518
+      }
+    ],
+    "getBeatHealth": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 1882
+      }
+    ],
+    "reducePosition": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2132
+      }
+    ],
+    "getOptionChain": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2360
+      }
+    ],
+    "injectPosition": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2403
+      }
+    ],
+    "setActiveStrike": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2932
+      }
+    ],
+    "closeStrike": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2953
+      }
+    ],
+    "adjustActiveLots": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 2983
+      }
+    ],
+    "pauseSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4606
+      }
+    ],
+    "resumeSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4609
+      }
+    ],
+    "stopSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4612
+      }
+    ],
+    "forceHeartbeat": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4615
+      }
+    ],
+    "exitAllSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4631
+      }
+    ],
+    "killSwitch": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4635
+      }
+    ],
+    "deleteSession": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4639
+      }
+    ],
+    "retryPartialLeg": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4653
+      }
+    ],
+    "resolvePartialEntry": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4667
+      }
+    ],
+    "submitBothSidesDecision": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+        "line": 4709
+      }
+    ],
+    "getRegimeStatus": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMRegimePanel.js",
+        "line": 415
+      }
+    ],
+    "getSessions": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMContext.js",
+        "line": 191
+      },
+      {
+        "file": "webui/frontend/src/components/mmm/MMMContext.js",
+        "line": 268
+      }
+    ],
+    "healthCheck": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMContext.js",
+        "line": 303
+      }
+    ],
+    "getParamsInfo": [
+      {
+        "file": "webui/frontend/src/components/mmm/MMMContext.js",
+        "line": 316
+      }
+    ],
+    "getSessionParams": [
+      {
+        "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+        "line": 43
+      }
+    ]
+  },
+  "mmmx": {
+    "getExpirations": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+        "line": 48
+      }
+    ],
+    "createSession": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+        "line": 71
+      }
+    ],
+    "scanStrikes": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+        "line": 245
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 82
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 156
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 254
+      }
+    ],
+    "deployTranche1": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+        "line": 315
+      }
+    ],
+    "getSession": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+        "line": 272
+      }
+    ],
+    "getActivityLog": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+        "line": 306
+      }
+    ],
+    "listSessions": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 123
+      }
+    ],
+    "pauseSession": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 168
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 427
+      }
+    ],
+    "resumeSession": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 168
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 448
+      }
+    ],
+    "stopSession": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 168
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 456
+      }
+    ],
+    "forceHeartbeat": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 177
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 510
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 439
+      }
+    ],
+    "reconcile": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 190
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+        "line": 19
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 463
+      }
+    ],
+    "killSwitch": [
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 263
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 277
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+        "line": 403
+      }
+    ],
+    "confirmReconcile": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+        "line": 36
+      }
+    ],
+    "profitBook": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXProfitBookingTab.js",
+        "line": 24
+      }
+    ],
+    "getHealth": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 71
+      }
+    ],
+    "checkGates": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 88
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+        "line": 259
+      }
+    ],
+    "getParamHistory": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+        "line": 15
+      }
+    ],
+    "hotReloadParams": [
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+        "line": 53
+      },
+      {
+        "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+        "line": 54
+      }
+    ],
+    "getAuditLog": [
+      {
+        "file": "webui/frontend/src/components/mmmx/panels/MMMXTradeAuditPanel.js",
+        "line": 35
+      }
+    ]
+  }
+}

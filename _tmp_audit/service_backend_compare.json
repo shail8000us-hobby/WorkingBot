@@ -1,0 +1,638 @@
+{
+  "mmm": [
+    {
+      "method": "getSessions",
+      "line": 27,
+      "verb": "GET",
+      "path": "/sessions",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSession",
+      "line": 39,
+      "verb": "GET",
+      "path": "/session/<session_id>",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "createSession",
+      "line": 53,
+      "verb": "POST",
+      "path": "/session/create",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "deleteSession",
+      "line": 62,
+      "verb": "DELETE",
+      "path": "/session/<session_id>",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "startSession",
+      "line": 84,
+      "verb": "POST",
+      "path": "/session/<session_id>/start",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "pauseSession",
+      "line": 93,
+      "verb": "POST",
+      "path": "/session/<session_id>/pause",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "resumeSession",
+      "line": 102,
+      "verb": "POST",
+      "path": "/session/<session_id>/resume",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "stopSession",
+      "line": 112,
+      "verb": "POST",
+      "path": "/session/<session_id>/stop",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "exitAllSession",
+      "line": 123,
+      "verb": "POST",
+      "path": "/session/<session_id>/exit_all",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "killSwitch",
+      "line": 135,
+      "verb": "POST",
+      "path": "/session/<session_id>/kill_switch",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getMonitorStatus",
+      "line": 195,
+      "verb": "GET",
+      "path": "/session/<session_id>/monitor",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAllMonitors",
+      "line": 203,
+      "verb": "GET",
+      "path": "/monitors",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "forceHeartbeat",
+      "line": 213,
+      "verb": "POST",
+      "path": "/session/<session_id>/force-heartbeat",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getBeatHealth",
+      "line": 223,
+      "verb": "GET",
+      "path": "/session/<session_id>/beat-health",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getPositions",
+      "line": 321,
+      "verb": "GET",
+      "path": "/session/<session_id>/positions",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getTriggerData",
+      "line": 330,
+      "verb": "GET",
+      "path": "/session/<session_id>/triggers",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getPnLTimeline",
+      "line": 340,
+      "verb": "GET",
+      "path": "/session/<session_id>/pnl-timeline",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSafetyStatus",
+      "line": 351,
+      "verb": "GET",
+      "path": "/session/<session_id>/safety",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSessionAnalytics",
+      "line": 360,
+      "verb": "GET",
+      "path": "/session/<session_id>/analytics",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAggregatedAnalytics",
+      "line": 369,
+      "verb": "GET",
+      "path": "/analytics/aggregated",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSessionPerformance",
+      "line": 377,
+      "verb": "GET",
+      "path": "/session/<session_id>/performance",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getPerformanceSummary",
+      "line": 385,
+      "verb": "GET",
+      "path": "/performance/summary",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getParamsInfo",
+      "line": 397,
+      "verb": "GET",
+      "path": "/params/info",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getDTEPresets",
+      "line": 405,
+      "verb": "GET",
+      "path": "/dte-presets",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAggregatePnL",
+      "line": 413,
+      "verb": "GET",
+      "path": "/aggregate-pnl",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSessionParams",
+      "line": 422,
+      "verb": "GET",
+      "path": "/session/<session_id>/params",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "updateSessionParams",
+      "line": 432,
+      "verb": "PATCH",
+      "path": "/session/<session_id>/params",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSessionHistory",
+      "line": 446,
+      "verb": "GET",
+      "path": "/session/<session_id>/history",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSessionState",
+      "line": 457,
+      "verb": "GET",
+      "path": "/session/<session_id>/state",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getExpiries",
+      "line": 470,
+      "verb": "GET",
+      "path": "/expiries",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSpotPrice",
+      "line": 481,
+      "verb": "GET",
+      "path": "/spot-price",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "previewStrikes",
+      "line": 498,
+      "verb": "POST",
+      "path": "/preview-strikes",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "previewAtmStraddle",
+      "line": 508,
+      "verb": "POST",
+      "path": "/preview_atm_straddle",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "checkLiquidity",
+      "line": 518,
+      "verb": "POST",
+      "path": "/check-liquidity",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "initSessionFresh",
+      "line": 536,
+      "verb": "POST",
+      "path": "/session/<session_id>/init-fresh",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "initSessionImport",
+      "line": 556,
+      "verb": "POST",
+      "path": "/session/<session_id>/init-import",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getExchangePositions",
+      "line": 566,
+      "verb": "GET",
+      "path": "/exchange-positions",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "adoptPositions",
+      "line": 579,
+      "verb": "POST",
+      "path": "/session/<session_id>/adopt",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getChainData",
+      "line": 597,
+      "verb": "GET",
+      "path": "/chain-data",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "validateSelection",
+      "line": 613,
+      "verb": "POST",
+      "path": "/validate-selection",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "executeEntry",
+      "line": 626,
+      "verb": "POST",
+      "path": "/session/<session_id>/execute-entry",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "healthCheck",
+      "line": 638,
+      "verb": "GET",
+      "path": "/health",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "emergencyCloseAllPositions",
+      "line": 651,
+      "verb": "POST",
+      "path": "/emergency/close-all-positions",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "emergencyKillAllBots",
+      "line": 668,
+      "verb": "POST",
+      "path": "/api/emergency/kill-all",
+      "exists": true,
+      "matched": "external:/api/emergency/kill-all"
+    },
+    {
+      "method": "getActivities",
+      "line": 683,
+      "verb": "GET",
+      "path": "/activities",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getActivityStats",
+      "line": 694,
+      "verb": "GET",
+      "path": "/activities/stats",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getCriticalActivities",
+      "line": 705,
+      "verb": "GET",
+      "path": "/activities/critical",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getExchangeMargin",
+      "line": 775,
+      "verb": "GET",
+      "path": "/exchange/margin",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditTrades",
+      "line": 822,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit/trades",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditStrikeSummary",
+      "line": 828,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit/strike_summary",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditPnL",
+      "line": 834,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit/pnl",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditReconcile",
+      "line": 840,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit/reconcile",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditEvents",
+      "line": 846,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit/events",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getOptionChain",
+      "line": 860,
+      "verb": "GET",
+      "path": "/session/<session_id>/option-chain",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "pinTrigger",
+      "line": 875,
+      "verb": "POST",
+      "path": "/session/<session_id>/pin-trigger",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "enableReverseMode",
+      "line": 890,
+      "verb": "POST",
+      "path": "/session/<session_id>/reverse/enable",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "disableReverseMode",
+      "line": 901,
+      "verb": "POST",
+      "path": "/session/<session_id>/reverse/disable",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "closeAllReversePositions",
+      "line": 912,
+      "verb": "POST",
+      "path": "/session/<session_id>/reverse/close",
+      "exists": false,
+      "matched": null
+    }
+  ],
+  "mmmx": [
+    {
+      "method": "createSession",
+      "line": 22,
+      "verb": "POST",
+      "path": "/session",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "listSessions",
+      "line": 23,
+      "verb": "GET",
+      "path": "/sessions${status ",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getSession",
+      "line": 24,
+      "verb": "GET",
+      "path": "/session/<session_id>",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "hotReloadParams",
+      "line": 27,
+      "verb": "PATCH",
+      "path": "/session/<session_id>/params",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "stopSession",
+      "line": 30,
+      "verb": "POST",
+      "path": "/session/<session_id>/stop",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "killSwitch",
+      "line": 31,
+      "verb": "POST",
+      "path": "/kill-switch",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "pauseSession",
+      "line": 33,
+      "verb": "POST",
+      "path": "/session/<session_id>/pause",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "resumeSession",
+      "line": 34,
+      "verb": "POST",
+      "path": "/session/<session_id>/resume",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "startMonitor",
+      "line": 35,
+      "verb": "POST",
+      "path": "/session/<session_id>/start-monitor",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "forceHeartbeat",
+      "line": 36,
+      "verb": "POST",
+      "path": "/session/<session_id>/force-heartbeat",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "deployTranche1",
+      "line": 40,
+      "verb": "POST",
+      "path": "/session/<session_id>/deploy_tranche1",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "profitBook",
+      "line": 41,
+      "verb": "POST",
+      "path": "/session/<session_id>/profit_book",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "reconcile",
+      "line": 43,
+      "verb": "POST",
+      "path": "/session/<session_id>/reconcile",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "scanStrikes",
+      "line": 44,
+      "verb": "GET",
+      "path": "/session/<session_id>/scan_strikes",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getAuditLog",
+      "line": 47,
+      "verb": "GET",
+      "path": "/session/<session_id>/audit",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getActivityLog",
+      "line": 48,
+      "verb": "GET",
+      "path": "/session/<session_id>/activity",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getParamHistory",
+      "line": 49,
+      "verb": "GET",
+      "path": "/session/<session_id>/param-history",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "confirmReconcile",
+      "line": 52,
+      "verb": "POST",
+      "path": "/session/<session_id>/confirm-reconcile",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "checkGates",
+      "line": 60,
+      "verb": "POST",
+      "path": "/session/<session_id>/check-gates",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getHealth",
+      "line": 64,
+      "verb": "GET",
+      "path": "/health",
+      "exists": false,
+      "matched": null
+    },
+    {
+      "method": "getExpirations",
+      "line": 68,
+      "verb": "GET?",
+      "path": "/api/options-chain/expirations",
+      "exists": false,
+      "matched": null
+    }
+  ]
+}

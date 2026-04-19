@@ -1,0 +1,2148 @@
+
+===== webui/frontend/src/components/mmm/MMMActivityFeed.js =====
+-- mmmService.getActivities @ 469
+  462:     () => STRATEGY_CONTEXT_FILTERS[normalizedStrategyType] || STRATEGY_CONTEXT_FILTERS.DEFAULT,
+  463:     [normalizedStrategyType]
+  464:   );
+  465: 
+  466:   // Fetch activities from API
+  467:   const fetchActivities = useCallback(async () => {
+  468:     try {
+  469:       const result = await mmmService.getActivities(80, sessionId);
+  470:       if (result.success) {
+  471:         setActivities(result.activities || []);
+  472:         setNewCount(0);
+  473:       }
+  474:     } catch (err) {
+  475:       console.error('Failed to fetch activities:', err);
+  476:     } finally {
+  477:       setLoading(false);
+  478:     }
+  479:   }, [sessionId]);
+
+===== webui/frontend/src/components/mmm/MMMAdoptPanel.js =====
+-- mmmService.getExchangePositions @ 121
+  114:         setSelections({});
+  115:         setScanned(false);
+  116: 
+  117:         try {
+  118:             // Always scan ALL positions regardless of selectedExpiry lock.
+  119:             // The session expiry lock is for auto-find/import modes (ensures correct contracts),
+  120:             // but Adopt lets the user choose which existing exchange positions to bring under MMM.
+  121:             const result = await mmmService.getExchangePositions(null);
+  122: 
+  123:             if (mounted.current) {
+  124:                 if (result.success) {
+  125:                     const allPositions = result.positions || [];
+  126:                     setPositions(allPositions);
+  127:                     setSpotPrice(result.spot_price || null);
+  128:                     const foundExpiries = result.expiries_with_positions || [];
+  129:                     setExpiriesAvailable(foundExpiries);
+  130:                     setScanned(true);
+  131: 
+-- mmmService.adoptPositions @ 282
+  275:             side: p.side,
+  276:             role: selections[p.symbol]?.role || 'frozen',
+  277:         }));
+  278: 
+  279:         const expiry = selectedPositions[0]?.expiry || selectedExpiry;
+  280: 
+  281:         try {
+  282:             const result = await mmmService.adoptPositions(
+  283:                 sessionId,
+  284:                 positionsPayload,
+  285:                 expiry,
+  286:                 triggerMode,
+  287:             );
+  288: 
+  289:             if (mounted.current) {
+  290:                 if (result.success) {
+  291:                     setSuccess(
+  292:                         `Positions adopted! ${selectedPositions.length} position(s) imported. ` +
+-- mmmService.startSession @ 300
+  293:                         'Session is ready — click START to begin monitoring.'
+  294:                     );
+  295:                     setWarnings(result.warnings || []);
+  296:                     onAdopted?.(result);
+  297: 
+  298:                     // Auto-start the session
+  299:                     try {
+  300:                         const startResult = await mmmService.startSession(sessionId);
+  301:                         if (mounted.current) {
+  302:                             if (startResult.success) {
+  303:                                 setSuccess('Positions adopted and strategy started! Monitor active.');
+  304:                             } else {
+  305:                                 setError(`Adopted but failed to start: ${startResult.error}`);
+  306:                             }
+  307:                         }
+  308:                     } catch (startErr) {
+  309:                         if (mounted.current) {
+  310:                             setError(`Adopted but start failed: ${startErr.details?.error || startErr.message}`);
+
+===== webui/frontend/src/components/mmm/MMMAlgoCalculations.js =====
+-- mmmService.getWalkthrough @ 365
+  358:   const sessionId = session?.session_id;
+  359: 
+  360:   // ── Fetch initial data from REST API ──
+  361:   const fetchWalkthrough = useCallback(async () => {
+  362:     if (!sessionId) return;
+  363:     try {
+  364:       setLoading(true);
+  365:       const resp = await mmmService.getWalkthrough(sessionId);
+  366:       if (resp.success && resp.walkthrough) {
+  367:         setWalkthrough(resp.walkthrough);
+  368:       }
+  369:     } catch (err) {
+  370:       console.error('Failed to fetch walkthrough:', err);
+  371:     } finally {
+  372:       setLoading(false);
+  373:     }
+  374:   }, [sessionId]);
+  375: 
+
+===== webui/frontend/src/components/mmm/MMMAnalyticsPanel.js =====
+-- mmmService.getSessionAnalytics @ 106
+   99:   const fetchAnalytics = useCallback(async () => {
+  100:     if (!sessionId) {
+  101:       setLoading(false);
+  102:       return;
+  103:     }
+  104:     try {
+  105:       setLoading(true);
+  106:       const response = await mmmService.getSessionAnalytics(sessionId);
+  107:       if (response.success) {
+  108:         setAnalytics(response.analytics);
+  109:       } else {
+  110:         setError(response.error || 'Failed to load analytics');
+  111:       }
+  112:     } catch (err) {
+  113:       setError(err.message || 'Network error');
+  114:     } finally {
+  115:       setLoading(false);
+  116:     }
+
+===== webui/frontend/src/components/mmm/MMMAnalyticsSummary.js =====
+-- mmmService.getSessionAnalytics @ 46
+   39:       setAnalytics(null);
+   40:       return;
+   41:     }
+   42: 
+   43:     try {
+   44:       setLoading(true);
+   45:       setError(null);
+   46:       const data = await mmmService.getSessionAnalytics(sessionId);
+   47: 
+   48:       if (!data) {
+   49:         setError('No response from server');
+   50:         return;
+   51:       }
+   52: 
+   53:       if (data.success) {
+   54:         setAnalytics(data.analytics);
+   55:         setSource(data.source || 'unknown');
+   56:       } else {
+
+===== webui/frontend/src/components/mmm/MMMAnalyticsTable.js =====
+-- mmmService.getSessionAnalytics @ 45
+   38: 
+   39:   const fetchAnalytics = useCallback(async () => {
+   40:     if (!sessionId) return;
+   41: 
+   42:     try {
+   43:       setLoading(true);
+   44:       setError(null);
+   45:       const data = await mmmService.getSessionAnalytics(sessionId);
+   46: 
+   47:       // The service returns data directly (not wrapped in response.data)
+   48:       if (!data) {
+   49:         setError('Invalid API response');
+   50:         return;
+   51:       }
+   52: 
+   53:       if (data.success) {
+   54:         setAnalytics(data.analytics);
+   55:         setSource(data.source || 'unknown');
+
+===== webui/frontend/src/components/mmm/MMMConfigPanel.js =====
+-- mmmService.getExpiries @ 274
+  267:     });
+  268:   }, [selectedExpiry]);
+  269: 
+  270:   // ----- Load expiries on mount -----
+  271:   const fetchExpiries = useCallback(async () => {
+  272:     setExpiryLoading(true);
+  273:     try {
+  274:       const result = await mmmService.getExpiries();
+  275:       if (result.success && mounted.current) {
+  276:         setExpiries(result.expiries || []);
+  277:         // M-25 fix: Only auto-select if no expiry is currently selected
+  278:         if (result.expiries?.length > 0) {
+  279:           setSelectedExpiry(prev => {
+  280:             if (prev) return prev;  // Don't override existing selection
+  281:             if (sessionExpiry && result.expiries.includes(sessionExpiry)) {
+  282:               return sessionExpiry;
+  283:             }
+  284:             return result.expiries[0];
+-- mmmService.getSpotPrice @ 297
+  290:     } finally {
+  291:       if (mounted.current) setExpiryLoading(false);
+  292:     }
+  293:   }, [sessionExpiry]);  // M-25 fix: depend on sessionExpiry, not selectedExpiry
+  294: 
+  295:   const fetchSpotPrice = useCallback(async () => {
+  296:     try {
+  297:       const result = await mmmService.getSpotPrice();
+  298:       if (result.success && mounted.current) {
+  299:         setSpotPrice(result.spot_price);
+  300:       }
+  301:     } catch (err) {
+  302:       console.error('Failed to fetch spot price:', err);
+  303:     }
+  304:   }, []);
+  305: 
+  306:   useEffect(() => {
+  307:     fetchExpiries();
+-- mmmService.previewStrikes @ 335
+  328:     setPreviewLoading(true);
+  329:     setError(null);
+  330:     setPreview(null);
+  331:     setSelectedCe(null);
+  332:     setSelectedPe(null);
+  333: 
+  334:     try {
+  335:       const result = await mmmService.previewStrikes({
+  336:         desired_ce_premium: desiredCePremium,
+  337:         desired_pe_premium: desiredPePremium,
+  338:         expiry: selectedExpiry,
+  339:       });
+  340: 
+  341:       if (mounted.current) {
+  342:         if (result.success) {
+  343:           setPreview(result);
+  344:           // M-26 fix: null guard on ce/pe before setting
+  345:           if (result.ce && result.pe) {
+-- mmmService.previewAtmStraddle @ 378
+  371:     setPreviewLoading(true);
+  372:     setError(null);
+  373:     setPreview(null);
+  374:     setSelectedCe(null);
+  375:     setSelectedPe(null);
+  376: 
+  377:     try {
+  378:       const result = await mmmService.previewAtmStraddle({ expiry: selectedExpiry });
+  379:       if (mounted.current) {
+  380:         if (result.success) {
+  381:           setPreview(result);
+  382:           setSelectedCe(result.ce);
+  383:           setSelectedPe(result.pe);
+  384:           setSpotPrice(result.spot_price);
+  385:         } else {
+  386:           setError(result.error || 'Failed to find ATM strike');
+  387:         }
+  388:       }
+-- mmmService.initSessionFresh @ 419
+  412:       return;
+  413:     }
+  414: 
+  415:     setLoading(true);
+  416:     setError(null);
+  417: 
+  418:     try {
+  419:       const result = await mmmService.initSessionFresh(sessionId, {
+  420:         ce_strike: selectedCe.strike,
+  421:         ce_premium: selectedCe.premium,
+  422:         ce_symbol: selectedCe.symbol,
+  423:         pe_strike: selectedPe.strike,
+  424:         pe_premium: selectedPe.premium,
+  425:         pe_symbol: selectedPe.symbol,
+  426:         lots,
+  427:         expiry: selectedExpiry,
+  428:       });
+  429: 
+-- mmmService.startSession @ 438
+  431:         if (result.success) {
+  432:           setSuccess('Session initialized — starting strategy...');
+  433:           setPreview(null);
+  434:           onInitialized?.(result);
+  435: 
+  436:           // Auto-start the session immediately after init
+  437:           try {
+  438:             const startResult = await mmmService.startSession(sessionId);
+  439:             if (mounted.current) {
+  440:               if (startResult.success) {
+  441:                 setSuccess(`Strategy started! ${startResult.status === 'STARTING' ? 'Placing entry orders...' : 'Monitor active.'}`);
+  442:               } else {
+  443:                 setError(`Initialized but failed to start: ${startResult.error}`);
+  444:               }
+  445:             }
+  446:           } catch (startErr) {
+  447:             if (mounted.current) {
+  448:               setError(`Initialized but start failed: ${startErr.details?.error || startErr.message}`);
+-- mmmService.initSessionImport @ 500
+  493:       return;
+  494:     }
+  495: 
+  496:     setLoading(true);
+  497:     setError(null);
+  498: 
+  499:     try {
+  500:       const result = await mmmService.initSessionImport(sessionId, {
+  501:         ce_strike: parseFloat(ce_strike),
+  502:         ce_fill_price: parseFloat(ce_fill_price),
+  503:         ce_symbol,
+  504:         pe_strike: parseFloat(pe_strike),
+  505:         pe_fill_price: parseFloat(pe_fill_price),
+  506:         pe_symbol,
+  507:         lots,
+  508:         expiry: selectedExpiry,
+  509:       });
+  510: 
+-- mmmService.startSession @ 518
+  511:       if (mounted.current) {
+  512:         if (result.success) {
+  513:           setSuccess('Position imported — starting monitor...');
+  514:           onInitialized?.(result);
+  515: 
+  516:           // Auto-start the session immediately after import
+  517:           try {
+  518:             const startResult = await mmmService.startSession(sessionId);
+  519:             if (mounted.current) {
+  520:               if (startResult.success) {
+  521:                 setSuccess('Strategy started! Monitor active.');
+  522:               } else {
+  523:                 setError(`Imported but failed to start: ${startResult.error}`);
+  524:               }
+  525:             }
+  526:           } catch (startErr) {
+  527:             if (mounted.current) {
+  528:               setError(`Imported but start failed: ${startErr.details?.error || startErr.message}`);
+-- mmmService.initSessionFresh @ 570
+  563:     }
+  564: 
+  565:     setLoading(true);
+  566:     setError(null);
+  567: 
+  568:     try {
+  569:       // First: initialize session state with the manually selected strikes
+  570:       const result = await mmmService.initSessionFresh(sessionId, {
+  571:         ce_strike: selection.ce_strike,
+  572:         ce_premium: selection.ce_premium,
+  573:         ce_symbol: selection.ce_symbol,
+  574:         pe_strike: selection.pe_strike,
+  575:         pe_premium: selection.pe_premium,
+  576:         pe_symbol: selection.pe_symbol,
+  577:         lots,
+  578:         expiry: selectedExpiry,
+  579:       });
+  580: 
+-- mmmService.startSession @ 588
+  581:       if (mounted.current) {
+  582:         if (result.success) {
+  583:           setSuccess('Strikes confirmed — starting strategy...');
+  584:           onInitialized?.(result);
+  585: 
+  586:           // Auto-start the session immediately after manual selection
+  587:           try {
+  588:             const startResult = await mmmService.startSession(sessionId);
+  589:             if (mounted.current) {
+  590:               if (startResult.success) {
+  591:                 setSuccess(`Strategy started! ${startResult.status === 'STARTING' ? 'Placing entry orders...' : 'Monitor active.'}`);
+  592:               } else {
+  593:                 setError(`Initialized but failed to start: ${startResult.error}`);
+  594:               }
+  595:             }
+  596:           } catch (startErr) {
+  597:             if (mounted.current) {
+  598:               setError(`Initialized but start failed: ${startErr.details?.error || startErr.message}`);
+-- mmmService.executeEntry @ 631
+  624:     }
+  625: 
+  626:     setExecuting(true);
+  627:     setError(null);
+  628:     setExecutionResult(null);
+  629: 
+  630:     try {
+  631:       const result = await mmmService.executeEntry(sessionId, mode);
+  632: 
+  633:       if (mounted.current) {
+  634:         setExecutionResult(result);
+  635:         if (result.success) {
+  636:           const ceResult = result.ce || {};
+  637:           const peResult = result.pe || {};
+  638:           setSuccess(
+  639:             `Entry executed! CE filled: ${ceResult.filled ? 'Yes' : 'No'}, ` +
+  640:             `PE filled: ${peResult.filled ? 'Yes' : 'No'}`
+  641:           );
+
+===== webui/frontend/src/components/mmm/MMMContext.js =====
+-- mmmService.getSessions @ 191
+  184:   // ---------------------------------------------------------------------------
+  185:   const fetchSessions = useCallback(async (showLoading = true) => {
+  186:     if (showLoading) {
+  187:       dispatch({ type: ACTIONS.SET_LOADING, payload: true });
+  188:     }
+  189: 
+  190:     try {
+  191:       const result = await mmmService.getSessions(false, true);
+  192:       if (result.success) {
+  193:         const sessions = result.sessions || [];
+  194: 
+  195:         applySessionsUpdate(sessions);
+  196: 
+  197:         dispatch({ type: ACTIONS.SET_ERROR, payload: null });
+  198:         dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'connected' });
+  199:         retryCountRef.current = 0;
+  200: 
+  201:         // Clear stale localStorage session ID if it no longer exists
+-- mmmService.getSessions @ 268
+  261:     if (activeRefreshInFlightRef.current) {
+  262:       activeRefreshQueuedRef.current = true;
+  263:       return;
+  264:     }
+  265: 
+  266:     activeRefreshInFlightRef.current = true;
+  267:     try {
+  268:       const result = await mmmService.getSessions(true, true);
+  269:       if (result.success) {
+  270:         const activeSessions = result.sessions || [];
+  271:         const merged = mergeActiveSessions(activeSessions);
+  272:         applySessionsUpdate(merged);
+  273:         dispatch({ type: ACTIONS.SET_ERROR, payload: null });
+  274:         dispatch({ type: ACTIONS.SET_CONNECTION_STATUS, payload: 'connected' });
+  275:         retryCountRef.current = 0;
+  276:       } else {
+  277:         dispatch({ type: ACTIONS.SET_ERROR, payload: result.error });
+  278:       }
+-- mmmService.healthCheck @ 303
+  296:       fetchActiveSessions();
+  297:     }, delayMs);
+  298:   }, [fetchActiveSessions]);
+  299: 
+  300:   // Health check
+  301:   const checkHealth = useCallback(async () => {
+  302:     try {
+  303:       const result = await mmmService.healthCheck();
+  304:       dispatch({
+  305:         type: ACTIONS.SET_HEALTH_STATUS,
+  306:         payload: result.success ? 'healthy' : 'error',
+  307:       });
+  308:     } catch {
+  309:       dispatch({ type: ACTIONS.SET_HEALTH_STATUS, payload: 'error' });
+  310:     }
+  311:   }, []);
+  312: 
+  313:   // Fetch parameter metadata
+-- mmmService.getParamsInfo @ 316
+  309:       dispatch({ type: ACTIONS.SET_HEALTH_STATUS, payload: 'error' });
+  310:     }
+  311:   }, []);
+  312: 
+  313:   // Fetch parameter metadata
+  314:   const fetchParamsInfo = useCallback(async () => {
+  315:     try {
+  316:       const result = await mmmService.getParamsInfo();
+  317:       if (result.success) {
+  318:         dispatch({ type: ACTIONS.SET_PARAMS_INFO, payload: result });
+  319:       }
+  320:     } catch (err) {
+  321:       console.error('MMM: Failed to fetch params info:', err);
+  322:     }
+  323:   }, []);
+  324: 
+  325:   // ---------------------------------------------------------------------------
+  326:   // WebSocket handlers
+
+===== webui/frontend/src/components/mmm/MMMDashboard.js =====
+-- mmmService.getAggregatePnL @ 130
+  123: };
+  124: 
+  125: const AggregatePnLWidget = () => {
+  126:   const [data, setData] = useState(null);
+  127: 
+  128:   const fetchAgg = useCallback(async () => {
+  129:     try {
+  130:       const result = await mmmService.getAggregatePnL();
+  131:       if (result.success && result.aggregate) setData(result.aggregate);
+  132:     } catch (_) { /* non-critical */ }
+  133:   }, []);
+  134: 
+  135:   useEffect(() => { fetchAgg(); }, [fetchAgg]);
+  136:   useVisibilityAwarePolling(fetchAgg, 30000, 120000, true);
+  137: 
+  138:   if (!data || data.session_count === 0) return null;
+  139: 
+  140:   const cfg = AGGREGATE_LEVEL_CONFIG[data.level] || AGGREGATE_LEVEL_CONFIG.ok;
+-- mmmService.getExpiries @ 1354
+ 1347:     if (!open) return;
+ 1348:     let cancelled = false;
+ 1349: 
+ 1350:     const fetchData = async () => {
+ 1351:       setExpiryLoading(true);
+ 1352:       try {
+ 1353:         const [expResult, spotResult, presetResult] = await Promise.all([
+ 1354:           mmmService.getExpiries().catch(() => ({ success: false })),
+ 1355:           mmmService.getSpotPrice().catch(() => ({ success: false })),
+ 1356:           mmmService.getDTEPresets().catch(() => ({ success: false })),
+ 1357:         ]);
+ 1358: 
+ 1359:         if (cancelled) return;
+ 1360: 
+ 1361:         if (expResult.success && expResult.expiries?.length > 0) {
+ 1362:           setExpiries(expResult.expiries);
+ 1363:           // Auto-select first (today's 0DTE) if no expiry set
+ 1364:           if (!params.expiry) {
+-- mmmService.getSpotPrice @ 1355
+ 1348:     let cancelled = false;
+ 1349: 
+ 1350:     const fetchData = async () => {
+ 1351:       setExpiryLoading(true);
+ 1352:       try {
+ 1353:         const [expResult, spotResult, presetResult] = await Promise.all([
+ 1354:           mmmService.getExpiries().catch(() => ({ success: false })),
+ 1355:           mmmService.getSpotPrice().catch(() => ({ success: false })),
+ 1356:           mmmService.getDTEPresets().catch(() => ({ success: false })),
+ 1357:         ]);
+ 1358: 
+ 1359:         if (cancelled) return;
+ 1360: 
+ 1361:         if (expResult.success && expResult.expiries?.length > 0) {
+ 1362:           setExpiries(expResult.expiries);
+ 1363:           // Auto-select first (today's 0DTE) if no expiry set
+ 1364:           if (!params.expiry) {
+ 1365:             setParams(prev => ({ ...prev, expiry: expResult.expiries[0] }));
+-- mmmService.getDTEPresets @ 1356
+ 1349: 
+ 1350:     const fetchData = async () => {
+ 1351:       setExpiryLoading(true);
+ 1352:       try {
+ 1353:         const [expResult, spotResult, presetResult] = await Promise.all([
+ 1354:           mmmService.getExpiries().catch(() => ({ success: false })),
+ 1355:           mmmService.getSpotPrice().catch(() => ({ success: false })),
+ 1356:           mmmService.getDTEPresets().catch(() => ({ success: false })),
+ 1357:         ]);
+ 1358: 
+ 1359:         if (cancelled) return;
+ 1360: 
+ 1361:         if (expResult.success && expResult.expiries?.length > 0) {
+ 1362:           setExpiries(expResult.expiries);
+ 1363:           // Auto-select first (today's 0DTE) if no expiry set
+ 1364:           if (!params.expiry) {
+ 1365:             setParams(prev => ({ ...prev, expiry: expResult.expiries[0] }));
+ 1366:           }
+-- mmmService.createSession @ 1518
+ 1511:           pe: {
+ 1512:             strike: parseFloat(importData.pe.strike),
+ 1513:             premium: parseFloat(importData.pe.premium),
+ 1514:             lots: parseInt(importData.pe.lots, 10),
+ 1515:           },
+ 1516:         };
+ 1517:       }
+ 1518:       const result = await mmmService.createSession(config);
+ 1519:       if (result.success) {
+ 1520:         // Signal adopt mode to parent so ConfigPanel opens in adopt tab
+ 1521:         if (mode === 'adopt') {
+ 1522:           result.session._adoptMode = true;
+ 1523:         }
+ 1524:         onCreated(result.session);
+ 1525:         onClose();
+ 1526:         // Reset form
+ 1527:         setMode('fresh');
+ 1528:         setError(null);
+-- mmmService.getBeatHealth @ 1882
+ 1875:   const [loading, setLoading] = useState(false);
+ 1876:   const [lastRefresh, setLastRefresh] = useState(null);
+ 1877: 
+ 1878:   const fetchHealth = useCallback(async () => {
+ 1879:     if (!sessionId) return;
+ 1880:     setLoading(true);
+ 1881:     try {
+ 1882:       const data = await mmmService.getBeatHealth(sessionId);
+ 1883:       if (data && data.success) {
+ 1884:         setHealth(data);
+ 1885:         setLastRefresh(new Date());
+ 1886:       }
+ 1887:     } catch (_e) {
+ 1888:       // silently ignore — health panel is non-critical
+ 1889:     } finally {
+ 1890:       setLoading(false);
+ 1891:     }
+ 1892:   }, [sessionId]);
+-- mmmService.reducePosition @ 2132
+ 2125: 
+ 2126:   const handleSubmit = async () => {
+ 2127:     setLoading(true);
+ 2128:     setNetworkError('');
+ 2129:     setResult(null);
+ 2130:     try {
+ 2131:       const strike = strikeMode === 'specific' && specificStrike ? Number(specificStrike) : null;
+ 2132:       const res = await mmmService.reducePosition(session.session_id, side, lots, strike);
+ 2133:       setResult(res);
+ 2134:     } catch (e) {
+ 2135:       setNetworkError(e?.response?.data?.error || e.message || 'Network error');
+ 2136:     } finally {
+ 2137:       setLoading(false);
+ 2138:     }
+ 2139:   };
+ 2140: 
+ 2141:   const isDone = result != null;
+ 2142:   const hasSuccess = (result?.results?.length || 0) > 0;
+-- mmmService.getOptionChain @ 2360
+ 2353:   if (!session) return null;
+ 2354: 
+ 2355:   // Fetch option chain whenever custom mode is activated or side changes
+ 2356:   const fetchChain = async () => {
+ 2357:     setChainLoading(true);
+ 2358:     setChainError('');
+ 2359:     try {
+ 2360:       const data = await mmmService.getOptionChain(session.session_id);
+ 2361:       if (data.success) setChain(data);
+ 2362:       else setChainError(data.error || 'Failed to load strikes');
+ 2363:     } catch (e) {
+ 2364:       setChainError('Could not load strikes from exchange');
+ 2365:     } finally {
+ 2366:       setChainLoading(false);
+ 2367:     }
+ 2368:   };
+ 2369: 
+ 2370:   const activeStrike = session[side]?.active_strike || 0;
+-- mmmService.injectPosition @ 2403
+ 2396: 
+ 2397:   const handleSubmit = async () => {
+ 2398:     if (!confirmed || !isValid) return;
+ 2399:     setLoading(true);
+ 2400:     setError('');
+ 2401:     setResult(null);
+ 2402:     try {
+ 2403:       const res = await mmmService.injectPosition(
+ 2404:         session.session_id, side, lots, effectiveStrike,
+ 2405:         adopt, adopt ? Number(adoptFillPrice) : null
+ 2406:       );
+ 2407:       setResult(res);
+ 2408:       if (!res.success) setError(res.error || 'Injection failed');
+ 2409:     } catch (e) {
+ 2410:       const msg = e?.response?.data?.error || e?.message || 'Network error';
+ 2411:       setError(
+ 2412:         msg === 'Failed to fetch' || msg.includes('ERR_CONNECTION_REFUSED')
+ 2413:           ? 'Backend unreachable — server may be restarting. Please try again.'
+-- mmmService.updateSessionParams @ 2795
+ 2788:   const [dangerDlg, setDangerDlg] = useState({ open: false, confirmText: '', loading: false });
+ 2789:   const isDangerousMode = session?.params?.dangerous_mode === true;
+ 2790: 
+ 2791:   const handleDangerousModeToggle = async () => {
+ 2792:     if (isDangerousMode) {
+ 2793:       // Turn OFF — no confirmation needed
+ 2794:       try {
+ 2795:         await mmmService.updateSessionParams(session.session_id, { dangerous_mode: false });
+ 2796:       } catch (e) {
+ 2797:         console.error('Failed to disable dangerous mode', e);
+ 2798:       }
+ 2799:     } else {
+ 2800:       setDangerDlg({ open: true, confirmText: '', loading: false });
+ 2801:     }
+ 2802:   };
+ 2803: 
+ 2804:   const handleDangerConfirm = async () => {
+ 2805:     if (dangerDlg.confirmText !== 'CONFIRM') return;
+-- mmmService.updateSessionParams @ 2808
+ 2801:     }
+ 2802:   };
+ 2803: 
+ 2804:   const handleDangerConfirm = async () => {
+ 2805:     if (dangerDlg.confirmText !== 'CONFIRM') return;
+ 2806:     setDangerDlg(d => ({ ...d, loading: true }));
+ 2807:     try {
+ 2808:       await mmmService.updateSessionParams(session.session_id, { dangerous_mode: true });
+ 2809:       setDangerDlg({ open: false, confirmText: '', loading: false });
+ 2810:     } catch (e) {
+ 2811:       console.error('Failed to enable dangerous mode', e);
+ 2812:       setDangerDlg(d => ({ ...d, loading: false }));
+ 2813:     }
+ 2814:   };
+ 2815: 
+ 2816:   // M-30 fix: Reset tab when session changes (avoids showing empty P&L tab on fresh session)
+ 2817:   useEffect(() => {
+ 2818:     setDetailTab(0);
+-- mmmService.setActiveStrike @ 2932
+ 2925:   const heartbeat = wsData?.heartbeat || null;
+ 2926: 
+ 2927:   const [activeStrikeSnack, setActiveStrikeSnack] = useState({ open: false, message: '', severity: 'success' });
+ 2928: 
+ 2929:   // --- Set Active Strike ---
+ 2930:   const handleSetActiveStrike = async (sideKey, strike) => {
+ 2931:     try {
+ 2932:       const res = await mmmService.setActiveStrike(session.session_id, sideKey, strike);
+ 2933:       if (!res.success) {
+ 2934:         setActiveStrikeSnack({ open: true, message: res.error || 'Cannot set active strike', severity: 'warning' });
+ 2935:       } else {
+ 2936:         setActiveStrikeSnack({ open: true, message: `Active strike set to ${Number(strike).toLocaleString()} ${sideKey.toUpperCase()}`, severity: 'success' });
+ 2937:         if (onStrikePromoted) onStrikePromoted();
+ 2938:       }
+ 2939:     } catch (e) {
+ 2940:       const msg = e.response?.data?.error || e.message || 'Request failed';
+ 2941:       setActiveStrikeSnack({ open: true, message: msg, severity: 'error' });
+ 2942:     }
+-- mmmService.closeStrike @ 2953
+ 2946:   const handleCloseStrikeRequest = (sideKey, strike, lots, currentPremium) => {
+ 2947:     setCloseStrikeDlg({ open: true, side: sideKey, strike, lots, currentPremium, loading: false, error: '' });
+ 2948:   };
+ 2949: 
+ 2950:   const handleCloseStrikeConfirm = async () => {
+ 2951:     setCloseStrikeDlg(d => ({ ...d, loading: true, error: '' }));
+ 2952:     try {
+ 2953:       const res = await mmmService.closeStrike(session.session_id, closeStrikeDlg.side, closeStrikeDlg.strike);
+ 2954:       if (res.success) {
+ 2955:         setCloseStrikeDlg(d => ({ ...d, open: false, loading: false }));
+ 2956:       } else {
+ 2957:         setCloseStrikeDlg(d => ({ ...d, loading: false, error: res.error || 'Close failed' }));
+ 2958:       }
+ 2959:     } catch (e) {
+ 2960:       const msg = e?.response?.data?.error || e.message;
+ 2961:       setCloseStrikeDlg(d => ({
+ 2962:         ...d, loading: false,
+ 2963:         error: msg.includes('fetch') || msg.includes('Network')
+-- mmmService.adjustActiveLots @ 2983
+ 2976:   };
+ 2977: 
+ 2978:   const handleAdjustLotsConfirm = async () => {
+ 2979:     const { side, direction, qty } = adjustLotsDlg;
+ 2980:     const delta = direction === 'add' ? qty : -qty;
+ 2981:     setAdjustLotsDlg(d => ({ ...d, loading: true, error: '' }));
+ 2982:     try {
+ 2983:       const res = await mmmService.adjustActiveLots(session.session_id, side, delta);
+ 2984:       if (res.success) {
+ 2985:         setAdjustLotsDlg(d => ({ ...d, open: false, loading: false }));
+ 2986:       } else {
+ 2987:         setAdjustLotsDlg(d => ({ ...d, loading: false, error: res.error || 'Adjust failed' }));
+ 2988:       }
+ 2989:     } catch (e) {
+ 2990:       const msg = e?.response?.data?.error || e.message;
+ 2991:       setAdjustLotsDlg(d => ({
+ 2992:         ...d, loading: false,
+ 2993:         error: msg.includes('fetch') || msg.includes('Network')
+-- mmmService.getSession @ 4500
+ 4493:         const now = Date.now();
+ 4494:         if (!bypassThrottle && (now - lastFullSessionFetchTsRef.current) < 800) {
+ 4495:           break;
+ 4496:         }
+ 4497:         lastFullSessionFetchTsRef.current = now;
+ 4498: 
+ 4499:         try {
+ 4500:           const result = await mmmService.getSession(selectedSessionId);
+ 4501:           if (result.success) {
+ 4502:             setFullSession(result.session);
+ 4503:             setFetchError(null);  // H-15: clear error on success
+ 4504:           }
+ 4505:         } catch (err) {
+ 4506:           // If 404, the session was deleted — clear selection & localStorage
+ 4507:           if (err.status === 404 || err?.details?.error?.includes('not found')) {
+ 4508:             setFullSession(null);
+ 4509:             setFetchError(null);
+ 4510:             selectSession(null);
+-- mmmService.startSession @ 4602
+ 4595:           // Guard: prevent starting a session that is not IDLE
+ 4596:           const sess = sessions.find(s => s.session_id === sessionId);
+ 4597:           const currentStatus = sess?.status || sess?.strategy_status;
+ 4598:           if (currentStatus && currentStatus !== 'IDLE') {
+ 4599:             setSnackbar({ open: true, message: `Session is already ${currentStatus}`, severity: 'info' });
+ 4600:             return;
+ 4601:           }
+ 4602:           result = await mmmService.startSession(sessionId);
+ 4603:           break;
+ 4604:         }
+ 4605:         case 'pause':
+ 4606:           result = await mmmService.pauseSession(sessionId);
+ 4607:           break;
+ 4608:         case 'resume':
+ 4609:           result = await mmmService.resumeSession(sessionId);
+ 4610:           break;
+ 4611:         case 'stop':
+ 4612:           result = await mmmService.stopSession(sessionId);
+-- mmmService.pauseSession @ 4606
+ 4599:             setSnackbar({ open: true, message: `Session is already ${currentStatus}`, severity: 'info' });
+ 4600:             return;
+ 4601:           }
+ 4602:           result = await mmmService.startSession(sessionId);
+ 4603:           break;
+ 4604:         }
+ 4605:         case 'pause':
+ 4606:           result = await mmmService.pauseSession(sessionId);
+ 4607:           break;
+ 4608:         case 'resume':
+ 4609:           result = await mmmService.resumeSession(sessionId);
+ 4610:           break;
+ 4611:         case 'stop':
+ 4612:           result = await mmmService.stopSession(sessionId);
+ 4613:           break;
+ 4614:         case 'force_heartbeat':
+ 4615:           result = await mmmService.forceHeartbeat(sessionId);
+ 4616:           break;
+-- mmmService.resumeSession @ 4609
+ 4602:           result = await mmmService.startSession(sessionId);
+ 4603:           break;
+ 4604:         }
+ 4605:         case 'pause':
+ 4606:           result = await mmmService.pauseSession(sessionId);
+ 4607:           break;
+ 4608:         case 'resume':
+ 4609:           result = await mmmService.resumeSession(sessionId);
+ 4610:           break;
+ 4611:         case 'stop':
+ 4612:           result = await mmmService.stopSession(sessionId);
+ 4613:           break;
+ 4614:         case 'force_heartbeat':
+ 4615:           result = await mmmService.forceHeartbeat(sessionId);
+ 4616:           break;
+ 4617:         case 'exit_all': {
+ 4618:           // Build position summary for confirmation dialog
+ 4619:           const sess = sessions.find(s => s.session_id === sessionId);
+-- mmmService.stopSession @ 4612
+ 4605:         case 'pause':
+ 4606:           result = await mmmService.pauseSession(sessionId);
+ 4607:           break;
+ 4608:         case 'resume':
+ 4609:           result = await mmmService.resumeSession(sessionId);
+ 4610:           break;
+ 4611:         case 'stop':
+ 4612:           result = await mmmService.stopSession(sessionId);
+ 4613:           break;
+ 4614:         case 'force_heartbeat':
+ 4615:           result = await mmmService.forceHeartbeat(sessionId);
+ 4616:           break;
+ 4617:         case 'exit_all': {
+ 4618:           // Build position summary for confirmation dialog
+ 4619:           const sess = sessions.find(s => s.session_id === sessionId);
+ 4620:           const ceLots = (sess?.ce_active_lots || 0) + (sess?.ce_frozen_lots || 0);
+ 4621:           const peLots = (sess?.pe_active_lots || 0) + (sess?.pe_frozen_lots || 0);
+ 4622:           const confirmed = window.confirm(
+-- mmmService.forceHeartbeat @ 4615
+ 4608:         case 'resume':
+ 4609:           result = await mmmService.resumeSession(sessionId);
+ 4610:           break;
+ 4611:         case 'stop':
+ 4612:           result = await mmmService.stopSession(sessionId);
+ 4613:           break;
+ 4614:         case 'force_heartbeat':
+ 4615:           result = await mmmService.forceHeartbeat(sessionId);
+ 4616:           break;
+ 4617:         case 'exit_all': {
+ 4618:           // Build position summary for confirmation dialog
+ 4619:           const sess = sessions.find(s => s.session_id === sessionId);
+ 4620:           const ceLots = (sess?.ce_active_lots || 0) + (sess?.ce_frozen_lots || 0);
+ 4621:           const peLots = (sess?.pe_active_lots || 0) + (sess?.pe_frozen_lots || 0);
+ 4622:           const confirmed = window.confirm(
+ 4623:             `Exit Strategy — Close ALL Positions\n\n` +
+ 4624:             `This will close ALL open options positions:\n` +
+ 4625:             `  CE: ${ceLots} lots\n` +
+-- mmmService.exitAllSession @ 4631
+ 4624:             `This will close ALL open options positions:\n` +
+ 4625:             `  CE: ${ceLots} lots\n` +
+ 4626:             `  PE: ${peLots} lots\n\n` +
+ 4627:             `The session will stop after all positions are closed.\n\n` +
+ 4628:             `This cannot be undone. Confirm?`
+ 4629:           );
+ 4630:           if (!confirmed) return;
+ 4631:           result = await mmmService.exitAllSession(sessionId);
+ 4632:           break;
+ 4633:         }
+ 4634:         case 'kill_switch': {
+ 4635:           result = await mmmService.killSwitch(sessionId);
+ 4636:           break;
+ 4637:         }
+ 4638:         case 'delete':
+ 4639:           result = await mmmService.deleteSession(sessionId);
+ 4640:           if (result.success && sessionId === selectedSessionId) {
+ 4641:             // Auto-select first remaining active session, or clear selection
+-- mmmService.killSwitch @ 4635
+ 4628:             `This cannot be undone. Confirm?`
+ 4629:           );
+ 4630:           if (!confirmed) return;
+ 4631:           result = await mmmService.exitAllSession(sessionId);
+ 4632:           break;
+ 4633:         }
+ 4634:         case 'kill_switch': {
+ 4635:           result = await mmmService.killSwitch(sessionId);
+ 4636:           break;
+ 4637:         }
+ 4638:         case 'delete':
+ 4639:           result = await mmmService.deleteSession(sessionId);
+ 4640:           if (result.success && sessionId === selectedSessionId) {
+ 4641:             // Auto-select first remaining active session, or clear selection
+ 4642:             const remaining = sessions.filter(s => s.session_id !== sessionId);
+ 4643:             const nextActive = remaining.find(s => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(s.status || s.strategy_status));
+ 4644:             selectSession(nextActive ? nextActive.session_id : (remaining[0]?.session_id || null));
+ 4645:           }
+-- mmmService.deleteSession @ 4639
+ 4632:           break;
+ 4633:         }
+ 4634:         case 'kill_switch': {
+ 4635:           result = await mmmService.killSwitch(sessionId);
+ 4636:           break;
+ 4637:         }
+ 4638:         case 'delete':
+ 4639:           result = await mmmService.deleteSession(sessionId);
+ 4640:           if (result.success && sessionId === selectedSessionId) {
+ 4641:             // Auto-select first remaining active session, or clear selection
+ 4642:             const remaining = sessions.filter(s => s.session_id !== sessionId);
+ 4643:             const nextActive = remaining.find(s => ['RUNNING', 'PAUSED', 'BOTH_SIDES_UP'].includes(s.status || s.strategy_status));
+ 4644:             selectSession(nextActive ? nextActive.session_id : (remaining[0]?.session_id || null));
+ 4645:           }
+ 4646:           break;
+ 4647:         case 'settings':
+ 4648:           // Open settings dialog
+ 4649:           setSettingsSessionId(sessionId);
+-- mmmService.retryPartialLeg @ 4653
+ 4646:           break;
+ 4647:         case 'settings':
+ 4648:           // Open settings dialog
+ 4649:           setSettingsSessionId(sessionId);
+ 4650:           setSettingsOpen(true);
+ 4651:           return;
+ 4652:         case 'retry_leg':
+ 4653:           result = await mmmService.retryPartialLeg(sessionId);
+ 4654:           break;
+ 4655:         case 'resolve_partial': {
+ 4656:           // Prompt user for both fill prices
+ 4657:           const ceFillStr = window.prompt('Enter CE fill price (actual fill from exchange):');
+ 4658:           if (!ceFillStr) return;
+ 4659:           const peFillStr = window.prompt('Enter PE fill price (actual fill from exchange):');
+ 4660:           if (!peFillStr) return;
+ 4661:           const ceFill = parseFloat(ceFillStr);
+ 4662:           const peFill = parseFloat(peFillStr);
+ 4663:           if (isNaN(ceFill) || isNaN(peFill) || ceFill <= 0 || peFill <= 0) {
+-- mmmService.resolvePartialEntry @ 4667
+ 4660:           if (!peFillStr) return;
+ 4661:           const ceFill = parseFloat(ceFillStr);
+ 4662:           const peFill = parseFloat(peFillStr);
+ 4663:           if (isNaN(ceFill) || isNaN(peFill) || ceFill <= 0 || peFill <= 0) {
+ 4664:             setSnackbar({ open: true, message: 'Invalid fill prices — must be positive numbers', severity: 'error' });
+ 4665:             return;
+ 4666:           }
+ 4667:           result = await mmmService.resolvePartialEntry(sessionId, ceFill, peFill);
+ 4668:           break;
+ 4669:         }
+ 4670:         default:
+ 4671:           return;
+ 4672: 
+ 4673:       }
+ 4674: 
+ 4675:       if (result.success) {
+ 4676:         setSnackbar({
+ 4677:           open: true,
+-- mmmService.submitBothSidesDecision @ 4709
+ 4702:     // M-32 fix: Don't fall back to selectedSessionId — could be wrong session
+ 4703:     if (!alertSessionId) {
+ 4704:       setSnackbar({ open: true, message: 'No active alert to respond to', severity: 'error' });
+ 4705:       return;
+ 4706:     }
+ 4707: 
+ 4708:     try {
+ 4709:       const result = await mmmService.submitBothSidesDecision(alertSessionId, decision, params);
+ 4710:       if (result.success) {
+ 4711:         const labels = {
+ 4712:           adjust_ce: 'Hedging CE → selling PE',
+ 4713:           adjust_pe: 'Hedging PE → selling CE',
+ 4714:           skip: 'Resumed with updated triggers',
+ 4715:         };
+ 4716:         setSnackbar({ open: true, message: labels[decision] || `Decision: ${decision}`, severity: 'success' });
+ 4717:         clearBothSidesAlert();
+ 4718:         wsData.clearBothSidesAlert?.();
+ 4719:         fetchSessions(false);
+
+===== webui/frontend/src/components/mmm/MMMExecutionLogPanel.js =====
+-- mmmService.getExecutionEvents @ 110
+  103:   const [loading, setLoading] = useState(false);
+  104:   const [error, setError]     = useState(null);
+  105: 
+  106:   const load = useCallback(async () => {
+  107:     if (!sessionId) return;
+  108:     setLoading(true);
+  109:     try {
+  110:       const res = await mmmService.getExecutionEvents(sessionId, 100);
+  111:       setData(res);
+  112:       setError(null);
+  113:     } catch (e) {
+  114:       setError(e.message || 'Failed to load execution events');
+  115:     } finally {
+  116:       setLoading(false);
+  117:     }
+  118:   }, [sessionId]);
+  119: 
+  120:   useEffect(() => { load(); }, [load]);
+
+===== webui/frontend/src/components/mmm/MMMGreeksPanel.js =====
+-- mmmService.getGreeksIV @ 86
+   79:   const sessionId = session?.session_id;
+   80: 
+   81:   const fetchGreeks = useCallback(async () => {
+   82:     if (!sessionId) return;
+   83:     setLoading(true);
+   84:     setError(null);
+   85:     try {
+   86:       const result = await mmmService.getGreeksIV(sessionId);
+   87:       if (result.success) {
+   88:         setData(result);
+   89:         setLastFetch(new Date());
+   90:       } else {
+   91:         setError(result.error || 'Unknown error');
+   92:       }
+   93:     } catch (err) {
+   94:       setError(err.message || 'Failed to fetch Greeks/IV data');
+   95:     } finally {
+   96:       setLoading(false);
+
+===== webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js =====
+-- mmmService.getExchangeMargin @ 440
+  433:   const guardianEnabled = params.margin_monitor_enabled || false;
+  434: 
+  435:   // Fetch exchange-level margin (always — not gated behind Guardian)
+  436:   const fetchExchangeMargin = useCallback(async () => {
+  437:     setLoading(true);
+  438:     setError(null);
+  439:     try {
+  440:       const result = await mmmService.getExchangeMargin();
+  441:       if (result.success) {
+  442:         setExchangeMargin(result);
+  443:         lastFetchRef.current = new Date();
+  444:       } else {
+  445:         setError(result.error || 'Failed to fetch exchange margin');
+  446:       }
+  447:     } catch (err) {
+  448:       setError(err.message || 'Network error');
+  449:     } finally {
+  450:       setLoading(false);
+-- mmmService.getMarginStatus @ 458
+  451:     }
+  452:   }, []);
+  453: 
+  454:   // Fetch Guardian tier status (session-specific)
+  455:   const fetchGuardianStatus = useCallback(async () => {
+  456:     if (!sessionId) return;
+  457:     try {
+  458:       const result = await mmmService.getMarginStatus(sessionId);
+  459:       if (result.success) {
+  460:         setGuardianStatus(result);
+  461:       }
+  462:     } catch (err) {
+  463:       // Non-critical — Guardian status is supplementary
+  464:     }
+  465:   }, [sessionId]);
+  466: 
+  467:   // Combined fetch
+  468:   const fetchAll = useCallback(async () => {
+-- mmmService.updateSessionParams @ 480
+  473:   useEffect(() => { fetchAll(); }, [fetchAll]);
+  474:   // Auto-refresh — pauses when tab is hidden
+  475:   useVisibilityAwarePolling(fetchAll, refreshInterval * 1000, 120000, autoRefresh);
+  476: 
+  477:   // Toggle guardian defense
+  478:   const handleToggleGuardian = async (enabled) => {
+  479:     try {
+  480:       await mmmService.updateSessionParams(sessionId, {
+  481:         margin_monitor_enabled: enabled,
+  482:       });
+  483:       setTimeout(fetchGuardianStatus, 1000);
+  484:     } catch (err) {
+  485:       setError(`Failed to ${enabled ? 'enable' : 'disable'} Guardian: ${err.message}`);
+  486:     }
+  487:   };
+  488: 
+  489:   if (!session) return null;
+  490: 
+
+===== webui/frontend/src/components/mmm/MMMPerformancePanel.js =====
+-- mmmService.getSessionPerformance @ 76
+   69:   const [error, setError] = useState(null);
+   70: 
+   71:   const fetchPerformance = useCallback(async () => {
+   72:     if (!sessionId) return;
+   73:     setLoading(true);
+   74:     setError(null);
+   75:     try {
+   76:       const res = await mmmService.getSessionPerformance(sessionId);
+   77:       if (res.success) {
+   78:         setPerf(res.performance);
+   79:       } else {
+   80:         setError(res.error || 'Failed to load');
+   81:       }
+   82:     } catch (e) {
+   83:       setError(e.message || 'Failed to load');
+   84:     } finally {
+   85:       setLoading(false);
+   86:     }
+
+===== webui/frontend/src/components/mmm/MMMPerpHedgePanel.js =====
+-- mmmService.togglePerpHedge @ 398
+  391: 
+  392:   // Toggle perp hedge on/off
+  393:   const handleToggle = useCallback(async () => {
+  394:     if (!sessionId) return;
+  395:     try {
+  396:       setToggling(true);
+  397:       setActionResult(null);
+  398:       const result = await mmmService.togglePerpHedge(sessionId);
+  399:       setActionResult({
+  400:         type: 'success',
+  401:         message: result.message || `Perp hedge ${result.new_state ? 'enabled' : 'disabled'}`,
+  402:       });
+  403:     } catch (err) {
+  404:       setActionResult({
+  405:         type: 'error',
+  406:         message: err?.response?.data?.error || err.message || 'Toggle failed',
+  407:       });
+  408:     } finally {
+-- mmmService.closePerpHedge @ 419
+  412: 
+  413:   // Manual close perp position
+  414:   const handleClose = useCallback(async () => {
+  415:     if (!sessionId) return;
+  416:     try {
+  417:       setClosing(true);
+  418:       setActionResult(null);
+  419:       const result = await mmmService.closePerpHedge(sessionId);
+  420:       setActionResult({
+  421:         type: 'success',
+  422:         message: result.message || 'Perp position closed',
+  423:       });
+  424:     } catch (err) {
+  425:       setActionResult({
+  426:         type: 'error',
+  427:         message: err?.response?.data?.error || err.message || 'Close failed',
+  428:       });
+  429:     } finally {
+
+===== webui/frontend/src/components/mmm/MMMRegimePanel.js =====
+-- mmmService.getRegimeStatus @ 415
+  408:     },
+  409:   } : null);
+  410: 
+  411:   const fetchRegime = useCallback(async () => {
+  412:     if (!session?.session_id) return;
+  413:     try {
+  414:       setLoading(true);
+  415:       const data = await mmmService.getRegimeStatus(session.session_id);
+  416:       if (data.success) {
+  417:         setFullRegime(data);
+  418:       }
+  419:     } catch (err) {
+  420:       // Non-fatal
+  421:     } finally {
+  422:       setLoading(false);
+  423:     }
+  424:   }, [session?.session_id]);
+  425: 
+
+===== webui/frontend/src/components/mmm/MMMReverseModePanel.js =====
+-- mmmService.enableReverseMode @ 225
+  218: 
+  219:   // All hooks must be called before any early return (Rules of Hooks)
+  220:   const handleEnable = useCallback(async () => {
+  221:     if (!sessionId) return;
+  222:     setLoading(true);
+  223:     setMsg(null);
+  224:     try {
+  225:       await mmmService.enableReverseMode(sessionId);
+  226:       setMsg({ type: 'success', text: 'Reverse mode enabled.' });
+  227:     } catch (e) {
+  228:       setMsg({ type: 'error', text: e?.message || 'Failed to enable.' });
+  229:     } finally {
+  230:       setLoading(false);
+  231:     }
+  232:   }, [sessionId]);
+  233: 
+  234:   const handleDisable = useCallback(async () => {
+  235:     if (!sessionId) return;
+-- mmmService.disableReverseMode @ 239
+  232:   }, [sessionId]);
+  233: 
+  234:   const handleDisable = useCallback(async () => {
+  235:     if (!sessionId) return;
+  236:     setLoading(true);
+  237:     setMsg(null);
+  238:     try {
+  239:       await mmmService.disableReverseMode(sessionId);
+  240:       setMsg({ type: 'success', text: 'Reverse mode disabled.' });
+  241:     } catch (e) {
+  242:       setMsg({ type: 'error', text: e?.message || 'Failed to disable.' });
+  243:     } finally {
+  244:       setLoading(false);
+  245:     }
+  246:   }, [sessionId]);
+  247: 
+  248:   const handleCloseAll = useCallback(async () => {
+  249:     if (!sessionId) return;
+-- mmmService.closeAllReversePositions @ 254
+  247: 
+  248:   const handleCloseAll = useCallback(async () => {
+  249:     if (!sessionId) return;
+  250:     if (!window.confirm('Close ALL open reverse positions? This will send real orders.')) return;
+  251:     setLoading(true);
+  252:     setMsg(null);
+  253:     try {
+  254:       await mmmService.closeAllReversePositions(sessionId);
+  255:       setMsg({ type: 'success', text: 'Reverse positions closed.' });
+  256:     } catch (e) {
+  257:       setMsg({ type: 'error', text: e?.message || 'Failed to close.' });
+  258:     } finally {
+  259:       setLoading(false);
+  260:     }
+  261:   }, [sessionId]);
+  262: 
+  263:   if (!reverseSupportedByStrategy) {
+  264:     return (
+
+===== webui/frontend/src/components/mmm/MMMSettingsDialog.js =====
+-- mmmService.getSession @ 925
+  918:       setActiveSection(null);
+  919:       return;
+  920:     }
+  921: 
+  922:     const fetchSessionData = async () => {
+  923:       setLoading(true);
+  924:       try {
+  925:         const result = await mmmService.getSession(sessionId);
+  926:         if (result.success && result.session) {
+  927:           setSessionData(result.session);
+  928:           // Merge backend defaults into session params so new params
+  929:           // (like shift_target_premium) show with default values
+  930:           // even for sessions created before the param existed
+  931:           const defaults = paramsInfo?.defaults || {};
+  932:           const sessionParams = result.session.params || {};
+  933:           setFormValues({ ...defaults, ...sessionParams });
+  934:         } else {
+  935:           setServerError('Failed to load session data');
+-- mmmService.updateSessionParams @ 1100
+ 1093:           setServerError('No changes detected');
+ 1094:         }
+ 1095:         setSaving(false);
+ 1096:         return;
+ 1097:       }
+ 1098: 
+ 1099:       // Send update request
+ 1100:       const result = await mmmService.updateSessionParams(sessionId, changedParams);
+ 1101: 
+ 1102:       const warnings = [];
+ 1103:       if (result?.total_exposure_warning) {
+ 1104:         warnings.push(result.total_exposure_warning);
+ 1105:       }
+ 1106:       if (result?.cap_raise_warning?.message) {
+ 1107:         warnings.push(result.cap_raise_warning.message);
+ 1108:       }
+ 1109:       if (warnings.length > 0) {
+ 1110:         setSaveWarning(warnings.join(' '));
+
+===== webui/frontend/src/components/mmm/MMMStrikeSelector.js =====
+-- mmmService.getChainData @ 157
+  150:   // ---- Fetch chain data ----
+  151:   const fetchChain = useCallback(async () => {
+  152:     if (!expiry) return;
+  153:     setLoading(true);
+  154:     setError(null);
+  155: 
+  156:     try {
+  157:       const result = await mmmService.getChainData(expiry);
+  158:       if (!mounted.current) return;
+  159: 
+  160:       if (result.success) {
+  161:         setChain(result.chain || []);
+  162:         setSpotPrice(result.spot_price);
+  163:         setAtmStrike(result.atm_strike);
+  164:       } else {
+  165:         setError(result.error || 'Failed to load chain');
+  166:       }
+  167:     } catch (err) {
+-- mmmService.validateSelection @ 217
+  210:   // ---- Validate selection ----
+  211:   const handleValidate = useCallback(async () => {
+  212:     if (!selectedCe || !selectedPe) return;
+  213:     setValidating(true);
+  214:     setValidation(null);
+  215: 
+  216:     try {
+  217:       const result = await mmmService.validateSelection({
+  218:         ce_symbol: selectedCe.symbol,
+  219:         pe_symbol: selectedPe.symbol,
+  220:         lots,
+  221:         expiry,
+  222:       });
+  223: 
+  224:       if (mounted.current) {
+  225:         setValidation(result);
+  226:       }
+  227:     } catch (err) {
+
+===== webui/frontend/src/components/mmm/MMMTradeAuditPanel.js =====
+-- mmmService.getAuditTrades @ 73
+   66:   const [data, setData] = useState(null);
+   67:   const [loading, setLoading] = useState(false);
+   68:   const [error, setError] = useState(null);
+   69: 
+   70:   const load = useCallback(async () => {
+   71:     setLoading(true);
+   72:     try {
+   73:       const res = await mmmService.getAuditTrades(sessionId);
+   74:       setData(res);
+   75:       setError(null);
+   76:     } catch (e) {
+   77:       setError(e.message || 'Failed to load trades');
+   78:     } finally {
+   79:       setLoading(false);
+   80:     }
+   81:   }, [sessionId]);
+   82: 
+   83:   useVisibilityAwarePolling(load, 15000, 60000, true);
+-- mmmService.getAuditStrikeSummary @ 188
+  181:   const [data, setData] = useState(null);
+  182:   const [loading, setLoading] = useState(false);
+  183:   const [error, setError] = useState(null);
+  184: 
+  185:   const load = useCallback(async () => {
+  186:     setLoading(true);
+  187:     try {
+  188:       const res = await mmmService.getAuditStrikeSummary(sessionId);
+  189:       setData(res);
+  190:       setError(null);
+  191:     } catch (e) {
+  192:       setError(e.message || 'Failed to load strike summary');
+  193:     } finally {
+  194:       setLoading(false);
+  195:     }
+  196:   }, [sessionId]);
+  197: 
+  198:   useVisibilityAwarePolling(load, 20000, 90000, true);
+-- mmmService.getAuditPnL @ 279
+  272:   const [data, setData] = useState(null);
+  273:   const [loading, setLoading] = useState(false);
+  274:   const [error, setError] = useState(null);
+  275: 
+  276:   const load = useCallback(async () => {
+  277:     setLoading(true);
+  278:     try {
+  279:       const res = await mmmService.getAuditPnL(sessionId);
+  280:       setData(res);
+  281:       setError(null);
+  282:     } catch (e) {
+  283:       setError(e.message || 'Failed to load P&L');
+  284:     } finally {
+  285:       setLoading(false);
+  286:     }
+  287:   }, [sessionId]);
+  288: 
+  289:   useVisibilityAwarePolling(load, 20000, 90000, true);
+-- mmmService.getAuditEvents @ 358
+  351:   const [data, setData] = useState(null);
+  352:   const [loading, setLoading] = useState(false);
+  353:   const [error, setError] = useState(null);
+  354: 
+  355:   const load = useCallback(async () => {
+  356:     setLoading(true);
+  357:     try {
+  358:       const res = await mmmService.getAuditEvents(sessionId);
+  359:       setData(res);
+  360:       setError(null);
+  361:     } catch (e) {
+  362:       setError(e.message || 'Failed to load events');
+  363:     } finally {
+  364:       setLoading(false);
+  365:     }
+  366:   }, [sessionId]);
+  367: 
+  368:   useVisibilityAwarePolling(load, 20000, 90000, true);
+-- mmmService.getAuditReconcile @ 444
+  437:   const [loading, setLoading] = useState(false);
+  438:   const [error, setError] = useState(null);
+  439: 
+  440:   const run = useCallback(async () => {
+  441:     setLoading(true);
+  442:     setError(null);
+  443:     try {
+  444:       const res = await mmmService.getAuditReconcile(sessionId);
+  445:       setResult(res);
+  446:     } catch (e) {
+  447:       setError(e.message || 'Reconcile failed');
+  448:     } finally {
+  449:       setLoading(false);
+  450:     }
+  451:   }, [sessionId]);
+  452: 
+  453:   return (
+  454:     <Box>
+-- mmmService.getAuditReconcile @ 574
+  567: 
+  568: const ReconcileBanner = ({ sessionId }) => {
+  569:   const [result, setResult] = useState(null);
+  570:   const [checked, setChecked] = useState(false);
+  571: 
+  572:   useEffect(() => {
+  573:     let cancelled = false;
+  574:     mmmService.getAuditReconcile(sessionId)
+  575:       .then((res) => { if (!cancelled) { setResult(res); setChecked(true); } })
+  576:       .catch(() => { if (!cancelled) setChecked(true); });
+  577:     return () => { cancelled = true; };
+  578:   }, [sessionId]);
+  579: 
+  580:   if (!checked || !result) return null;
+  581:   if (result.is_clean) return null;           // silent on clean
+  582:   if ((result.trade_count ?? 0) === 0) return null;  // pre-deployment session — no audit data yet
+  583: 
+  584:   return (
+
+===== webui/frontend/src/components/mmm/MMMTriggerGauge.js =====
+-- mmmService.pinTrigger @ 160
+  153: 
+  154:       const finalVal = dragValueRef.current;
+  155:       setDragValue(null);
+  156: 
+  157:       // Click on pinned marker (no drag) → unpin early
+  158:       if (isPinned && !moved) {
+  159:         try {
+  160:           const result = await mmmService.pinTrigger(sessionId, side, null, true);
+  161:           if (result?.success && onPinChange) onPinChange(side, result);
+  162:         } catch (err) {
+  163:           const msg = err?.response?.data?.error || 'Failed to unpin. Try again.';
+  164:           setSnackbar({ severity: 'error', message: msg });
+  165:         }
+  166:         return;
+  167:       }
+  168: 
+  169:       // Abort if didn't drag above current premium (loosen-only enforced client-side)
+  170:       if (finalVal === null || finalVal <= currentPremium) return;
+-- mmmService.pinTrigger @ 173
+  166:         return;
+  167:       }
+  168: 
+  169:       // Abort if didn't drag above current premium (loosen-only enforced client-side)
+  170:       if (finalVal === null || finalVal <= currentPremium) return;
+  171: 
+  172:       try {
+  173:         const result = await mmmService.pinTrigger(sessionId, side, finalVal);
+  174:         if (result?.success && onPinChange) onPinChange(side, result);
+  175:       } catch (err) {
+  176:         const msg = err?.response?.data?.error || 'Failed to pin trigger. Try again.';
+  177:         setSnackbar({ severity: 'error', message: msg });
+  178:       }
+  179:     };
+  180: 
+  181:     document.addEventListener('mousemove', handleMouseMove);
+  182:     document.addEventListener('mouseup', handleMouseUp);
+  183:   }, [sessionId, triggerLevel, currentPremium, computeValueFromEvent, side, onPinChange, isPinned]);
+-- mmmService.pinTrigger @ 189
+  182:     document.addEventListener('mouseup', handleMouseUp);
+  183:   }, [sessionId, triggerLevel, currentPremium, computeValueFromEvent, side, onPinChange, isPinned]);
+  184: 
+  185:   const handleUnpin = useCallback(async (e) => {
+  186:     e.stopPropagation();
+  187:     if (!sessionId || !isPinned) return;
+  188:     try {
+  189:       const result = await mmmService.pinTrigger(sessionId, side, null, true);
+  190:       if (result?.success && onPinChange) onPinChange(side, result);
+  191:     } catch (err) {
+  192:       const msg = err?.response?.data?.error || 'Failed to unpin. Try again.';
+  193:       setSnackbar({ severity: 'error', message: msg });
+  194:     }
+  195:   }, [sessionId, isPinned, side, onPinChange]);
+  196: 
+  197:   // ── Marker positions ──────────────────────────────────────────────────────
+  198:   // Effective display level: during drag show dragValue, otherwise triggerLevel
+  199:   const displayLevel = isDragging && dragValue !== null ? dragValue : triggerLevel;
+
+===== webui/frontend/src/components/mmm/hooks/useMMMParams.js =====
+-- mmmService.getSessionParams @ 43
+   36:   // ----- Load params from backend -----
+   37:   const fetchParams = useCallback(async () => {
+   38:     if (!sessionId) return;
+   39:     setLoading(true);
+   40:     setError(null);
+   41: 
+   42:     try {
+   43:       const result = await mmmService.getSessionParams(sessionId);
+   44:       if (result.success && mounted.current) {
+   45:         setServerParams(result.params);
+   46:         setLocalParams(result.params);
+   47:       } else if (mounted.current) {
+   48:         setError(result.error || 'Failed to load params');
+   49:       }
+   50:     } catch (err) {
+   51:       if (mounted.current) {
+   52:         setError(err.details?.error || err.message);
+   53:       }
+-- mmmService.updateSessionParams @ 97
+   90:     // Only send changed params
+   91:     const changedParams = {};
+   92:     for (const key of dirtyKeys) {
+   93:       changedParams[key] = localParams[key];
+   94:     }
+   95: 
+   96:     try {
+   97:       const result = await mmmService.updateSessionParams(sessionId, changedParams);
+   98:       if (result.success && mounted.current) {
+   99:         // Merge backend response into our state
+  100:         const updatedParams = { ...serverParams, ...changedParams };
+  101:         setServerParams(updatedParams);
+  102:         setLocalParams(updatedParams);
+  103:         setLastSaved(new Date().toISOString());
+  104:         return result;
+  105:       } else if (mounted.current) {
+  106:         setError(result.error || 'Failed to save params');
+  107:         return result;
+
+===== webui/frontend/src/components/mmmx/MMMXContext.js =====
+-- mmmxService.getSession @ 272
+  265: 
+  266:   // ── REST: load session ──────────────────────────────────────────────────────
+  267:   const loadSession = useCallback(async (id) => {
+  268:     if (!id) return;
+  269:     sessionIdRef.current = id;
+  270:     dispatch({ type: 'SET_ACTIVE_SESSION', payload: id });
+  271:     try {
+  272:       const res = await mmmxService.getSession(id);
+  273:       if (res.ok && res.data) {
+  274:         dispatch({ type: 'SET_SESSION', payload: res.data });
+  275:         const sig = res.data?._integrity;
+  276:         if (sig) {
+  277:           dispatch({
+  278:             type: 'UPDATE_INTEGRITY',
+  279:             payload: {
+  280:               snapshot_version: sig.state_version ?? null,
+  281:               snapshot_checksum: sig.state_checksum ?? null,
+  282:               snapshot_at: sig.generated_at || new Date().toISOString(),
+-- mmmxService.getActivityLog @ 306
+  299:     }
+  300:   }, []);
+  301: 
+  302:   const loadActivity = useCallback(async () => {
+  303:     const id = sessionIdRef.current;
+  304:     if (!id) return;
+  305:     try {
+  306:       const res = await mmmxService.getActivityLog(id, 50);
+  307:       if (res.ok && res.data) {
+  308:         dispatch({ type: 'PUSH_ACTIVITY', payload: res.data });
+  309:       }
+  310:     } catch (e) {
+  311:       console.error('[MMMX] loadActivity error', e);
+  312:     }
+  313:   }, []);
+  314: 
+  315:   const validateContract = useCallback((eventName, payload) => {
+  316:     const result = validateEventPayload(eventName, payload);
+
+===== webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js =====
+-- mmmxService.getExpirations @ 48
+   41:       close_at_dte: 7, tranche_deploy_move_pct: 2.0, hedging_enabled: true,
+   42:       hedge_distance_pct: 20, target_expiry_ddmmyy: '',
+   43:     });
+   44:     setError('');
+   45:     setLiveExpiries(null);
+   46:     setExpiriesError('');
+   47: 
+   48:     mmmxService.getExpirations('BTC').then(res => {
+   49:       if (Array.isArray(res.expirations) && res.expirations.length > 0) {
+   50:         const converted = res.expirations.map(ddmmyyyyToDdmmyy).filter(Boolean);
+   51:         setLiveExpiries(converted);
+   52:       } else {
+   53:         setExpiriesError('Delta Exchange API unavailable — showing computed approximations.');
+   54:         setLiveExpiries([]);
+   55:       }
+   56:     }).catch(() => {
+   57:       setExpiriesError('Delta Exchange API unavailable — showing computed approximations.');
+   58:       setLiveExpiries([]);
+-- mmmxService.createSession @ 71
+   64:   const handleCreate = async () => {
+   65:     if (!form.target_expiry_ddmmyy || form.target_expiry_ddmmyy.length !== 6) {
+   66:       setError('Enter a valid 6-digit expiry (DDMMYY) from your Delta Exchange contract.');
+   67:       return;
+   68:     }
+   69:     setBusy(true); setError('');
+   70:     try {
+   71:       const res = await mmmxService.createSession(form);
+   72:       if (res.ok) {
+   73:         onCreated(res.data);
+   74:         onClose();
+   75:       } else {
+   76:         setError(res.error || 'Failed to create session');
+   77:       }
+   78:     } catch (e) {
+   79:       setError(String(e));
+   80:     } finally {
+   81:       setBusy(false);
+-- mmmxService.scanStrikes @ 245
+  238:     setError('');
+  239:     setScanMsg('');
+  240: 
+  241:     if (!sessionId) return;
+  242:     const otmPct = session?.params?.otm_distance_pct ?? 15;
+  243:     setScanning(true);
+  244:     setScanMsg('Fetching live strikes from exchange…');
+  245:     mmmxService.scanStrikes(sessionId, otmPct)
+  246:       .then(r => {
+  247:         const data = r.data ?? r;
+  248:         if (data?.ce && data?.pe) {
+  249:           const ceBid  = data.ce.bid  ?? 0;
+  250:           const ceAsk  = data.ce.ask  ?? 0;
+  251:           const peBid  = data.pe.bid  ?? 0;
+  252:           const peAsk  = data.pe.ask  ?? 0;
+  253:           setForm(prev => ({
+  254:             ...prev,
+  255:             ce_symbol:  data.ce.symbol  ?? '',
+-- mmmxService.deployTranche1 @ 315
+  308:       if (form.ce_premium) payload.ce_premium = parseFloat(form.ce_premium);
+  309:       if (form.pe_premium) payload.pe_premium = parseFloat(form.pe_premium);
+  310:       if (form.ce_delta) payload.ce_delta = parseFloat(form.ce_delta);
+  311:       if (form.pe_delta) payload.pe_delta = parseFloat(form.pe_delta);
+  312:       if (form.spot) payload.spot = parseFloat(form.spot);
+  313:       if (form.iv_rank) payload.iv_rank = parseFloat(form.iv_rank);
+  314: 
+  315:       const res = await mmmxService.deployTranche1(sessionId, payload);
+  316:       if (res.ok) {
+  317:         onDeployed(res.data);
+  318:         onClose();
+  319:       } else {
+  320:         setError(res.error || res.reason || 'Deploy failed');
+  321:       }
+  322:     } catch (e) {
+  323:       setError(String(e));
+  324:     } finally {
+  325:       setBusy(false);
+
+===== webui/frontend/src/components/mmmx/MMMXDashboard.js =====
+-- mmmxService.listSessions @ 123
+  116:     incidents: incidentQueue, health: healthModel, integrityState,
+  117:   }), [incidentQueue, healthModel, integrityState]);
+  118: 
+  119:   // ── Session list ─────────────────────────────────────────────────────────────
+  120:   const fetchSessions = useCallback(async (silent = true) => {
+  121:     if (!silent) setRefreshing(true);
+  122:     try {
+  123:       const res = await mmmxService.listSessions();
+  124:       if (res.ok) { setAllSessions(res.data ?? []); setApiError(null); }
+  125:       else setApiError(`Session list unavailable: ${res.error || 'unknown error'}`);
+  126:     } catch (err) { setApiError(`API unreachable: ${String(err)}`); }
+  127:     finally { if (!silent) setRefreshing(false); }
+  128:   }, []);
+  129: 
+  130:   // Visibility-aware polling — pauses when tab is hidden, resumes on focus
+  131:   useVisibilityAwarePolling(() => fetchSessions(true), 10000, 30000);
+  132: 
+  133:   useEffect(() => { fetchSessions(false); }, [fetchSessions]); // initial load
+-- mmmxService.pauseSession @ 168
+  161:   const queueConfirmedAction = useCallback((cfg) => {
+  162:     if (!cfg || typeof cfg.run !== 'function') return;
+  163:     if ((cfg.tier || 'A') === 'A') { cfg.run(); return; }
+  164:     setConfirmText(''); setConfirmStep(1); setConfirmDialog(cfg);
+  165:   }, []);
+  166: 
+  167:   const handleControl = useCallback(async (action, sid) => {
+  168:     const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];
+  169:     if (fn) {
+  170:       await runControl(`${action}:${sid}`, fn);
+  171:       setTimeout(() => fetchSessions(true), 800);
+  172:       if (activeSessionId === sid) setTimeout(() => loadSession(sid), 600);
+  173:     }
+  174:   }, [runControl, fetchSessions, activeSessionId, loadSession]);
+  175: 
+  176:   const handleForceHeartbeat = useCallback(async (sid) => {
+  177:     await runControl(`force_heartbeat:${sid}`, () => mmmxService.forceHeartbeat(sid));
+  178:     if (activeSessionId === sid) setTimeout(() => loadSession(sid), 500);
+-- mmmxService.resumeSession @ 168
+  161:   const queueConfirmedAction = useCallback((cfg) => {
+  162:     if (!cfg || typeof cfg.run !== 'function') return;
+  163:     if ((cfg.tier || 'A') === 'A') { cfg.run(); return; }
+  164:     setConfirmText(''); setConfirmStep(1); setConfirmDialog(cfg);
+  165:   }, []);
+  166: 
+  167:   const handleControl = useCallback(async (action, sid) => {
+  168:     const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];
+  169:     if (fn) {
+  170:       await runControl(`${action}:${sid}`, fn);
+  171:       setTimeout(() => fetchSessions(true), 800);
+  172:       if (activeSessionId === sid) setTimeout(() => loadSession(sid), 600);
+  173:     }
+  174:   }, [runControl, fetchSessions, activeSessionId, loadSession]);
+  175: 
+  176:   const handleForceHeartbeat = useCallback(async (sid) => {
+  177:     await runControl(`force_heartbeat:${sid}`, () => mmmxService.forceHeartbeat(sid));
+  178:     if (activeSessionId === sid) setTimeout(() => loadSession(sid), 500);
+-- mmmxService.stopSession @ 168
+  161:   const queueConfirmedAction = useCallback((cfg) => {
+  162:     if (!cfg || typeof cfg.run !== 'function') return;
+  163:     if ((cfg.tier || 'A') === 'A') { cfg.run(); return; }
+  164:     setConfirmText(''); setConfirmStep(1); setConfirmDialog(cfg);
+  165:   }, []);
+  166: 
+  167:   const handleControl = useCallback(async (action, sid) => {
+  168:     const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];
+  169:     if (fn) {
+  170:       await runControl(`${action}:${sid}`, fn);
+  171:       setTimeout(() => fetchSessions(true), 800);
+  172:       if (activeSessionId === sid) setTimeout(() => loadSession(sid), 600);
+  173:     }
+  174:   }, [runControl, fetchSessions, activeSessionId, loadSession]);
+  175: 
+  176:   const handleForceHeartbeat = useCallback(async (sid) => {
+  177:     await runControl(`force_heartbeat:${sid}`, () => mmmxService.forceHeartbeat(sid));
+  178:     if (activeSessionId === sid) setTimeout(() => loadSession(sid), 500);
+-- mmmxService.forceHeartbeat @ 177
+  170:       await runControl(`${action}:${sid}`, fn);
+  171:       setTimeout(() => fetchSessions(true), 800);
+  172:       if (activeSessionId === sid) setTimeout(() => loadSession(sid), 600);
+  173:     }
+  174:   }, [runControl, fetchSessions, activeSessionId, loadSession]);
+  175: 
+  176:   const handleForceHeartbeat = useCallback(async (sid) => {
+  177:     await runControl(`force_heartbeat:${sid}`, () => mmmxService.forceHeartbeat(sid));
+  178:     if (activeSessionId === sid) setTimeout(() => loadSession(sid), 500);
+  179:   }, [runControl, activeSessionId, loadSession]);
+  180: 
+  181:   const requestSessionAction = useCallback((action, sid) => {
+  182:     const actionLabel = {
+  183:       pause: 'Pause session', resume: 'Resume session', stop: 'Stop session',
+  184:       force_heartbeat: 'Force heartbeat', reconcile: 'Run reconcile',
+  185:     }[action] || action;
+  186:     const tier = action === 'stop' ? 'C' : 'B';
+  187:     const run = () => {
+-- mmmxService.reconcile @ 190
+  183:       pause: 'Pause session', resume: 'Resume session', stop: 'Stop session',
+  184:       force_heartbeat: 'Force heartbeat', reconcile: 'Run reconcile',
+  185:     }[action] || action;
+  186:     const tier = action === 'stop' ? 'C' : 'B';
+  187:     const run = () => {
+  188:       if (action === 'force_heartbeat') return handleForceHeartbeat(sid);
+  189:       if (action === 'reconcile') return runControl(`reconcile:${sid}`, async () => {
+  190:         const out = await mmmxService.reconcile(sid);
+  191:         if (activeSessionId === sid) setTimeout(() => loadSession(sid), 500);
+  192:         return out;
+  193:       });
+  194:       return handleControl(action, sid);
+  195:     };
+  196:     queueConfirmedAction({
+  197:       tier,
+  198:       title: actionLabel,
+  199:       description: `Session ${sid.slice(-8)} · integrity=${integrityState} · health=${healthModel.state}`,
+  200:       typedPhrase: tier === 'C' ? `STOP ${sid.slice(0, 8)}` : '',
+-- mmmxService.killSwitch @ 263
+  256:     if (!session?.session_id) return;
+  257:     queueConfirmedAction({
+  258:       tier: 'C',
+  259:       title: 'Kill current session',
+  260:       description: `Terminal stop for ${session.session_id}. Offensive controls remain locked until completion certainty.`,
+  261:       typedPhrase: `KILL ${session.session_id.slice(0, 8)}`,
+  262:       run: async () => {
+  263:         await runControl(`kill_switch:${session.session_id}`, () => mmmxService.killSwitch({ scope: 'session', session_id: session.session_id, reason: 'operator kill switch' }));
+  264:         setTimeout(() => fetchSessions(true), 600);
+  265:         setTimeout(() => loadSession(session.session_id), 600);
+  266:       },
+  267:     });
+  268:   }, [session?.session_id, queueConfirmedAction, runControl, fetchSessions, loadSession]);
+  269: 
+  270:   const handleKillGlobal = useCallback(() => {
+  271:     queueConfirmedAction({
+  272:       tier: 'C',
+  273:       title: 'Global kill switch',
+-- mmmxService.killSwitch @ 277
+  270:   const handleKillGlobal = useCallback(() => {
+  271:     queueConfirmedAction({
+  272:       tier: 'C',
+  273:       title: 'Global kill switch',
+  274:       description: 'Terminal stop for all RUNNING/PAUSED/GATES_PASSED sessions.',
+  275:       typedPhrase: 'KILL GLOBAL',
+  276:       run: async () => {
+  277:         await runControl('kill_switch:global', () => mmmxService.killSwitch({ scope: 'global', reason: 'operator global kill switch' }));
+  278:         setTimeout(() => fetchSessions(true), 800);
+  279:         if (activeSessionId) setTimeout(() => loadSession(activeSessionId), 800);
+  280:       },
+  281:     });
+  282:   }, [queueConfirmedAction, runControl, fetchSessions, activeSessionId, loadSession]);
+  283: 
+  284:   const handleIntegrityCheck = useCallback(async (sid) => { if (sid) await loadSession(sid); }, [loadSession]);
+  285: 
+  286:   const closeConfirmDialog = useCallback(() => {
+  287:     if (confirmBusy) return;
+-- mmmxService.killSwitch @ 403
+  396:                   selected={s.session_id === activeSessionId}
+  397:                   onSelect={id => { loadSession(id); setDetailTab(0); }}
+  398:                   onPause={id => requestSessionAction('pause', id)}
+  399:                   onResume={id => requestSessionAction('resume', id)}
+  400:                   onStop={id => requestSessionAction('stop', id)}
+  401:                   onDeploy={id => requestDeployAction(id)}
+  402:                   onForceHB={id => requestSessionAction('force_heartbeat', id)}
+  403:                   onKillSwitch={id => runControl(`kill_switch:${id}`, () => mmmxService.killSwitch({ scope: 'session', session_id: id, reason: 'card kill switch' }))}
+  404:                   controlSafety={cardSafety}
+  405:                   allSessions={allSessions}
+  406:                 />
+  407:               );
+  408:             })
+  409:           )}
+  410:         </Box>
+  411: 
+  412:         {/* Footer */}
+  413:         <Box sx={{ px: 1.5, py: 0.75, borderTop: '1px solid', borderColor: 'divider' }}>
+-- mmmxService.forceHeartbeat @ 510
+  503:                 </Tabs>
+  504: 
+  505:                 <Box sx={{ flex: 1, overflow: 'auto' }}>
+  506:                   <TabPanel value={detailTab} index={0}>
+  507:                     <MMMXErrorBoundary name="StatusTab">
+  508:                       <MMMXStatusTab
+  509:                         onDeploy={id => requestDeployAction(id)}
+  510:                         onForceHeartbeat={id => mmmxService.forceHeartbeat(id)}
+  511:                         onIntegrityCheck={handleIntegrityCheck}
+  512:                         runControl={runControl}
+  513:                         requestSessionAction={requestSessionAction}
+  514:                         pendingControls={pendingControls}
+  515:                         integrityState={integrityState}
+  516:                         healthModel={healthModel}
+  517:                         incidentQueue={incidentQueue}
+  518:                         recommendations={recommendations}
+  519:                       />
+  520:                     </MMMXErrorBoundary>
+
+===== webui/frontend/src/components/mmmx/panels/MMMXTradeAuditPanel.js =====
+-- mmmxService.getAuditLog @ 35
+   28:   const [catFilter, setCatFilter] = useState('ALL');
+   29:   const [search, setSearch]       = useState('');
+   30: 
+   31:   const load = useCallback(async () => {
+   32:     if (!session?.session_id) return;
+   33:     setLoading(true); setError('');
+   34:     try {
+   35:       const res = await mmmxService.getAuditLog(session.session_id, limit);
+   36:       if (res.ok) setEntries(res.data ?? []);
+   37:       else setError(res.error || 'Failed to load audit log');
+   38:     } catch (e) { setError(String(e)); }
+   39:     finally { setLoading(false); }
+   40:   }, [session?.session_id, limit]);
+   41: 
+   42:   useEffect(() => { load(); }, [load]);
+   43: 
+   44:   const filtered = entries.filter(e => {
+   45:     if (catFilter !== 'ALL' && e?.category !== catFilter) return false;
+
+===== webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js =====
+-- mmmxService.getParamHistory @ 15
+    8: import { useMMMX } from '../MMMXContext';
+    9: import { mmmxService } from '../mmmxService';
+   10: import { HOT_RELOAD_ALLOWLIST } from '../utils/mmmxConstants';
+   11: 
+   12: function ParamHistory({ sessionId }) {
+   13:   const [history, setHistory] = useState([]);
+   14:   useEffect(() => {
+   15:     mmmxService.getParamHistory(sessionId, 20).then(r => { if (r.ok) setHistory(r.data ?? []); }).catch(() => {});
+   16:   }, [sessionId]);
+   17: 
+   18:   if (!history.length)
+   19:     return <Typography variant="caption" color="text.secondary" sx={{ p: 1, display: 'block' }}>No history.</Typography>;
+   20: 
+   21:   return (
+   22:     <Box sx={{ p: 1 }}>
+   23:       {history.map((h, i) => (
+   24:         <Paper key={i} variant="outlined" sx={{ p: 1, mb: 0.5, borderRadius: 1 }}>
+   25:           <Typography variant="caption" color="text.secondary">{h.changed_at}</Typography>
+-- mmmxService.hotReloadParams @ 53
+   46:       patch[k] = typeof params[k] === 'number' ? Number(v) : v;
+   47:     }
+   48:     const apply = async () => {
+   49:       setBusy(true);
+   50:       try {
+   51:         const controlKey = `hot_reload_apply:${session.session_id}`;
+   52:         const run = runControl
+   53:           ? () => runControl(controlKey, () => mmmxService.hotReloadParams(session.session_id, patch))
+   54:           : () => mmmxService.hotReloadParams(session.session_id, patch);
+   55:         const res = await run();
+   56:         setResult(res);
+   57:         if (res?.ok) setEdits({});
+   58:       } catch (e) {
+   59:         setResult({ ok: false, error: String(e) });
+   60:       } finally {
+   61:         setBusy(false);
+   62:       }
+   63:     };
+-- mmmxService.hotReloadParams @ 54
+   47:     }
+   48:     const apply = async () => {
+   49:       setBusy(true);
+   50:       try {
+   51:         const controlKey = `hot_reload_apply:${session.session_id}`;
+   52:         const run = runControl
+   53:           ? () => runControl(controlKey, () => mmmxService.hotReloadParams(session.session_id, patch))
+   54:           : () => mmmxService.hotReloadParams(session.session_id, patch);
+   55:         const res = await run();
+   56:         setResult(res);
+   57:         if (res?.ok) setEdits({});
+   58:       } catch (e) {
+   59:         setResult({ ok: false, error: String(e) });
+   60:       } finally {
+   61:         setBusy(false);
+   62:       }
+   63:     };
+   64:     if (queueConfirmedAction) {
+
+===== webui/frontend/src/components/mmmx/tabs/MMMXProfitBookingTab.js =====
+-- mmmxService.profitBook @ 24
+   17: 
+   18:   const handleBook = (trancheId) => {
+   19:     const pct = Number(targets[trancheId] || 20);
+   20:     const tranche = tranches.find(t => t.tranche_id === trancheId);
+   21:     const apply = async () => {
+   22:       setPendingBook(p => ({ ...p, [trancheId]: true }));
+   23:       try {
+   24:         const res = await mmmxService.profitBook(session.session_id, trancheId, pct);
+   25:         setMsgs(m => ({ ...m, [trancheId]: res.ok ? '✓ Queued' : (res.error ?? 'Failed') }));
+   26:       } catch (e) {
+   27:         setMsgs(m => ({ ...m, [trancheId]: String(e) }));
+   28:       } finally {
+   29:         setPendingBook(p => ({ ...p, [trancheId]: false }));
+   30:       }
+   31:     };
+   32:     if (queueConfirmedAction) {
+   33:       queueConfirmedAction({
+   34:         tier: 'B',
+
+===== webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js =====
+-- mmmxService.reconcile @ 19
+   12:   const [busy, setBusy] = useState(false);
+   13:   const [msg, setMsg] = useState('');
+   14: 
+   15:   const runRecon = async () => {
+   16:     if (!session) return;
+   17:     setBusy(true); setMsg('');
+   18:     try {
+   19:       const res = await mmmxService.reconcile(session.session_id);
+   20:       if (res.ok) setReport(res.data); else setMsg(res.error || 'Failed');
+   21:     } catch (e) { setMsg(String(e)); }
+   22:     finally { setBusy(false); }
+   23:   };
+   24: 
+   25:   const applyAction = (divId, action, symbol) => {
+   26:     if (!session) return;
+   27:     const tier = action === 'accept_db' ? 'B' : 'C';
+   28:     const TIER_C_PHRASES = {
+   29:       accept_exchange: `ACCEPT EXCHANGE ${(symbol || '').slice(0, 8)}`,
+-- mmmxService.confirmReconcile @ 36
+   29:       accept_exchange: `ACCEPT EXCHANGE ${(symbol || '').slice(0, 8)}`,
+   30:       manual_close: `MANUAL CLOSE ${(symbol || '').slice(0, 8)}`,
+   31:     };
+   32:     const typedPhrase = tier === 'C' ? TIER_C_PHRASES[action] : '';
+   33:     const run = async () => {
+   34:       setBusy(true); setMsg('');
+   35:       try {
+   36:         const res = await mmmxService.confirmReconcile(session.session_id, divId, action);
+   37:         setMsg(res.ok ? `✓ Action "${action}" applied` : (res.error || 'Failed'));
+   38:         if (res.ok) setReport(null);
+   39:       } catch (e) { setMsg(String(e)); }
+   40:       finally { setBusy(false); }
+   41:     };
+   42:     if (queueConfirmedAction) {
+   43:       queueConfirmedAction({ tier, title: `Reconcile: ${action}`, description: `Apply "${action}" to divergence ${divId}`, typedPhrase, run });
+   44:     } else {
+   45:       run();
+   46:     }
+
+===== webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js =====
+-- mmmxService.getHealth @ 71
+   64:     integrityState,
+   65:     heartbeatAgeSec: hbAgeSec,
+   66:     healthState: healthModel?.state,
+   67:     pending: sessionControlPending,
+   68:   }), [session, isConnected, contract?.status, integrityState, hbAgeSec, healthModel?.state, sessionControlPending]);
+   69: 
+   70:   useEffect(() => {
+   71:     mmmxService.getHealth().then(r => { if (r.ok) setHealth(r.data); }).catch(() => {});
+   72:   }, [session?.status]);
+   73: 
+   74:   useEffect(() => {
+   75:     if (!session?.session_id || session.status !== 'DRAFT') {
+   76:       setStrikePreview(null); setGatesResult(null); return;
+   77:     }
+   78:     const id = session.session_id;
+   79:     const otmPct = session.params?.otm_distance_pct ?? 15;
+   80: 
+   81:     setStrikeLoading(true);
+-- mmmxService.scanStrikes @ 82
+   75:     if (!session?.session_id || session.status !== 'DRAFT') {
+   76:       setStrikePreview(null); setGatesResult(null); return;
+   77:     }
+   78:     const id = session.session_id;
+   79:     const otmPct = session.params?.otm_distance_pct ?? 15;
+   80: 
+   81:     setStrikeLoading(true);
+   82:     mmmxService.scanStrikes(id, otmPct)
+   83:       .then(r => { if (r.ok) setStrikePreview(r.data ?? r); })
+   84:       .catch(() => {}).finally(() => setStrikeLoading(false));
+   85: 
+   86:     if (session.expiry_ddmmyy) {
+   87:       setGatesLoading(true);
+   88:       mmmxService.checkGates(id, session.expiry_ddmmyy)
+   89:         .then(r => { if (r.ok || r.gates) setGatesResult(r.data ?? r); })
+   90:         .catch(() => {}).finally(() => setGatesLoading(false));
+   91:     }
+   92:   }, [session?.session_id, session?.status, session?.expiry_ddmmyy]);
+-- mmmxService.checkGates @ 88
+   81:     setStrikeLoading(true);
+   82:     mmmxService.scanStrikes(id, otmPct)
+   83:       .then(r => { if (r.ok) setStrikePreview(r.data ?? r); })
+   84:       .catch(() => {}).finally(() => setStrikeLoading(false));
+   85: 
+   86:     if (session.expiry_ddmmyy) {
+   87:       setGatesLoading(true);
+   88:       mmmxService.checkGates(id, session.expiry_ddmmyy)
+   89:         .then(r => { if (r.ok || r.gates) setGatesResult(r.data ?? r); })
+   90:         .catch(() => {}).finally(() => setGatesLoading(false));
+   91:     }
+   92:   }, [session?.session_id, session?.status, session?.expiry_ddmmyy]);
+   93: 
+   94:   const act = async (controlKey, fn, label) => {
+   95:     setBusy(true); setMsg('');
+   96:     try {
+   97:       const run = runControl || (async (_key, op) => op());
+   98:       const r = await run(`${controlKey}:${session.session_id}`, fn);
+-- mmmxService.scanStrikes @ 156
+  149:             <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>
+  150:               Strike Preview at {p.otm_distance_pct ?? 15}% OTM
+  151:             </Typography>
+  152:             <Box sx={{ display: 'flex', gap: 0.6, alignItems: 'center' }}>
+  153:               {strikeLoading && <CircularProgress size={14} />}
+  154:               <Button size="small" variant="text" onClick={() => {
+  155:                 setStrikeLoading(true);
+  156:                 mmmxService.scanStrikes(session.session_id, p.otm_distance_pct ?? 15)
+  157:                   .then(r => { if (r.ok) setStrikePreview(r.data ?? r); })
+  158:                   .catch(() => {}).finally(() => setStrikeLoading(false));
+  159:               }}>Refresh</Button>
+  160:             </Box>
+  161:           </Box>
+  162:           {!strikePreview && !strikeLoading && (
+  163:             <Typography variant="caption" color="text.secondary">Strike scan pending…</Typography>
+  164:           )}
+  165:           {strikePreview && strikePreview.reason === 'no_expiry_set' && (
+  166:             <Typography variant="caption" color="text.secondary">No expiry set — strikes will be available after Tranche 1 is deployed.</Typography>
+-- mmmxService.scanStrikes @ 254
+  247:           <Button variant="contained" color="primary" startIcon={<RocketLaunchIcon />}
+  248:             disabled={safety.deploy_tranche1?.enabled === false}
+  249:             onClick={() => onDeploy(session.session_id)}>
+  250:             Deploy Tranche 1
+  251:           </Button>
+  252:           <Button variant="outlined" onClick={() => {
+  253:             setStrikeLoading(true);
+  254:             mmmxService.scanStrikes(session.session_id, p.otm_distance_pct ?? 15)
+  255:               .then(r => { if (r.ok) setStrikePreview(r.data ?? r); })
+  256:               .catch(() => {}).finally(() => setStrikeLoading(false));
+  257:             if (expiry) {
+  258:               setGatesLoading(true);
+  259:               mmmxService.checkGates(session.session_id, expiry)
+  260:                 .then(r => { if (r.ok || r.gates) setGatesResult(r.data ?? r); })
+  261:                 .catch(() => {}).finally(() => setGatesLoading(false));
+  262:             }
+  263:           }}>
+  264:             Refresh Market Data
+-- mmmxService.checkGates @ 259
+  252:           <Button variant="outlined" onClick={() => {
+  253:             setStrikeLoading(true);
+  254:             mmmxService.scanStrikes(session.session_id, p.otm_distance_pct ?? 15)
+  255:               .then(r => { if (r.ok) setStrikePreview(r.data ?? r); })
+  256:               .catch(() => {}).finally(() => setStrikeLoading(false));
+  257:             if (expiry) {
+  258:               setGatesLoading(true);
+  259:               mmmxService.checkGates(session.session_id, expiry)
+  260:                 .then(r => { if (r.ok || r.gates) setGatesResult(r.data ?? r); })
+  261:                 .catch(() => {}).finally(() => setGatesLoading(false));
+  262:             }
+  263:           }}>
+  264:             Refresh Market Data
+  265:           </Button>
+  266:         </Box>
+  267: 
+  268:         {safety.deploy_tranche1?.enabled === false && (
+  269:           <Typography variant="caption" sx={{ display: 'block', mt: 0.8, color: 'warning.main' }}>
+-- mmmxService.pauseSession @ 427
+  420:             Deploy Tranche 1
+  421:           </Button>
+  422:         )}
+  423:         {session.status === 'RUNNING' && (
+  424:           <Button variant="outlined" color="warning" startIcon={<PauseIcon />} disabled={busy || safety.pause?.enabled === false}
+  425:             onClick={() => requestSessionAction
+  426:               ? requestSessionAction('pause', session.session_id)
+  427:               : act('pause', () => mmmxService.pauseSession(session.session_id), 'Paused')}>
+  428:             Pause
+  429:           </Button>
+  430:         )}
+  431:         {session.status === 'RUNNING' && (
+  432:           <Button variant="outlined"
+  433:             sx={{ borderColor: '#ffab00', color: '#ffab00' }}
+  434:             startIcon={<BoltIcon />}
+  435:             disabled={busy || safety.force_heartbeat?.enabled === false}
+  436:             onClick={() => requestSessionAction
+  437:               ? requestSessionAction('force_heartbeat', session.session_id)
+-- mmmxService.forceHeartbeat @ 439
+  432:           <Button variant="outlined"
+  433:             sx={{ borderColor: '#ffab00', color: '#ffab00' }}
+  434:             startIcon={<BoltIcon />}
+  435:             disabled={busy || safety.force_heartbeat?.enabled === false}
+  436:             onClick={() => requestSessionAction
+  437:               ? requestSessionAction('force_heartbeat', session.session_id)
+  438:               : act('force_heartbeat',
+  439:                 () => (onForceHeartbeat ? onForceHeartbeat(session.session_id) : mmmxService.forceHeartbeat(session.session_id)),
+  440:                 'Forced heartbeat')}>
+  441:             Force Heartbeat
+  442:           </Button>
+  443:         )}
+  444:         {session.status === 'PAUSED' && (
+  445:           <Button variant="contained" color="success" startIcon={<PlayArrowIcon />} disabled={busy || safety.resume?.enabled === false}
+  446:             onClick={() => requestSessionAction
+  447:               ? requestSessionAction('resume', session.session_id)
+  448:               : act('resume', () => mmmxService.resumeSession(session.session_id), 'Resumed')}>
+  449:             Resume
+-- mmmxService.resumeSession @ 448
+  441:             Force Heartbeat
+  442:           </Button>
+  443:         )}
+  444:         {session.status === 'PAUSED' && (
+  445:           <Button variant="contained" color="success" startIcon={<PlayArrowIcon />} disabled={busy || safety.resume?.enabled === false}
+  446:             onClick={() => requestSessionAction
+  447:               ? requestSessionAction('resume', session.session_id)
+  448:               : act('resume', () => mmmxService.resumeSession(session.session_id), 'Resumed')}>
+  449:             Resume
+  450:           </Button>
+  451:         )}
+  452:         {!['COMPLETE', 'ERROR', 'DRAFT'].includes(session.status) && (
+  453:           <Button variant="outlined" color="error" startIcon={<StopIcon />} disabled={busy || safety.stop?.enabled === false}
+  454:             onClick={() => requestSessionAction
+  455:               ? requestSessionAction('stop', session.session_id)
+  456:               : act('stop', () => mmmxService.stopSession(session.session_id), 'Stopped')}>
+  457:             Stop
+  458:           </Button>
+-- mmmxService.stopSession @ 456
+  449:             Resume
+  450:           </Button>
+  451:         )}
+  452:         {!['COMPLETE', 'ERROR', 'DRAFT'].includes(session.status) && (
+  453:           <Button variant="outlined" color="error" startIcon={<StopIcon />} disabled={busy || safety.stop?.enabled === false}
+  454:             onClick={() => requestSessionAction
+  455:               ? requestSessionAction('stop', session.session_id)
+  456:               : act('stop', () => mmmxService.stopSession(session.session_id), 'Stopped')}>
+  457:             Stop
+  458:           </Button>
+  459:         )}
+  460:         <Button variant="outlined" disabled={busy || safety.reconcile?.enabled === false}
+  461:           onClick={() => requestSessionAction
+  462:             ? requestSessionAction('reconcile', session.session_id)
+  463:             : act('reconcile', () => mmmxService.reconcile(session.session_id), 'Reconcile triggered')}>
+  464:           Reconcile
+  465:         </Button>
+  466:       </Box>
+-- mmmxService.reconcile @ 463
+  456:               : act('stop', () => mmmxService.stopSession(session.session_id), 'Stopped')}>
+  457:             Stop
+  458:           </Button>
+  459:         )}
+  460:         <Button variant="outlined" disabled={busy || safety.reconcile?.enabled === false}
+  461:           onClick={() => requestSessionAction
+  462:             ? requestSessionAction('reconcile', session.session_id)
+  463:             : act('reconcile', () => mmmxService.reconcile(session.session_id), 'Reconcile triggered')}>
+  464:           Reconcile
+  465:         </Button>
+  466:       </Box>
+  467: 
+  468:       {Object.values(safety).some((v) => v?.enabled === false) && (
+  469:         <Paper variant="outlined" sx={{ p: 1, mb: 1, borderRadius: 1.5, borderColor: '#ff9800' }}>
+  470:           <Typography variant="caption" sx={{ color: 'warning.main', fontWeight: 700 }}>Control locks</Typography>
+  471:           {Object.entries(safety)
+  472:             .filter(([, v]) => v?.enabled === false)
+  473:             .slice(0, 6)

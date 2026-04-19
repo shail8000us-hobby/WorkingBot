@@ -50,6 +50,7 @@ class PriceAlertMonitor:
         self._running = False
         self._thread: Optional[threading.Thread] = None
         self._current_price: Optional[float] = None
+        self._previous_price: Optional[float] = None
         self._last_check: Optional[datetime] = None
         
         # Load notification settings from database
@@ -84,6 +85,7 @@ class PriceAlertMonitor:
         """
         if self._current_price != price:
             logger.debug(f"Price updated in monitor: ${price:,.2f}")
+        self._previous_price = self._current_price
         self._current_price = price
         
     def get_status(self) -> dict:
@@ -133,8 +135,11 @@ class PriceAlertMonitor:
                 elif direction == 'below' and self._current_price <= target_price:
                     should_trigger = True
                 elif direction == 'cross':
-                    # Cross alerts trigger on any crossing
-                    should_trigger = True  # Simplified for now
+                    # Cross alerts trigger when price moves through the target level
+                    if self._previous_price is not None:
+                        prev_below = self._previous_price < target_price
+                        curr_below = self._current_price < target_price
+                        should_trigger = prev_below != curr_below  # True only on actual crossing
                     
                 if should_trigger:
                     # Check cooldown

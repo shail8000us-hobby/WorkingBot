@@ -884,8 +884,7 @@ async def execute_pure_straddle_roll(
             else:
                 # Fallback: standard close (should not happen — preset sets True)
                 try:
-                    from .mmm_monitor import _auto_close_all
-                    await _auto_close_all(monitor, session, sid, reason='hard_stop')
+                    await monitor._auto_close_all(reason='hard_stop')
                     closed = -1
                 except Exception:
                     closed = 0
@@ -919,8 +918,7 @@ async def execute_pure_straddle_roll(
             sid, 'warning',
         )
         try:
-            from .mmm_monitor import _auto_close_all
-            await _auto_close_all(monitor, session, sid, reason='expiry')
+            await monitor._auto_close_all(reason='expiry')
         except Exception as e:
             log.error(f"[{sid}] [STRADDLE_ROLL] Expiry close failed: {e}", exc_info=True)
         session['strategy_status'] = 'STOPPED'

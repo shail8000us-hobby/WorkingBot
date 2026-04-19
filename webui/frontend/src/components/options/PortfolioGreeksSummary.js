@@ -104,19 +104,27 @@ function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, ivStats, on
                         <Typography variant="caption" color="text.secondary" fontWeight="bold">
                             Portfolio Greeks ({sortedPositions.length} visible positions)
                         </Typography>
-                        {Math.abs(aggregatedGreeks.delta) < 0.1 && (
+                        {Math.abs(aggregatedGreeks.delta) < 0.05 && (
                             <Chip
-                                label="Delta Neutral ✅"
+                                label="Δ Near-Neutral ✅"
                                 size="small"
                                 color="info"
                                 sx={{ height: 18, fontSize: '0.65rem' }}
                             />
                         )}
-                        {Math.abs(aggregatedGreeks.delta) > 10 && (
+                        {Math.abs(aggregatedGreeks.delta) >= 0.05 && Math.abs(aggregatedGreeks.delta) < 3 && (
+                            <Chip
+                                label={`Δ ${aggregatedGreeks.delta >= 0 ? '+' : ''}${(Number(aggregatedGreeks.delta) || 0).toFixed(3)} BTC`}
+                                size="small"
+                                color="warning"
+                                sx={{ height: 18, fontSize: '0.65rem' }}
+                            />
+                        )}
+                        {Math.abs(aggregatedGreeks.delta) >= 3 && (
                             <Chip
                                 label="High Delta ⚠️"
                                 size="small"
-                                color="warning"
+                                color="error"
                                 sx={{ height: 18, fontSize: '0.65rem' }}
                             />
                         )}

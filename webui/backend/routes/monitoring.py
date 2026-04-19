@@ -142,7 +142,12 @@ def _load_monitoring_snapshot(symbol_name=None, mode=None):
             data = json.load(f)
         
         # Check if data is fresh (< 30s old)
-        timestamp = datetime.fromisoformat(data['timestamp'])
+        # Snapshots use epoch float; older/alternative format may use ISO string
+        raw_ts = data['timestamp']
+        if isinstance(raw_ts, (int, float)):
+            timestamp = datetime.fromtimestamp(raw_ts)
+        else:
+            timestamp = datetime.fromisoformat(raw_ts)
         age = (datetime.now() - timestamp).total_seconds()
         
         if age < 30:
@@ -219,16 +224,18 @@ def monitoring_status():
         # Try snapshot file first (works with standalone bot)
         snapshot = _load_monitoring_snapshot(symbol, mode)
         if snapshot:
+            # Snapshots may use 'monitoring' (current bot) or 'layers' (legacy) key
+            layer_data = snapshot.get('layers') or snapshot.get('monitoring') or {}
             return jsonify({
-                'monitoring_active': snapshot.get('monitoring_active', False),
+                'monitoring_active': snapshot.get('monitoring_active', bool(layer_data)),
                 'symbol': snapshot.get('symbol', symbol or 'BTCUSD'),
                 'mode': snapshot.get('mode', mode or 'LONG'),
                 'layers': {
-                    'price_health': snapshot['layers'].get('price_health', {}).get('active', False),
-                    'pre_order_logger': snapshot['layers'].get('pre_order_stats', {}).get('active', False),
-                    'tp_verification': snapshot['layers'].get('tp_verification', {}).get('active', False),
-                    'anomaly_detection': snapshot['layers'].get('anomalies', {}).get('active', False),
-                    'predictive_display': snapshot['layers'].get('predictive', {}).get('active', False)
+                    'price_health': layer_data.get('price_health', {}).get('active', False),
+                    'pre_order_logger': layer_data.get('pre_order_stats', {}).get('active', False),
+                    'tp_verification': layer_data.get('tp_verification', {}).get('active', False),
+                    'anomaly_detection': layer_data.get('anomalies', {}).get('active', False),
+                    'predictive_display': layer_data.get('predictive', {}).get('active', False)
                 },
                 'timestamp': snapshot.get('timestamp'),
                 'source': 'snapshot_file'

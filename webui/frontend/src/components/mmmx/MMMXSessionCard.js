@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Card, CardContent, Box, Typography, Chip, LinearProgress, IconButton, Tooltip,
+  Dialog, DialogTitle, DialogContent, DialogActions, Button, CircularProgress,
 } from '@mui/material';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import PauseIcon from '@mui/icons-material/Pause';
@@ -8,6 +9,7 @@ import StopIcon from '@mui/icons-material/Stop';
 import RocketLaunchIcon from '@mui/icons-material/RocketLaunch';
 import BoltIcon from '@mui/icons-material/Bolt';
 import CircleIcon from '@mui/icons-material/Circle';
+import PowerOffIcon from '@mui/icons-material/PowerOff';
 import { scfg } from './utils/mmmxConstants';
 import { fmt, pnlColor, computeDTE, sessionDisplayName, heartbeatAge, formatDdmmyy } from './utils/mmmxFormatters';
 
@@ -39,13 +41,26 @@ function DteChip({ dteInfo }) {
 }
 
 export default function MMMXSessionCard({
-  s, selected, onSelect, onPause, onResume, onStop, onDeploy, onForceHB, controlSafety, allSessions,
+  s, selected, onSelect, onPause, onResume, onStop, onDeploy, onForceHB, onKillSwitch,
+  controlSafety, allSessions,
 }) {
   const cfg = scfg(s.status, s.reconcile_required);
   const pnl = s.portfolio_pnl ?? 0;
   const hardStop = s.hard_stop_usd ?? 0;
   const pnlPct = hardStop > 0 ? Math.min(100, (Math.abs(pnl) / hardStop) * 100) : 0;
+  const hardStopHit = hardStop > 0 && pnl < 0 && Math.abs(pnl) >= hardStop;
   const safety = controlSafety || {};
+
+  // Kill switch dialog state
+  const [killDialogOpen, setKillDialogOpen] = useState(false);
+  const [killSubmitting, setKillSubmitting] = useState(false);
+
+  const handleKillConfirm = async () => {
+    setKillSubmitting(true);
+    setKillDialogOpen(false);
+    await onKillSwitch?.(s.session_id);
+    setKillSubmitting(false);
+  };
 
   const dteInfo = computeDTE(s.expiry_date, s.expiry_ddmmyy || s.params?.target_expiry_ddmmyy);
 
@@ -117,7 +132,21 @@ export default function MMMXSessionCard({
           </Box>
         </Box>
 
-        {/* Row 4: P&L bar */}
+        {/* Row 4: Hard stop label + P&L bar */}
+        <Typography
+          variant="caption"
+          sx={{
+            display: 'block', mb: 0.25, fontFamily: 'monospace', fontSize: '0.62rem',
+            fontWeight: hardStopHit ? 700 : 400,
+            color: hardStopHit ? '#f44336' : hardStop > 0 ? '#ff9800' : 'text.disabled',
+          }}
+        >
+          {hardStopHit
+            ? '⛔ Hard Stop Hit'
+            : hardStop > 0
+              ? `Hard Stop: $${hardStop.toLocaleString()}`
+              : 'Hard Stop: Disabled'}
+        </Typography>
         {hardStop > 0 && (
           <Box sx={{ mb: 0.5 }}>
             <LinearProgress variant="determinate" value={pnlPct}
@@ -196,8 +225,63 @@ export default function MMMXSessionCard({
               </span>
             </Tooltip>
           )}
+          {['RUNNING', 'PAUSED'].includes(s.status) && onKillSwitch && (
+            <Tooltip title="Emergency Kill Switch — square off ALL positions with market orders">
+              <span>
+                <IconButton
+                  size="small"
+                  aria-label="Emergency Kill Switch"
+                  disabled={killSubmitting}
+                  sx={{
+                    color: '#d50000',
+                    '&:hover': { color: '#ff1744', backgroundColor: 'rgba(213,0,0,0.12)' },
+                  }}
+                  onClick={() => setKillDialogOpen(true)}>
+                  {killSubmitting
+                    ? <CircularProgress size={14} sx={{ color: '#d50000' }} />
+                    : <PowerOffIcon sx={{ fontSize: 16 }} />}
+                </IconButton>
+              </span>
+            </Tooltip>
+          )}
         </Box>
       </CardContent>
+
+      {/* Emergency Kill Switch confirmation dialog */}
+      <Dialog
+        open={killDialogOpen}
+        onClose={() => setKillDialogOpen(false)}
+        onClick={(e) => e.stopPropagation()}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ color: '#d50000', fontWeight: 700 }}>
+          ⛔ Emergency Kill Switch
+        </DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ mb: 1 }}>
+            Square off <strong>all positions</strong> for session{' '}
+            <code>{s.session_id}</code> using market orders?
+          </Typography>
+          <Typography variant="caption" sx={{ display: 'block', mt: 1, color: '#ff9800' }}>
+            This cannot be undone. Other sessions are not affected.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setKillDialogOpen(false)} color="inherit" size="small">
+            Cancel
+          </Button>
+          <Button
+            onClick={handleKillConfirm}
+            variant="contained"
+            color="error"
+            size="small"
+            sx={{ fontWeight: 700 }}
+          >
+            Confirm Exit All
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Card>
   );
 }

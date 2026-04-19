@@ -178,6 +178,7 @@ export default function OptionsPositionsPropDeskHeader({
   status,
   positions,
   positionsCount,
+  advisory,
   customOrderCount,
   hiddenCount,
   payoffSelectedCount,
@@ -213,6 +214,8 @@ export default function OptionsPositionsPropDeskHeader({
   const [settingsAnchorEl, setSettingsAnchorEl] = useState(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
+  const advisoryTone = advisory?.color || ACCENT_CYAN;
+
   const expiryMeta = useMemo(() => {
     const counts = {};
     (positions || []).forEach((p) => {
@@ -237,7 +240,12 @@ export default function OptionsPositionsPropDeskHeader({
     <Shell data-testid="options-propdesk-header">
       {/* ROW 1 — Top Bar */}
       <Row>
-        <Cluster sx={{ minWidth: 260 }}>
+        <Cluster
+          sx={{
+            minWidth: { xs: 260, lg: 0 },
+            flex: { lg: '1 1 0' },
+          }}
+        >
           <ChevronIcon sx={{ color: alpha('#e2e8f0', 0.8), fontSize: 20 }} />
           <TitleText>Options Positions</TitleText>
           <Chip
@@ -292,7 +300,89 @@ export default function OptionsPositionsPropDeskHeader({
           )}
         </Cluster>
 
-        <PillsRow sx={{ justifyContent: { xs: 'flex-start', md: 'flex-end' } }}>
+        {advisory && (
+          <Box
+            sx={{
+              flex: { lg: '0 0 auto' },
+              width: { xs: '100%', lg: 640 },
+              maxWidth: '100%',
+              minWidth: { xs: '100%', lg: 320 },
+              display: 'flex',
+              justifyContent: 'center',
+              px: { xs: 0, lg: 1 },
+              order: { xs: 3, lg: 2 },
+            }}
+          >
+            <Tooltip title={advisory.reasons ? `Why: ${advisory.reasons}` : ''} arrow disableHoverListener={!advisory.reasons}>
+              <Box
+                sx={{
+                  width: '100%',
+                  maxWidth: 640,
+                  borderRadius: 999,
+                  border: `1px solid ${alpha(advisoryTone, 0.55)}`,
+                  bgcolor: alpha(advisoryTone, 0.12),
+                  boxShadow: `0 0 14px ${alpha(advisoryTone, 0.2)}`,
+                  px: 0.9,
+                  py: 0.45,
+                  minHeight: 30,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 0.7,
+                }}
+              >
+                <Chip
+                  label={`Signal: ${advisory.label}`}
+                  size="small"
+                  variant="outlined"
+                  sx={{
+                    height: 18,
+                    fontSize: '0.62rem',
+                    fontWeight: 900,
+                    borderColor: alpha(advisoryTone, 0.75),
+                    color: advisoryTone,
+                    bgcolor: alpha(advisoryTone, 0.12),
+                    '& .MuiChip-label': { px: 0.7 },
+                  }}
+                />
+
+                <Typography
+                  sx={{
+                    color: alpha('#dbeafe', 0.9),
+                    fontSize: '0.68rem',
+                    fontWeight: 700,
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    flex: 1,
+                    minWidth: 0,
+                  }}
+                >
+                  {advisory.action}
+                </Typography>
+
+                <Typography
+                  sx={{
+                    color: advisoryTone,
+                    fontSize: '0.66rem',
+                    fontWeight: 900,
+                    letterSpacing: '0.04em',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  Confidence {advisory.confidence}%
+                </Typography>
+              </Box>
+            </Tooltip>
+          </Box>
+        )}
+
+        <PillsRow
+          sx={{
+            flex: { lg: '1 1 0' },
+            minWidth: { lg: 0 },
+            justifyContent: { xs: 'flex-start', lg: 'flex-end' },
+          }}
+        >
           <Button
             size="small"
             variant="contained"
@@ -567,6 +657,14 @@ OptionsPositionsPropDeskHeader.propTypes = {
   status: PropTypes.object,
   positions: PropTypes.array,
   positionsCount: PropTypes.number.isRequired,
+  advisory: PropTypes.shape({
+    signalState: PropTypes.string,
+    label: PropTypes.string,
+    color: PropTypes.string,
+    action: PropTypes.string,
+    confidence: PropTypes.number,
+    reasons: PropTypes.string,
+  }),
   customOrderCount: PropTypes.number,
   hiddenCount: PropTypes.number,
   payoffSelectedCount: PropTypes.number,
@@ -603,6 +701,7 @@ OptionsPositionsPropDeskHeader.propTypes = {
 OptionsPositionsPropDeskHeader.defaultProps = {
   status: null,
   positions: [],
+  advisory: null,
   customOrderCount: 0,
   hiddenCount: 0,
   payoffSelectedCount: 0,

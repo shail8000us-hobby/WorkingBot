@@ -725,7 +725,8 @@ def start_session(session_id: str):
         # force_start=true lets an operator bypass the checks below in emergency
         # (e.g. to start a recovery/flatten session on a broken inventory).
         _req_body = request.get_json(silent=True) or {}
-        _force_start = bool(_req_body.get('force_start', False))
+        _fs_raw = _req_body.get('force_start', False)
+        _force_start = str(_fs_raw).lower() in ('true', '1', 'yes', 'on')  # F4: safe bool
 
         # ── PREFLIGHT A: strategy invariant check ─────────────────────────────
         # For STRADDLE_WITH_ADJUSTMENT, CE/PE active_strike must be equal.
@@ -756,27 +757,48 @@ def start_session(session_id: str):
         # position-cap gate returns 0 on every single call — all adjustments are
         # silently blocked from the first heartbeat.  Force the operator to fix
         # the cap before the monitor starts (or acknowledge with force_start).
+        #
+        # ── F4 fix: also check total_lots vs max_total_exposure ───────────────
+        # Engine §13.2 enforces max_total_exposure (active+frozen) per side,
+        # defaulting to max_lots_per_side * 2 when not configured.  A session
+        # can start and "run" but be unable to adjust effectively if already over
+        # the total ceiling.  Surface this before start so operator can fix it.
         if entry_mode == 'adopt':
-            _max_lots = session.get('params', {}).get('max_lots_per_side', 100)
-            _ce_lots = session.get('ce', {}).get('active_lots', 0)
-            _pe_lots = session.get('pe', {}).get('active_lots', 0)
+            _params = session.get('params', {})
+            _max_lots = _params.get('max_lots_per_side', 100)
+            # Mirror engine default: max_total_exposure = max_lots_per_side * 2 if unset
+            _max_total = _params.get('max_total_exposure', 0) or (_max_lots * 2)
+            _ce_active = session.get('ce', {}).get('active_lots', 0)
+            _pe_active = session.get('pe', {}).get('active_lots', 0)
+            _ce_total = session.get('ce', {}).get('total_lots', 0)
+            _pe_total = session.get('pe', {}).get('total_lots', 0)
             _cap_issues = []
-            if _ce_lots > _max_lots:
+            if _ce_active > _max_lots:
                 _cap_issues.append(
-                    f"CE active_lots ({_ce_lots}) > max_lots_per_side ({_max_lots})"
+                    f"CE active_lots ({_ce_active}) > max_lots_per_side ({_max_lots})"
                     f" — all CE adjustments will be blocked"
                 )
-            if _pe_lots > _max_lots:
+            if _pe_active > _max_lots:
                 _cap_issues.append(
-                    f"PE active_lots ({_pe_lots}) > max_lots_per_side ({_max_lots})"
+                    f"PE active_lots ({_pe_active}) > max_lots_per_side ({_max_lots})"
                     f" — all PE adjustments will be blocked"
+                )
+            if _ce_total > _max_total:
+                _cap_issues.append(
+                    f"CE total_lots ({_ce_total}) > max_total_exposure ({_max_total})"
+                    f" — no new CE sells will be allowed (total exposure ceiling)"
+                )
+            if _pe_total > _max_total:
+                _cap_issues.append(
+                    f"PE total_lots ({_pe_total}) > max_total_exposure ({_max_total})"
+                    f" — no new PE sells will be allowed (total exposure ceiling)"
                 )
             if _cap_issues and not _force_start:
                 return jsonify({
                     'success': False,
                     'error': (
                         f"Cap/lots mismatch on adopted session: {'; '.join(_cap_issues)}. "
-                        f"Update max_lots_per_side before starting, "
+                        f"Update max_lots_per_side/max_total_exposure before starting, "
                         f"or pass force_start=true to override."
                     ),
                     'cap_violations': _cap_issues,
@@ -1851,6 +1873,140 @@ def exit_all_session(session_id: str):
 
     except Exception as e:
         log.exception(f"Failed to initiate exit_all for session {session_id}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
+# Emergency Kill Switch — per-session market-order square-off
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/kill_switch', methods=['POST'])
+def kill_switch_session(session_id: str):
+    """
+    Emergency Kill Switch — immediately square off ALL positions for a single session.
+
+    Marks the session with _kill_switch_triggered=True (audit marker) then
+    delegates to the existing exit_all flow: sets strategy_status=EXITING and
+    forces the heartbeat to run immediately so close orders go out without
+    waiting for the next scheduled interval.
+
+    Safety rules:
+    - Scope is THIS session only — other sessions are never touched.
+    - Idempotent: if already EXITING/STOPPED/IDLE, returns 200 (no double-submit).
+    - Audit entries written to both activity log and event log.
+
+    Returns HTTP 202 Accepted (async close is in-flight).
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+
+        if not session:
+            return jsonify({'success': False, 'error': f'Session not found: {session_id}'}), 404
+
+        status = session.get('strategy_status', 'IDLE')
+
+        # Idempotent: nothing to do for terminal / already-exiting states
+        if status in ('STOPPED', 'IDLE'):
+            return jsonify({
+                'success': True,
+                'message': f'Session already {status} — no positions to exit',
+                'current_status': status,
+                'kill_switch_triggered': False,
+            }), 200
+
+        if status == 'EXITING':
+            return jsonify({
+                'success': True,
+                'message': 'Exit already in progress (idempotent)',
+                'current_status': status,
+                'kill_switch_triggered': session.get('_kill_switch_triggered', False),
+            }), 200
+
+        data = request.get_json(silent=True) or {}
+        reason = (data.get('reason') or '').strip() or 'kill_switch'
+        initiated_at = datetime.now(timezone.utc).isoformat()
+
+        # Build position summary for response
+        def _lots(side_key):
+            ss = session.get(side_key, {})
+            return {
+                'active_lots': ss.get('active_lots', 0),
+                'frozen_lots': ss.get('frozen_total_lots', 0),
+                'total_lots': ss.get('total_lots', 0),
+            }
+
+        # Atomically mark kill switch + set EXITING (same fields as exit_all,
+        # plus the _kill_switch_* audit markers)
+        kill_fields = {
+            'strategy_status': 'EXITING',
+            '_kill_switch_triggered': True,
+            '_kill_switch_at': initiated_at,
+            '_kill_switch_reason': reason,
+            '_exit_all_requested': True,
+            '_exit_all_initiated_at': initiated_at,
+            '_exit_all_reason': f'kill_switch: {reason}',
+            '_exit_all_rounds_attempted': 0,
+            '_exit_all_failed_positions': [],
+            '_exit_all_partial': False,
+            '_exit_all_completed_at': None,
+        }
+        storage.update_session(session_id, kill_fields)
+
+        # Mirror into live monitor's in-memory session (if running)
+        monitor = get_monitor(session_id)
+        if monitor:
+            for k, v in kill_fields.items():
+                monitor.session[k] = v
+
+        emit_status_change(session_id, status, 'EXITING', f'Kill Switch: {reason}')
+
+        # Force immediate heartbeat so the close doesn't wait for next interval
+        if monitor:
+            monitor.force_heartbeat()
+
+        # Audit: activity log
+        try:
+            from .mmm_activity import log_activity
+            log_activity(
+                'kill_switch_triggered',
+                f'\U0001f6a8 KILL SWITCH triggered (reason={reason}, from={status})',
+                session_id, 'critical',
+                {'reason': reason, 'prior_status': status, 'initiated_at': initiated_at},
+            )
+        except Exception:
+            pass
+
+        # Audit: structured event log
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            _get_evl().enqueue_event(
+                session_id=session_id,
+                event_category='SESSION_LIFECYCLE',
+                event_type='kill_switch_triggered',
+                severity='CRITICAL',
+                remark=f'KILL SWITCH — emergency square off all positions (reason={reason})',
+                details={'reason': reason, 'prior_status': status, 'initiated_at': initiated_at},
+            )
+        except Exception:
+            pass
+
+        log.critical(f"[{session_id}] KILL SWITCH triggered from {status} (reason={reason})")
+
+        return jsonify({
+            'success': True,
+            'message': f'Kill switch activated for session {session_id}',
+            'session_id': session_id,
+            'initiated_at': initiated_at,
+            'prior_status': status,
+            'positions_to_close': {
+                'ce': _lots('ce'),
+                'pe': _lots('pe'),
+            },
+        }), 202
+
+    except Exception as e:
+        log.exception(f"Failed to trigger kill switch for session {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
 
 
@@ -3395,6 +3551,7 @@ def adopt_positions(session_id: str):
         from .mmm_adopter import (
             classify_positions,
             validate_adoptable,
+            validate_position_congruence,
             build_adopted_session_state,
         )
 
@@ -3444,6 +3601,18 @@ def adopt_positions(session_id: str):
                     'error': f'Position {i+1} missing fields: {", ".join(missing)}',
                 }), 400
 
+        # ── F1 fix: Payload congruence — symbol must encode the same side/strike/expiry ──
+        # Prevents mismatched state where the adopted live contract diverges from
+        # the contract used by runtime logic, causing reconciliation to treat real
+        # positions as missing/untracked and leave them open but unmanaged.
+        congruence_errors = validate_position_congruence(positions, expiry)
+        if congruence_errors:
+            return jsonify({
+                'success': False,
+                'error': 'Payload congruence validation failed: ' + '; '.join(congruence_errors),
+                'congruence_errors': congruence_errors,
+            }), 400
+
         # Get spot price for classification
         spot_price = 0.0
         try:
@@ -3476,8 +3645,14 @@ def adopt_positions(session_id: str):
             expiry=expiry,
         )
 
-        # If trigger_mode is current_prices, fetch live premiums now
+        # If trigger_mode is current_prices, fetch live premiums now.
+        # ── F2 fix: fail explicitly if any active-side fetch fails ──────────────
+        # Frontend defaults to current_prices. A transient fetch failure would
+        # silently leave a stale entry-price baseline, causing immediate/early
+        # trigger behaviour after start. Return HTTP 400 so the operator can
+        # retry or explicitly choose trigger_mode=entry_prices instead.
         if trigger_mode == 'current_prices':
+            _trigger_failures = []
             for side_key in ('ce', 'pe'):
                 side_data = session.get(side_key, {})
                 active_strike = side_data.get('active_strike')
@@ -3498,8 +3673,28 @@ def adopt_positions(session_id: str):
                                     f"[Adopt] Set {side_key.upper()} trigger to current price: "
                                     f"strike={active_strike}, trigger={live_mark:.2f}"
                                 )
+                            else:
+                                _trigger_failures.append(
+                                    f"{side_key.upper()} ticker returned mark_price=0 for {symbol}"
+                                )
+                        else:
+                            _trigger_failures.append(
+                                f"{side_key.upper()} ticker request unsuccessful for {symbol}"
+                            )
                     except Exception as e:
-                        log.warning(f"[Adopt] Could not fetch live price for {symbol}: {e}")
+                        _trigger_failures.append(
+                            f"{side_key.upper()} ticker fetch error for {symbol}: {e}"
+                        )
+            if _trigger_failures:
+                return jsonify({
+                    'success': False,
+                    'error': (
+                        'Could not seed trigger snapshots from live prices '
+                        f'({"; ".join(_trigger_failures)}). '
+                        'Retry, or pass trigger_mode=entry_prices to use entry prices instead.'
+                    ),
+                    'trigger_failures': _trigger_failures,
+                }), 400
 
         # Store adoption snapshot
         session['adoption_snapshot']['spot_at_adoption'] = spot_price
@@ -4443,7 +4638,8 @@ def inject_position(session_id: str):
         side_param = data.get('side', '').lower()
         lots_param = int(data.get('lots', 0))
         strike_raw = data.get('strike')
-        adopt = bool(data.get('adopt', False))
+        _adopt_raw = data.get('adopt', False)
+        adopt = str(_adopt_raw).lower() in ('true', '1', 'yes', 'on')  # F4: safe bool
         adopt_fill_price = data.get('fill_price')  # required when adopt=True
 
         if side_param not in ('ce', 'pe'):
@@ -7277,7 +7473,7 @@ def emergency_stop_all():
                 monitor = get_monitor(sid)
                 if monitor and monitor.is_running:
                     monitor.stop(reason)
-                    session['strategy_status'] = 'PAUSED'
+                    session['strategy_status'] = 'STOPPED'
                     session['_emergency_stop'] = {
                         'timestamp': datetime.now(timezone.utc).isoformat(),
                         'reason': reason,
@@ -7285,6 +7481,27 @@ def emergency_stop_all():
                     storage.save_session(session)
                     stopped.append(sid)
                     log_activity('emergency', f'🚨 Emergency stop: {reason}', sid, 'critical')
+                else:
+                    # R2 fix: RUNNING session has no live monitor (crashed/dead).
+                    # Mark it as FAILED in storage so it doesn't appear stuck-running.
+                    # Add to failed list so the operator knows it was not cleanly stopped.
+                    log.error(
+                        f"[{sid}] emergency_stop_all: RUNNING session has no live monitor "
+                        f"(monitor={'dead' if monitor else 'missing'}) — marking FAILED"
+                    )
+                    session['strategy_status'] = 'FAILED'
+                    session['_emergency_stop'] = {
+                        'timestamp': datetime.now(timezone.utc).isoformat(),
+                        'reason': reason,
+                        'degraded': True,
+                        'note': 'No live monitor at stop time — marked FAILED',
+                    }
+                    try:
+                        storage.save_session(session)
+                    except Exception as save_e:
+                        log.error(f"[{sid}] Failed to persist FAILED status: {save_e}")
+                    failed.append({'session_id': sid, 'error': 'No live monitor — marked FAILED'})
+                    log_activity('emergency', f'🚨 Emergency stop (no monitor): {reason}', sid, 'critical')
             except Exception as e:
                 log.error(f"Failed to stop {sid}: {e}")
                 failed.append({'session_id': sid, 'error': str(e)})
@@ -7439,6 +7656,7 @@ def emergency_pause_all():
         for session in running_sessions:
             sid = session.get('session_id', session.get('id', ''))
             try:
+                pause_session_monitor(sid, reason)
                 session['strategy_status'] = 'PAUSED'
                 session['_emergency_pause'] = {
                     'timestamp': datetime.now(timezone.utc).isoformat(),
@@ -7532,12 +7750,11 @@ def emergency_close_all_positions():
                 positions = []
                 for side_key in ['ce', 'pe']:
                     side = session.get(side_key, {})
-                    for pos_type in ['entry', 'adj1', 'adj2', 'adj3']:
-                        pos = side.get(pos_type, {})
-                        if pos.get('open') and pos.get('lots', 0) > 0:
+                    for pos in side.get('positions', []):
+                        if pos.get('status') != 'closed' and pos.get('lots', 0) > 0:
                             positions.append({
                                 'side': side_key,
-                                'type': pos_type,
+                                'type': pos.get('type', 'original'),
                                 'strike': pos.get('strike'),
                                 'lots': pos.get('lots'),
                             })
@@ -7571,16 +7788,17 @@ def emergency_close_all_positions():
                     emergency=True,
                 )
                 
-                # Count closed positions
+                # Count closed positions from unified positions[] ledger
                 session = monitor.session
                 positions_closed = []
                 for side_key in ['ce', 'pe']:
                     side = session.get(side_key, {})
-                    for pos_type in ['entry', 'adj1', 'adj2', 'adj3']:
-                        pos = side.get(pos_type, {})
-                        # Check if position was just closed
-                        if not pos.get('open') and pos.get('close_time'):
-                            positions_closed.append(f"{side_key}_{pos_type}")
+                    for pos in side.get('positions', []):
+                        if pos.get('status') == 'closed' and pos.get('close_time'):
+                            positions_closed.append(
+                                f"{side_key}@{pos.get('strike', '?')}"
+                                f"({pos.get('type', 'original')})"
+                            )
                 
                 return {
                     'session_id': sid,

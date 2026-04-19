@@ -267,7 +267,106 @@ def _classify_side(
 
 
 # =============================================================================
-# 3. Validate adoptable
+# 3. Validate position congruence (symbol must encode the same side/strike/expiry)
+# =============================================================================
+
+def validate_position_congruence(positions: List[Dict], expiry: str) -> List[str]:
+    """
+    Cross-validate that each position's symbol encodes the same side, strike, and
+    expiry that was submitted in the payload.
+
+    The Delta symbol format is: {TYPE}-{ASSET}-{STRIKE}-{EXPIRY_DDMMYY[YY]}
+    e.g.  C-BTC-98000-180226  or  P-BTC-92000-18022026
+
+    Returns a list of error strings (empty list = all OK).
+    Called at the API boundary before any state mutation.
+    """
+    errors = []
+    for i, pos in enumerate(positions):
+        idx = i + 1
+        symbol = pos.get('symbol', '')
+        submitted_side = (pos.get('side') or '').upper()
+
+        try:
+            submitted_strike = float(pos.get('strike', 0))
+        except (ValueError, TypeError):
+            errors.append(f"Position {idx}: strike is not a valid number")
+            continue
+
+        # Parse symbol parts
+        parts = symbol.split('-')
+        if len(parts) < 4:
+            errors.append(
+                f"Position {idx}: cannot parse symbol '{symbol}' "
+                f"(expected C-BTC-STRIKE-EXPIRY format)"
+            )
+            continue
+
+        # Derive side from symbol type prefix
+        sym_type = parts[0].upper()
+        if sym_type == 'C':
+            derived_side = 'CE'
+        elif sym_type == 'P':
+            derived_side = 'PE'
+        else:
+            errors.append(
+                f"Position {idx}: symbol '{symbol}' has unknown option type '{sym_type}' "
+                f"(expected 'C' for CE or 'P' for PE)"
+            )
+            continue
+
+        # Validate submitted side is a known value
+        if submitted_side not in ('CE', 'PE'):
+            errors.append(
+                f"Position {idx}: submitted side '{submitted_side}' is invalid "
+                f"(must be CE or PE)"
+            )
+            # Don't continue — still validate strike/expiry vs symbol
+        elif submitted_side != derived_side:
+            errors.append(
+                f"Position {idx}: side mismatch — symbol '{symbol}' encodes {derived_side} "
+                f"but submitted side='{submitted_side}'"
+            )
+
+        # Derive strike from symbol
+        try:
+            derived_strike = float(parts[2])
+        except (ValueError, IndexError):
+            errors.append(
+                f"Position {idx}: cannot parse strike from symbol '{symbol}'"
+            )
+            continue
+
+        if abs(submitted_strike - derived_strike) > 0.01:
+            errors.append(
+                f"Position {idx}: strike mismatch — symbol '{symbol}' encodes "
+                f"strike={derived_strike} but submitted strike={submitted_strike}"
+            )
+
+        # Derive expiry from symbol and normalise to DDMMYYYY
+        expiry_str = parts[3]
+        if len(expiry_str) == 6:
+            derived_expiry = expiry_str[:4] + '20' + expiry_str[4:]
+        elif len(expiry_str) == 8:
+            derived_expiry = expiry_str
+        else:
+            errors.append(
+                f"Position {idx}: cannot parse expiry from symbol '{symbol}' "
+                f"(got '{expiry_str}', expected 6 or 8 chars)"
+            )
+            continue
+
+        if expiry and derived_expiry != expiry:
+            errors.append(
+                f"Position {idx}: expiry mismatch — symbol '{symbol}' encodes "
+                f"expiry {derived_expiry} but request expiry='{expiry}'"
+            )
+
+    return errors
+
+
+# =============================================================================
+# 4. Validate adoptable
 # =============================================================================
 
 def validate_adoptable(
@@ -386,7 +485,14 @@ def validate_adoptable(
                     f"(status: {s_status}). Cannot adopt."
                 )
     except Exception as e:
-        warnings.append(f"Could not check cross-session overlap: {e}")
+        # ── F5 fix: fail-closed — do not adopt if isolation cannot be confirmed ──
+        # On storage faults or races the overlap check is undefined; a warning
+        # that continues can allow double-ownership.  Block adoption and force
+        # the operator to resolve the storage issue before proceeding.
+        errors.append(
+            f"Ownership isolation check failed — cannot adopt without confirming "
+            f"no cross-session overlap: {e}"
+        )
 
     # --- Total premium sketch ---
     total_prem = 0.0

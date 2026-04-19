@@ -759,7 +759,7 @@ def log_request_metrics(response):
     
     except Exception as e:
         # Don't fail the request if metrics logging fails
-        log.debug(f"Metrics logging failed: {e}")
+        log.warning(f"Metrics logging failed: {e}")
     
     # Phase 7.3: Browser cache headers for API responses
     if request.path.startswith('/api/') and request.method == 'GET' and response.status_code < 400:
@@ -1704,7 +1704,7 @@ if __name__ == '__main__':
                     'positions': {},
                     'timestamp': time.time()
                 }
-                socketio.emit('state_snapshot', state_snapshot, broadcast=True)
+                socketio.emit('state_snapshot', state_snapshot)
                 print(f"📤 Broadcasted state snapshot to all {len(socketio.server.eio.sids)} clients")
             except Exception as e:
                 print(f"⚠️  Error broadcasting state: {e}")
@@ -1716,6 +1716,64 @@ if __name__ == '__main__':
         name='state-broadcaster'
     ).start()
     print("✅ State broadcaster started")
+
+    # ==========================================
+    # SHAILENDRA SIGNAL BROADCASTER (Zero-Impact)
+    # ==========================================
+    def shailendra_broadcaster():
+        import json
+        import sys
+        from pathlib import Path
+        from datetime import datetime
+        if str(BASE_DIR) not in sys.path:
+            sys.path.append(str(BASE_DIR))
+        
+        try:
+            import shailendra
+        except ImportError:
+            print("⚠️ Shailendra engine not found")
+            return
+            
+        snapshot_path = Path(BASE_DIR) / 'monitoring_snapshot.json'
+        
+        while True:
+            try:
+                _threading.Event().wait(10)
+                if not snapshot_path.exists():
+                    continue
+                with open(snapshot_path, 'r') as f:
+                    snapshot = json.load(f)
+                
+                tc = snapshot.get('trading_condition', {})
+                cp = tc.get('current_price', 0)
+                # Parse session for data
+                sessions = snapshot.get('active_sessions', [])
+                if not sessions:
+                    continue
+                sess = sessions[0]
+                rsi = sess.get('_rsi', 50)  # default if not found
+                trend = sess.get('_trend_regime', 'NORMAL')
+                
+                md = shailendra.MarketData(price=cp, rsi=rsi, mmm_trend_regime=trend, timestamp=datetime.now())
+                suggestions = shailendra.default_engine.process(md)
+                
+                for s in suggestions:
+                    socketio.emit('shailendra_signal', {
+                        'rule_name': s.rule_name,
+                        'action': s.action,
+                        'description': s.description,
+                        'risk_level': s.risk_level
+                    }, broadcast=True)
+                    print(f"🔥 SHAILENDRA EMITTED: {s.action}")
+            except Exception as e:
+                pass
+                
+    # _threading.Thread(
+    #     target=shailendra_broadcaster,
+    #     daemon=True,
+    #     name='shailendra-broadcaster'
+    # ).start()
+    # print("✅ Shailendra Shadow Copilot thread started")
 
     # Launch deferred init as a daemon thread — does NOT block socketio.run()
     _threading.Thread(

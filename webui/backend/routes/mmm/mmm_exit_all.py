@@ -101,13 +101,19 @@ async def run_exit_all(monitor) -> None:
     # would block every round otherwise (3 rounds × 2s = 6s << 180s TTL).
     _force_clear_being_closed(session, sid)
 
+    # ── Kill Switch mode: cancel pending adjustment orders + use market orders ──
+    kill_switch_mode = bool(session.get('_kill_switch_triggered'))
+    if kill_switch_mode:
+        log.warning(f"[{sid}] KILL SWITCH: Cancelling pending adjustment orders before close")
+        await _cancel_pending_for_kill_switch(monitor, sid)
+
     try:
         # ── Close reverse positions FIRST (unhedged, highest risk) ──
         if session.get('_reverse', {}).get('positions'):
             try:
                 from .mmm_reverse import close_all_reverse_positions, disable_reverse_mode
                 await close_all_reverse_positions(session, monitor._engine, 'exit_all')
-                disable_reverse_mode(session, f'exit_all: {reason}')
+                disable_reverse_mode(session, 'exit_all')
                 log.info(f"[{sid}] EXIT ALL: Reverse positions closed")
             except Exception as _rev_err:
                 log.error(f"[{sid}] EXIT ALL: Failed to close reverse positions: {_rev_err}")
@@ -127,7 +133,9 @@ async def run_exit_all(monitor) -> None:
             log.error(f"[{sid}] EXIT ALL: Failed to close perp hedge: {_perp_err}")
 
         # ── Close options positions (CE/PE) via round-based logic ──
-        await _run_exit_rounds(monitor)
+        # Kill switch → market orders (immediate fill, no price-improvement wait).
+        # Normal exit  → limit orders (smart_execute with repricing).
+        await _run_exit_rounds(monitor, use_market_orders=kill_switch_mode)
     except Exception as e:
         log.error(f"[{sid}] EXIT ALL: Unexpected exception during exit rounds: {e}", exc_info=True)
         session['_exit_all_partial'] = True
@@ -215,10 +223,19 @@ async def run_exit_all(monitor) -> None:
 # Round-based closing logic
 # =============================================================================
 
-async def _run_exit_rounds(monitor) -> None:
-    """Execute up to MAX_EXIT_ROUNDS of position closing."""
+async def _run_exit_rounds(monitor, use_market_orders: bool = False) -> None:
+    """Execute up to MAX_EXIT_ROUNDS of position closing.
+
+    Args:
+        use_market_orders: When True (kill switch mode), each close_position call
+                           uses order_type='market' for immediate fills at any price.
+                           When False (normal exit), uses limit orders with repricing.
+    """
     session = monitor.session
     sid = monitor.session_id
+
+    if use_market_orders:
+        log.warning(f"[{sid}] EXIT ALL: KILL SWITCH MODE — using market orders for all closes")
 
     # Spot price for ATM-proximity risk sorting
     spot_price = float(session.get('_regime_spot_price') or 0)
@@ -269,6 +286,8 @@ async def _run_exit_rounds(monitor) -> None:
         #   - Semaphore limits API pressure on Delta Exchange
         _sem = asyncio.Semaphore(MAX_CONCURRENT_CLOSES_PER_SIDE)
 
+        _order_type = 'market' if use_market_orders else 'limit'
+
         async def _close_one(side_key: str, pos: dict) -> bool:
             pos_id = pos.get('_pos_id') or f"{side_key}@{pos.get('strike')}"
             async with _sem:
@@ -281,17 +300,19 @@ async def _run_exit_rounds(monitor) -> None:
                         mechanism='exit_all',
                         hedge_guard=False,
                         side=side_key,
+                        order_type=_order_type,
                     )
                     if result.get('success'):
                         log.info(
                             f"[{sid}] EXIT ALL: Closed {side_key.upper()} @ {pos['strike']} "
                             f"({result.get('lots_closed', pos['lots'])} lots, "
-                            f"pnl={result.get('realized_pnl', 0):.4f})"
+                            f"pnl={result.get('realized_pnl', 0):.4f}, "
+                            f"order_type={_order_type})"
                         )
                         return True
                     else:
                         err = result.get('error', 'unknown')
-                        log.warning(f"[{sid}] EXIT ALL: Failed to close {pos_id}: {err}")
+                        log.warning(f"[{sid}] EXIT ALL: Failed to close {pos_id} ({_order_type}): {err}")
                 except Exception as e:
                     log.error(f"[{sid}] EXIT ALL: Exception closing {pos_id}: {e}")
             return False
@@ -368,14 +389,18 @@ async def _verify_exchange_cleared(monitor, session: Dict, sid: str) -> None:
             log.warning(f"[{sid}] EXIT ALL: 0 rounds attempted and exchange unverifiable — marking partial")
         return
 
-    # Build set of all tracked strikes (any non-closed position in our ledger)
+    # Build set of ALL managed strikes this session ever held lots for.
+    # Intentionally includes positions our ledger marks as 'closed' — if the
+    # ledger closed them prematurely, the exchange may still have the position
+    # and we need to catch that here.  Only positions with lots > 0 are included
+    # (positions that never had lots, or that are 0-lot placeholders, are excluded).
     tracked_strikes = set()
     for sk in ('ce', 'pe'):
         side_state = session.get(sk, {})
         if not isinstance(side_state, dict):
             continue
         for pos in side_state.get('positions', []):
-            if pos.get('status') != 'closed' and pos.get('lots', 0) > 0:
+            if pos.get('lots', 0) > 0:
                 tracked_strikes.add(int(pos.get('strike', 0)))
 
     # Find any options positions on the exchange matching our tracked strikes
@@ -523,6 +548,54 @@ def _build_failed_list(session: Dict) -> List[Dict]:
                     'type': pos.get('type', 'unknown'),
                 })
     return failed
+
+
+async def _cancel_pending_for_kill_switch(monitor, sid: str) -> None:
+    """
+    Cancel any in-flight adjustment orders before kill switch closes.
+
+    The pending_orders registry tracks SELL orders placed during the last heartbeat.
+    If kill switch fires mid-heartbeat those orders are still open on the exchange and
+    must be cancelled before market buy orders go out — otherwise we'd end up with
+    extra short legs while simultaneously closing.
+
+    Best-effort: failure to cancel a single order is logged but never blocks the close.
+    """
+    try:
+        from .mmm_pending_orders import get_pending, clear_all as clear_all_pending
+        executor = monitor.executor
+        for side in ('ce', 'pe'):
+            pending = get_pending(sid, side)
+            if not pending:
+                continue
+            order_id = pending.get('order_id', '')
+            if not order_id or order_id == 'pending':
+                continue
+            # Look up the exchange order to get its product_id (needed by cancel_order)
+            try:
+                order_data = await executor._get_order_status(order_id)
+                if order_data:
+                    product_id = order_data.get('product_id')
+                    if product_id:
+                        cancelled = await executor._cancel_order(order_id, int(product_id))
+                        log.warning(
+                            f"[{sid}] KILL SWITCH: Cancel pending {side.upper()} "
+                            f"order {order_id}: {'ok' if cancelled else 'failed/already gone'}"
+                        )
+                    else:
+                        log.warning(
+                            f"[{sid}] KILL SWITCH: No product_id for pending {side.upper()} "
+                            f"order {order_id} — skipping cancel"
+                        )
+            except Exception as _ce:
+                log.warning(
+                    f"[{sid}] KILL SWITCH: Could not cancel pending {side.upper()} "
+                    f"order {order_id}: {_ce}"
+                )
+        # Clear in-memory registry regardless — no new adjustment should retry
+        clear_all_pending(sid)
+    except Exception as e:
+        log.warning(f"[{sid}] KILL SWITCH: _cancel_pending_for_kill_switch failed: {e} — continuing")
 
 
 def _force_clear_being_closed(session: Dict, sid: str) -> None:

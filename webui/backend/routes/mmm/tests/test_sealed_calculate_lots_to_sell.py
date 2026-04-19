@@ -180,18 +180,22 @@ def test_c5_position_cap_returns_true_not_false():
 
 def test_c6_total_exposure_ceiling_returns_false_flag():
     """
-    total_lots=200, max_total_exposure=200 → ceiling hit → is_cap=False.
+    User directive 2026-04-19: max_lots_per_side is now a HARD ceiling on
+    active+frozen. §13.1 position cap check uses total_lots, so reaching the
+    cap triggers is_cap=True (drives M2 recycle / CAP AUTO-SHIFT short-circuit).
+    The separate max_total_exposure ceiling remains as a redundant safety net
+    only for when it's tighter than max_lots_per_side (unusual config).
     """
     engine = _make_engine()
     session = _base_session(
         ce_active_lots=90,
-        ce_total_lots=200,
+        ce_total_lots=100,
         max_lots_per_side=100,
         max_total_exposure=200,
     )
     lots, msg, cap = engine.calculate_lots_to_sell(session, 'ce', 500.0, 100.0)
     assert lots == 0
-    assert cap is False  # total exposure ceiling does NOT trigger M2
+    assert cap is True  # hard position cap (active+frozen) reached
     assert msg
 
 

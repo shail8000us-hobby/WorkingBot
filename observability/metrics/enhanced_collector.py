@@ -59,20 +59,17 @@ def collect_real_trading_metrics():
             
             if total_placed > 0:
                 orders_placed_total.labels(
-                    symbol=symbol, instance=instance, order_type='all'
-                ).inc(0)  # Set gauge to current value
-                orders_placed_total.labels(
-                    symbol=symbol, instance=instance, order_type='all'
+                    side='all', status='placed', symbol=symbol, instance=instance, order_type='all'
                 )._value.set(total_placed)
-            
+
             if total_cancelled > 0:
                 orders_cancelled_total.labels(
-                    symbol=symbol, instance=instance, order_type='all'
+                    reason='all', symbol=symbol, instance=instance
                 )._value.set(total_cancelled)
-            
+
             if total_failures > 0:
                 orders_failed_total.labels(
-                    symbol=symbol, instance=instance, order_type='all'
+                    error_type='all', symbol=symbol, instance=instance
                 )._value.set(total_failures)
             
             # P&L from metrics
@@ -210,16 +207,14 @@ def collect_real_options_metrics():
             # Track configured positions (not yet opened)
             if call_count > 0:
                 options_positions_count.labels(
-                    symbol='BTC',
                     option_type='call',
-                    strategy='sl_tp'
+                    symbol='BTC',
                 ).set(call_count)
-            
+
             if put_count > 0:
                 options_positions_count.labels(
-                    symbol='BTC',
                     option_type='put',
-                    strategy='sl_tp'
+                    symbol='BTC',
                 ).set(put_count)
             
             conn.close()
@@ -234,10 +229,11 @@ def collect_real_options_metrics():
                 if len(trades) > 0:
                     # Count total trades
                     options_orders_total.labels(
-                        symbol='BTC',
+                        side='buy',
                         option_type='all',
-                        action='buy'
-                    ).inc(len(trades))
+                        symbol='BTC',
+                        status='placed',
+                    )._value.set(len(trades))
                     
                     # Calculate P&L from completed trades
                     total_pnl = 0

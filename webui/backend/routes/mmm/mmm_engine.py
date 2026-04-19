@@ -615,9 +615,12 @@ class MMMEngine:
                     constraint_msg = f'{constraint_msg}; {conf_msg}' if constraint_msg else conf_msg
         # ── END Data Confidence Gate ─────────────────────────────────────
 
-        # §13.1: Position cap — Split Ledger: only active_lots count against cap
+        # §13.1: Position cap — HARD ceiling on active+frozen lots (user directive
+        # 2026-04-19: max_lots_per_side is the absolute budget; may not be exceeded
+        # under any circumstance. Frozen lots count because they are still real
+        # exchange exposure until drained via close_at_5 / M1 harvest.
         hedge_state = session.get(hedge_side, {})
-        current_total = hedge_state.get('active_lots', 0)
+        current_total = hedge_state.get('total_lots', 0)
 
         if current_total + lots_to_sell > max_lots_per_side:
             lots_to_sell = max_lots_per_side - current_total
@@ -625,7 +628,7 @@ class MMMEngine:
                 # Fix F1.6: Return is_position_cap=True for M2 recycling trigger
                 return 0, (
                     f"Position cap reached: {hedge_side.upper()} has "
-                    f"{current_total}/{max_lots_per_side} lots"
+                    f"{current_total}/{max_lots_per_side} lots (active+frozen)"
                 ), True  # is_position_cap
             cap_msg = (
                 f"Capped from {math.ceil(raw_lots)} to {lots_to_sell} "

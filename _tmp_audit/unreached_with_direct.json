@@ -1,0 +1,192 @@
+{
+  "mmm": [
+    {
+      "route": "/api/mmm/parameter_suggestions",
+      "method": "GET",
+      "def": "get_parameter_suggestions",
+      "line": 2120
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/history",
+      "method": "GET",
+      "def": "get_session_history",
+      "line": 2754
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/state",
+      "method": "GET",
+      "def": "get_session_state",
+      "line": 2790
+    },
+    {
+      "route": "/api/mmm/activities/stats",
+      "method": "GET",
+      "def": "get_activities_stats",
+      "line": 2927
+    },
+    {
+      "route": "/api/mmm/activities/critical",
+      "method": "GET",
+      "def": "get_critical_activities",
+      "line": 2948
+    },
+    {
+      "route": "/api/mmm/check-liquidity",
+      "method": "POST",
+      "def": "check_liquidity",
+      "line": 3132
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/monitor",
+      "method": "GET",
+      "def": "get_monitor_status",
+      "line": 3995
+    },
+    {
+      "route": "/api/mmm/monitors",
+      "method": "GET",
+      "def": "list_monitors",
+      "line": 4021
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/reconcile",
+      "method": "POST",
+      "def": "reconcile_session",
+      "line": 6063
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/positions",
+      "method": "GET",
+      "def": "get_positions",
+      "line": 6212
+    },
+    {
+      "route": "/api/mmm/exchange/positions",
+      "method": "GET",
+      "def": "get_exchange_positions_direct",
+      "line": 6276
+    },
+    {
+      "route": "/api/mmm/exchange/orders",
+      "method": "GET",
+      "def": "get_exchange_orders",
+      "line": 6337
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/triggers",
+      "method": "GET",
+      "def": "get_triggers",
+      "line": 6394
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/pnl-timeline",
+      "method": "GET",
+      "def": "get_pnl_timeline",
+      "line": 6432
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/safety",
+      "method": "GET",
+      "def": "get_safety_status",
+      "line": 6466
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/breakeven",
+      "method": "GET",
+      "def": "get_breakeven",
+      "line": 6510
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/gamma",
+      "method": "GET",
+      "def": "get_gamma",
+      "line": 6540
+    },
+    {
+      "route": "/api/mmm/analytics/history",
+      "method": "GET",
+      "def": "get_analytics_history",
+      "line": 6994
+    },
+    {
+      "route": "/api/mmm/performance/summary",
+      "method": "GET",
+      "def": "get_performance_summary",
+      "line": 7118
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/hedge/status",
+      "method": "GET",
+      "def": "get_hedge_status",
+      "line": 7143
+    },
+    {
+      "route": "/api/mmm/metrics/aggregate",
+      "method": "GET",
+      "def": "get_aggregate_metrics",
+      "line": 7326
+    },
+    {
+      "route": "/api/mmm/emergency/stop-all",
+      "method": "POST",
+      "def": "emergency_stop_all",
+      "line": 7443
+    },
+    {
+      "route": "/api/mmm/emergency/health-check",
+      "method": "GET",
+      "def": "emergency_health_check",
+      "line": 7511
+    },
+    {
+      "route": "/api/mmm/emergency/pause-all",
+      "method": "POST",
+      "def": "emergency_pause_all",
+      "line": 7611
+    },
+    {
+      "route": "/api/mmm/emergency/close-all-positions",
+      "method": "POST",
+      "def": "emergency_close_all_positions",
+      "line": 7674
+    },
+    {
+      "route": "/api/mmm/emergency/reset-circuit/<session_id>",
+      "method": "POST",
+      "def": "emergency_reset_circuit",
+      "line": 7833
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/clear-backoff",
+      "method": "POST",
+      "def": "clear_session_backoff",
+      "line": 7891
+    },
+    {
+      "route": "/api/mmm/audit/trail",
+      "method": "GET",
+      "def": "get_audit_trail",
+      "line": 7931
+    },
+    {
+      "route": "/api/mmm/audit/export",
+      "method": "GET",
+      "def": "export_audit_trail",
+      "line": 8017
+    },
+    {
+      "route": "/api/mmm/session/<session_id>/reverse",
+      "method": "GET",
+      "def": "get_reverse_status",
+      "line": 8405
+    }
+  ],
+  "mmmx": [
+    {
+      "route": "/api/mmmx/session/<session_id>/start-monitor",
+      "method": "POST",
+      "def": "start_monitor",
+      "line": 464
+    }
+  ]
+}

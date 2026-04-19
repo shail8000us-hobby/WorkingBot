@@ -94,6 +94,8 @@ class MMMWatchdog:
         self._stop_event = threading.Event()
         # Track last restart times for exponential backoff
         self._last_restart: Dict[str, float] = {}  # session_id → monotonic timestamp
+        # F5 fix: deferred restart timestamps — avoids blocking sweep loop for 30s
+        self._pending_restart_at: Dict[str, float] = {}  # session_id → wall time to restart
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -260,17 +262,38 @@ class MMMWatchdog:
             self.deregister(sid)
             return
 
+        # F5 fix: deferred restart — first pass schedules settlement wait without
+        # blocking the sweep loop; second pass (after delay elapsed) executes restart.
+        import time as _time
+        if sid not in self._pending_restart_at:
+            SETTLEMENT_DELAY_SECS = 30
+            self._pending_restart_at[sid] = _time.time() + SETTLEMENT_DELAY_SECS
+            log.critical(
+                f"[{sid}] Watchdog: {problem}. "
+                f"Restart scheduled in {SETTLEMENT_DELAY_SECS}s "
+                f"(settlement wait, restart #{restarts + 1})..."
+            )
+            self._emit_alert(
+                sid,
+                f"Watchdog restart scheduled (problem: {problem}, "
+                f"restart #{restarts + 1}, settling {SETTLEMENT_DELAY_SECS}s)",
+                level='error',
+            )
+            return
+
+        if _time.time() < self._pending_restart_at[sid]:
+            log.debug(
+                f"[{sid}] Watchdog: waiting for settlement before restart "
+                f"({self._pending_restart_at[sid] - _time.time():.0f}s remaining)"
+            )
+            return
+
+        # Settlement wait elapsed — execute the restart now
+        self._pending_restart_at.pop(sid, None)
         log.critical(
             f"[{sid}] Watchdog: {problem}. "
-            f"Restarting monitor (restart #{restarts + 1})..."
+            f"Executing restart (restart #{restarts + 1})..."
         )
-        self._emit_alert(
-            sid,
-            f"Watchdog restarting dead monitor (problem: {problem}, "
-            f"restart #{restarts + 1})",
-            level='error',
-        )
-
         self._restart_monitor(sid, monitor, session, problem)
 
     def _check_beat_timeout(
@@ -345,16 +368,10 @@ class MMMWatchdog:
                         f"proceeding with restart anyway"
                     )
 
-            # Fix A4 (March 12 incident): Settlement delay — wait for any
-            # in-flight exchange orders to settle before reconciling.
-            # Without this, reconciliation sees mid-settlement exchange state
-            # and makes incorrect auto-corrections.
-            SETTLEMENT_DELAY_SECS = 30
-            log.info(
-                f"[{sid}] Watchdog: waiting {SETTLEMENT_DELAY_SECS}s for "
-                f"in-flight exchange orders to settle..."
-            )
-            time.sleep(SETTLEMENT_DELAY_SECS)
+            # Fix A4 (March 12 incident): Settlement delay was previously a
+            # blocking time.sleep(30) here. Now handled non-blockingly in
+            # _check_monitor via _pending_restart_at before calling this method,
+            # so in-flight orders have already settled before we reach here.
 
             # Import here to avoid circular import at module level
             from .mmm_storage import get_storage

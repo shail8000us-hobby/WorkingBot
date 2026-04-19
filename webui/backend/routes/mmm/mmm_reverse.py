@@ -576,35 +576,49 @@ async def _close_reverse_position(
         )
     realized = (pos['entry_premium'] - close_fill) * close_filled * LOT_SIZE_BTC
 
-    # Record close in pnl_core for fee attribution
+    # Record close in pnl_core for fee attribution (F2 fix: correct signature)
     try:
         from .mmm_pnl_core import record_close as _pnl_close
         _pnl_close(
-            session,
-            lots_closed=close_filled,
-            close_premium=close_fill,
-            entry_premium=pos['entry_premium'],
-            source='reverse_close',
-            side=option_type,
-            strike=strike,
+            session=session,
             order_id=str(result.get('order_id', '')),
+            symbol=symbol,
+            option_side=option_type,
+            strike=strike,
+            lots=close_filled,
+            entry_premium=pos['entry_premium'],
+            close_premium=close_fill,
+            commission=0.0,
+            source='reverse_close',
+            position_id=pos.get('id', ''),
         )
     except Exception as pnl_err:
         log.warning(f"[{sid}] [REVERSE] record_close failed: {pnl_err}")
         # Still update reverse state even if ledger record fails
 
-    # Update position
+    # Update reverse state — decrement by actual filled lots, not requested (F1 fix)
+    rev = session['_reverse']
+    rev['realized_pnl'] = rev.get('realized_pnl', 0.0) + realized
+    rev['total_lots'] = max(0, rev.get('total_lots', 0) - close_filled)
+    rev['net_pnl'] = rev['realized_pnl'] + rev.get('unrealized_pnl', 0.0)
+
+    # Partial fill: keep position open with residual lots; next scan retries (F1 fix)
+    is_partial = close_filled < lots
+    if is_partial:
+        pos['lots'] = max(0, lots - close_filled)
+        pos['realized_pnl'] = pos.get('realized_pnl', 0.0) + realized
+        log.warning(
+            f"[{sid}] [REVERSE] Partial close for {pos['id']}: "
+            f"filled={close_filled}/{lots}, residual={pos['lots']} lots remain open"
+        )
+        return
+
+    # Full close
     pos['status'] = 'closed'
     pos['realized_pnl'] = realized
     pos['close_premium'] = close_fill
     pos['close_time'] = datetime.now(timezone.utc).isoformat()
     pos['close_reason'] = reason
-
-    # Update reverse state
-    rev = session['_reverse']
-    rev['realized_pnl'] = rev.get('realized_pnl', 0.0) + realized
-    rev['total_lots'] = max(0, rev.get('total_lots', 0) - lots)
-    rev['net_pnl'] = rev['realized_pnl'] + rev.get('unrealized_pnl', 0.0)
 
     log_activity(
         ACTIVITY_REVERSE_CLOSED,

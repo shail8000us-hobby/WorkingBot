@@ -31,8 +31,7 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from 'recharts';
-
-const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555';
+import api from '../../utils/apiShim';
 
 // Format a number as a BTC price
 function fmtPrice(val) {
@@ -85,8 +84,7 @@ export default function MMMRiskProfileChart({ sessionId, isActive, breakeven: br
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`${API_BASE}/api/mmm/session/${sessionId}/pnl-curve?n_points=150`);
-      const data = await res.json();
+      const { data } = await api.get(`/api/mmm/session/${sessionId}/pnl-curve`, { params: { n_points: 150 }, skipCircuit: true });
       if (data.success) {
         // Compute zero-crossings client-side if backend didn't provide them
         // This works without a backend restart as long as curve_points are present

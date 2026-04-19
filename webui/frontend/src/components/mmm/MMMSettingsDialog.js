@@ -452,7 +452,7 @@ const PARAM_GROUPS = {
       },
       {
         header: 'Execution Control',
-        params: ['reverse_max_adjustments', 'reverse_mode_type', 'reverse_cooldown_mins'],
+        params: ['reverse_max_adjustments', 'reverse_cooldown_mins'],
       },
       {
         header: 'Time Window',

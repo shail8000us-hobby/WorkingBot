@@ -13,6 +13,7 @@ Created: February 15, 2026
 import json
 import os
 import logging
+import queue
 import threading
 import shutil
 from collections import Counter, deque
@@ -119,6 +120,7 @@ ACTIVITY_TYPES = {
     'proactive_shift_lot_fallback': 'Proactive Shift Lot Fallback',
     'delta_neutral_match': 'Delta-Neutral Match',
     'cap_auto_shift': 'Cap Auto Shift',
+    'capacity_full': 'Capacity Full',
     'delta_rescue': 'Delta Rescue',
     'trigger_cleared_by_close_at_5': 'Trigger Cleared',
     'cooldown_blocking': 'Cooldown Blocking',
@@ -258,10 +260,11 @@ ACTIVITY_TYPES = {
     'auto_close_all': 'Auto Close All',
     'auto_close_failures': 'Auto Close Failures',
 
-    # Global Graceful Exit
+    # Global Graceful Exit / Kill Switch
     'session_exit_all_initiated': 'Exit All Initiated',
     'session_exit_all_completed': 'Exit All Complete',
     'session_exit_all_partial': 'Exit All Partial',
+    'kill_switch_triggered': 'Kill Switch Triggered',
 
     # Reverse Mode
     'reverse_entry': 'Reverse Entry',
@@ -324,6 +327,7 @@ ACTIVITY_CATEGORIES = {
                     'auto_atm_promote',
                     'fill_sync_confirmed', 'fill_sync_partial'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
+                'capacity_full',
                 'safety', 'guardian_violation', 'guardian_auto_heal', 'god_correction',
                 'strategy_validation',
                 'hard_stop', 'expiry_close', 'adjustments_stopped',
@@ -345,6 +349,7 @@ ACTIVITY_CATEGORIES = {
                 'hot_reload', 'watchdog', 'force_heartbeat', 'emergency',
                 'auto_close_all', 'auto_close_failures',
                'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
+               'kill_switch_triggered',
                'param_adapted',
                'info', 'warning', 'critical', 'error'},
 }
@@ -404,6 +409,16 @@ class MMMActivityLog:
         self._dedup_cache: Dict[tuple, datetime] = {}
         self._DEDUP_INTERVAL_SECS = 30  # Suppress identical events within this window
         self._suppressed_dedup_count = 0
+        # Background disk writer — keeps fsync/backup I/O off the event loop thread.
+        # Queue is bounded (maxsize=10); if full, the write is dropped (non-critical
+        # for a UI log — in-memory state is always authoritative).
+        self._write_queue: queue.Queue = queue.Queue(maxsize=10)
+        self._writer_thread = threading.Thread(
+            target=self._background_writer,
+            daemon=True,
+            name='mmm-activity-writer',
+        )
+        self._writer_thread.start()
 
     def _load_file(self, path: str) -> List[Dict[str, Any]]:
         """Load activities payload from a file path."""
@@ -461,6 +476,7 @@ class MMMActivityLog:
         'session_stop', 'session_stopped', 'session_pause', 'session_paused',
         'hard_stop', 'watchdog', 'margin_critical',
         'session_exit_all_initiated', 'session_exit_all_completed', 'session_exit_all_partial',
+        'kill_switch_triggered',
         'error', 'critical',
     })
 
@@ -515,20 +531,49 @@ class MMMActivityLog:
             return 'safety'
         return 'system'
 
+    def _background_writer(self):
+        """Drain the write queue and persist to disk off the event loop thread.
+
+        Runs as a daemon thread so it exits automatically when the process ends.
+        Blocks on queue.get() — no busy-loop, no sleep. Each item is either an
+        activity dict (passed through to _do_save_to_disk for critical-bypass
+        logic) or None (sentinel to drain a queued non-critical write).
+        """
+        while True:
+            try:
+                item = self._write_queue.get(timeout=5.0)
+                self._do_save_to_disk(item)
+            except queue.Empty:
+                continue
+            except Exception as e:
+                log.warning(f"Activity background writer error: {e}")
+
     def _save_to_disk(self, activity: Dict = None):
-        """Persist activities to disk (throttled — every 2nd write).
+        """Enqueue a disk write (throttled — every 2nd write).
+
+        The counter increment and throttle check run synchronously so the 1-in-2
+        cadence is correct. Actual I/O is handed off to the background writer
+        thread so fsync/backup never block the event loop or the heartbeat thread.
+        """
+        self._counter += 1
+        if activity is not None and not self._should_persist(activity):
+            return
+        try:
+            self._write_queue.put_nowait(activity)
+        except queue.Full:
+            log.debug("Activity write queue full — disk write skipped (in-memory state intact)")
+
+    def _do_save_to_disk(self, activity: Dict = None):
+        """Persist activities to disk (called from background writer thread only).
 
         Fix #16: Atomic write (write to .tmp then rename) prevents corruption
-        on crash mid-write. Throttling reduced from 1-in-5 to 1-in-2.
+        on crash mid-write.
         M-7 fix: critical/error/warning severity and safety event types bypass
         the throttle so they are always persisted for post-crash debugging.
         Fix: use unique tmp file per call to avoid race between concurrent
         heartbeat threads (Thread A renames .tmp away before Thread B can).
         H-12 fix: lock around os.rename() critical section.
         """
-        self._counter += 1
-        if activity is not None and not self._should_persist(activity):
-            return
         tmp_file = None
         try:
             import tempfile

@@ -294,7 +294,6 @@ PARAM_RULES = {
     'reverse_time_start':                {'type': str,   'min': None, 'max': None,  'hot': True},
     'reverse_time_end':                  {'type': str,   'min': None, 'max': None,  'hot': True},
     'reverse_duration_mins':             {'type': int,   'min': 0,    'max': 1440,  'hot': True},
-    'reverse_mode_type':                 {'type': str,   'min': None, 'max': None,  'hot': True},
     'reverse_cooldown_mins':             {'type': int,   'min': 0,    'max': 60,    'hot': True},
     'reverse_max_loss':                  {'type': float, 'min': 0,    'max': 1e9,   'hot': True},
     'reverse_close_at_threshold':        {'type': float, 'min': 0,    'max': 1000,  'hot': True},

@@ -4538,46 +4538,6 @@ Expected: Keep adding CE/PE lots at 71K until shift_threshold is hit, then shift
 
 ---
 
-## 2026-04-16 — Forensic Analysis: First Adjustment Aggressiveness (`mmm17apr26-3`)
-
-- **Scope (no code changes):** Investigated why the first adjustment looked aggressive for session `mmm17apr26-3` (Straddle + Adj), using code + DB/session forensics only.
-- **Files reviewed:**
-  - `webui/backend/routes/mmm/mmm_monitor.py`
-  - `webui/backend/routes/mmm/mmm_engine.py`
-  - `webui/backend/routes/mmm/mmm_trigger.py`
-  - `webui/backend/routes/mmm/mmm_breakeven_engine.py`
-  - `webui/backend/routes/mmm/mmm_gamma_detector.py`
-  - `webui/backend/routes/mmm/mmm_walkthrough.py`
-  - `webui/backend/routes/mmm/mmm_dte_presets.py`
-- **Data forensics performed:**
-  - Queried `webui/backend/data/mmm_sessions.db` (`mmm_sessions`, `position_audit_log`, `session_event_log`) for session-level evidence.
-  - Confirmed first adjustment audit row: `SELL 5 PE @ 74400 @ $482.00`, `loss_covered_usd=$0.74`.
-  - Confirmed hot-reload changes before trigger: `min_trigger_move 50→20`, `max_lots_per_side 5→50`.
-  - Confirmed breakeven state transition immediately before first adjustment: `SAFE→WARNING`, multiplier `1.0617x`.
-- **Root-cause conclusion captured:**
-  - Base lot math from loss/hedge-premium yields ~`1.66` → base `2` lots.
-  - Engine then applies sequential multipliers with per-step `ceil` (`calculate_lots_to_sell`), including breakeven + gamma-severity, which can staircase `2 → 3 → 5`.
-  - Combined cap (`max_combined_lot_multiplier`) did not clamp this case; raised side cap (`max_lots_per_side=50`) allowed execution.
-  - Walkthrough text can appear mathematically inconsistent (`⌈1.66⌉ = 5`) because it prints base formula + final sold lots while omitting internal multiplier steps.
-
----
-
-## 2026-04-16 — Session Forensic Audit Report (`mmm16apr26-2`) [No Code Changes]
-
-- **Scope:** Deep post-session forensic analysis only (no strategy/backend/frontend code modified).
-- **Report created:** `MMM_SESSION_FORENSIC_AUDIT_mmm16apr26-2.md`
-- **Evidence correlated:**
-  - `mmm_sessions.db` (`mmm_sessions`, `position_audit_log`, `session_event_log`, `mmm_analytics`, `performance_sessions`)
-  - `mmm_activity_log.json` + `.bak` (merged 253 unique session events)
-- **Key forensic findings recorded:**
-  - 31 confirmed exchange fills vs 30 `position_audit_log` rows (missing replenish audit row for `order_id=1275862757`)
-  - 2 intent rows without terminal status in `session_event_log` (`1275945116`, `1276102923`)
-  - Repeated late-session blocker loop: `shift_no_strike` / cap saturation / dangerous-mode bypass churn
-  - Execution slowness clusters with >60s intent→confirm outliers and repricing events
-- **Outcome:** Full markdown forensic dossier delivered with trade timeline, issue table, bottleneck analysis, profitability opportunities, scorecard, and prioritized fixes/research list.
-
----
-
 ## 2026-04-16 — Fix walkthrough calculation display bugs
 
 - **`mmm_monitor.py`**: Capture `_pre_adj_trigger` (aggressor's trigger_snapshot value at active strike) immediately before `calculate_standard_loss` runs in the standard-adjustment `else` branch. Store it in `_hb_wt['adjustment']['pre_adj_trigger']`. The trigger gets ratcheted post-fill by `update_trigger_snapshots`, so reading it here gives the actual pre-adjustment baseline the loss formula used.
@@ -4684,36 +4644,6 @@ Comprehensive audit of all guards in `mmm_monitor.py` that were written for stan
 - **Root cause:** For a short straddle, the straddle itself is a large-gamma position by definition (both CE and PE sold ATM). The existing straddle already saturates the gamma cap. Every hedge sell attempt hits the projected-gamma block — adjustments are silently dropped even when all other regime gates are bypassed.
 - **Fix:** Added `elif _straddle_adj:` bypass — logs a deduplicated warning and proceeds. The hedge sell is reactive (trigger fired because spot moved); unhedged straddle exposure is more dangerous than incremental hedge-lot gamma.
 
-## 2026-04-17 — MMM Sealing Audit (Type-1/Type-2) Deep Risk Mapping [Audit-Only]
-
-- **Scope:** Audit-only session focused on seal coverage + high-risk unsealed control paths. No MMM strategy logic or API behavior was modified.
-- **Protocol baseline reviewed:** `mmm_workdone_march.md`, `AI_SEAL.md`, and sealing evidence from `test_sealed_*` coverage/import mappings.
-- **Quantitative inventory (active workspace):**
-  - 768 total backend MMM functions
-  - 43 decorator-sealed
-  - 725 unsealed
-  - Highest unsealed concentration: `mmm_api.py` (98), `mmm_monitor.py` (79), `mmm_websocket.py` (35), `mmm_storage.py` (29), `mmm_executor.py` (22)
-- **High-risk deep reads completed (code archaeology):**
-  - `webui/backend/routes/mmm/mmm_monitor.py`
-  - `webui/backend/routes/mmm/mmm_api.py`
-  - `webui/backend/routes/mmm/mmm_executor.py`
-  - `webui/backend/routes/mmm/mmm_fill_sync.py`
-  - `webui/backend/routes/mmm/mmm_storage.py`
-  - `webui/backend/routes/mmm/mmm_websocket.py`
-  - `webui/backend/routes/mmm/mmm_watchdog.py`
-  - `webui/backend/routes/mmm/mmm_guardian.py`
-  - `webui/backend/routes/mmm/mmm_pending_orders.py`
-- **Type-2 infrastructure hotspots confirmed:**
-  - Heartbeat skip/degraded paths in `_heartbeat_inner()` and `_fetch_premiums_with_fallback()`
-  - Pending-order guard branches (`filled/open/error/stale`) before `_process_adjustment()`
-  - Reconciliation/autocorrect branches in `_reconcile_exchange_positions()`
-  - Emergency control-plane routes in `mmm_api.py` (`stop-all`, `pause-all`, `close-all-positions`, `reset-circuit`, `reconcile`)
-  - Supervisory paths in watchdog/guardian and WS emission health counters
-- **Churn signal (since 2026-03-20) used for roadmap ordering:**
-  - `mmm_monitor.py` (25), `mmm_api.py` (15), `mmm_state.py` (16), `mmm_safety.py` (7), `mmm_executor.py` (6), `mmm_storage.py` (6)
-- **Outcome:** Prepared evidence set for final ranked unsealed-function list, Type-2 required list, and first 10 seal-session roadmap.
-- **Validation note:** Audit-only — no code-path changes, no trading actions, no service restart.
-
 ---
 
 ## 2026-04-17 — Post-Session Forensic Audit Fixes (session mmm17apr26-6)
@@ -4775,3 +4705,490 @@ Reversal path gets `0` which is correct (no meaningful pre-adj trigger concept f
 
 **File changed:** `mmm_workdone_march.md`, `mmm_monitor.py` (one line added)
 **Tests:** 1421 passed / 0 failed
+
+## 2026-04-17 — Fix 5 hidden bugs from AUDIT_HIDDEN_BUGS.md (F1–F5)
+
+All bugs verified against live code before fixing. No logic invented — all fixes use patterns already present elsewhere in the codebase.
+
+### F1 (P0) — Reverse partial close finalized as full close (`mmm_reverse.py`)
+- `_close_reverse_position`: `pos['status']='closed'` and `rev['total_lots'] -= lots` were unconditional.
+- Fix: if `close_filled < lots`, keep `pos['status']='open'`, update `pos['lots']` to residual, accumulate partial realized_pnl, return early. Always decrement `rev['total_lots']` by `close_filled` (actual), not `lots` (requested).
+
+### F2 (P1) — Wrong `record_close()` kwargs in reverse close (`mmm_reverse.py`)
+- `_pnl_close(session, lots_closed=..., side=..., ...)` — wrong kwarg names (`lots_closed`→`lots`, `side`→`option_side`) and missing required args (`symbol`, `commission`).
+- Fix: corrected all kwargs to match `mmm_pnl_core.record_close` signature; added `symbol` (already in scope), `commission=0.0`, `position_id`.
+
+### F3 (P0) — Market hard-stop close removes position without partial-fill check (`mmm_close_at_5.py`)
+- `close_position` market path: unconditional `_remove_closed_position`, P&L on `lots` (requested), no `_pending_close_verification`.
+- Fix: read `actual_lots` from result (`filled_size`/`size` fallback); use `_partial_close_position` when partial; compute P&L on actual; add `_pending_close_verification` matching non-market path.
+
+### F4 (P1) — Unsafe bool coercion `bool("false") == True` (`mmm_api.py`, `mmm_monitor.py`)
+- `force_start`, `adopt`, `close_at_watcher_force_enabled` all used raw `bool(raw)`.
+- Fix: replaced with `str(raw).lower() in ('true', '1', 'yes', 'on')` at all 3 sites.
+
+### F5 (P2) — Watchdog restart blocks entire sweep for 30s (`mmm_watchdog.py`)
+- `_restart_monitor` called `time.sleep(30)` synchronously, blocking `_sweep` for all sessions.
+- Fix: deferred restart via `_pending_restart_at` dict. First sweep: schedules restart timestamp (non-blocking). Subsequent sweeps: checks if elapsed, then executes. Settlement guarantee preserved; other sessions no longer blocked.
+
+### Stale test fix
+- `test_mmm_monitor_strategy_validation.py`: test expected old warn+continue behavior (now ValueError+block from 2026-04-17 session). Updated to `pytest.raises(ValueError)`.
+
+**Files changed:** `mmm_reverse.py`, `mmm_close_at_5.py`, `mmm_api.py`, `mmm_monitor.py`, `mmm_watchdog.py`, `tests/test_mmm_monitor_strategy_validation.py`
+**Tests:** 1426 passed / 0 failed
+
+## 2026-04-17 — P0 fix: Independent hard stop guard + no_position_for_reduce_only treated as success
+
+### Root cause (today's incident)
+Heartbeat interval was 97–111 seconds (slow exchange + heavy session). The max_loss check lives
+INSIDE the heartbeat loop, so it only fired once every ~2 minutes. Market moved hard upward; losses
+exceeded max_loss threshold but the check didn't fire in time. The MMM auto-close also failed with
+`no_position_for_reduce_only` because the max_loss_manager had already closed those positions —
+the MMM treated that as a failure and retried 3 times instead of counting it as success.
+
+### Fix 1 — Independent hard stop guard (`mmm_monitor.py`)
+- Added `self._hard_stop_guard_thread` and `self._hard_stop_fired` to `__init__`
+- `start()` now also calls `self._start_hard_stop_guard()` after launching the heartbeat thread
+- New `_start_hard_stop_guard()` method: launches real OS thread (not eventlet greenlet)
+- New `_run_hard_stop_guard()` method: **sealed**, runs every `HARD_STOP_INTERVAL=10s`
+  - Uses `compute_current_total_pnl(session)` — identical formula to `check_max_loss` in mmm_safety.py
+  - On breach: Telegram alert → sets `_running=False` + `_stop_event` → emergency close in own asyncio loop
+  - `_hard_stop_fired` Event prevents double-fire if heartbeat path also detects the breach
+  - COMPLETELY INDEPENDENT of heartbeat speed — fires even if heartbeat is stuck at 111s
+
+### Fix 2 — `no_position_for_reduce_only` treated as success (`_close_one_side`)
+- BEFORE: When exchange returned `no_position_for_reduce_only`, code treated as failure → 3 retries
+- AFTER: Checks `'no_position_for_reduce_only' in str(result.get('error', ''))` for both active
+  and frozen position close paths. If present: logs warning, sets `closed=True`, breaks — no retry.
+- Rationale: this error means the position is GONE from the exchange (closed by another system or
+  already flat). Retrying is wrong and causes the auto-close to report spurious failures.
+
+### Fix 3 — Heartbeat auto_close path marks `_hard_stop_fired` first
+- Line ~2533: Added `self._hard_stop_fired.set()` before `await self._auto_close_all(...)` in the
+  heartbeat-path `auto_close` handler. Prevents guard thread from double-firing after heartbeat
+  already claimed the close.
+
+### Emergency close path
+- Guard calls `_auto_close_all(reason, emergency=True)` → routes to `emergency_execute` (IOC taker
+  fill) — pure market order. No maker, no smart order. No exceptions on the order path.
+
+**Files changed:** `mmm_monitor.py`
+**Tests:** 1426 passed / 0 failed
+
+---
+
+## 2026-04-17 — Emergency Kill Switch + Hard Stop display on session cards
+
+### Feature 1 — Emergency Kill Switch button on every active session card
+- Added `POST /api/mmm/session/<id>/kill_switch` endpoint in `mmm_api.py`
+- Sets `_kill_switch_triggered=True`, `_kill_switch_at`, `_kill_switch_reason` (audit markers)
+- Delegates to existing `exit_all` flow: sets EXITING, forces immediate heartbeat
+- Idempotent: EXITING/STOPPED/IDLE all return 200 safely
+- Scoped to ONE session — no other sessions touched
+- Registered `kill_switch_triggered` in `mmm_activity.py` ACTIVITY_TYPES + ACTIVITY_CATEGORIES.system + _ALWAYS_PERSIST_TYPES
+- Added `killSwitch(sessionId)` to `mmmService.js`
+- Added kill switch button (dark red PowerOffIcon) to `MMMDashboard.js SessionCard`, `MMMSessionCard.js`, `MMMXSessionCard.js`
+- Confirmation dialog: title "⛔ Emergency Kill Switch", shows CE/PE lot counts, Cancel + Confirm Exit All buttons
+- `kill_switch` case added to `handleControl` switch in `MMMDashboard.js`
+- MMMX: wired `onKillSwitch` prop in `MMMXDashboard.js` → `mmmxService.killSwitch({ scope: 'session' })`
+
+### Feature 2 — Hard Stop display on every session card
+- `MMMDashboard.js` SessionCard: shows `Hard Stop: $X` (orange) / `Hard Stop: Disabled` / `⛔ Hard Stop Hit` (red bold)
+- Source: `session.params.max_loss_amount`; breach: `|net_pnl| >= max_loss_amount`
+- `MMMSessionCard.js`: same display below stats grid
+- `MMMXSessionCard.js`: hard stop label added above existing LinearProgress bar; source: `s.hard_stop_usd`
+
+**No trading logic changed. All changes are UI + the new endpoint wrapper.**
+**Files changed:** `mmm_api.py`, `mmm_activity.py`, `mmmService.js`, `MMMDashboard.js`, `MMMSessionCard.js`, `MMMXSessionCard.js`, `MMMXDashboard.js`
+**Tests:** Backend 1436 passed / 0 failed (+10 new). Frontend 247 passed / 0 failed (+16 new).
+**Report files:** `KILL_SWITCH_IMPLEMENTATION.md`, `KILL_SWITCH_TEST_RESULTS.md`, `UI_CARD_CHANGES.md`
+
+## 2026-04-17 — Hard stop market orders fix + sealed tests
+
+### Changes
+- **`mmm_monitor.py` — `_close_one_side._execute_close` (~line 8175)**
+  - **Before**: `emergency=True` called `executor.emergency_execute()` — IOC limit order at ask+5% slippage
+  - **After**: `emergency=True` calls `executor.place_market_order_immediate()` — true `market_order` type on Delta Exchange, no price limit, immediate fill at any price. Normalizes raw exchange response (`id`, `average_fill_price`, `filled_size`) into the same dict shape (`success`, `fill_price`, `filled_size`, `order_id`, `order_details`) used by `smart_execute`/`emergency_execute` so all downstream P&L accounting in `_close_one_side` is unchanged.
+  - No change to non-emergency path (smart_execute unchanged)
+  - No change to any other monitor logic
+
+### New sealed test file
+- `tests/test_sealed_kill_switch_and_hard_stop.py` — 20 tests, all passing
+  - T1–T10: Kill switch API endpoint contracts (ported from non-sealed `test_kill_switch_endpoint.py` + now sealed)
+  - EX1–EX3: `run_exit_all` market-order routing contracts (kill switch → use_market_orders=True; normal → False; cancel-before-rounds ordering)
+  - CS1–CS7: `_close_one_side` market order enforcement contracts (CORE SAFETY — CS1/CS7 assert `emergency_execute` is NEVER called when emergency=True)
+
+### Frontend test update
+- `src/components/mmm/__tests__/test_kill_switch_and_hard_stop.test.js` — Added SEALED header with full contract list. 18/18 tests passing.
+
+### Test counts
+- Backend: 1456 passed / 0 failed
+- Frontend sealed: 18 passed / 0 failed
+
+## 2026-04-17 — Fix P1 audit: background disk writer for activity log
+
+- **What**: `mmm_activity.py` — `_save_to_disk()` was calling `os.fsync()` + `shutil.copy2()` (273KB backup) synchronously from the event loop thread on every `log_activity()` call. On macOS/APFS, `os.fsync()` uses F_FULLFSYNC semantics (full flush, up to tens of ms per call), blocking the heartbeat event loop during order execution.
+- **Fix**: Introduced a background daemon writer thread (`mmm-activity-writer`) with a bounded `queue.Queue(maxsize=10)`. `_save_to_disk()` now increments counter + throttle checks synchronously then does a non-blocking `put_nowait()`. Actual disk I/O moved to `_do_save_to_disk()` which only runs in the background thread. In-memory `_activities` deque still updated synchronously — readers always see fresh data. If the queue is full, the disk write is dropped with `log.debug` (non-critical for a UI log).
+- **Safety invariants**: Stale monitor 3-layer protections unaffected (those live in `_save_session()` / SQLite). Hard-stop guard unaffected. Reverse mode unaffected. Generation guards unaffected.
+- **Tests**: 1456 passed / 0 failed
+
+## 2026-04-17 — MMM risk engine read-only audit + report
+
+- Performed a broad read-only risk audit across MMM runtime safety paths (monitor loop, hard-stop guard, pending-order guard, margin guardian, circuit breaker, exit-all, reconciliation, API preflight, and core P&L safety flows).
+- Created `AUDIT_RISK_ENGINE.md` with severity-ranked findings focused on silent-failure, delayed-action, and rule-conflict risks.
+- Highlighted immediate hotfix items with concrete evidence anchors:
+  - reconciliation safety emit call signature mismatch (`emit_safety` call arity bug),
+  - replenish pending-order guard inconsistency on `'error'` state,
+  - undefined `reason` usage in `run_exit_all` reverse-disable path,
+  - circuit-breaker auto-pause/partial-beat integration gap in monitor runtime.
+- Also documented verified strengths (3-layer stale monitor containment, independent hard-stop guard, API preflight gates, reverse→perp→options close sequencing) and a remediation timeline.
+
+## 2026-04-17 — Database integrity audit fixes (lifecycle events + log bloat)
+
+### What changed and why
+
+**1. `mmm_monitor.py` — `stop()` method (~line 685)**
+- **Bug**: `stop()` called `log_activity('session_stopped', ...)` (activity log only) but never wrote to `session_event_log`. Only the API stop endpoint wrote the 'stopped' lifecycle event. Consequence: all internal stops (crash stops with UnboundLocalError/NameError, watchdog stops, near-expiry auto-close) produced STOPPED sessions with no terminal event in `session_event_log` — making forensic audits unreliable.
+- **Fix**: Added `get_event_log().enqueue_event(event_type='stopped', ...)` call after the performance record save. Wrapped in `try/except` so it never blocks the stop path. `source: 'monitor_stop'` tag in details distinguishes monitor-originated stops from API-originated stops (both writing is harmless).
+
+**2. DB backfill — `webui/backend/data/mmm_sessions.db`**
+- Backup created at `mmm_sessions.db.bak_20260417_224451` before any mutation.
+- **30 STOPPED sessions** missing terminal events → inserted 'stopped' events with `repair_source: backfilled_lifecycle_terminal` + repair_date in details. Reasons derived from `performance_sessions.stop_reason` or `data_json._stopped_reason` where available; fell back to 'Unknown (backfilled_lifecycle_terminal)' for 3 old sessions (Mar 10-11) with no recoverable reason.
+- **69 `performance_sessions` rows** with empty `stop_reason` → updated from `data_json._stopped_reason`; 41 fell back to 'Unknown (backfilled)' (older sessions with no recorded reason).
+- RUNNING sessions (`mmm26jun26-2`, `mmm26jun26-3`) were NOT touched.
+
+**3. `bot/delta_websocket/async_ws_manager.py` — `_route_message` (~line 802)**
+- **Bug**: `l1_orderbook` messages (arriving dozens per second) logged `log.debug(f"Routing l1_orderbook to N handler(s)")` with no rate-limit. Only `v2/ticker` had a 60s rate-limit. This was writing hundreds of DEBUG lines per second to `logs/webui_production_error.log`, causing it to balloon to 170MB+.
+- **Fix**: Generalized rate-limiting to all types in `_HIGH_FREQ_TYPES = ("v2/ticker", "l1_orderbook")`. Both now log at most once per 60s. Other non-high-freq message types still log every occurrence. The `_last_<type>_route_log` per-type timestamp pattern is extensible.
+
+### Tests
+- 1456 passed / 0 failed (all sealed tests clean)
+
+## 2026-04-17 — Risk audit hotfixes: F-01, F-02, F-03
+
+Three critical/high findings from AUDIT_RISK_ENGINE.md fixed:
+
+- **F-01 (Critical) — `mmm_monitor.py` ~line 8777**: `emit_safety` in reconciliation phantom-lot path had wrong call signature — was passing a dict as 3rd arg (`level`), missing required `level` and `message` positional args. Exception was swallowed by bare `except: pass`, making the safety alert silently fail. Fixed: proper 4-arg call with `level='critical'`, explicit `message` string, dict moved to `details=`. Bare `except` replaced with logged exception so alert-channel failures are visible.
+
+- **F-02 (High) — `mmm_monitor.py` ~line 6812**: Replenish pending-order guard did not treat guard result `'error'` as blocking (fell through and proceeded), and its exception handler also proceeded instead of failing safe. This diverged from the adjustment path which blocks on `'error'`. Fixed: added `elif _pg_result == 'error': return False`; changed exception handler from proceed to `return False` (fail-safe, matches adjustment path).
+
+- **F-03 (High) — `mmm_exit_all.py` line 116**: `disable_reverse_mode(session, f'exit_all: {reason}')` used undefined variable `reason` in the `run_exit_all()` scope, causing a `NameError` in the reverse-close try block during emergency unwinds. Fixed: replaced with literal `'exit_all'`.
+
+### Tests
+- 1456 passed / 0 failed
+
+## 2026-04-17 — Risk audit: F-04 and F-05 wired
+
+**F-04 — Circuit breaker hooks wired into monitor runtime (mmm_monitor.py)**
+
+Two properties existed in `mmm_circuit_breaker.py` but were never called in the monitor:
+
+- `should_auto_pause`: After the existing `should_alert` emit in `_run_loop`, added check: if `should_auto_pause and not self._paused`, call `self.pause(...)`. This prevents zombie sessions (RUNNING but circuit permanently OPEN and unmonitored). Fires after `AUTO_PAUSE_CONSECUTIVE_OPENS=5` consecutive OPEN episodes.
+
+- `partial_beat_allowed`: In `_heartbeat_inner`, changed partial beat condition from `if cached_ce is not None and cached_pe is not None:` to add `and self._circuit.partial_beat_allowed`. Also split the else branch into a distinct "DEEP BACKOFF BEAT" path (cached available, depth > 2, skip partial beat) vs "MISS BEAT" (no cached prices). Matches the documented graduated-response design in mmm_circuit_breaker.py.
+
+**F-05 — Exit-all verification includes prematurely-closed positions (mmm_exit_all.py)**
+
+`_verify_exchange_cleared` built `tracked_strikes` only from positions where `status != 'closed'`. If local state marked a position closed prematurely, it would be excluded from verification, and exchange residuals would be missed. Fix: removed the `status != 'closed'` filter — all positions with `lots > 0` are included, regardless of their local status.
+
+### Tests
+- 1456 passed / 0 failed
+
+## 2026-04-17 — Profitability audit (read-only) + report
+
+- Read-only deep audit of MMM profitability paths completed across `mmm_monitor.py`, `mmm_close_at_5.py`, `mmm_trigger.py`, `mmm_scaler.py`, `mmm_replenish.py`, `mmm_recycler.py`, `mmm_reverse.py`, `mmm_config.py`, `mmm_state.py`, and `mmm_dte_presets.py`.
+- No trading logic or runtime behavior was modified in this session.
+- Produced required deliverable: `AUDIT_PROFITABILITY.md` with severity-ranked findings and risk-safe recommendations.
+- Highest-ROI findings documented: close-at-threshold ordering under per-beat cap, watcher 0h semantic mismatch, scale-up partial-fill accounting drift, and threshold/gating refinements for churn reduction without weakening safety.
+
+## 2026-04-18 — Profitability audit P1 fixes (Finding B + C applied; A blocked by sealed test)
+
+### Fix B — Close-watcher `hours_before=0` semantic mismatch (`mmm_monitor.py`)
+- **File:** `mmm_monitor.py`, `_run_close_watcher()` ~line 10344
+- **BEFORE:** `in_window = hours_before > 0 and ...` → when `close_at_watch_hours_before_expiry=0`, `in_window` was always False (watcher silently disabled despite docs saying 0 = always on).
+- **AFTER:** Split into `near_expiry_window` (original time-based check) and `in_window = (hours_before == 0) or near_expiry_window`. Also `interval` uses `near_expiry_interval` only when `near_expiry_window` is True — always-on mode uses `normal_interval` to avoid unnecessary churn.
+- No change to force-enabled behavior, guardian/stop logic, or close execution.
+
+### Fix C — Scale-up premium accounting uses requested lots, not actual fills (`mmm_monitor.py`)
+- **File:** `mmm_monitor.py`, `_process_scale_up()` ~line 6717
+- **BEFORE:** `premium_collected_ce = ce_fill * lots * LOT_SIZE_BTC` — used requested `lots`, which overstates collected premium on partial fills and distorts breakeven/profitability metrics.
+- **AFTER:** `premium_collected_ce = ce_fill * ce_filled_lots * LOT_SIZE_BTC` and `premium_collected_pe = pe_fill * pe_filled_lots * LOT_SIZE_BTC`. Variables `ce_filled_lots`/`pe_filled_lots` already computed at line 6633 from actual exchange fills.
+- Accounting-only change; no change to execution, cap checks, or `record_scale_event` call.
+
+### Finding A — Blocked by sealed test conflict
+- Fix A (profit-first close ordering) would require changing the sort key in `mmm_close_at_5.py` from `(side, type_order, profit)` to `(profit, type_order, side)`.
+- `test_c18_sort_order_frozen_before_adj_before_original_same_side` (sealed) explicitly asserts the old type-first order and is incompatible with Fix A.
+- Fix A reverted; awaiting user decision on whether to update the sealed test.
+
+### Tests
+- 1456 passed / 0 failed
+
+## 2026-04-18 — Profitability audit Fix A applied (profit-first close ordering)
+
+- **File:** `mmm_close_at_5.py`, `scan_closeable_positions()` sort block
+- **BEFORE:** `sort(key=(side, type_order, profit), reverse=True)` — side was primary, profit was tertiary; PE positions always closed before CE regardless of profit, and frozen always before original regardless of profit delta
+- **AFTER:** `sort(key=(profit, type_order, side), reverse=True)` — profit is primary; type and side are tie-breakers only
+- **Why beneficial:** When `close_at_max_per_beat` cap (default 3) is hit with 4+ positions eligible, old ordering could defer a high-profit CE original while closing low-profit PE frozen positions first. If premium bounces above threshold before next beat, deferred close is lost entirely.
+- **Updated:** `test_c18_sort_order_frozen_before_adj_before_original_same_side` renamed to `test_c18_sort_order_profit_first_then_type_then_side` with assertions updated to match new profit-first ordering (original=$0.240 > adjustment=$0.056 > frozen=$0.054)
+
+### Tests
+- 1456 passed / 0 failed
+
+## 2026-04-18 — Adopted inventory mode audit (read-only)
+
+- Performed a strict read-only audit of MMM adopted inventory flow end-to-end (no runtime/code logic edits), covering:
+  - `webui/backend/routes/mmm/mmm_adopter.py`
+  - `webui/backend/routes/mmm/mmm_api.py` (adopt + start preflight)
+  - `webui/backend/routes/mmm/mmm_monitor.py` (reconciliation, restore behavior)
+  - `webui/backend/routes/mmm/mmm_engine.py` (active vs total cap enforcement)
+  - `webui/backend/routes/mmm/mmm_trigger.py` (trigger snapshot lifecycle)
+  - related strategy/state modules, frontend adopt payload path, and sealed tests.
+- Created deliverable report: `AUDIT_ADOPTION_MODE.md`.
+- Report captures severity-ranked findings for requested dimensions:
+  - wrong classification,
+  - mixed ownership,
+  - strike mismatch,
+  - stale inherited positions,
+  - trigger snapshot issues,
+  - caps after adopt,
+  - invalid strategy starts,
+  - recovery mode need.
+- Highest-risk finding documented as P0: adopt API payload congruence gap (`symbol/side/strike/expiry` consistency not strictly enforced at boundary), with recommended fail-closed validation plan.
+- Session outcome: audit/report only; no trading logic changed.
+
+## 2026-04-18 — Adopt-mode trust-boundary fixes (F1/F2/F4/F5 from AUDIT_ADOPTION_MODE.md)
+
+### F1 — P0: Payload congruence validation added (`mmm_adopter.py`, `mmm_api.py`)
+- Added `validate_position_congruence(positions, expiry)` in `mmm_adopter.py` (new section 3, old section 3 renumbered to 4).
+- Parses each position's `symbol` server-side (format `C/P-BTC-STRIKE-EXPIRY`) and derives canonical `side`, `strike`, and `expiry`.
+- Rejects with HTTP 400 + `congruence_errors[]` if submitted `side`, `strike`, or `expiry` diverges from symbol-encoded values.
+- Called in `adopt_positions()` (`mmm_api.py`) immediately after required-field presence check, before any state mutation.
+
+### F2 — P1: `trigger_mode=current_prices` fails explicitly on ticker fetch failure (`mmm_api.py`)
+- Previously: `log.warning` only; entry-price baseline silently persisted.
+- Now: tracks failures per side; returns HTTP 400 with `trigger_failures[]` if any active-side fetch fails.
+- Operator must retry or explicitly pass `trigger_mode=entry_prices`.
+
+### F4 — P2: PREFLIGHT B extended to total_lots vs max_total_exposure (`mmm_api.py`)
+- Previously: checked only `active_lots > max_lots_per_side`.
+- Now: also checks `total_lots (active+frozen) > max_total_exposure` per side, using engine's same default (`max_lots_per_side * 2` if unset).
+- Prevents "running but unable to adjust effectively" after adopted sessions already over the total exposure ceiling.
+
+### F5 — P2: Ownership-overlap check made fail-closed (`mmm_adopter.py`)
+- Previously: storage exception → `warnings.append(...)` → adoption proceeds.
+- Now: storage exception → `errors.append(...)` → adoption blocked.
+- Prevents double-ownership during storage faults or races.
+
+**No trading logic changed. API validation boundary only.**
+**Tests: 1456 passed / 0 failed**
+
+## 2026-04-18 — MMM realtime update flow audit (read-only)
+
+- Performed a strict read-only realtime architecture audit across MMM backend emitters and frontend consumers; no trading/runtime logic was modified.
+- Created deliverable report: `REALTIME_AUDIT.md`.
+- Report includes evidence-backed websocket contract coverage and severity-ranked findings for stale/delay/mismatch risk:
+  - selected-session detail pane staleness (`fullSession` merge gap),
+  - emitted-but-unconsumed manual action events (`mmm_manual_reduce`, `mmm_manual_injection`, `mmm_strike_closed`, `mmm_trigger_pin_changed`),
+  - options ticker fanout and live-price memory-pressure risk,
+  - weak socket-disconnect observability in primary MMM UX,
+  - adjustment timeline relying on delayed history over direct ws adjustments/reversals,
+  - reverse-mode dedicated events emitted but not directly consumed.
+- Added recommended remediation order and regression checklist in `REALTIME_AUDIT.md`.
+
+---
+
+## 2026-04-18 — Fix: Proactive shift disabled for STRADDLE_WITH_ADJUSTMENT after adjustments begin
+
+### Incident: mmm18apr26-3 (real money, live session)
+
+**What failed:** CE premium decayed from $89 → $37.5 (below shift_threshold=$70) without any
+proactive shift firing. The shift only ran inside `_process_adjustment` (triggered by PE), but
+PE couldn't trigger because `theta_acceleration_window=288` min widened the PE trigger from
+50% → 80%. PE was at 41% excess — not enough. By the time PE finally triggered at 80%+, CE
+at $37.5 was so far OTM that `find_new_strike` returned None (no OTM CE strike had >= $70
+premium). `shift_fallback` sold 14 lots at the decayed 77000 strike @ $37.5. User was forced
+to manually add 100 CE lots at 76800 @ $36.5 (still below threshold).
+
+**Root cause (mmm_monitor.py line 3141):**
+Proactive shift scan was unconditionally disabled for STRADDLE_WITH_ADJUSTMENT:
+```python
+if not _skip_to_pnl and not _is_straddle_adj and ...
+```
+Original intent: prevent shifting one leg away from ATM at session start (both legs start ATM
+and shift would break initial straddle symmetry). This was correct for `adjustment_count=0`.
+But after adjustments begin, the straddle is already asymmetric — proactive shift on the
+decayed hedge is exactly the right mechanism.
+
+**Fix (mmm_monitor.py lines 3134-3151):**
+Added `_straddle_adj_allow_proactive = _is_straddle_adj and adjustment_count > 0`.
+Condition now: `if not _skip_to_pnl and (not _is_straddle_adj or _straddle_adj_allow_proactive) and proactive_shift_enabled`.
+- `adjustment_count=0`: straddle just started → proactive shift still disabled (unchanged)
+- `adjustment_count>0`: straddle is asymmetric → proactive shift fires when hedge premium < shift_threshold
+
+**Effect:** On next heartbeat after fix is deployed, if CE/PE premium is below shift_threshold
+AND adjustment_count > 0 AND proactive_shift_enabled=True (default), the proactive shift will
+scan for a valid new strike and shift the decayed leg. This is what should have happened when
+CE dropped from $89 → just below $70.
+
+**Tests: 1456 passed / 0 failed**
+
+## 2026-04-18 — Wiring audit fixes: F1–F5 (state visibility, emergency controls, API hygiene)
+
+### F1 — mmm_storage.py: Active session filter now includes STARTING/PARTIAL_ENTRY
+- `list_sessions(active_only=True)` at line 789: added `'STARTING','PARTIAL_ENTRY'` to the SQL IN clause
+- `list_sessions_summary(active_only=True)` at line 967: same fix
+- **Why:** MMMContext.js treats STARTING/PARTIAL_ENTRY as active-status sessions but backend active filter excluded them. On active-only polls, mergeActiveSessions() would drop any STARTING/PARTIAL_ENTRY session not returned — cards disappeared during orphan/entry states where operator attention is most critical.
+
+### F2 — MMMDashboard.js: Exit/Kill controls now available in PARTIAL_ENTRY
+- Both Exit Strategy button (line 749) and Emergency Kill Switch (line 763) arrays extended with 'PARTIAL_ENTRY'
+- **Why:** Backend exit_all explicitly allows PARTIAL_ENTRY (api.py:1766) and kill_switch handles all non-terminal states, but UI blocked both buttons in that state. Operator had no emergency flatten path from UI during orphan-leg scenarios.
+
+### F3 — mmm_api.py: Emergency endpoint state divergence fixed
+- `emergency_stop_all` (line 7476): `strategy_status = 'PAUSED'` → `'STOPPED'` after `monitor.stop()` call
+- `emergency_pause_all` (line 7638): added `pause_session_monitor(sid, reason)` before DB write
+- **Why (stop_all):** monitor.stop() fully halts the monitor; writing PAUSED let the DB show a resumable state that the monitor could never resume — dangerous state label mismatch.
+- **Why (pause_all):** DB said PAUSED but monitor thread continued in RUNNING state (no pause call), allowing order placement to continue despite operator expecting a pause.
+
+### F4 — mmmService.js: force_start param plumbing
+- `startSession(sessionId, forceStart=false)` now accepts optional forceStart param
+- Passes `{ force_start: true }` in body only when forceStart=true
+- **Why:** Backend advertises force_start for recovery/flatten on invariant violations but service posted no body, making that recovery path unreachable from UI.
+
+### F5 — MMMRiskProfileChart.js: Route pnl-curve through apiShim
+- Removed raw `fetch(API_BASE + ...)` and replaced with `api.get(...)` from apiShim
+- Removed hardcoded `API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555'`
+- **Why:** Direct fetch bypassed retry logic (3 attempts) and circuit breaker in apiShim. Also risked localhost:5555 hardcode in non-dev environments.
+
+## 2026-04-18 — Dead code cleanup: unused MMM components, service methods, no-op setting
+
+### What changed
+- **Deleted 6 dead frontend files** (all confirmed zero consumers beyond barrel re-export):
+  - `MMMSessionCard.js` (superseded by `SessionCard` in `MMMDashboard.js`)
+  - `MMMAnalyticsPanel.js`, `MMMAnalyticsTable.js` (superseded by `MMMAnalyticsSummary`)
+  - `hooks/useMMMParams.js` (barrel-only export, no call sites)
+  - `utils/mmmCalculations.js`, `utils/mmmFormatters.js` (each consuming component has its own local copy)
+- **Cleaned barrel `index.js`**: removed exports for all 6 deleted files + removed orphan utils re-exports
+- **Removed 15 dead methods from `mmmService.js`** (confirmed zero `mmmService.xxx()` callers):
+  `getMonitorStatus`, `getAllMonitors`, `getPositions`, `getTriggerData`, `getPnLTimeline`,
+  `getSafetyStatus`, `getPerformanceSummary`, `getSessionHistory`, `getSessionState`,
+  `checkLiquidity`, `emergencyCloseAllPositions`, `emergencyKillAllBots`,
+  `getActivityStats`, `getCriticalActivities`, `getPerpHedgeStatus`
+- **Removed no-op setting `reverse_mode_type`** (confirmed: zero reads in `mmm_monitor.py`, `mmm_engine.py`, `mmm_reverse.py`):
+  - `mmm_config.py`: removed from param validator dict
+  - `mmm_state.py`: removed from default params dict and `ALLOWED_HOT_PARAMS` set
+  - `MMMReverseModePanel.js`: removed "Mode" chip from status display
+  - `MMMSettingsDialog.js`: removed from "Execution Control" params group
+
+### Why
+Static dead code audit (DEAD_CODE_AUDIT.md, 2026-04-18). All removals verified by grep before deletion.
+No algo logic touched. Zero impact on runtime MMM behavior.
+
+## 2026-04-18 — Realtime audit fixes: stale UI, missing ws listeners, connection banner
+
+### What changed and why (per file)
+
+**`webui/frontend/src/components/mmm/hooks/useMMMWebSocket.js`**
+- `useState(false)` → `useState(() => sharedSocket?.connected ?? false)` for `connected` state
+- Why: initial render was always `false`, causing a brief "WS Disconnected" banner flash on mount before the effect ran and set the real value
+
+**`webui/frontend/src/components/mmm/MMMDashboard.js`**
+
+1. `handleCloseStrikeConfirm` (SessionDetail): added `onStrikePromoted?.()` after dialog closes on success
+2. `handleAdjustLotsConfirm` (SessionDetail): added `onStrikePromoted?.()` after dialog closes on success
+   - Why (both): detail pane was previously waiting up to 15s (polling interval) to reflect manual lot/strike changes. `onStrikePromoted` = `fetchFullSession`, so the detail pane now refreshes immediately.
+
+3. New `useEffect` (parent `MMMDashboard`) listening on: `mmm_manual_reduce`, `mmm_manual_injection`, `mmm_strike_closed`, `mmm_trigger_pin_changed`, `mmm_status_change`
+   - Why: backend emits all 4 manual-action events but frontend had zero listeners. Status changes (RUNNING→PAUSED etc.) also didn't trigger `fetchFullSession`. All now call `fetchFullSession(true)` when session_id matches.
+
+4. Connection banners (lines ~4830 and ~4919): condition changed from `connectionStatus !== 'connected'` to `connectionStatus !== 'connected' || !wsData.connected`
+   - Why: `connectionStatus` is driven by REST fetch success/fail; a socket disconnect while REST is reachable was invisible to the operator. Now shows "WS Disconnected" chip/alert on socket-level disconnect.
+
+**`webui/frontend/src/components/mmm/MMMAdjustmentLog.js`**
+- Added ws `adjustments` array to the timeline `useMemo` (previously ignored — `reversals` also ignored but those lack enough fields for a timeline entry)
+- Added `_dedup` key using `adjustment_number`/`adjustment_count` to properly deduplicate ws events vs REST history events (ws events have no timestamp)
+- `useMemo` deps updated: `[session, adjustments, shifts, closeEvents]`
+- Why: new adjustments were invisible in the Adjustments tab until next 15s REST poll; now appear instantly when the `mmm_adjustment` ws event fires
+
+## 2026-04-18 — Fix Finding 3: options ticker flood gated by subscription list
+
+**`webui/backend/services/delta_price_websocket.py`** — `broadcast_ticker()`
+
+BEFORE: emitted `options_ticker_update` for every l1_orderbook message from the Delta WS
+wildcard subscription (`["call_options", "put_options"]`) — 200–400+ symbols flooding all
+connected clients at ~500ms/symbol, regardless of what anyone subscribed to.
+
+AFTER: acquires `subscribed_options_lock` and returns early if `symbol not in
+price_ws.subscribed_options`. Only symbols explicitly subscribed via the
+`subscribe_options_tickers` socket event are forwarded. The l1_orderbook wildcard
+subscription is still needed (Delta WS requires it) but its output is now filtered
+server-side before hitting Socket.IO.
+
+Also hardened `ticker_data.get('mark_price', 0)` (was `['mark_price']`) since the
+l1_orderbook worker always sends 0 for this field anyway.
+
+Effect: frontend `livePrices` accumulation reduced from all-options to CE+PE active
+strikes only; MMMDashboard re-render rate from options ticker drops from ~4/sec to
+only when subscribed symbols change.
+
+## 2026-04-18 — Fix: broken _auto_close_all import in STRADDLE_ROLL expiry/hard-stop paths
+
+- **Bug**: `mmm_straddle_roll_pure.py` had `from .mmm_monitor import _auto_close_all` in two places (hard stop else-branch line 887, expiry guard line 922). `_auto_close_all` is an instance method of `MMMMonitor` — no module-level function with that name exists. Every call raised `ImportError`, silently swallowed by the surrounding `except Exception` block.
+- **Impact**: Expiry guard path (`minutes_to_expiry < auto_close_mins`) would error-log and then set `strategy_status='STOPPED'` without closing any exchange positions. Hard stop else-branch (dead code — `use_market_stop` defaults True) had same broken import.
+- **Fix**: Replaced both broken import+call blocks with `await monitor._auto_close_all(reason=...)` — `monitor` is the `MMMMonitor` instance already passed as first arg to `execute_pure_straddle_roll`.
+- **Files changed**: `mmm_straddle_roll_pure.py`
+- **Tests**: 1456 passed / 0 failed
+
+**Remaining audit findings (not fixed — need separate decision):**
+- F-FB-1: `_fetch_premiums_with_fallback` exception path returns `ok=True` with last-known-good (non-exception path returns `ok=False` for same scenario). Real inconsistency, lower urgency.
+- F-FB-2: `_check_guardian_signal()` in `mmm_api.py` returns `'GO'` on exception (fail-open). Design choice, flagged to user.
+- F-STATE-1, F-VAL-1, F-CYC-*: complex, need separate targeted sessions.
+
+## 2026-04-19 — Fix: F6 gamma shift widening bypass for STRADDLE_WITH_ADJUSTMENT + starvation guard
+
+**Incident (mmm19apr26-1, live STRADDLE_WITH_ADJUSTMENT):** Proactive shift fired repeatedly for CE at strike=76000 (premium decayed to $59–$68) with `shift_threshold=$70`. `find_new_strike` returned no candidates for 10+ beats even though strikes 75600 ($186) and 75800 ($109) sat clearly above the threshold. L1→L2→L3 shift-starvation alerts fired.
+
+**Root cause:** Session gamma zone was DANGER, so `_process_strike_shift` set `_gamma_shift_min_otm = spot × 1.5% × 1.2 ≈ 1359` (Feature 6 "shift distance widening"). Passed to `find_new_strike` as `min_otm_distance`, this required the new CE strike to be at distance ≥ 1359 from spot. With spot=75502, new_strike had to be > 76861. The current strike 76000 was already at distance 498 (INSIDE the F6 floor). Every strike further from spot than the floor has lower premium than the current decayed strike, so nothing could clear `shift_threshold=$70`.
+
+**STRADDLE_WITH_ADJUSTMENT invariant added (user feedback 2026-04-19):** For this strategy, the straddle is anchored at ATM, so gamma_zone is *structurally* DANGER. F6 widening would always push the new strike further OTM than the existing straddle legs (where premium is below threshold). The hedge shift is reactive — blocking it leaves the position unhedged. Same rationale as the projected-gamma cap bypass (Fix 8, 2026-04-17) at `_process_adjustment` (mmm_monitor.py L5059-5073).
+
+**Fix (`mmm_monitor.py`, `_process_strike_shift`, F6 block ~L5402–5462):**
+1. **STRADDLE_WITH_ADJUSTMENT bypass** (primary): `_is_straddle_adj_shift` short-circuits the F6 computation entirely — F6 never applies in this strategy. Emits a rate-limited warning (`_should_emit_warning`) the first time F6 would have applied. Matches the Fix 8 gamma-cap bypass pattern already established.
+2. **Starvation guard** (secondary, for non-straddle strategies): When F6 does apply and `old_strike`'s distance-from-spot is already less than the F6 floor, reset `_gamma_shift_min_otm = 0.0` and log a warning. Prevents the same "nothing qualifies" trap if a non-straddle strategy ever lands in this edge case.
+
+- **Files changed:** `webui/backend/routes/mmm/mmm_monitor.py`
+- **Tests:** `test_sealed_mmm_strike_shift.py` — 30 passed / 0 failed
+- **Risk:** LOW — purely additive safety valves; F6 semantics unchanged for non-straddle strategies whose current strike is outside the floor.
+
+---
+
+## 2026-04-19 (evening) — Fix: max_lots_per_side is now a HARD ceiling on active+frozen
+
+**Incident (today, live STRADDLE_WITH_ADJUSTMENT):** Session sold far more lots than the `max_lots_per_side` budget. Activity log showed many cancelled orders and CAP AUTO-SHIFT firing repeatedly, accumulating real exchange exposure above the configured lot cap.
+
+**Root cause:** Split-ledger position cap at `mmm_engine.py:618-629` used `hedge_state.get('active_lots', 0)` — counted only ACTIVE lots. After CAP AUTO-SHIFT froze 150 lots, `active_lots` reset to 0 and the engine allowed another 150 at a new strike → real exposure ≈ 2× cap. The secondary `max_total_exposure` ceiling defaulted to `max_lots_per_side * 2` (silently), so the combined exposure was capped at double the user's budget — not at the budget itself.
+
+**User directive (logged):** "in any condition it should not sell more than the desired lots … it should stay inside the lot cap and if lots are not available then flash message that capacity full no further adjustment because lots cap reached." Real-money bot — this is a hard invariant.
+
+### Fix 1 — `mmm_engine.py:620` §13.1 position cap: `active_lots` → `total_lots`
+`max_lots_per_side` is now a HARD ceiling on `active + frozen`. Frozen lots still count because they are still real exchange exposure until drained via close_at_5 / M1 harvest / manual close. When the cap is reached, engine returns `is_position_cap=True` (same as before — drives M2 recycling).
+
+### Fix 2 — `mmm_monitor.py` CAP AUTO-SHIFT short-circuit (before `_process_strike_shift`)
+Added a pre-emptive guard: if `total_lots >= max_lots_per_side` at the moment CAP AUTO-SHIFT would fire, the shift is skipped and a rate-limited `capacity_full` activity + `emit_safety('capacity_full', 'alert', …)` is fired instead. Freezing + shifting wouldn't free capacity (frozen still counts under the new cap), so the shift would be useless anyway.
+
+Message surfaced to operator: "⛔ Capacity Full: {SIDE} at {N}/{CAP} lots (active+frozen). No further adjustment possible — raise max_lots_per_side or wait for close_at_5 / M1 harvest to drain frozen lots."
+
+### Fix 3 — Activity registry (`mmm_activity.py`)
+Registered `capacity_full` in `ACTIVITY_TYPES` ("Capacity Full") and in `ACTIVITY_CATEGORIES['safety']`. Required by `test_activity_registry_covers_literal_log_types`.
+
+### Test updates
+- `test_sealed_calculate_lots_to_sell.py::test_c6_total_exposure_ceiling_returns_false_flag` — scenario updated: under new semantics the §13.1 cap (now on total_lots) fires first and returns `is_cap=True`. Test now encodes: `active=90, total=100, max=100` → `(0, msg, True)`.
+
+**Accepted consequence:** Once active+frozen hits cap, the system stops selling that side entirely until frozen lots drain (close_at_5 / M1 harvest / manual close). If the opposite side breaches while the capped side is hard-capped, the position is unhedged and max-loss guard is the only protection. The user accepted this — "it is not allowed to sell more than capacity lots". If more capacity is wanted, raise `max_lots_per_side`.
+
+**Strategy invariants preserved:**
+- Gamma bypass for STRADDLE_WITH_ADJUSTMENT (2026-04-17 / 2026-04-19) — untouched.
+- Stale monitor 3-layer guard, reverse mode isolation — untouched.
+- CAP AUTO-SHIFT code path itself is not removed — only gated behind the hard-cap check (still reachable when `max_total_exposure` is configured larger than `max_lots_per_side`, though that's now unusual).
+
+**Files changed:** `webui/backend/routes/mmm/mmm_engine.py`, `webui/backend/routes/mmm/mmm_monitor.py`, `webui/backend/routes/mmm/mmm_activity.py`, `webui/backend/routes/mmm/tests/test_sealed_calculate_lots_to_sell.py`
+**Tests:** All MMM sealed tests — **1456 passed / 0 failed**
+**Risk:** MEDIUM. Hard cap is a behavior change; CAP AUTO-SHIFT is effectively disabled when `max_total_exposure` is not set above `max_lots_per_side`. Operators must watch for `capacity_full` alerts and raise the budget or drain frozen lots when they fire.

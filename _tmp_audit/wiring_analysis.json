@@ -1,0 +1,4450 @@
+{
+  "service_methods": {
+    "mmm": [
+      {
+        "method": "getSessions",
+        "line": 27,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/sessions`",
+            "path": "/api/mmm/sessions"
+          }
+        ]
+      },
+      {
+        "method": "getSession",
+        "line": 39,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}`",
+            "path": "/api/mmm/session/<session_id>"
+          }
+        ]
+      },
+      {
+        "method": "createSession",
+        "line": 53,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/create`",
+            "path": "/api/mmm/session/create"
+          }
+        ]
+      },
+      {
+        "method": "deleteSession",
+        "line": 62,
+        "calls": [
+          {
+            "verb": "DELETE",
+            "raw": "`${BASE_URL}/session/${sessionId}`",
+            "path": "/api/mmm/session/<session_id>"
+          }
+        ]
+      },
+      {
+        "method": "startSession",
+        "line": 84,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/start`",
+            "path": "/api/mmm/session/<session_id>/start"
+          }
+        ]
+      },
+      {
+        "method": "pauseSession",
+        "line": 93,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/pause`",
+            "path": "/api/mmm/session/<session_id>/pause"
+          }
+        ]
+      },
+      {
+        "method": "resumeSession",
+        "line": 102,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/resume`",
+            "path": "/api/mmm/session/<session_id>/resume"
+          }
+        ]
+      },
+      {
+        "method": "stopSession",
+        "line": 112,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/stop`",
+            "path": "/api/mmm/session/<session_id>/stop"
+          }
+        ]
+      },
+      {
+        "method": "exitAllSession",
+        "line": 123,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/exit_all`",
+            "path": "/api/mmm/session/<session_id>/exit_all"
+          }
+        ]
+      },
+      {
+        "method": "killSwitch",
+        "line": 135,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/kill_switch`",
+            "path": "/api/mmm/session/<session_id>/kill_switch"
+          }
+        ]
+      },
+      {
+        "method": "resolvePartialEntry",
+        "line": 147,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/resolve-partial-entry`",
+            "path": "/api/mmm/session/<session_id>/resolve-partial-entry"
+          }
+        ]
+      },
+      {
+        "method": "retryPartialLeg",
+        "line": 160,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/retry-partial-leg`",
+            "path": "/api/mmm/session/<session_id>/retry-partial-leg"
+          }
+        ]
+      },
+      {
+        "method": "submitBothSidesDecision",
+        "line": 179,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/both_sides_decision`",
+            "path": "/api/mmm/session/<session_id>/both_sides_decision"
+          }
+        ]
+      },
+      {
+        "method": "getMonitorStatus",
+        "line": 195,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/monitor`",
+            "path": "/api/mmm/session/<session_id>/monitor"
+          }
+        ]
+      },
+      {
+        "method": "getAllMonitors",
+        "line": 203,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/monitors`",
+            "path": "/api/mmm/monitors"
+          }
+        ]
+      },
+      {
+        "method": "forceHeartbeat",
+        "line": 213,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/force-heartbeat`",
+            "path": "/api/mmm/session/<session_id>/force-heartbeat"
+          }
+        ]
+      },
+      {
+        "method": "getBeatHealth",
+        "line": 223,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/beat-health`",
+            "path": "/api/mmm/session/<session_id>/beat-health"
+          }
+        ]
+      },
+      {
+        "method": "reducePosition",
+        "line": 241,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/reduce-position`",
+            "path": "/api/mmm/session/<session_id>/reduce-position"
+          }
+        ]
+      },
+      {
+        "method": "injectPosition",
+        "line": 257,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/inject-position`",
+            "path": "/api/mmm/session/<session_id>/inject-position"
+          }
+        ]
+      },
+      {
+        "method": "setActiveStrike",
+        "line": 274,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/set-active-strike`",
+            "path": "/api/mmm/session/<session_id>/set-active-strike"
+          }
+        ]
+      },
+      {
+        "method": "adjustActiveLots",
+        "line": 290,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/adjust-active-lots`",
+            "path": "/api/mmm/session/<session_id>/adjust-active-lots"
+          }
+        ]
+      },
+      {
+        "method": "closeStrike",
+        "line": 305,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/close-strike`",
+            "path": "/api/mmm/session/<session_id>/close-strike"
+          }
+        ]
+      },
+      {
+        "method": "getPositions",
+        "line": 321,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/positions`",
+            "path": "/api/mmm/session/<session_id>/positions"
+          }
+        ]
+      },
+      {
+        "method": "getTriggerData",
+        "line": 330,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/triggers`",
+            "path": "/api/mmm/session/<session_id>/triggers"
+          }
+        ]
+      },
+      {
+        "method": "getPnLTimeline",
+        "line": 340,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/pnl-timeline`",
+            "path": "/api/mmm/session/<session_id>/pnl-timeline"
+          }
+        ]
+      },
+      {
+        "method": "getSafetyStatus",
+        "line": 351,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/safety`",
+            "path": "/api/mmm/session/<session_id>/safety"
+          }
+        ]
+      },
+      {
+        "method": "getSessionAnalytics",
+        "line": 360,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/analytics`",
+            "path": "/api/mmm/session/<session_id>/analytics"
+          }
+        ]
+      },
+      {
+        "method": "getAggregatedAnalytics",
+        "line": 369,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/analytics/aggregated`",
+            "path": "/api/mmm/analytics/aggregated"
+          }
+        ]
+      },
+      {
+        "method": "getSessionPerformance",
+        "line": 377,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/performance`",
+            "path": "/api/mmm/session/<session_id>/performance"
+          }
+        ]
+      },
+      {
+        "method": "getPerformanceSummary",
+        "line": 385,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/performance/summary`",
+            "path": "/api/mmm/performance/summary"
+          }
+        ]
+      },
+      {
+        "method": "getParamsInfo",
+        "line": 397,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/params/info`",
+            "path": "/api/mmm/params/info"
+          }
+        ]
+      },
+      {
+        "method": "getDTEPresets",
+        "line": 405,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/dte-presets`",
+            "path": "/api/mmm/dte-presets"
+          }
+        ]
+      },
+      {
+        "method": "getAggregatePnL",
+        "line": 413,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/aggregate-pnl`",
+            "path": "/api/mmm/aggregate-pnl"
+          }
+        ]
+      },
+      {
+        "method": "getSessionParams",
+        "line": 422,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/params`",
+            "path": "/api/mmm/session/<session_id>/params"
+          }
+        ]
+      },
+      {
+        "method": "updateSessionParams",
+        "line": 432,
+        "calls": [
+          {
+            "verb": "PATCH",
+            "raw": "`${BASE_URL}/session/${sessionId}/params`",
+            "path": "/api/mmm/session/<session_id>/params"
+          }
+        ]
+      },
+      {
+        "method": "getSessionHistory",
+        "line": 446,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/history`",
+            "path": "/api/mmm/session/<session_id>/history"
+          }
+        ]
+      },
+      {
+        "method": "getSessionState",
+        "line": 457,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/state`",
+            "path": "/api/mmm/session/<session_id>/state"
+          }
+        ]
+      },
+      {
+        "method": "getExpiries",
+        "line": 470,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/expiries`",
+            "path": "/api/mmm/expiries"
+          }
+        ]
+      },
+      {
+        "method": "getSpotPrice",
+        "line": 481,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/spot-price`",
+            "path": "/api/mmm/spot-price"
+          }
+        ]
+      },
+      {
+        "method": "previewStrikes",
+        "line": 498,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/preview-strikes`",
+            "path": "/api/mmm/preview-strikes"
+          }
+        ]
+      },
+      {
+        "method": "previewAtmStraddle",
+        "line": 508,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/preview_atm_straddle`",
+            "path": "/api/mmm/preview_atm_straddle"
+          }
+        ]
+      },
+      {
+        "method": "checkLiquidity",
+        "line": 518,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/check-liquidity`",
+            "path": "/api/mmm/check-liquidity"
+          }
+        ]
+      },
+      {
+        "method": "initSessionFresh",
+        "line": 536,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/init-fresh`",
+            "path": "/api/mmm/session/<session_id>/init-fresh"
+          }
+        ]
+      },
+      {
+        "method": "initSessionImport",
+        "line": 556,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/init-import`",
+            "path": "/api/mmm/session/<session_id>/init-import"
+          }
+        ]
+      },
+      {
+        "method": "getExchangePositions",
+        "line": 566,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/exchange-positions`",
+            "path": "/api/mmm/exchange-positions"
+          }
+        ]
+      },
+      {
+        "method": "adoptPositions",
+        "line": 579,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/adopt`",
+            "path": "/api/mmm/session/<session_id>/adopt"
+          }
+        ]
+      },
+      {
+        "method": "getChainData",
+        "line": 597,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/chain-data`",
+            "path": "/api/mmm/chain-data"
+          }
+        ]
+      },
+      {
+        "method": "validateSelection",
+        "line": 613,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/validate-selection`",
+            "path": "/api/mmm/validate-selection"
+          }
+        ]
+      },
+      {
+        "method": "executeEntry",
+        "line": 626,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/execute-entry`",
+            "path": "/api/mmm/session/<session_id>/execute-entry"
+          }
+        ]
+      },
+      {
+        "method": "healthCheck",
+        "line": 638,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/health`",
+            "path": "/api/mmm/health"
+          }
+        ]
+      },
+      {
+        "method": "emergencyCloseAllPositions",
+        "line": 651,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/emergency/close-all-positions`",
+            "path": "/api/mmm/emergency/close-all-positions"
+          }
+        ]
+      },
+      {
+        "method": "emergencyKillAllBots",
+        "line": 668,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "'/api/emergency/kill-all'",
+            "path": "/api/emergency/kill-all"
+          }
+        ]
+      },
+      {
+        "method": "getActivities",
+        "line": 683,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/activities`",
+            "path": "/api/mmm/activities"
+          }
+        ]
+      },
+      {
+        "method": "getActivityStats",
+        "line": 694,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/activities/stats`",
+            "path": "/api/mmm/activities/stats"
+          }
+        ]
+      },
+      {
+        "method": "getCriticalActivities",
+        "line": 705,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/activities/critical`",
+            "path": "/api/mmm/activities/critical"
+          }
+        ]
+      },
+      {
+        "method": "getWalkthrough",
+        "line": 720,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/walkthrough`",
+            "path": "/api/mmm/session/<session_id>/walkthrough"
+          }
+        ]
+      },
+      {
+        "method": "getGreeksIV",
+        "line": 736,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/greeks-iv`",
+            "path": "/api/mmm/session/<session_id>/greeks-iv"
+          }
+        ]
+      },
+      {
+        "method": "getRegimeStatus",
+        "line": 747,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/regime`",
+            "path": "/api/mmm/session/<session_id>/regime"
+          }
+        ]
+      },
+      {
+        "method": "getMarginStatus",
+        "line": 763,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/margin`",
+            "path": "/api/mmm/session/<session_id>/margin"
+          }
+        ]
+      },
+      {
+        "method": "getExchangeMargin",
+        "line": 775,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/exchange/margin`",
+            "path": "/api/mmm/exchange/margin"
+          }
+        ]
+      },
+      {
+        "method": "getPerpHedgeStatus",
+        "line": 788,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/hedge/status`",
+            "path": "/api/mmm/session/<session_id>/hedge/status"
+          }
+        ]
+      },
+      {
+        "method": "togglePerpHedge",
+        "line": 799,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/hedge/toggle`",
+            "path": "/api/mmm/session/<session_id>/hedge/toggle"
+          }
+        ]
+      },
+      {
+        "method": "closePerpHedge",
+        "line": 810,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/hedge/close`",
+            "path": "/api/mmm/session/<session_id>/hedge/close"
+          }
+        ]
+      },
+      {
+        "method": "getAuditTrades",
+        "line": 822,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/trades`",
+            "path": "/api/mmm/session/<session_id>/audit/trades"
+          }
+        ]
+      },
+      {
+        "method": "getAuditStrikeSummary",
+        "line": 828,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/strike_summary`",
+            "path": "/api/mmm/session/<session_id>/audit/strike_summary"
+          }
+        ]
+      },
+      {
+        "method": "getAuditPnL",
+        "line": 834,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/pnl`",
+            "path": "/api/mmm/session/<session_id>/audit/pnl"
+          }
+        ]
+      },
+      {
+        "method": "getAuditReconcile",
+        "line": 840,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/reconcile`",
+            "path": "/api/mmm/session/<session_id>/audit/reconcile"
+          }
+        ]
+      },
+      {
+        "method": "getAuditEvents",
+        "line": 846,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/events`",
+            "path": "/api/mmm/session/<session_id>/audit/events"
+          }
+        ]
+      },
+      {
+        "method": "getExecutionEvents",
+        "line": 852,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/audit/execution-events?limit=${limit}`",
+            "path": "/api/mmm/session/<session_id>/audit/execution-events"
+          }
+        ]
+      },
+      {
+        "method": "getOptionChain",
+        "line": 860,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`${BASE_URL}/session/${sessionId}/option-chain`",
+            "path": "/api/mmm/session/<session_id>/option-chain"
+          }
+        ]
+      },
+      {
+        "method": "pinTrigger",
+        "line": 875,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/pin-trigger`",
+            "path": "/api/mmm/session/<session_id>/pin-trigger"
+          }
+        ]
+      },
+      {
+        "method": "enableReverseMode",
+        "line": 890,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/reverse/enable`",
+            "path": "/api/mmm/session/<session_id>/reverse/enable"
+          }
+        ]
+      },
+      {
+        "method": "disableReverseMode",
+        "line": 901,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/reverse/disable`",
+            "path": "/api/mmm/session/<session_id>/reverse/disable"
+          }
+        ]
+      },
+      {
+        "method": "closeAllReversePositions",
+        "line": 912,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`${BASE_URL}/session/${sessionId}/reverse/close`",
+            "path": "/api/mmm/session/<session_id>/reverse/close"
+          }
+        ]
+      }
+    ],
+    "mmmx": [
+      {
+        "method": "createSession",
+        "line": 22,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "'/session'",
+            "path": "/api/mmmx/session"
+          }
+        ]
+      },
+      {
+        "method": "listSessions",
+        "line": 23,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/sessions${status ? `",
+            "path": "/api/mmmx/sessions"
+          }
+        ]
+      },
+      {
+        "method": "getSession",
+        "line": 24,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/session/${id}`",
+            "path": "/api/mmmx/session/<session_id>"
+          }
+        ]
+      },
+      {
+        "method": "hotReloadParams",
+        "line": 27,
+        "calls": [
+          {
+            "verb": "PATCH",
+            "raw": "`/session/${id}/params`",
+            "path": "/api/mmmx/session/<session_id>/params"
+          }
+        ]
+      },
+      {
+        "method": "stopSession",
+        "line": 30,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/stop`",
+            "path": "/api/mmmx/session/<session_id>/stop"
+          }
+        ]
+      },
+      {
+        "method": "killSwitch",
+        "line": 31,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "'/kill-switch'",
+            "path": "/api/mmmx/kill-switch"
+          }
+        ]
+      },
+      {
+        "method": "pauseSession",
+        "line": 33,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/pause`",
+            "path": "/api/mmmx/session/<session_id>/pause"
+          }
+        ]
+      },
+      {
+        "method": "resumeSession",
+        "line": 34,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/resume`",
+            "path": "/api/mmmx/session/<session_id>/resume"
+          }
+        ]
+      },
+      {
+        "method": "startMonitor",
+        "line": 35,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/start-monitor`",
+            "path": "/api/mmmx/session/<session_id>/start-monitor"
+          }
+        ]
+      },
+      {
+        "method": "forceHeartbeat",
+        "line": 36,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/force-heartbeat`",
+            "path": "/api/mmmx/session/<session_id>/force-heartbeat"
+          }
+        ]
+      },
+      {
+        "method": "deployTranche1",
+        "line": 40,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/deploy_tranche1`",
+            "path": "/api/mmmx/session/<session_id>/deploy_tranche1"
+          }
+        ]
+      },
+      {
+        "method": "profitBook",
+        "line": 41,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/profit_book`",
+            "path": "/api/mmmx/session/<session_id>/profit_book"
+          }
+        ]
+      },
+      {
+        "method": "reconcile",
+        "line": 43,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/reconcile`",
+            "path": "/api/mmmx/session/<session_id>/reconcile"
+          }
+        ]
+      },
+      {
+        "method": "scanStrikes",
+        "line": 44,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/session/${id}/scan_strikes?otm_pct=${otmPct}`",
+            "path": "/api/mmmx/session/<session_id>/scan_strikes"
+          }
+        ]
+      },
+      {
+        "method": "getAuditLog",
+        "line": 47,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/session/${id}/audit?limit=${limit}`",
+            "path": "/api/mmmx/session/<session_id>/audit"
+          }
+        ]
+      },
+      {
+        "method": "getActivityLog",
+        "line": 48,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/session/${id}/activity?limit=${limit}`",
+            "path": "/api/mmmx/session/<session_id>/activity"
+          }
+        ]
+      },
+      {
+        "method": "getParamHistory",
+        "line": 49,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/session/${id}/param-history?limit=${limit}`",
+            "path": "/api/mmmx/session/<session_id>/param-history"
+          }
+        ]
+      },
+      {
+        "method": "confirmReconcile",
+        "line": 52,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/confirm-reconcile`",
+            "path": "/api/mmmx/session/<session_id>/confirm-reconcile"
+          }
+        ]
+      },
+      {
+        "method": "checkGates",
+        "line": 60,
+        "calls": [
+          {
+            "verb": "POST",
+            "raw": "`/session/${id}/check-gates`",
+            "path": "/api/mmmx/session/<session_id>/check-gates"
+          }
+        ]
+      },
+      {
+        "method": "getHealth",
+        "line": 64,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "'/health'",
+            "path": "/api/mmmx/health"
+          }
+        ]
+      },
+      {
+        "method": "getExpirations",
+        "line": 68,
+        "calls": [
+          {
+            "verb": "GET",
+            "raw": "`/api/options-chain/expirations?underlying=${underlying}`",
+            "path": "/api/options-chain/expirations"
+          }
+        ]
+      }
+    ]
+  },
+  "usage": {
+    "mmm": {
+      "getWalkthrough": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAlgoCalculations.js",
+          "line": 365
+        }
+      ],
+      "getGreeksIV": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMGreeksPanel.js",
+          "line": 86
+        }
+      ],
+      "getChainData": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+          "line": 157
+        }
+      ],
+      "validateSelection": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+          "line": 217
+        }
+      ],
+      "getExchangeMargin": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+          "line": 440
+        }
+      ],
+      "getMarginStatus": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+          "line": 458
+        }
+      ],
+      "updateSessionParams": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+          "line": 480
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+          "line": 1100
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2795
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2808
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+          "line": 97
+        }
+      ],
+      "getSessionPerformance": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMPerformancePanel.js",
+          "line": 76
+        }
+      ],
+      "enableReverseMode": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+          "line": 225
+        }
+      ],
+      "disableReverseMode": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+          "line": 239
+        }
+      ],
+      "closeAllReversePositions": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+          "line": 254
+        }
+      ],
+      "togglePerpHedge": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+          "line": 398
+        }
+      ],
+      "closePerpHedge": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+          "line": 419
+        }
+      ],
+      "getAuditTrades": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 73
+        }
+      ],
+      "getAuditStrikeSummary": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 188
+        }
+      ],
+      "getAuditPnL": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 279
+        }
+      ],
+      "getAuditEvents": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 358
+        }
+      ],
+      "getAuditReconcile": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 444
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+          "line": 574
+        }
+      ],
+      "getExchangePositions": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+          "line": 121
+        }
+      ],
+      "adoptPositions": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+          "line": 282
+        }
+      ],
+      "startSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+          "line": 300
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 438
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 518
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 588
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4602
+        }
+      ],
+      "getExecutionEvents": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMExecutionLogPanel.js",
+          "line": 110
+        }
+      ],
+      "getSessionAnalytics": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAnalyticsTable.js",
+          "line": 45
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAnalyticsSummary.js",
+          "line": 46
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMAnalyticsPanel.js",
+          "line": 106
+        }
+      ],
+      "getActivities": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMActivityFeed.js",
+          "line": 469
+        }
+      ],
+      "getSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+          "line": 925
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4500
+        }
+      ],
+      "getExpiries": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 274
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 1354
+        }
+      ],
+      "getSpotPrice": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 297
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 1355
+        }
+      ],
+      "previewStrikes": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 335
+        }
+      ],
+      "previewAtmStraddle": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 378
+        }
+      ],
+      "initSessionFresh": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 419
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 570
+        }
+      ],
+      "initSessionImport": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 500
+        }
+      ],
+      "executeEntry": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+          "line": 631
+        }
+      ],
+      "pinTrigger": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+          "line": 160
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+          "line": 173
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+          "line": 189
+        }
+      ],
+      "getAggregatePnL": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 130
+        }
+      ],
+      "getDTEPresets": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 1356
+        }
+      ],
+      "createSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 1518
+        }
+      ],
+      "getBeatHealth": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 1882
+        }
+      ],
+      "reducePosition": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2132
+        }
+      ],
+      "getOptionChain": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2360
+        }
+      ],
+      "injectPosition": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2403
+        }
+      ],
+      "setActiveStrike": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2932
+        }
+      ],
+      "closeStrike": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2953
+        }
+      ],
+      "adjustActiveLots": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 2983
+        }
+      ],
+      "pauseSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4606
+        }
+      ],
+      "resumeSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4609
+        }
+      ],
+      "stopSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4612
+        }
+      ],
+      "forceHeartbeat": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4615
+        }
+      ],
+      "exitAllSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4631
+        }
+      ],
+      "killSwitch": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4635
+        }
+      ],
+      "deleteSession": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4639
+        }
+      ],
+      "retryPartialLeg": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4653
+        }
+      ],
+      "resolvePartialEntry": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4667
+        }
+      ],
+      "submitBothSidesDecision": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+          "line": 4709
+        }
+      ],
+      "getRegimeStatus": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMRegimePanel.js",
+          "line": 415
+        }
+      ],
+      "getSessions": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMContext.js",
+          "line": 191
+        },
+        {
+          "file": "webui/frontend/src/components/mmm/MMMContext.js",
+          "line": 268
+        }
+      ],
+      "healthCheck": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMContext.js",
+          "line": 303
+        }
+      ],
+      "getParamsInfo": [
+        {
+          "file": "webui/frontend/src/components/mmm/MMMContext.js",
+          "line": 316
+        }
+      ],
+      "getSessionParams": [
+        {
+          "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+          "line": 43
+        }
+      ],
+      "getAggregatedAnalytics": [
+        {
+          "file": "webui/frontend/src/components/MMMInstitutionalAnalytics.js",
+          "line": 54
+        }
+      ]
+    },
+    "mmmx": {
+      "getExpirations": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+          "line": 48
+        }
+      ],
+      "createSession": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+          "line": 71
+        }
+      ],
+      "scanStrikes": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+          "line": 245
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 82
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 156
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 254
+        }
+      ],
+      "deployTranche1": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+          "line": 315
+        }
+      ],
+      "getSession": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+          "line": 272
+        }
+      ],
+      "getActivityLog": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+          "line": 306
+        }
+      ],
+      "listSessions": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 123
+        }
+      ],
+      "pauseSession": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 168
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 427
+        }
+      ],
+      "resumeSession": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 168
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 448
+        }
+      ],
+      "stopSession": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 168
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 456
+        }
+      ],
+      "forceHeartbeat": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 177
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 510
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 439
+        }
+      ],
+      "reconcile": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 190
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+          "line": 19
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 463
+        }
+      ],
+      "killSwitch": [
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 263
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 277
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+          "line": 403
+        }
+      ],
+      "confirmReconcile": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+          "line": 36
+        }
+      ],
+      "profitBook": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXProfitBookingTab.js",
+          "line": 24
+        }
+      ],
+      "getHealth": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 71
+        }
+      ],
+      "checkGates": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 88
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+          "line": 259
+        }
+      ],
+      "getParamHistory": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+          "line": 15
+        }
+      ],
+      "hotReloadParams": [
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+          "line": 53
+        },
+        {
+          "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+          "line": 54
+        }
+      ],
+      "getAuditLog": [
+        {
+          "file": "webui/frontend/src/components/mmmx/panels/MMMXTradeAuditPanel.js",
+          "line": 35
+        }
+      ]
+    }
+  },
+  "direct_calls": [
+    {
+      "file": "webui/frontend/src/components/mmm/MMMRiskProfileChart.js",
+      "line": 88,
+      "verb": "GET",
+      "path": "${API_BASE}/api/mmm/session/${sessionId}/pnl-curve"
+    },
+    {
+      "file": "webui/frontend/src/components/mmmx/mmmxService.js",
+      "line": 69,
+      "verb": "GET",
+      "path": "/api/options-chain/expirations"
+    }
+  ],
+  "match_results": {
+    "mmm": [
+      {
+        "method": "getWalkthrough",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAlgoCalculations.js",
+            "line": 365
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/walkthrough`",
+          "path": "/api/mmm/session/<session_id>/walkthrough"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/walkthrough",
+        "def": "get_walkthrough",
+        "line": 6571
+      },
+      {
+        "method": "getGreeksIV",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMGreeksPanel.js",
+            "line": 86
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/greeks-iv`",
+          "path": "/api/mmm/session/<session_id>/greeks-iv"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/greeks-iv",
+        "def": "get_greeks_iv",
+        "line": 6690
+      },
+      {
+        "method": "getChainData",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+            "line": 157
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/chain-data`",
+          "path": "/api/mmm/chain-data"
+        },
+        "matched": true,
+        "route": "/api/mmm/chain-data",
+        "def": "get_chain_data",
+        "line": 3775
+      },
+      {
+        "method": "validateSelection",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+            "line": 217
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/validate-selection`",
+          "path": "/api/mmm/validate-selection"
+        },
+        "matched": true,
+        "route": "/api/mmm/validate-selection",
+        "def": "validate_selection",
+        "line": 3817
+      },
+      {
+        "method": "getExchangeMargin",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+            "line": 440
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/exchange/margin`",
+          "path": "/api/mmm/exchange/margin"
+        },
+        "matched": true,
+        "route": "/api/mmm/exchange/margin",
+        "def": "get_exchange_margin",
+        "line": 2337
+      },
+      {
+        "method": "getMarginStatus",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+            "line": 458
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/margin`",
+          "path": "/api/mmm/session/<session_id>/margin"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/margin",
+        "def": "get_session_margin_status",
+        "line": 2248
+      },
+      {
+        "method": "updateSessionParams",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+            "line": 480
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+            "line": 1100
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2795
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2808
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+            "line": 97
+          }
+        ],
+        "endpoint": {
+          "verb": "PATCH",
+          "raw": "`${BASE_URL}/session/${sessionId}/params`",
+          "path": "/api/mmm/session/<session_id>/params"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/params",
+        "def": "update_session_params",
+        "line": 2464
+      },
+      {
+        "method": "getSessionPerformance",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMPerformancePanel.js",
+            "line": 76
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/performance`",
+          "path": "/api/mmm/session/<session_id>/performance"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/performance",
+        "def": "get_session_performance",
+        "line": 7081
+      },
+      {
+        "method": "enableReverseMode",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+            "line": 225
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/reverse/enable`",
+          "path": "/api/mmm/session/<session_id>/reverse/enable"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/reverse/enable",
+        "def": "enable_reverse_mode_api",
+        "line": 8439
+      },
+      {
+        "method": "disableReverseMode",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+            "line": 239
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/reverse/disable`",
+          "path": "/api/mmm/session/<session_id>/reverse/disable"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/reverse/disable",
+        "def": "disable_reverse_mode_api",
+        "line": 8481
+      },
+      {
+        "method": "closeAllReversePositions",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+            "line": 254
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/reverse/close`",
+          "path": "/api/mmm/session/<session_id>/reverse/close"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/reverse/close",
+        "def": "close_reverse_positions_api",
+        "line": 8525
+      },
+      {
+        "method": "togglePerpHedge",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+            "line": 398
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/hedge/toggle`",
+          "path": "/api/mmm/session/<session_id>/hedge/toggle"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/hedge/toggle",
+        "def": "toggle_hedge",
+        "line": 7182
+      },
+      {
+        "method": "closePerpHedge",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+            "line": 419
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/hedge/close`",
+          "path": "/api/mmm/session/<session_id>/hedge/close"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/hedge/close",
+        "def": "close_hedge",
+        "line": 7236
+      },
+      {
+        "method": "getAuditTrades",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 73
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/trades`",
+          "path": "/api/mmm/session/<session_id>/audit/trades"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/trades",
+        "def": "get_trade_audit",
+        "line": 8270
+      },
+      {
+        "method": "getAuditStrikeSummary",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 188
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/strike_summary`",
+          "path": "/api/mmm/session/<session_id>/audit/strike_summary"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/strike_summary",
+        "def": "get_strike_summary_audit",
+        "line": 8287
+      },
+      {
+        "method": "getAuditPnL",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 279
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/pnl`",
+          "path": "/api/mmm/session/<session_id>/audit/pnl"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/pnl",
+        "def": "get_pnl_attribution_audit",
+        "line": 8341
+      },
+      {
+        "method": "getAuditEvents",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 358
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/events`",
+          "path": "/api/mmm/session/<session_id>/audit/events"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/events",
+        "def": "get_session_events_audit",
+        "line": 8370
+      },
+      {
+        "method": "getAuditReconcile",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 444
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+            "line": 574
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/reconcile`",
+          "path": "/api/mmm/session/<session_id>/audit/reconcile"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/reconcile",
+        "def": "reconcile_audit_endpoint",
+        "line": 8352
+      },
+      {
+        "method": "getExchangePositions",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+            "line": 121
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/exchange-positions`",
+          "path": "/api/mmm/exchange-positions"
+        },
+        "matched": true,
+        "route": "/api/mmm/exchange-positions",
+        "def": "get_exchange_positions",
+        "line": 3490
+      },
+      {
+        "method": "adoptPositions",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+            "line": 282
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/adopt`",
+          "path": "/api/mmm/session/<session_id>/adopt"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/adopt",
+        "def": "adopt_positions",
+        "line": 3525
+      },
+      {
+        "method": "startSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+            "line": 300
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 438
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 518
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 588
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4602
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/start`",
+          "path": "/api/mmm/session/<session_id>/start"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/start",
+        "def": "start_session",
+        "line": 603
+      },
+      {
+        "method": "getExecutionEvents",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMExecutionLogPanel.js",
+            "line": 110
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/audit/execution-events?limit=${limit}`",
+          "path": "/api/mmm/session/<session_id>/audit/execution-events"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/audit/execution-events",
+        "def": "get_session_execution_events",
+        "line": 8386
+      },
+      {
+        "method": "getSessionAnalytics",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAnalyticsTable.js",
+            "line": 45
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAnalyticsSummary.js",
+            "line": 46
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMAnalyticsPanel.js",
+            "line": 106
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/analytics`",
+          "path": "/api/mmm/session/<session_id>/analytics"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/analytics",
+        "def": "get_session_analytics",
+        "line": 6894
+      },
+      {
+        "method": "getActivities",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMActivityFeed.js",
+            "line": 469
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/activities`",
+          "path": "/api/mmm/activities"
+        },
+        "matched": true,
+        "route": "/api/mmm/activities",
+        "def": "get_activities",
+        "line": 2855
+      },
+      {
+        "method": "getSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+            "line": 925
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4500
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}`",
+          "path": "/api/mmm/session/<session_id>"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>",
+        "def": "get_session",
+        "line": 257
+      },
+      {
+        "method": "getExpiries",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 274
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 1354
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/expiries`",
+          "path": "/api/mmm/expiries"
+        },
+        "matched": true,
+        "route": "/api/mmm/expiries",
+        "def": "get_expiries",
+        "line": 2983
+      },
+      {
+        "method": "getSpotPrice",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 297
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 1355
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/spot-price`",
+          "path": "/api/mmm/spot-price"
+        },
+        "matched": true,
+        "route": "/api/mmm/spot-price",
+        "def": "get_spot_price",
+        "line": 3010
+      },
+      {
+        "method": "previewStrikes",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 335
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/preview-strikes`",
+          "path": "/api/mmm/preview-strikes"
+        },
+        "matched": true,
+        "route": "/api/mmm/preview-strikes",
+        "def": "preview_strikes",
+        "line": 3034
+      },
+      {
+        "method": "previewAtmStraddle",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 378
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/preview_atm_straddle`",
+          "path": "/api/mmm/preview_atm_straddle"
+        },
+        "matched": true,
+        "route": "/api/mmm/preview_atm_straddle",
+        "def": "preview_atm_straddle",
+        "line": 3103
+      },
+      {
+        "method": "initSessionFresh",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 419
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 570
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/init-fresh`",
+          "path": "/api/mmm/session/<session_id>/init-fresh"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/init-fresh",
+        "def": "init_session_fresh",
+        "line": 3167
+      },
+      {
+        "method": "initSessionImport",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 500
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/init-import`",
+          "path": "/api/mmm/session/<session_id>/init-import"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/init-import",
+        "def": "init_session_import",
+        "line": 3326
+      },
+      {
+        "method": "executeEntry",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+            "line": 631
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/execute-entry`",
+          "path": "/api/mmm/session/<session_id>/execute-entry"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/execute-entry",
+        "def": "execute_entry",
+        "line": 3870
+      },
+      {
+        "method": "pinTrigger",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+            "line": 160
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+            "line": 173
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+            "line": 189
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/pin-trigger`",
+          "path": "/api/mmm/session/<session_id>/pin-trigger"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/pin-trigger",
+        "def": "pin_trigger",
+        "line": 5126
+      },
+      {
+        "method": "getAggregatePnL",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 130
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/aggregate-pnl`",
+          "path": "/api/mmm/aggregate-pnl"
+        },
+        "matched": true,
+        "route": "/api/mmm/aggregate-pnl",
+        "def": "get_aggregate_pnl",
+        "line": 183
+      },
+      {
+        "method": "getDTEPresets",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 1356
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/dte-presets`",
+          "path": "/api/mmm/dte-presets"
+        },
+        "matched": true,
+        "route": "/api/mmm/dte-presets",
+        "def": "get_dte_presets",
+        "line": 149
+      },
+      {
+        "method": "createSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 1518
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/create`",
+          "path": "/api/mmm/session/create"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/create",
+        "def": "create_session_endpoint",
+        "line": 291
+      },
+      {
+        "method": "getBeatHealth",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 1882
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/beat-health`",
+          "path": "/api/mmm/session/<session_id>/beat-health"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/beat-health",
+        "def": "get_beat_health",
+        "line": 6599
+      },
+      {
+        "method": "reducePosition",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2132
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/reduce-position`",
+          "path": "/api/mmm/session/<session_id>/reduce-position"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/reduce-position",
+        "def": "reduce_position",
+        "line": 4147
+      },
+      {
+        "method": "getOptionChain",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2360
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/option-chain`",
+          "path": "/api/mmm/session/<session_id>/option-chain"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/option-chain",
+        "def": "get_option_chain",
+        "line": 4520
+      },
+      {
+        "method": "injectPosition",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2403
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/inject-position`",
+          "path": "/api/mmm/session/<session_id>/inject-position"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/inject-position",
+        "def": "inject_position",
+        "line": 4596
+      },
+      {
+        "method": "setActiveStrike",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2932
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/set-active-strike`",
+          "path": "/api/mmm/session/<session_id>/set-active-strike"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/set-active-strike",
+        "def": "set_active_strike",
+        "line": 4948
+      },
+      {
+        "method": "closeStrike",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2953
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/close-strike`",
+          "path": "/api/mmm/session/<session_id>/close-strike"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/close-strike",
+        "def": "close_strike_route",
+        "line": 5307
+      },
+      {
+        "method": "adjustActiveLots",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 2983
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/adjust-active-lots`",
+          "path": "/api/mmm/session/<session_id>/adjust-active-lots"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/adjust-active-lots",
+        "def": "adjust_active_lots",
+        "line": 5683
+      },
+      {
+        "method": "pauseSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4606
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/pause`",
+          "path": "/api/mmm/session/<session_id>/pause"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/pause",
+        "def": "pause_session",
+        "line": 1502
+      },
+      {
+        "method": "resumeSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4609
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/resume`",
+          "path": "/api/mmm/session/<session_id>/resume"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/resume",
+        "def": "resume_session",
+        "line": 1554
+      },
+      {
+        "method": "stopSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4612
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/stop`",
+          "path": "/api/mmm/session/<session_id>/stop"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/stop",
+        "def": "stop_session",
+        "line": 1651
+      },
+      {
+        "method": "forceHeartbeat",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4615
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/force-heartbeat`",
+          "path": "/api/mmm/session/<session_id>/force-heartbeat"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/force-heartbeat",
+        "def": "force_heartbeat",
+        "line": 6179
+      },
+      {
+        "method": "exitAllSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4631
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/exit_all`",
+          "path": "/api/mmm/session/<session_id>/exit_all"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/exit_all",
+        "def": "exit_all_session",
+        "line": 1758
+      },
+      {
+        "method": "killSwitch",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4635
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/kill_switch`",
+          "path": "/api/mmm/session/<session_id>/kill_switch"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/kill_switch",
+        "def": "kill_switch_session",
+        "line": 1884
+      },
+      {
+        "method": "deleteSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4639
+          }
+        ],
+        "endpoint": {
+          "verb": "DELETE",
+          "raw": "`${BASE_URL}/session/${sessionId}`",
+          "path": "/api/mmm/session/<session_id>"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>",
+        "def": "delete_session",
+        "line": 550
+      },
+      {
+        "method": "retryPartialLeg",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4653
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/retry-partial-leg`",
+          "path": "/api/mmm/session/<session_id>/retry-partial-leg"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/retry-partial-leg",
+        "def": "retry_partial_leg",
+        "line": 1307
+      },
+      {
+        "method": "resolvePartialEntry",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4667
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/resolve-partial-entry`",
+          "path": "/api/mmm/session/<session_id>/resolve-partial-entry"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/resolve-partial-entry",
+        "def": "resolve_partial_entry",
+        "line": 1178
+      },
+      {
+        "method": "submitBothSidesDecision",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+            "line": 4709
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`${BASE_URL}/session/${sessionId}/both_sides_decision`",
+          "path": "/api/mmm/session/<session_id>/both_sides_decision"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/both_sides_decision",
+        "def": "both_sides_decision",
+        "line": 2018
+      },
+      {
+        "method": "getRegimeStatus",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMRegimePanel.js",
+            "line": 415
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/regime`",
+          "path": "/api/mmm/session/<session_id>/regime"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/regime",
+        "def": "get_regime_status",
+        "line": 6647
+      },
+      {
+        "method": "getSessions",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMContext.js",
+            "line": 191
+          },
+          {
+            "file": "webui/frontend/src/components/mmm/MMMContext.js",
+            "line": 268
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/sessions`",
+          "path": "/api/mmm/sessions"
+        },
+        "matched": true,
+        "route": "/api/mmm/sessions",
+        "def": "list_sessions",
+        "line": 213
+      },
+      {
+        "method": "healthCheck",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMContext.js",
+            "line": 303
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/health`",
+          "path": "/api/mmm/health"
+        },
+        "matched": true,
+        "route": "/api/mmm/health",
+        "def": "health_check",
+        "line": 2826
+      },
+      {
+        "method": "getParamsInfo",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/MMMContext.js",
+            "line": 316
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/params/info`",
+          "path": "/api/mmm/params/info"
+        },
+        "matched": true,
+        "route": "/api/mmm/params/info",
+        "def": "get_params_info",
+        "line": 2102
+      },
+      {
+        "method": "getSessionParams",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+            "line": 43
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/session/${sessionId}/params`",
+          "path": "/api/mmm/session/<session_id>/params"
+        },
+        "matched": true,
+        "route": "/api/mmm/session/<session_id>/params",
+        "def": "get_session_params",
+        "line": 2440
+      },
+      {
+        "method": "getAggregatedAnalytics",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/MMMInstitutionalAnalytics.js",
+            "line": 54
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`${BASE_URL}/analytics/aggregated`",
+          "path": "/api/mmm/analytics/aggregated"
+        },
+        "matched": true,
+        "route": "/api/mmm/analytics/aggregated",
+        "def": "get_aggregated_analytics",
+        "line": 7040
+      }
+    ],
+    "mmmx": [
+      {
+        "method": "getExpirations",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+            "line": 48
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/api/options-chain/expirations?underlying=${underlying}`",
+          "path": "/api/options-chain/expirations"
+        },
+        "matched": false,
+        "route": null,
+        "def": null
+      },
+      {
+        "method": "createSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+            "line": 71
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "'/session'",
+          "path": "/api/mmmx/session"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session",
+        "def": "create_session",
+        "line": 118
+      },
+      {
+        "method": "scanStrikes",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+            "line": 245
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 82
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 156
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 254
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/session/${id}/scan_strikes?otm_pct=${otmPct}`",
+          "path": "/api/mmmx/session/<session_id>/scan_strikes"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/scan_strikes",
+        "def": "scan_strikes_endpoint",
+        "line": 762
+      },
+      {
+        "method": "deployTranche1",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+            "line": 315
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/deploy_tranche1`",
+          "path": "/api/mmmx/session/<session_id>/deploy_tranche1"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/deploy_tranche1",
+        "def": "deploy_tranche1",
+        "line": 892
+      },
+      {
+        "method": "getSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+            "line": 272
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/session/${id}`",
+          "path": "/api/mmmx/session/<session_id>"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>",
+        "def": "get_session",
+        "line": 188
+      },
+      {
+        "method": "getActivityLog",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+            "line": 306
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/session/${id}/activity?limit=${limit}`",
+          "path": "/api/mmmx/session/<session_id>/activity"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/activity",
+        "def": "get_activity",
+        "line": 509
+      },
+      {
+        "method": "listSessions",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 123
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/sessions${status ? `",
+          "path": "/api/mmmx/sessions"
+        },
+        "matched": true,
+        "route": "/api/mmmx/sessions",
+        "def": "list_sessions",
+        "line": 169
+      },
+      {
+        "method": "pauseSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 168
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 427
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/pause`",
+          "path": "/api/mmmx/session/<session_id>/pause"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/pause",
+        "def": "pause_session",
+        "line": 554
+      },
+      {
+        "method": "resumeSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 168
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 448
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/resume`",
+          "path": "/api/mmmx/session/<session_id>/resume"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/resume",
+        "def": "resume_session",
+        "line": 618
+      },
+      {
+        "method": "stopSession",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 168
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 456
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/stop`",
+          "path": "/api/mmmx/session/<session_id>/stop"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/stop",
+        "def": "stop_session",
+        "line": 286
+      },
+      {
+        "method": "forceHeartbeat",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 177
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 510
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 439
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/force-heartbeat`",
+          "path": "/api/mmmx/session/<session_id>/force-heartbeat"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/force-heartbeat",
+        "def": "force_heartbeat",
+        "line": 671
+      },
+      {
+        "method": "reconcile",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 190
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+            "line": 19
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 463
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/reconcile`",
+          "path": "/api/mmmx/session/<session_id>/reconcile"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/reconcile",
+        "def": "reconcile",
+        "line": 1173
+      },
+      {
+        "method": "killSwitch",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 263
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 277
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+            "line": 403
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "'/kill-switch'",
+          "path": "/api/mmmx/kill-switch"
+        },
+        "matched": true,
+        "route": "/api/mmmx/kill-switch",
+        "def": "kill_switch",
+        "line": 315
+      },
+      {
+        "method": "confirmReconcile",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+            "line": 36
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/confirm-reconcile`",
+          "path": "/api/mmmx/session/<session_id>/confirm-reconcile"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/confirm-reconcile",
+        "def": "confirm_reconcile",
+        "line": 1119
+      },
+      {
+        "method": "profitBook",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXProfitBookingTab.js",
+            "line": 24
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/profit_book`",
+          "path": "/api/mmmx/session/<session_id>/profit_book"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/profit_book",
+        "def": "profit_book",
+        "line": 1063
+      },
+      {
+        "method": "getHealth",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 71
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "'/health'",
+          "path": "/api/mmmx/health"
+        },
+        "matched": true,
+        "route": "/api/mmmx/health",
+        "def": "health",
+        "line": 533
+      },
+      {
+        "method": "checkGates",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 88
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+            "line": 259
+          }
+        ],
+        "endpoint": {
+          "verb": "POST",
+          "raw": "`/session/${id}/check-gates`",
+          "path": "/api/mmmx/session/<session_id>/check-gates"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/check-gates",
+        "def": "check_gates",
+        "line": 1001
+      },
+      {
+        "method": "getParamHistory",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+            "line": 15
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/session/${id}/param-history?limit=${limit}`",
+          "path": "/api/mmmx/session/<session_id>/param-history"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/param-history",
+        "def": "get_param_history",
+        "line": 521
+      },
+      {
+        "method": "hotReloadParams",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+            "line": 53
+          },
+          {
+            "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+            "line": 54
+          }
+        ],
+        "endpoint": {
+          "verb": "PATCH",
+          "raw": "`/session/${id}/params`",
+          "path": "/api/mmmx/session/<session_id>/params"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/params",
+        "def": "hot_reload_params",
+        "line": 210
+      },
+      {
+        "method": "getAuditLog",
+        "refs": [
+          {
+            "file": "webui/frontend/src/components/mmmx/panels/MMMXTradeAuditPanel.js",
+            "line": 35
+          }
+        ],
+        "endpoint": {
+          "verb": "GET",
+          "raw": "`/session/${id}/audit?limit=${limit}`",
+          "path": "/api/mmmx/session/<session_id>/audit"
+        },
+        "matched": true,
+        "route": "/api/mmmx/session/<session_id>/audit",
+        "def": "get_audit",
+        "line": 496
+      }
+    ]
+  },
+  "undefined_used": {
+    "mmm": [],
+    "mmmx": []
+  },
+  "unused_defined": {
+    "mmm": [
+      "checkLiquidity",
+      "emergencyCloseAllPositions",
+      "emergencyKillAllBots",
+      "getActivityStats",
+      "getAllMonitors",
+      "getCriticalActivities",
+      "getMonitorStatus",
+      "getPerformanceSummary",
+      "getPerpHedgeStatus",
+      "getPnLTimeline",
+      "getPositions",
+      "getSafetyStatus",
+      "getSessionHistory",
+      "getSessionState",
+      "getTriggerData"
+    ],
+    "mmmx": [
+      "startMonitor"
+    ]
+  },
+  "backend_routes": {
+    "mmm": [
+      {
+        "route": "/dte-presets",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_dte_presets",
+        "line": 149,
+        "norm": "/api/mmm/dte-presets"
+      },
+      {
+        "route": "/aggregate-pnl",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_aggregate_pnl",
+        "line": 183,
+        "norm": "/api/mmm/aggregate-pnl"
+      },
+      {
+        "route": "/sessions",
+        "methods": [
+          "GET"
+        ],
+        "def": "list_sessions",
+        "line": 213,
+        "norm": "/api/mmm/sessions"
+      },
+      {
+        "route": "/session/<session_id>",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session",
+        "line": 257,
+        "norm": "/api/mmm/session/<session_id>"
+      },
+      {
+        "route": "/session/create",
+        "methods": [
+          "POST"
+        ],
+        "def": "create_session_endpoint",
+        "line": 291,
+        "norm": "/api/mmm/session/create"
+      },
+      {
+        "route": "/session/<session_id>",
+        "methods": [
+          "DELETE"
+        ],
+        "def": "delete_session",
+        "line": 550,
+        "norm": "/api/mmm/session/<session_id>"
+      },
+      {
+        "route": "/session/<session_id>/start",
+        "methods": [
+          "POST"
+        ],
+        "def": "start_session",
+        "line": 603,
+        "norm": "/api/mmm/session/<session_id>/start"
+      },
+      {
+        "route": "/session/<session_id>/resolve-partial-entry",
+        "methods": [
+          "POST"
+        ],
+        "def": "resolve_partial_entry",
+        "line": 1178,
+        "norm": "/api/mmm/session/<session_id>/resolve-partial-entry"
+      },
+      {
+        "route": "/session/<session_id>/retry-partial-leg",
+        "methods": [
+          "POST"
+        ],
+        "def": "retry_partial_leg",
+        "line": 1307,
+        "norm": "/api/mmm/session/<session_id>/retry-partial-leg"
+      },
+      {
+        "route": "/session/<session_id>/pause",
+        "methods": [
+          "POST"
+        ],
+        "def": "pause_session",
+        "line": 1502,
+        "norm": "/api/mmm/session/<session_id>/pause"
+      },
+      {
+        "route": "/session/<session_id>/resume",
+        "methods": [
+          "POST"
+        ],
+        "def": "resume_session",
+        "line": 1554,
+        "norm": "/api/mmm/session/<session_id>/resume"
+      },
+      {
+        "route": "/session/<session_id>/stop",
+        "methods": [
+          "POST"
+        ],
+        "def": "stop_session",
+        "line": 1651,
+        "norm": "/api/mmm/session/<session_id>/stop"
+      },
+      {
+        "route": "/session/<session_id>/exit_all",
+        "methods": [
+          "POST"
+        ],
+        "def": "exit_all_session",
+        "line": 1758,
+        "norm": "/api/mmm/session/<session_id>/exit_all"
+      },
+      {
+        "route": "/session/<session_id>/kill_switch",
+        "methods": [
+          "POST"
+        ],
+        "def": "kill_switch_session",
+        "line": 1884,
+        "norm": "/api/mmm/session/<session_id>/kill_switch"
+      },
+      {
+        "route": "/session/<session_id>/both_sides_decision",
+        "methods": [
+          "POST"
+        ],
+        "def": "both_sides_decision",
+        "line": 2018,
+        "norm": "/api/mmm/session/<session_id>/both_sides_decision"
+      },
+      {
+        "route": "/params/info",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_params_info",
+        "line": 2102,
+        "norm": "/api/mmm/params/info"
+      },
+      {
+        "route": "/parameter_suggestions",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_parameter_suggestions",
+        "line": 2120,
+        "norm": "/api/mmm/parameter_suggestions"
+      },
+      {
+        "route": "/session/<session_id>/margin",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_margin_status",
+        "line": 2248,
+        "norm": "/api/mmm/session/<session_id>/margin"
+      },
+      {
+        "route": "/exchange/margin",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_exchange_margin",
+        "line": 2337,
+        "norm": "/api/mmm/exchange/margin"
+      },
+      {
+        "route": "/session/<session_id>/params",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_params",
+        "line": 2440,
+        "norm": "/api/mmm/session/<session_id>/params"
+      },
+      {
+        "route": "/session/<session_id>/params",
+        "methods": [
+          "PATCH"
+        ],
+        "def": "update_session_params",
+        "line": 2464,
+        "norm": "/api/mmm/session/<session_id>/params"
+      },
+      {
+        "route": "/session/<session_id>/history",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_history",
+        "line": 2754,
+        "norm": "/api/mmm/session/<session_id>/history"
+      },
+      {
+        "route": "/session/<session_id>/state",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_state",
+        "line": 2790,
+        "norm": "/api/mmm/session/<session_id>/state"
+      },
+      {
+        "route": "/health",
+        "methods": [
+          "GET"
+        ],
+        "def": "health_check",
+        "line": 2826,
+        "norm": "/api/mmm/health"
+      },
+      {
+        "route": "/activities",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_activities",
+        "line": 2855,
+        "norm": "/api/mmm/activities"
+      },
+      {
+        "route": "/activities/stats",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_activities_stats",
+        "line": 2927,
+        "norm": "/api/mmm/activities/stats"
+      },
+      {
+        "route": "/activities/critical",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_critical_activities",
+        "line": 2948,
+        "norm": "/api/mmm/activities/critical"
+      },
+      {
+        "route": "/expiries",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_expiries",
+        "line": 2983,
+        "norm": "/api/mmm/expiries"
+      },
+      {
+        "route": "/spot-price",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_spot_price",
+        "line": 3010,
+        "norm": "/api/mmm/spot-price"
+      },
+      {
+        "route": "/preview-strikes",
+        "methods": [
+          "POST"
+        ],
+        "def": "preview_strikes",
+        "line": 3034,
+        "norm": "/api/mmm/preview-strikes"
+      },
+      {
+        "route": "/preview_atm_straddle",
+        "methods": [
+          "POST"
+        ],
+        "def": "preview_atm_straddle",
+        "line": 3103,
+        "norm": "/api/mmm/preview_atm_straddle"
+      },
+      {
+        "route": "/check-liquidity",
+        "methods": [
+          "POST"
+        ],
+        "def": "check_liquidity",
+        "line": 3132,
+        "norm": "/api/mmm/check-liquidity"
+      },
+      {
+        "route": "/session/<session_id>/init-fresh",
+        "methods": [
+          "POST"
+        ],
+        "def": "init_session_fresh",
+        "line": 3167,
+        "norm": "/api/mmm/session/<session_id>/init-fresh"
+      },
+      {
+        "route": "/session/<session_id>/init-import",
+        "methods": [
+          "POST"
+        ],
+        "def": "init_session_import",
+        "line": 3326,
+        "norm": "/api/mmm/session/<session_id>/init-import"
+      },
+      {
+        "route": "/exchange-positions",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_exchange_positions",
+        "line": 3490,
+        "norm": "/api/mmm/exchange-positions"
+      },
+      {
+        "route": "/session/<session_id>/adopt",
+        "methods": [
+          "POST"
+        ],
+        "def": "adopt_positions",
+        "line": 3525,
+        "norm": "/api/mmm/session/<session_id>/adopt"
+      },
+      {
+        "route": "/chain-data",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_chain_data",
+        "line": 3775,
+        "norm": "/api/mmm/chain-data"
+      },
+      {
+        "route": "/validate-selection",
+        "methods": [
+          "POST"
+        ],
+        "def": "validate_selection",
+        "line": 3817,
+        "norm": "/api/mmm/validate-selection"
+      },
+      {
+        "route": "/session/<session_id>/execute-entry",
+        "methods": [
+          "POST"
+        ],
+        "def": "execute_entry",
+        "line": 3870,
+        "norm": "/api/mmm/session/<session_id>/execute-entry"
+      },
+      {
+        "route": "/session/<session_id>/monitor",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_monitor_status",
+        "line": 3995,
+        "norm": "/api/mmm/session/<session_id>/monitor"
+      },
+      {
+        "route": "/monitors",
+        "methods": [
+          "GET"
+        ],
+        "def": "list_monitors",
+        "line": 4021,
+        "norm": "/api/mmm/monitors"
+      },
+      {
+        "route": "/session/<session_id>/reduce-position",
+        "methods": [
+          "POST"
+        ],
+        "def": "reduce_position",
+        "line": 4147,
+        "norm": "/api/mmm/session/<session_id>/reduce-position"
+      },
+      {
+        "route": "/session/<session_id>/option-chain",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_option_chain",
+        "line": 4520,
+        "norm": "/api/mmm/session/<session_id>/option-chain"
+      },
+      {
+        "route": "/session/<session_id>/inject-position",
+        "methods": [
+          "POST"
+        ],
+        "def": "inject_position",
+        "line": 4596,
+        "norm": "/api/mmm/session/<session_id>/inject-position"
+      },
+      {
+        "route": "/session/<session_id>/set-active-strike",
+        "methods": [
+          "POST"
+        ],
+        "def": "set_active_strike",
+        "line": 4948,
+        "norm": "/api/mmm/session/<session_id>/set-active-strike"
+      },
+      {
+        "route": "/session/<session_id>/pin-trigger",
+        "methods": [
+          "POST"
+        ],
+        "def": "pin_trigger",
+        "line": 5126,
+        "norm": "/api/mmm/session/<session_id>/pin-trigger"
+      },
+      {
+        "route": "/session/<session_id>/close-strike",
+        "methods": [
+          "POST"
+        ],
+        "def": "close_strike_route",
+        "line": 5307,
+        "norm": "/api/mmm/session/<session_id>/close-strike"
+      },
+      {
+        "route": "/session/<session_id>/adjust-active-lots",
+        "methods": [
+          "POST"
+        ],
+        "def": "adjust_active_lots",
+        "line": 5683,
+        "norm": "/api/mmm/session/<session_id>/adjust-active-lots"
+      },
+      {
+        "route": "/session/<session_id>/reconcile",
+        "methods": [
+          "POST"
+        ],
+        "def": "reconcile_session",
+        "line": 6063,
+        "norm": "/api/mmm/session/<session_id>/reconcile"
+      },
+      {
+        "route": "/session/<session_id>/force-heartbeat",
+        "methods": [
+          "POST"
+        ],
+        "def": "force_heartbeat",
+        "line": 6179,
+        "norm": "/api/mmm/session/<session_id>/force-heartbeat"
+      },
+      {
+        "route": "/session/<session_id>/positions",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_positions",
+        "line": 6212,
+        "norm": "/api/mmm/session/<session_id>/positions"
+      },
+      {
+        "route": "/exchange/positions",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_exchange_positions_direct",
+        "line": 6276,
+        "norm": "/api/mmm/exchange/positions"
+      },
+      {
+        "route": "/exchange/orders",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_exchange_orders",
+        "line": 6337,
+        "norm": "/api/mmm/exchange/orders"
+      },
+      {
+        "route": "/session/<session_id>/triggers",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_triggers",
+        "line": 6394,
+        "norm": "/api/mmm/session/<session_id>/triggers"
+      },
+      {
+        "route": "/session/<session_id>/pnl-timeline",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_pnl_timeline",
+        "line": 6432,
+        "norm": "/api/mmm/session/<session_id>/pnl-timeline"
+      },
+      {
+        "route": "/session/<session_id>/safety",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_safety_status",
+        "line": 6466,
+        "norm": "/api/mmm/session/<session_id>/safety"
+      },
+      {
+        "route": "/session/<session_id>/breakeven",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_breakeven",
+        "line": 6510,
+        "norm": "/api/mmm/session/<session_id>/breakeven"
+      },
+      {
+        "route": "/session/<session_id>/gamma",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_gamma",
+        "line": 6540,
+        "norm": "/api/mmm/session/<session_id>/gamma"
+      },
+      {
+        "route": "/session/<session_id>/walkthrough",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_walkthrough",
+        "line": 6571,
+        "norm": "/api/mmm/session/<session_id>/walkthrough"
+      },
+      {
+        "route": "/session/<session_id>/beat-health",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_beat_health",
+        "line": 6599,
+        "norm": "/api/mmm/session/<session_id>/beat-health"
+      },
+      {
+        "route": "/session/<session_id>/regime",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_regime_status",
+        "line": 6647,
+        "norm": "/api/mmm/session/<session_id>/regime"
+      },
+      {
+        "route": "/session/<session_id>/greeks-iv",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_greeks_iv",
+        "line": 6690,
+        "norm": "/api/mmm/session/<session_id>/greeks-iv"
+      },
+      {
+        "route": "/session/<session_id>/analytics",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_analytics",
+        "line": 6894,
+        "norm": "/api/mmm/session/<session_id>/analytics"
+      },
+      {
+        "route": "/analytics/history",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_analytics_history",
+        "line": 6994,
+        "norm": "/api/mmm/analytics/history"
+      },
+      {
+        "route": "/analytics/aggregated",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_aggregated_analytics",
+        "line": 7040,
+        "norm": "/api/mmm/analytics/aggregated"
+      },
+      {
+        "route": "/session/<session_id>/performance",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_performance",
+        "line": 7081,
+        "norm": "/api/mmm/session/<session_id>/performance"
+      },
+      {
+        "route": "/performance/summary",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_performance_summary",
+        "line": 7118,
+        "norm": "/api/mmm/performance/summary"
+      },
+      {
+        "route": "/session/<session_id>/hedge/status",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_hedge_status",
+        "line": 7143,
+        "norm": "/api/mmm/session/<session_id>/hedge/status"
+      },
+      {
+        "route": "/session/<session_id>/hedge/toggle",
+        "methods": [
+          "POST"
+        ],
+        "def": "toggle_hedge",
+        "line": 7182,
+        "norm": "/api/mmm/session/<session_id>/hedge/toggle"
+      },
+      {
+        "route": "/session/<session_id>/hedge/close",
+        "methods": [
+          "POST"
+        ],
+        "def": "close_hedge",
+        "line": 7236,
+        "norm": "/api/mmm/session/<session_id>/hedge/close"
+      },
+      {
+        "route": "/metrics/aggregate",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_aggregate_metrics",
+        "line": 7326,
+        "norm": "/api/mmm/metrics/aggregate"
+      },
+      {
+        "route": "/emergency/stop-all",
+        "methods": [
+          "POST"
+        ],
+        "def": "emergency_stop_all",
+        "line": 7443,
+        "norm": "/api/mmm/emergency/stop-all"
+      },
+      {
+        "route": "/emergency/health-check",
+        "methods": [
+          "GET"
+        ],
+        "def": "emergency_health_check",
+        "line": 7511,
+        "norm": "/api/mmm/emergency/health-check"
+      },
+      {
+        "route": "/emergency/pause-all",
+        "methods": [
+          "POST"
+        ],
+        "def": "emergency_pause_all",
+        "line": 7611,
+        "norm": "/api/mmm/emergency/pause-all"
+      },
+      {
+        "route": "/emergency/close-all-positions",
+        "methods": [
+          "POST"
+        ],
+        "def": "emergency_close_all_positions",
+        "line": 7674,
+        "norm": "/api/mmm/emergency/close-all-positions"
+      },
+      {
+        "route": "/emergency/reset-circuit/<session_id>",
+        "methods": [
+          "POST"
+        ],
+        "def": "emergency_reset_circuit",
+        "line": 7833,
+        "norm": "/api/mmm/emergency/reset-circuit/<session_id>"
+      },
+      {
+        "route": "/session/<session_id>/clear-backoff",
+        "methods": [
+          "POST"
+        ],
+        "def": "clear_session_backoff",
+        "line": 7891,
+        "norm": "/api/mmm/session/<session_id>/clear-backoff"
+      },
+      {
+        "route": "/audit/trail",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_audit_trail",
+        "line": 7931,
+        "norm": "/api/mmm/audit/trail"
+      },
+      {
+        "route": "/audit/export",
+        "methods": [
+          "GET"
+        ],
+        "def": "export_audit_trail",
+        "line": 8017,
+        "norm": "/api/mmm/audit/export"
+      },
+      {
+        "route": "/session/<session_id>/pnl-curve",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_pnl_curve",
+        "line": 8113,
+        "norm": "/api/mmm/session/<session_id>/pnl-curve"
+      },
+      {
+        "route": "/session/<session_id>/audit/trades",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_trade_audit",
+        "line": 8270,
+        "norm": "/api/mmm/session/<session_id>/audit/trades"
+      },
+      {
+        "route": "/session/<session_id>/audit/strike_summary",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_strike_summary_audit",
+        "line": 8287,
+        "norm": "/api/mmm/session/<session_id>/audit/strike_summary"
+      },
+      {
+        "route": "/session/<session_id>/audit/pnl",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_pnl_attribution_audit",
+        "line": 8341,
+        "norm": "/api/mmm/session/<session_id>/audit/pnl"
+      },
+      {
+        "route": "/session/<session_id>/audit/reconcile",
+        "methods": [
+          "GET"
+        ],
+        "def": "reconcile_audit_endpoint",
+        "line": 8352,
+        "norm": "/api/mmm/session/<session_id>/audit/reconcile"
+      },
+      {
+        "route": "/session/<session_id>/audit/events",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_events_audit",
+        "line": 8370,
+        "norm": "/api/mmm/session/<session_id>/audit/events"
+      },
+      {
+        "route": "/session/<session_id>/audit/execution-events",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session_execution_events",
+        "line": 8386,
+        "norm": "/api/mmm/session/<session_id>/audit/execution-events"
+      },
+      {
+        "route": "/session/<session_id>/reverse",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_reverse_status",
+        "line": 8405,
+        "norm": "/api/mmm/session/<session_id>/reverse"
+      },
+      {
+        "route": "/session/<session_id>/reverse/enable",
+        "methods": [
+          "POST"
+        ],
+        "def": "enable_reverse_mode_api",
+        "line": 8439,
+        "norm": "/api/mmm/session/<session_id>/reverse/enable"
+      },
+      {
+        "route": "/session/<session_id>/reverse/disable",
+        "methods": [
+          "POST"
+        ],
+        "def": "disable_reverse_mode_api",
+        "line": 8481,
+        "norm": "/api/mmm/session/<session_id>/reverse/disable"
+      },
+      {
+        "route": "/session/<session_id>/reverse/close",
+        "methods": [
+          "POST"
+        ],
+        "def": "close_reverse_positions_api",
+        "line": 8525,
+        "norm": "/api/mmm/session/<session_id>/reverse/close"
+      }
+    ],
+    "mmmx": [
+      {
+        "route": "/api/mmmx/session",
+        "methods": [
+          "POST"
+        ],
+        "def": "create_session",
+        "line": 118,
+        "norm": "/api/mmmx/session"
+      },
+      {
+        "route": "/api/mmmx/sessions",
+        "methods": [
+          "GET"
+        ],
+        "def": "list_sessions",
+        "line": 169,
+        "norm": "/api/mmmx/sessions"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_session",
+        "line": 188,
+        "norm": "/api/mmmx/session/<session_id>"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/params",
+        "methods": [
+          "PATCH"
+        ],
+        "def": "hot_reload_params",
+        "line": 210,
+        "norm": "/api/mmmx/session/<session_id>/params"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/stop",
+        "methods": [
+          "POST"
+        ],
+        "def": "stop_session",
+        "line": 286,
+        "norm": "/api/mmmx/session/<session_id>/stop"
+      },
+      {
+        "route": "/api/mmmx/kill-switch",
+        "methods": [
+          "POST"
+        ],
+        "def": "kill_switch",
+        "line": 315,
+        "norm": "/api/mmmx/kill-switch"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/start-monitor",
+        "methods": [
+          "POST"
+        ],
+        "def": "start_monitor",
+        "line": 464,
+        "norm": "/api/mmmx/session/<session_id>/start-monitor"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/audit",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_audit",
+        "line": 496,
+        "norm": "/api/mmmx/session/<session_id>/audit"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/activity",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_activity",
+        "line": 509,
+        "norm": "/api/mmmx/session/<session_id>/activity"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/param-history",
+        "methods": [
+          "GET"
+        ],
+        "def": "get_param_history",
+        "line": 521,
+        "norm": "/api/mmmx/session/<session_id>/param-history"
+      },
+      {
+        "route": "/api/mmmx/health",
+        "methods": [
+          "GET"
+        ],
+        "def": "health",
+        "line": 533,
+        "norm": "/api/mmmx/health"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/pause",
+        "methods": [
+          "POST"
+        ],
+        "def": "pause_session",
+        "line": 554,
+        "norm": "/api/mmmx/session/<session_id>/pause"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/resume",
+        "methods": [
+          "POST"
+        ],
+        "def": "resume_session",
+        "line": 618,
+        "norm": "/api/mmmx/session/<session_id>/resume"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/force-heartbeat",
+        "methods": [
+          "POST"
+        ],
+        "def": "force_heartbeat",
+        "line": 671,
+        "norm": "/api/mmmx/session/<session_id>/force-heartbeat"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/scan_strikes",
+        "methods": [
+          "GET"
+        ],
+        "def": "scan_strikes_endpoint",
+        "line": 762,
+        "norm": "/api/mmmx/session/<session_id>/scan_strikes"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/deploy_tranche1",
+        "methods": [
+          "POST"
+        ],
+        "def": "deploy_tranche1",
+        "line": 892,
+        "norm": "/api/mmmx/session/<session_id>/deploy_tranche1"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/check-gates",
+        "methods": [
+          "POST"
+        ],
+        "def": "check_gates",
+        "line": 1001,
+        "norm": "/api/mmmx/session/<session_id>/check-gates"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/profit_book",
+        "methods": [
+          "POST"
+        ],
+        "def": "profit_book",
+        "line": 1063,
+        "norm": "/api/mmmx/session/<session_id>/profit_book"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/confirm-reconcile",
+        "methods": [
+          "POST"
+        ],
+        "def": "confirm_reconcile",
+        "line": 1119,
+        "norm": "/api/mmmx/session/<session_id>/confirm-reconcile"
+      },
+      {
+        "route": "/api/mmmx/session/<session_id>/reconcile",
+        "methods": [
+          "POST"
+        ],
+        "def": "reconcile",
+        "line": 1173,
+        "norm": "/api/mmmx/session/<session_id>/reconcile"
+      }
+    ]
+  },
+  "unreached_backend_routes": {
+    "mmm": [
+      {
+        "route": "/api/mmm/parameter_suggestions",
+        "method": "GET",
+        "def": "get_parameter_suggestions",
+        "line": 2120
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/history",
+        "method": "GET",
+        "def": "get_session_history",
+        "line": 2754
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/state",
+        "method": "GET",
+        "def": "get_session_state",
+        "line": 2790
+      },
+      {
+        "route": "/api/mmm/activities/stats",
+        "method": "GET",
+        "def": "get_activities_stats",
+        "line": 2927
+      },
+      {
+        "route": "/api/mmm/activities/critical",
+        "method": "GET",
+        "def": "get_critical_activities",
+        "line": 2948
+      },
+      {
+        "route": "/api/mmm/check-liquidity",
+        "method": "POST",
+        "def": "check_liquidity",
+        "line": 3132
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/monitor",
+        "method": "GET",
+        "def": "get_monitor_status",
+        "line": 3995
+      },
+      {
+        "route": "/api/mmm/monitors",
+        "method": "GET",
+        "def": "list_monitors",
+        "line": 4021
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/reconcile",
+        "method": "POST",
+        "def": "reconcile_session",
+        "line": 6063
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/positions",
+        "method": "GET",
+        "def": "get_positions",
+        "line": 6212
+      },
+      {
+        "route": "/api/mmm/exchange/positions",
+        "method": "GET",
+        "def": "get_exchange_positions_direct",
+        "line": 6276
+      },
+      {
+        "route": "/api/mmm/exchange/orders",
+        "method": "GET",
+        "def": "get_exchange_orders",
+        "line": 6337
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/triggers",
+        "method": "GET",
+        "def": "get_triggers",
+        "line": 6394
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/pnl-timeline",
+        "method": "GET",
+        "def": "get_pnl_timeline",
+        "line": 6432
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/safety",
+        "method": "GET",
+        "def": "get_safety_status",
+        "line": 6466
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/breakeven",
+        "method": "GET",
+        "def": "get_breakeven",
+        "line": 6510
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/gamma",
+        "method": "GET",
+        "def": "get_gamma",
+        "line": 6540
+      },
+      {
+        "route": "/api/mmm/analytics/history",
+        "method": "GET",
+        "def": "get_analytics_history",
+        "line": 6994
+      },
+      {
+        "route": "/api/mmm/performance/summary",
+        "method": "GET",
+        "def": "get_performance_summary",
+        "line": 7118
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/hedge/status",
+        "method": "GET",
+        "def": "get_hedge_status",
+        "line": 7143
+      },
+      {
+        "route": "/api/mmm/metrics/aggregate",
+        "method": "GET",
+        "def": "get_aggregate_metrics",
+        "line": 7326
+      },
+      {
+        "route": "/api/mmm/emergency/stop-all",
+        "method": "POST",
+        "def": "emergency_stop_all",
+        "line": 7443
+      },
+      {
+        "route": "/api/mmm/emergency/health-check",
+        "method": "GET",
+        "def": "emergency_health_check",
+        "line": 7511
+      },
+      {
+        "route": "/api/mmm/emergency/pause-all",
+        "method": "POST",
+        "def": "emergency_pause_all",
+        "line": 7611
+      },
+      {
+        "route": "/api/mmm/emergency/close-all-positions",
+        "method": "POST",
+        "def": "emergency_close_all_positions",
+        "line": 7674
+      },
+      {
+        "route": "/api/mmm/emergency/reset-circuit/<session_id>",
+        "method": "POST",
+        "def": "emergency_reset_circuit",
+        "line": 7833
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/clear-backoff",
+        "method": "POST",
+        "def": "clear_session_backoff",
+        "line": 7891
+      },
+      {
+        "route": "/api/mmm/audit/trail",
+        "method": "GET",
+        "def": "get_audit_trail",
+        "line": 7931
+      },
+      {
+        "route": "/api/mmm/audit/export",
+        "method": "GET",
+        "def": "export_audit_trail",
+        "line": 8017
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/pnl-curve",
+        "method": "GET",
+        "def": "get_pnl_curve",
+        "line": 8113
+      },
+      {
+        "route": "/api/mmm/session/<session_id>/reverse",
+        "method": "GET",
+        "def": "get_reverse_status",
+        "line": 8405
+      }
+    ],
+    "mmmx": [
+      {
+        "route": "/api/mmmx/session/<session_id>/start-monitor",
+        "method": "POST",
+        "def": "start_monitor",
+        "line": 464
+      }
+    ]
+  }
+}

@@ -79,7 +79,7 @@ def init_mmm():
                     if status in ('RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY', 'EXITING'):
                         print(f"[MMM] Restoring monitor for session {sid} (status={status})")
                         log.info(f"  Restoring monitor for session {sid} (status={status})")
-                        start_session_monitor(sid, session)
+                        start_session_monitor(sid, session, context='monitor_restore')
                         restored_count += 1
                         log.info(f"  ✅ Successfully restored monitor for {sid}")
                     else:

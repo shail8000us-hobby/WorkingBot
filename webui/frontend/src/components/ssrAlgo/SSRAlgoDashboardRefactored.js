@@ -31,6 +31,11 @@ import {
   Tab,
   Tabs,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
 } from '@mui/material';
 import {
   Refresh as RefreshIcon,
@@ -197,6 +202,8 @@ const SSRAlgoDashboardRefactored = () => {
   const [rightTab, setRightTab] = useState(0);
   const [actionLoading, setActionLoading] = useState(false);
   const [configDrawerOpen, setConfigDrawerOpen] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', severity: 'warning', onConfirm: null });
+  const closeConfirmDialog = useCallback(() => setConfirmDialog(d => ({ ...d, open: false })), []);
   const sessionsInFlightRef = useRef(false);
   const healthInFlightRef = useRef(false);
 
@@ -367,13 +374,29 @@ const SSRAlgoDashboardRefactored = () => {
   const handleResume = () => act(() => ssrAlgoService.resumeSession(sess.session_id));
   const handleStart = () => act(() => ssrAlgoService.startSession(sess.session_id));
   const handleRetry = () => act(() => ssrAlgoService.retrySession(sess.session_id));
-  const handleStop = () => { if (window.confirm('Stop this session?')) act(() => ssrAlgoService.stopSession(sess.session_id)); };
-  const handleDelete = async () => {
-    if (!window.confirm('Delete this session permanently?')) return;
-    setActionLoading(true);
-    try { await ssrAlgoService.deleteSession(sess.session_id); setSelectedSession(null); setPayoff(null); setMonitor(null); fetchSessions(); }
-    catch (e) { setError(e.message); }
-    finally { setActionLoading(false); }
+  const handleStop = () => {
+    setConfirmDialog({
+      open: true,
+      title: 'Stop Session?',
+      message: 'This will stop the session. Open positions will remain and need to be managed manually.',
+      severity: 'warning',
+      onConfirm: () => { closeConfirmDialog(); act(() => ssrAlgoService.stopSession(sess.session_id)); },
+    });
+  };
+  const handleDelete = () => {
+    setConfirmDialog({
+      open: true,
+      title: 'Delete Session Permanently?',
+      message: 'This will permanently delete the session and all its data. This cannot be undone.',
+      severity: 'error',
+      onConfirm: async () => {
+        closeConfirmDialog();
+        setActionLoading(true);
+        try { await ssrAlgoService.deleteSession(sess.session_id); setSelectedSession(null); setPayoff(null); setMonitor(null); fetchSessions(); }
+        catch (e) { setError(e.message); }
+        finally { setActionLoading(false); }
+      },
+    });
   };
 
   // ── No sessions → creation flow ──
@@ -878,6 +901,33 @@ const SSRAlgoDashboardRefactored = () => {
           </Box>
         </Box>
       </Drawer>
+
+      {/* ═══════ CONFIRM DIALOG ═══════ */}
+      <Dialog
+        open={confirmDialog.open}
+        onClose={closeConfirmDialog}
+        maxWidth="xs"
+        fullWidth
+        PaperProps={{ sx: { bgcolor: '#0f172a', border: `1px solid ${confirmDialog.severity === 'error' ? 'rgba(239,68,68,0.4)' : 'rgba(251,191,36,0.4)'}` } }}
+      >
+        <DialogTitle sx={{ color: confirmDialog.severity === 'error' ? '#f87171' : '#fbbf24', fontWeight: 700, fontSize: 16 }}>
+          {confirmDialog.title}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText sx={{ color: '#94a3b8', fontSize: 14 }}>{confirmDialog.message}</DialogContentText>
+        </DialogContent>
+        <DialogActions sx={{ px: 2, pb: 2 }}>
+          <Button onClick={closeConfirmDialog} sx={{ color: '#64748b' }}>Cancel</Button>
+          <Button
+            onClick={confirmDialog.onConfirm}
+            variant="contained"
+            color={confirmDialog.severity === 'error' ? 'error' : 'warning'}
+            autoFocus
+          >
+            Confirm
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       {actionLoading && <LinearProgress sx={{ position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1400, height: 3 }} />}
     </Box>

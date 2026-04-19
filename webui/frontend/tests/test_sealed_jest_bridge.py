@@ -217,3 +217,33 @@ class TestJestSealedMMMSessionCard:
             f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
             f"--testPathPattern=test_sealed_mmm_session_card"
         )
+
+
+class TestJestSealedKillSwitchAndHardStop:
+    """
+    @sealed — Kill Switch + Hard Stop UI contracts (entry #77)
+    Runs: webui/frontend/src/components/mmm/__tests__/test_sealed_kill_switch_and_hard_stop.test.js
+
+    Contracts:
+      KS1–KS8: Kill Switch button visibility and dialog flow on SessionCard
+      HS1–HS6, HS2b, HS2c, HS3b, HS4b: Hard Stop display, threshold, color
+    """
+
+    def test_all_kill_switch_and_hard_stop_contracts_pass(self):
+        """
+        CONTRACT: Kill Switch button (KS1-KS8) and Hard Stop display (HS1-HS6)
+        on SessionCard must pass all Jest contract tests.
+        FAILURE = life-safety UI contract broken. Do NOT ignore.
+        """
+        result = _run_jest("test_sealed_kill_switch_and_hard_stop")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed Kill Switch + Hard Stop tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_kill_switch_and_hard_stop"
+        )

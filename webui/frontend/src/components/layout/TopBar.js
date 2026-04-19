@@ -124,7 +124,7 @@ function TopBar({
             </div>
             <div>
               <p className="text-[9px] font-medium uppercase tracking-wider text-slate-400">
-                SSR BOT
+                TRADING DESK
               </p>
               <p className="text-xs font-semibold text-slate-100">{running ? 'Online' : 'Standby'}</p>
             </div>

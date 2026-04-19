@@ -30,7 +30,7 @@ log = logging.getLogger('oi_aggregator')
 _MAX_STRIKES_PER_EXPIRY = 300
 _MAX_EXPIRIES = 12
 _DEQUE_MAXLEN = 20
-_RETENTION_DAYS = 7
+_RETENTION_DAYS = 3  # OI snapshots are analytics-only; 3 days is ample for spike detection
 _DB_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data')
 _DB_PATH = os.path.join(_DB_DIR, 'oi_data.db')
 

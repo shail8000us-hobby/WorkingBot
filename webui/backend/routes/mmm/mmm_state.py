@@ -727,7 +727,6 @@ DEFAULT_PARAMS = {
     'reverse_time_start': '',
     'reverse_time_end': '',
     'reverse_duration_mins': 120,
-    'reverse_mode_type': 'strict_alternating',
     'reverse_cooldown_mins': 5,
     'reverse_max_loss': 100.0,
     'reverse_close_at_threshold': 8.0,
@@ -877,7 +876,7 @@ HOT_RELOAD_PARAMS = {
     'reverse_enabled', 'reverse_capacity_pct', 'reverse_num_slots',
     'reverse_slot_size_override', 'reverse_max_adjustments',
     'reverse_time_start', 'reverse_time_end', 'reverse_duration_mins',
-    'reverse_mode_type', 'reverse_cooldown_mins', 'reverse_max_loss',
+    'reverse_cooldown_mins', 'reverse_max_loss',
     'reverse_close_at_threshold', 'reverse_unhedged_emergency_loss',
     # God Layer (strategic integrity monitor)
     'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',

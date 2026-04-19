@@ -5,11 +5,14 @@ on:
     branches:
       - main
       - master
-      - production*  # Only run on production branches
+      - production*
+      - SSR
+      - BTEH
   pull_request:
     branches:
       - main
       - master
+      - BTEH
   workflow_dispatch:
 
 env:
@@ -94,3 +97,35 @@ PY
             echo "---- Backend logs ----"
             tail -n 200 /tmp/backend.log || true
           fi
+
+  mmm-sealed-tests:
+    name: MMM Sealed Suite (deployment gate)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pytest
+
+      - name: Run MMM sealed tests
+        run: |
+          python3 -m pytest webui/backend/routes/mmm/tests -m sealed -q \
+            --tb=short --no-header \
+            -p no:warnings 2>&1 | tee /tmp/mmm_sealed.log
+          # Fail the job if any sealed test failed
+          grep -qE "^(FAILED|ERROR)" /tmp/mmm_sealed.log && exit 1 || true
+
+      - name: Upload sealed test log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmm-sealed-test-log
+          path: /tmp/mmm_sealed.log

@@ -203,16 +203,16 @@ def scan_closeable_positions(
             f"[{session_id}] Found {len(closeable)} position(s) eligible for close-at-5 "
             f"(threshold={threshold:.1f})"
         )
-        # Fix #8: content-match-first removal makes index-based sorting unnecessary.
-        # Sort by profit descending — close the most profitable positions first.
-        # (Frozen > adjustment > original ordering is preserved as a secondary key
-        # so higher-premium frozen positions don't accidentally beat active strikes.)
+        # Fix A (profitability audit): Sort by profit descending as the PRIMARY key.
+        # When close_at_max_per_beat cap limits closes per beat, profit-first ordering
+        # ensures the highest-value positions are captured first, reducing rebound risk.
+        # type_order and side are tie-breakers only.
         _type_order = {'frozen': 2, 'adjustment': 1, 'original': 0}
         closeable.sort(
             key=lambda p: (
-                p.get('side', ''),
-                _type_order.get(p.get('type', ''), -1),
                 p.get('profit', 0),
+                _type_order.get(p.get('type', ''), -1),
+                p.get('side', ''),
             ),
             reverse=True,
         )
@@ -422,18 +422,33 @@ async def close_position(
                             pos.pop('_being_closed', None)
                             break
                 return {'success': False, 'error': f"Market order returned no ID: {mkt_result}"}
-            # Best-effort P&L estimate — fill price may not be in response
+            # Actual filled lots — market orders may partially fill (F3 fix)
+            actual_lots = int(mkt_result.get('filled_size') or mkt_result.get('size') or lots)
+            is_partial = actual_lots < lots
+            # Best-effort P&L — compute on actual filled, not requested
             fill_price = float(mkt_result.get('average_fill_price', 0) or
                                mkt_result.get('fill_price', 0) or entry_prem)
             realized_pnl = float(
-                (_D(entry_prem) - _D(fill_price)) * _D(lots) * _LOT
+                (_D(entry_prem) - _D(fill_price)) * _D(actual_lots) * _LOT
             )
-            _remove_closed_position(session, side, position, pos_type)
+            if is_partial and actual_lots > 0:
+                _partial_close_position(session, side, position, pos_type, actual_lots,
+                                        close_order_id=order_id)
+            else:
+                _remove_closed_position(session, side, position, pos_type)
+            # Register pending close verification — same as non-market path (F3 fix)
+            _pcv = session.setdefault('_pending_close_verification', {})
+            _pcv[symbol] = {
+                'side': side,
+                'strike': strike,
+                'lots_closed': actual_lots,
+                'grace_beats': 3,
+            }
             return {
                 'success': True,
                 'realized_pnl': realized_pnl,
                 'close_premium': fill_price,
-                'lots_closed': lots,
+                'lots_closed': actual_lots,
                 'order_id': order_id,
                 'order_type': 'market',
             }

@@ -786,7 +786,7 @@ class MMMStorage:
         try:
             if active_only:
                 rows = conn.execute(
-                    "SELECT * FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING') "
+                    "SELECT * FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING','STARTING','PARTIAL_ENTRY') "
                     "ORDER BY created_at DESC"
                 ).fetchall()
             else:
@@ -942,7 +942,7 @@ class MMMStorage:
         conn = self._get_conn()
         try:
             rows = conn.execute(
-                "SELECT session_id FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING')"
+                "SELECT session_id FROM mmm_sessions WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING','STARTING','PARTIAL_ENTRY')"
             ).fetchall()
             return [r['session_id'] for r in rows]
         except Exception as e:
@@ -964,7 +964,7 @@ class MMMStorage:
         conn = self._get_conn()
         try:
             where = (
-                "WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING')"
+                "WHERE status IN ('RUNNING','PAUSED','BOTH_SIDES_UP','EXITING','STARTING','PARTIAL_ENTRY')"
                 if active_only else ""
             )
             rows = conn.execute(f'''
@@ -1008,6 +1008,7 @@ class MMMStorage:
                     json_extract(params_json, '$.expiry')                 AS expiry,
                     json_extract(params_json, '$.dte_category')           AS dte_category,
                     json_extract(params_json, '$._preset_source')         AS _preset_source,
+                    json_extract(params_json, '$.max_loss_amount')        AS max_loss_amount,
                     json_extract(data_json, '$._health_grade')            AS _health_grade,
                     json_extract(data_json, '$._gamma_regime')            AS _gamma_regime,
                     json_extract(data_json, '$._paused_reason')           AS _paused_reason,
@@ -1090,6 +1091,7 @@ class MMMStorage:
                     '_gamma_enabled': bool(r['_gamma_enabled']),
                     '_gamma_zone': r['_gamma_zone'] or 'SAFE',
                     '_data_confidence': r['_data_confidence'],
+                    'max_loss_amount': r['max_loss_amount'] or 0,
                 })
             return summaries
         except Exception as e:
@@ -1216,6 +1218,7 @@ class MMMStorage:
             '_gamma_enabled': bool(gamma_result.get('enabled', False)),
             '_gamma_zone': gamma_result.get('gamma_zone', 'SAFE') or 'SAFE',
             '_data_confidence': session.get('_data_confidence'),
+            'max_loss_amount': session.get('params', {}).get('max_loss_amount', 0),
         }
 
     def get_session_count(self) -> int:

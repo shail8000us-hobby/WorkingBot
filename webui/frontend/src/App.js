@@ -29,6 +29,7 @@ import AutoloopStatusBar from './components/positionAdjustment/AutoloopStatusBar
 import IdleIndicator from './components/IdleIndicator';
 import SafetyWarningBanner from './components/SafetyWarningBanner';
 import OfflineIndicator from './components/OfflineIndicator';
+import ShailendraToast from './components/ShailendraToast';
 // BackendDownError must NOT be lazy-loaded — it's the error fallback for backend failures
 // and must be available immediately (lazy components need Suspense which may not be ready)
 import BackendDownError from './components/BackendDownError';
@@ -541,6 +542,9 @@ function App() {
 
         {/* Safety Warning - Shows bots are still running */}
         <SafetyWarningBanner />
+
+        {/* Shailendra AI Copilot Signals (Zero Impact UI Popup) */}
+        <ShailendraToast />
 
         {/* Mobile Status Indicators (Battery + Connection) */}
         {isMobile && (

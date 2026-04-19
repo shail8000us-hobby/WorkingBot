@@ -1,0 +1,996 @@
+{
+  "mmm": [
+    {
+      "route": "/dte-presets",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_dte_presets",
+      "line": 149,
+      "decorator_line": 148
+    },
+    {
+      "route": "/aggregate-pnl",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_aggregate_pnl",
+      "line": 183,
+      "decorator_line": 182
+    },
+    {
+      "route": "/sessions",
+      "methods": [
+        "GET"
+      ],
+      "def": "list_sessions",
+      "line": 213,
+      "decorator_line": 212
+    },
+    {
+      "route": "/session/<session_id>",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session",
+      "line": 257,
+      "decorator_line": 256
+    },
+    {
+      "route": "/session/create",
+      "methods": [
+        "POST"
+      ],
+      "def": "create_session_endpoint",
+      "line": 291,
+      "decorator_line": 290
+    },
+    {
+      "route": "/session/<session_id>",
+      "methods": [
+        "DELETE"
+      ],
+      "def": "delete_session",
+      "line": 550,
+      "decorator_line": 549
+    },
+    {
+      "route": "/session/<session_id>/start",
+      "methods": [
+        "POST"
+      ],
+      "def": "start_session",
+      "line": 603,
+      "decorator_line": 602
+    },
+    {
+      "route": "/session/<session_id>/resolve-partial-entry",
+      "methods": [
+        "POST"
+      ],
+      "def": "resolve_partial_entry",
+      "line": 1178,
+      "decorator_line": 1177
+    },
+    {
+      "route": "/session/<session_id>/retry-partial-leg",
+      "methods": [
+        "POST"
+      ],
+      "def": "retry_partial_leg",
+      "line": 1307,
+      "decorator_line": 1306
+    },
+    {
+      "route": "/session/<session_id>/pause",
+      "methods": [
+        "POST"
+      ],
+      "def": "pause_session",
+      "line": 1502,
+      "decorator_line": 1501
+    },
+    {
+      "route": "/session/<session_id>/resume",
+      "methods": [
+        "POST"
+      ],
+      "def": "resume_session",
+      "line": 1554,
+      "decorator_line": 1553
+    },
+    {
+      "route": "/session/<session_id>/stop",
+      "methods": [
+        "POST"
+      ],
+      "def": "stop_session",
+      "line": 1651,
+      "decorator_line": 1650
+    },
+    {
+      "route": "/session/<session_id>/exit_all",
+      "methods": [
+        "POST"
+      ],
+      "def": "exit_all_session",
+      "line": 1758,
+      "decorator_line": 1757
+    },
+    {
+      "route": "/session/<session_id>/kill_switch",
+      "methods": [
+        "POST"
+      ],
+      "def": "kill_switch_session",
+      "line": 1884,
+      "decorator_line": 1883
+    },
+    {
+      "route": "/session/<session_id>/both_sides_decision",
+      "methods": [
+        "POST"
+      ],
+      "def": "both_sides_decision",
+      "line": 2018,
+      "decorator_line": 2017
+    },
+    {
+      "route": "/params/info",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_params_info",
+      "line": 2102,
+      "decorator_line": 2101
+    },
+    {
+      "route": "/parameter_suggestions",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_parameter_suggestions",
+      "line": 2120,
+      "decorator_line": 2119
+    },
+    {
+      "route": "/session/<session_id>/margin",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_margin_status",
+      "line": 2248,
+      "decorator_line": 2247
+    },
+    {
+      "route": "/exchange/margin",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_exchange_margin",
+      "line": 2337,
+      "decorator_line": 2336
+    },
+    {
+      "route": "/session/<session_id>/params",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_params",
+      "line": 2440,
+      "decorator_line": 2439
+    },
+    {
+      "route": "/session/<session_id>/params",
+      "methods": [
+        "PATCH"
+      ],
+      "def": "update_session_params",
+      "line": 2464,
+      "decorator_line": 2463
+    },
+    {
+      "route": "/session/<session_id>/history",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_history",
+      "line": 2754,
+      "decorator_line": 2753
+    },
+    {
+      "route": "/session/<session_id>/state",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_state",
+      "line": 2790,
+      "decorator_line": 2789
+    },
+    {
+      "route": "/health",
+      "methods": [
+        "GET"
+      ],
+      "def": "health_check",
+      "line": 2826,
+      "decorator_line": 2825
+    },
+    {
+      "route": "/activities",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_activities",
+      "line": 2855,
+      "decorator_line": 2854
+    },
+    {
+      "route": "/activities/stats",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_activities_stats",
+      "line": 2927,
+      "decorator_line": 2926
+    },
+    {
+      "route": "/activities/critical",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_critical_activities",
+      "line": 2948,
+      "decorator_line": 2947
+    },
+    {
+      "route": "/expiries",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_expiries",
+      "line": 2983,
+      "decorator_line": 2982
+    },
+    {
+      "route": "/spot-price",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_spot_price",
+      "line": 3010,
+      "decorator_line": 3009
+    },
+    {
+      "route": "/preview-strikes",
+      "methods": [
+        "POST"
+      ],
+      "def": "preview_strikes",
+      "line": 3034,
+      "decorator_line": 3033
+    },
+    {
+      "route": "/preview_atm_straddle",
+      "methods": [
+        "POST"
+      ],
+      "def": "preview_atm_straddle",
+      "line": 3103,
+      "decorator_line": 3102
+    },
+    {
+      "route": "/check-liquidity",
+      "methods": [
+        "POST"
+      ],
+      "def": "check_liquidity",
+      "line": 3132,
+      "decorator_line": 3131
+    },
+    {
+      "route": "/session/<session_id>/init-fresh",
+      "methods": [
+        "POST"
+      ],
+      "def": "init_session_fresh",
+      "line": 3167,
+      "decorator_line": 3166
+    },
+    {
+      "route": "/session/<session_id>/init-import",
+      "methods": [
+        "POST"
+      ],
+      "def": "init_session_import",
+      "line": 3326,
+      "decorator_line": 3325
+    },
+    {
+      "route": "/exchange-positions",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_exchange_positions",
+      "line": 3490,
+      "decorator_line": 3489
+    },
+    {
+      "route": "/session/<session_id>/adopt",
+      "methods": [
+        "POST"
+      ],
+      "def": "adopt_positions",
+      "line": 3525,
+      "decorator_line": 3524
+    },
+    {
+      "route": "/chain-data",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_chain_data",
+      "line": 3775,
+      "decorator_line": 3774
+    },
+    {
+      "route": "/validate-selection",
+      "methods": [
+        "POST"
+      ],
+      "def": "validate_selection",
+      "line": 3817,
+      "decorator_line": 3816
+    },
+    {
+      "route": "/session/<session_id>/execute-entry",
+      "methods": [
+        "POST"
+      ],
+      "def": "execute_entry",
+      "line": 3870,
+      "decorator_line": 3869
+    },
+    {
+      "route": "/session/<session_id>/monitor",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_monitor_status",
+      "line": 3995,
+      "decorator_line": 3994
+    },
+    {
+      "route": "/monitors",
+      "methods": [
+        "GET"
+      ],
+      "def": "list_monitors",
+      "line": 4021,
+      "decorator_line": 4020
+    },
+    {
+      "route": "/session/<session_id>/reduce-position",
+      "methods": [
+        "POST"
+      ],
+      "def": "reduce_position",
+      "line": 4147,
+      "decorator_line": 4146
+    },
+    {
+      "route": "/session/<session_id>/option-chain",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_option_chain",
+      "line": 4520,
+      "decorator_line": 4519
+    },
+    {
+      "route": "/session/<session_id>/inject-position",
+      "methods": [
+        "POST"
+      ],
+      "def": "inject_position",
+      "line": 4596,
+      "decorator_line": 4595
+    },
+    {
+      "route": "/session/<session_id>/set-active-strike",
+      "methods": [
+        "POST"
+      ],
+      "def": "set_active_strike",
+      "line": 4948,
+      "decorator_line": 4947
+    },
+    {
+      "route": "/session/<session_id>/pin-trigger",
+      "methods": [
+        "POST"
+      ],
+      "def": "pin_trigger",
+      "line": 5126,
+      "decorator_line": 5125
+    },
+    {
+      "route": "/session/<session_id>/close-strike",
+      "methods": [
+        "POST"
+      ],
+      "def": "close_strike_route",
+      "line": 5307,
+      "decorator_line": 5306
+    },
+    {
+      "route": "/session/<session_id>/adjust-active-lots",
+      "methods": [
+        "POST"
+      ],
+      "def": "adjust_active_lots",
+      "line": 5683,
+      "decorator_line": 5682
+    },
+    {
+      "route": "/session/<session_id>/reconcile",
+      "methods": [
+        "POST"
+      ],
+      "def": "reconcile_session",
+      "line": 6063,
+      "decorator_line": 6062
+    },
+    {
+      "route": "/session/<session_id>/force-heartbeat",
+      "methods": [
+        "POST"
+      ],
+      "def": "force_heartbeat",
+      "line": 6179,
+      "decorator_line": 6178
+    },
+    {
+      "route": "/session/<session_id>/positions",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_positions",
+      "line": 6212,
+      "decorator_line": 6211
+    },
+    {
+      "route": "/exchange/positions",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_exchange_positions_direct",
+      "line": 6276,
+      "decorator_line": 6275
+    },
+    {
+      "route": "/exchange/orders",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_exchange_orders",
+      "line": 6337,
+      "decorator_line": 6336
+    },
+    {
+      "route": "/session/<session_id>/triggers",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_triggers",
+      "line": 6394,
+      "decorator_line": 6393
+    },
+    {
+      "route": "/session/<session_id>/pnl-timeline",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_pnl_timeline",
+      "line": 6432,
+      "decorator_line": 6431
+    },
+    {
+      "route": "/session/<session_id>/safety",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_safety_status",
+      "line": 6466,
+      "decorator_line": 6465
+    },
+    {
+      "route": "/session/<session_id>/breakeven",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_breakeven",
+      "line": 6510,
+      "decorator_line": 6509
+    },
+    {
+      "route": "/session/<session_id>/gamma",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_gamma",
+      "line": 6540,
+      "decorator_line": 6539
+    },
+    {
+      "route": "/session/<session_id>/walkthrough",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_walkthrough",
+      "line": 6571,
+      "decorator_line": 6570
+    },
+    {
+      "route": "/session/<session_id>/beat-health",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_beat_health",
+      "line": 6599,
+      "decorator_line": 6598
+    },
+    {
+      "route": "/session/<session_id>/regime",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_regime_status",
+      "line": 6647,
+      "decorator_line": 6646
+    },
+    {
+      "route": "/session/<session_id>/greeks-iv",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_greeks_iv",
+      "line": 6690,
+      "decorator_line": 6689
+    },
+    {
+      "route": "/session/<session_id>/analytics",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_analytics",
+      "line": 6894,
+      "decorator_line": 6893
+    },
+    {
+      "route": "/analytics/history",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_analytics_history",
+      "line": 6994,
+      "decorator_line": 6993
+    },
+    {
+      "route": "/analytics/aggregated",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_aggregated_analytics",
+      "line": 7040,
+      "decorator_line": 7039
+    },
+    {
+      "route": "/session/<session_id>/performance",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_performance",
+      "line": 7081,
+      "decorator_line": 7080
+    },
+    {
+      "route": "/performance/summary",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_performance_summary",
+      "line": 7118,
+      "decorator_line": 7117
+    },
+    {
+      "route": "/session/<session_id>/hedge/status",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_hedge_status",
+      "line": 7143,
+      "decorator_line": 7142
+    },
+    {
+      "route": "/session/<session_id>/hedge/toggle",
+      "methods": [
+        "POST"
+      ],
+      "def": "toggle_hedge",
+      "line": 7182,
+      "decorator_line": 7181
+    },
+    {
+      "route": "/session/<session_id>/hedge/close",
+      "methods": [
+        "POST"
+      ],
+      "def": "close_hedge",
+      "line": 7236,
+      "decorator_line": 7235
+    },
+    {
+      "route": "/metrics/aggregate",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_aggregate_metrics",
+      "line": 7326,
+      "decorator_line": 7325
+    },
+    {
+      "route": "/emergency/stop-all",
+      "methods": [
+        "POST"
+      ],
+      "def": "emergency_stop_all",
+      "line": 7443,
+      "decorator_line": 7442
+    },
+    {
+      "route": "/emergency/health-check",
+      "methods": [
+        "GET"
+      ],
+      "def": "emergency_health_check",
+      "line": 7511,
+      "decorator_line": 7510
+    },
+    {
+      "route": "/emergency/pause-all",
+      "methods": [
+        "POST"
+      ],
+      "def": "emergency_pause_all",
+      "line": 7611,
+      "decorator_line": 7610
+    },
+    {
+      "route": "/emergency/close-all-positions",
+      "methods": [
+        "POST"
+      ],
+      "def": "emergency_close_all_positions",
+      "line": 7674,
+      "decorator_line": 7673
+    },
+    {
+      "route": "/emergency/reset-circuit/<session_id>",
+      "methods": [
+        "POST"
+      ],
+      "def": "emergency_reset_circuit",
+      "line": 7833,
+      "decorator_line": 7832
+    },
+    {
+      "route": "/session/<session_id>/clear-backoff",
+      "methods": [
+        "POST"
+      ],
+      "def": "clear_session_backoff",
+      "line": 7891,
+      "decorator_line": 7890
+    },
+    {
+      "route": "/audit/trail",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_audit_trail",
+      "line": 7931,
+      "decorator_line": 7930
+    },
+    {
+      "route": "/audit/export",
+      "methods": [
+        "GET"
+      ],
+      "def": "export_audit_trail",
+      "line": 8017,
+      "decorator_line": 8016
+    },
+    {
+      "route": "/session/<session_id>/pnl-curve",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_pnl_curve",
+      "line": 8113,
+      "decorator_line": 8112
+    },
+    {
+      "route": "/session/<session_id>/audit/trades",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_trade_audit",
+      "line": 8270,
+      "decorator_line": 8269
+    },
+    {
+      "route": "/session/<session_id>/audit/strike_summary",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_strike_summary_audit",
+      "line": 8287,
+      "decorator_line": 8286
+    },
+    {
+      "route": "/session/<session_id>/audit/pnl",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_pnl_attribution_audit",
+      "line": 8341,
+      "decorator_line": 8340
+    },
+    {
+      "route": "/session/<session_id>/audit/reconcile",
+      "methods": [
+        "GET"
+      ],
+      "def": "reconcile_audit_endpoint",
+      "line": 8352,
+      "decorator_line": 8351
+    },
+    {
+      "route": "/session/<session_id>/audit/events",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_events_audit",
+      "line": 8370,
+      "decorator_line": 8369
+    },
+    {
+      "route": "/session/<session_id>/audit/execution-events",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session_execution_events",
+      "line": 8386,
+      "decorator_line": 8385
+    },
+    {
+      "route": "/session/<session_id>/reverse",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_reverse_status",
+      "line": 8405,
+      "decorator_line": 8404
+    },
+    {
+      "route": "/session/<session_id>/reverse/enable",
+      "methods": [
+        "POST"
+      ],
+      "def": "enable_reverse_mode_api",
+      "line": 8439,
+      "decorator_line": 8438
+    },
+    {
+      "route": "/session/<session_id>/reverse/disable",
+      "methods": [
+        "POST"
+      ],
+      "def": "disable_reverse_mode_api",
+      "line": 8481,
+      "decorator_line": 8480
+    },
+    {
+      "route": "/session/<session_id>/reverse/close",
+      "methods": [
+        "POST"
+      ],
+      "def": "close_reverse_positions_api",
+      "line": 8525,
+      "decorator_line": 8524
+    }
+  ],
+  "mmmx": [
+    {
+      "route": "/api/mmmx/session",
+      "methods": [
+        "POST"
+      ],
+      "def": "create_session",
+      "line": 118,
+      "decorator_line": 117
+    },
+    {
+      "route": "/api/mmmx/sessions",
+      "methods": [
+        "GET"
+      ],
+      "def": "list_sessions",
+      "line": 169,
+      "decorator_line": 168
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_session",
+      "line": 188,
+      "decorator_line": 187
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/params",
+      "methods": [
+        "PATCH"
+      ],
+      "def": "hot_reload_params",
+      "line": 210,
+      "decorator_line": 209
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/stop",
+      "methods": [
+        "POST"
+      ],
+      "def": "stop_session",
+      "line": 286,
+      "decorator_line": 285
+    },
+    {
+      "route": "/api/mmmx/kill-switch",
+      "methods": [
+        "POST"
+      ],
+      "def": "kill_switch",
+      "line": 315,
+      "decorator_line": 314
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/start-monitor",
+      "methods": [
+        "POST"
+      ],
+      "def": "start_monitor",
+      "line": 464,
+      "decorator_line": 463
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/audit",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_audit",
+      "line": 496,
+      "decorator_line": 495
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/activity",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_activity",
+      "line": 509,
+      "decorator_line": 508
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/param-history",
+      "methods": [
+        "GET"
+      ],
+      "def": "get_param_history",
+      "line": 521,
+      "decorator_line": 520
+    },
+    {
+      "route": "/api/mmmx/health",
+      "methods": [
+        "GET"
+      ],
+      "def": "health",
+      "line": 533,
+      "decorator_line": 532
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/pause",
+      "methods": [
+        "POST"
+      ],
+      "def": "pause_session",
+      "line": 554,
+      "decorator_line": 553
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/resume",
+      "methods": [
+        "POST"
+      ],
+      "def": "resume_session",
+      "line": 618,
+      "decorator_line": 617
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/force-heartbeat",
+      "methods": [
+        "POST"
+      ],
+      "def": "force_heartbeat",
+      "line": 671,
+      "decorator_line": 670
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/scan_strikes",
+      "methods": [
+        "GET"
+      ],
+      "def": "scan_strikes_endpoint",
+      "line": 762,
+      "decorator_line": 761
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/deploy_tranche1",
+      "methods": [
+        "POST"
+      ],
+      "def": "deploy_tranche1",
+      "line": 892,
+      "decorator_line": 891
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/check-gates",
+      "methods": [
+        "POST"
+      ],
+      "def": "check_gates",
+      "line": 1001,
+      "decorator_line": 1000
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/profit_book",
+      "methods": [
+        "POST"
+      ],
+      "def": "profit_book",
+      "line": 1063,
+      "decorator_line": 1062
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/confirm-reconcile",
+      "methods": [
+        "POST"
+      ],
+      "def": "confirm_reconcile",
+      "line": 1119,
+      "decorator_line": 1118
+    },
+    {
+      "route": "/api/mmmx/session/<session_id>/reconcile",
+      "methods": [
+        "POST"
+      ],
+      "def": "reconcile",
+      "line": 1173,
+      "decorator_line": 1172
+    }
+  ]
+}

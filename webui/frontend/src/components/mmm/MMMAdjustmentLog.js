@@ -332,7 +332,7 @@ export default function MMMAdjustmentLog({
   const timeline = useMemo(() => {
     const events = [];
 
-    // From session history (most reliable)
+    // From session history (most reliable, has timestamps)
     const history = session?.adjustment_history || [];
     history.forEach((h, i) => {
       events.push({
@@ -340,10 +340,24 @@ export default function MMMAdjustmentLog({
         _source: 'history',
         _number: h.adjustment_number || i + 1,
         _ts: parseUTC(h.timestamp)?.getTime() || 0,
+        // Use adjustment_number as dedup key so ws events with same count are merged
+        _dedup: h.adjustment_number != null ? `adj-${h.adjustment_number}-${h.side}` : null,
       });
     });
 
-    // Add WebSocket-sourced events not in history
+    // Add WebSocket-sourced adjustment events not yet in history.
+    // ws adjustments carry _received_ts (stamped in useMMMWebSocket) for correct newest-first sort.
+    adjustments.forEach((a) => {
+      events.push({
+        ...a,
+        _source: 'ws',
+        _number: a.adjustment_count || null,
+        _ts: a._received_ts || 0,
+        _dedup: a.adjustment_count != null ? `adj-${a.adjustment_count}-${a.side}` : null,
+      });
+    });
+
+    // Add WebSocket-sourced shift events not in history
     shifts.forEach((s) => {
       events.push({
         ...s,
@@ -351,6 +365,7 @@ export default function MMMAdjustmentLog({
         _source: 'ws',
         _number: null,
         _ts: parseUTC(s.timestamp)?.getTime() || 0,
+        _dedup: null,
       });
     });
 
@@ -361,16 +376,17 @@ export default function MMMAdjustmentLog({
         _source: 'ws',
         _number: null,
         _ts: parseUTC(c.timestamp)?.getTime() || 0,
+        _dedup: null,
       });
     });
 
-    // Deduplicate and sort (newest first)
+    // Deduplicate and sort (newest first by _ts; ws adjustments use _received_ts so they sort correctly)
     const unique = [];
     const seen = new Set();
     events
       .sort((a, b) => b._ts - a._ts)
       .forEach((e) => {
-        const key = `${e.type}-${e._ts}-${e.side}`;
+        const key = e._dedup || `${e.type}-${e._ts}-${e.side}`;
         if (!seen.has(key)) {
           seen.add(key);
           unique.push(e);
@@ -378,7 +394,7 @@ export default function MMMAdjustmentLog({
       });
 
     return unique;
-  }, [session, shifts, closeEvents]);
+  }, [session, adjustments, shifts, closeEvents]);
 
   if (timeline.length === 0) {
     return (

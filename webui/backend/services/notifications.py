@@ -231,20 +231,23 @@ class NotificationService:
         results = {
             'telegram': None,
             'ntfy': None,
-            'in_app': True  # Always succeed for in-app
         }
-        
+
         channels = alert.get('notification_channels', 'telegram,in_app').split(',')
         enabled = self.settings.get('enabled_channels', 'telegram').split(',')
-        
+
+        # in_app channel: record delivery only if it was actually requested
+        if 'in_app' in channels:
+            results['in_app'] = True
+
         # Send to Telegram
         if 'telegram' in channels and 'telegram' in enabled and self._telegram:
             results['telegram'] = await self._telegram.send_price_alert(alert, current_price)
-        
+
         # Send to ntfy
         if 'ntfy' in channels and 'ntfy' in enabled and self._ntfy:
             results['ntfy'] = await self._ntfy.send_price_alert(alert, current_price)
-        
+
         return results
     
     async def test_telegram(self) -> tuple[bool, str]:

@@ -8,14 +8,22 @@ import SealedBadge from './common/SealedBadge';
 // ---- 5:30 PM IST daily session helpers ----
 // IST is UTC+5:30, so 5:30 PM IST = 12:00 PM UTC
 const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000; // 5h30m in ms
+const SESSION_DAY_MS = 24 * 60 * 60 * 1000;
 const SESSION_RESET_HOUR = 17; // 5 PM
 const SESSION_RESET_MINUTE = 30; // :30
+const ANCHOR_FETCH_TIMEOUT_MS = 4500;
 
-/** Get current time in IST as a Date object */
-const getISTNow = () => {
-  const now = new Date();
-  return new Date(now.getTime() + IST_OFFSET_MS + now.getTimezoneOffset() * 60000);
-};
+const pad2 = (value) => String(value).padStart(2, '0');
+
+/**
+ * Shift UTC epoch into an IST-aligned Date where UTC getters map to IST wall-clock.
+ * Using UTC getters avoids local-timezone skew and ISO date rollover bugs.
+ */
+const getShiftedISTDate = (sourceDate = new Date()) =>
+  new Date(sourceDate.getTime() + IST_OFFSET_MS);
+
+const shiftedISTDateToKey = (shiftedDate) =>
+  `${shiftedDate.getUTCFullYear()}-${pad2(shiftedDate.getUTCMonth() + 1)}-${pad2(shiftedDate.getUTCDate())}`;
 
 /**
  * Returns the session key string (YYYY-MM-DD) for the current IST session.
@@ -23,23 +31,21 @@ const getISTNow = () => {
  * The key is the date of the session START (i.e. the 5:30 PM date).
  */
 const getSessionKey = () => {
-  const istTime = getISTNow();
-  const h = istTime.getHours();
-  const m = istTime.getMinutes();
+  const shiftedIST = getShiftedISTDate();
+  const h = shiftedIST.getUTCHours();
+  const m = shiftedIST.getUTCMinutes();
 
   // If before 5:30 PM IST, session started yesterday at 5:30 PM
   if (h < SESSION_RESET_HOUR || (h === SESSION_RESET_HOUR && m < SESSION_RESET_MINUTE)) {
-    const yesterday = new Date(istTime);
-    yesterday.setDate(yesterday.getDate() - 1);
-    return yesterday.toISOString().slice(0, 10);
+    return shiftedISTDateToKey(new Date(shiftedIST.getTime() - SESSION_DAY_MS));
   }
-  return istTime.toISOString().slice(0, 10);
+  return shiftedISTDateToKey(shiftedIST);
 };
 
 /** Format the session start date for display, e.g. "Since 24-Feb 5:30 PM" */
 const formatSessionLabel = (sessionKey) => {
   if (!sessionKey) return '';
-  const [y, m, d] = sessionKey.split('-').map(Number);
+  const [, m, d] = sessionKey.split('-').map(Number);
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   return `Since ${d}-${months[m - 1]} 5:30 PM`;
 };
@@ -67,6 +73,35 @@ const saveSessionRef = (data) => {
   } catch (_) {}
 };
 
+const fetchSessionAnchorPrice = async (symbol, sessionKey) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ANCHOR_FETCH_TIMEOUT_MS);
+
+  try {
+    const params = new URLSearchParams({
+      symbol,
+      session: sessionKey,
+      _: String(Date.now()),
+    });
+
+    const response = await fetch(`/api/market/session-anchor?${params.toString()}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const price = Number(payload?.price);
+    if (!Number.isFinite(price) || price <= 0) {
+      throw new Error('Invalid anchor price');
+    }
+    return price;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+};
+
 const FloatingPriceWidget = () => {
   const [position, setPosition] = useState(() => ({
     x: Math.max(8, window.innerWidth - WIDGET_WIDTH - 16),
@@ -89,6 +124,67 @@ const FloatingPriceWidget = () => {
   // Use refs to avoid stale closures when saving to localStorage
   const btcRefLatest = useRef(null);
   const ethRefLatest = useRef(null);
+  const btcAnchorResolved = useRef(false);
+  const ethAnchorResolved = useRef(false);
+  const anchorRequestToken = useRef(0);
+
+  const resetSessionReferences = useCallback((sessionKey) => {
+    sessionKeyRef.current = sessionKey;
+    setSessionLabel(formatSessionLabel(sessionKey));
+    setBtcRef(null);
+    setEthRef(null);
+    btcRefLatest.current = null;
+    ethRefLatest.current = null;
+    btcAnchorResolved.current = false;
+    ethAnchorResolved.current = false;
+    saveSessionRef({ session: sessionKey, btcRef: null, ethRef: null });
+  }, []);
+
+  const loadSessionAnchors = useCallback((sessionKey) => {
+    const token = Date.now();
+    anchorRequestToken.current = token;
+    btcAnchorResolved.current = false;
+    ethAnchorResolved.current = false;
+
+    const isCurrentRequest = () =>
+      anchorRequestToken.current === token && sessionKeyRef.current === sessionKey;
+
+    const persistSnapshot = () => {
+      saveSessionRef({
+        session: sessionKey,
+        btcRef: btcRefLatest.current,
+        ethRef: ethRefLatest.current,
+      });
+    };
+
+    const fetchOne = async (symbol) => {
+      try {
+        const anchorPrice = await fetchSessionAnchorPrice(symbol, sessionKey);
+        if (!isCurrentRequest()) return;
+
+        if (symbol === 'BTC') {
+          setBtcRef(anchorPrice);
+          btcRefLatest.current = anchorPrice;
+        } else {
+          setEthRef(anchorPrice);
+          ethRefLatest.current = anchorPrice;
+        }
+        persistSnapshot();
+      } catch (error) {
+        console.warn(`[FloatingPriceWidget] ${symbol} anchor fetch failed for ${sessionKey}:`, error);
+      } finally {
+        if (!isCurrentRequest()) return;
+        if (symbol === 'BTC') {
+          btcAnchorResolved.current = true;
+        } else {
+          ethAnchorResolved.current = true;
+        }
+      }
+    };
+
+    fetchOne('BTC');
+    fetchOne('ETH');
+  }, []);
 
   // Keep refs in sync with state
   useEffect(() => { btcRefLatest.current = btcRef; }, [btcRef]);
@@ -98,69 +194,82 @@ const FloatingPriceWidget = () => {
   useEffect(() => {
     const currentSession = getSessionKey();
     const stored = loadSessionRef();
-    if (stored && stored.session === currentSession) {
-      setBtcRef(stored.btcRef);
-      setEthRef(stored.ethRef);
-      btcRefLatest.current = stored.btcRef;
-      ethRefLatest.current = stored.ethRef;
-    }
+
     sessionKeyRef.current = currentSession;
     setSessionLabel(formatSessionLabel(currentSession));
-  }, []);
+
+    if (stored && stored.session === currentSession) {
+      const storedBtc = Number(stored.btcRef);
+      const storedEth = Number(stored.ethRef);
+
+      if (Number.isFinite(storedBtc) && storedBtc > 0) {
+        setBtcRef(storedBtc);
+        btcRefLatest.current = storedBtc;
+      }
+      if (Number.isFinite(storedEth) && storedEth > 0) {
+        setEthRef(storedEth);
+        ethRefLatest.current = storedEth;
+      }
+    }
+
+    loadSessionAnchors(currentSession);
+  }, [loadSessionAnchors]);
 
   // Check for session rollover every 5 seconds (fast near 5:30 PM IST)
   useEffect(() => {
     const interval = setInterval(() => {
       const currentSession = getSessionKey();
       if (sessionKeyRef.current && currentSession !== sessionKeyRef.current) {
-        // New session – snapshot current live prices as new reference
-        sessionKeyRef.current = currentSession;
-        setSessionLabel(formatSessionLabel(currentSession));
-        // Force null so the next price tick captures the new session reference
-        setBtcRef(null);
-        setEthRef(null);
-        btcRefLatest.current = null;
-        ethRefLatest.current = null;
+        resetSessionReferences(currentSession);
+        loadSessionAnchors(currentSession);
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [loadSessionAnchors, resetSessionReferences]);
 
   // Update BTC reference when price arrives and ref is not yet set for this session
   useEffect(() => {
     if (btcPrice === null) return;
     const currentSession = getSessionKey();
-    // Reset if session changed (safety net in case interval didn't catch it)
+
+    // Safety net in case interval did not run yet.
     if (sessionKeyRef.current !== currentSession) {
-      sessionKeyRef.current = currentSession;
-      setSessionLabel(formatSessionLabel(currentSession));
-      setBtcRef(btcPrice);
-      btcRefLatest.current = btcPrice;
-      setEthRef(null);
-      ethRefLatest.current = null;
-      saveSessionRef({ session: currentSession, btcRef: btcPrice, ethRef: null });
-    } else if (btcRefLatest.current === null) {
-      // First BTC price in this session (e.g. page reload without stored ref)
+      resetSessionReferences(currentSession);
+      loadSessionAnchors(currentSession);
+    }
+
+    // Fallback path: if anchor fetch completed but no anchor was available,
+    // use first live tick for this session.
+    if (btcRefLatest.current === null && btcAnchorResolved.current) {
       setBtcRef(btcPrice);
       btcRefLatest.current = btcPrice;
       saveSessionRef({ session: currentSession, btcRef: btcPrice, ethRef: ethRefLatest.current });
     }
+
     setLastUpdate(new Date());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [btcPrice]);
+  }, [btcPrice, loadSessionAnchors, resetSessionReferences]);
 
   // Update ETH reference when price arrives and ref is not yet set for this session
   useEffect(() => {
     if (ethPrice === null) return;
     const currentSession = getSessionKey();
-    if (ethRefLatest.current === null) {
+
+    // Safety net in case interval did not run yet.
+    if (sessionKeyRef.current !== currentSession) {
+      resetSessionReferences(currentSession);
+      loadSessionAnchors(currentSession);
+    }
+
+    // Fallback path: if anchor fetch completed but no anchor was available,
+    // use first live tick for this session.
+    if (ethRefLatest.current === null && ethAnchorResolved.current) {
       setEthRef(ethPrice);
       ethRefLatest.current = ethPrice;
       saveSessionRef({ session: currentSession, btcRef: btcRefLatest.current, ethRef: ethPrice });
     }
+
     setLastUpdate(new Date());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ethPrice]);
+  }, [ethPrice, loadSessionAnchors, resetSessionReferences]);
 
   // Dragging logic
   const handleMouseDown = useCallback((e) => {

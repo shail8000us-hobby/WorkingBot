@@ -287,12 +287,18 @@ def start_price_service(socketio_instance):
             log.error(f"[DeltaWS] Error broadcasting price: {e}")
 
     def broadcast_ticker(symbol: str, ticker_data: dict):
+        # Gate: only forward symbols that at least one client has explicitly subscribed to.
+        # Without this, the l1_orderbook wildcard subscription floods ALL clients with
+        # every option contract on the exchange (200–400+ symbols at ~500ms each).
+        with price_ws.subscribed_options_lock:
+            if symbol not in price_ws.subscribed_options:
+                return
         try:
             socketio_instance.emit('options_ticker_update', {
                 'symbol': symbol,
                 'best_bid': ticker_data['best_bid'],
                 'best_ask': ticker_data['best_ask'],
-                'mark_price': ticker_data['mark_price'],
+                'mark_price': ticker_data.get('mark_price', 0),
                 'timestamp': ticker_data['timestamp']
             })
         except Exception as e:

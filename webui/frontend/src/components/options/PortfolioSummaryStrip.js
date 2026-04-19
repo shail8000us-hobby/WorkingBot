@@ -246,31 +246,53 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
     },
   });
 
+  // Delta risk badge uses dollar-equivalent exposure for scale-invariant thresholds.
+  // Falls back to raw BTC-unit comparison if spot price is unavailable.
+  const deltaThresholdReady = btcSpot > 0 || ethSpot > 0;
+
+  // Delta-directional card accent — tints the Portfolio Greeks panel to signal direction at a glance.
+  // Near-neutral (< $1K): cyan (unchanged). Positive: green scale. Negative: red scale.
+  const greeksCardAccent = (() => {
+    if (!hasGreeks || !deltaThresholdReady) return ACCENT_CYAN;
+    if (absDeltaExposure < 1000) return ACCENT_CYAN;
+    if (deltaExposureUsd > 0) return absDeltaExposure >= 5000 ? '#22c55e' : '#4ade80';
+    return absDeltaExposure >= 5000 ? '#ef4444' : '#f87171';
+  })();
   let deltaRiskBadge = null;
-  if (hasGreeks && Math.abs(delta) < 0.1) {
+  if (hasGreeks && (deltaThresholdReady ? absDeltaExposure < 1000 : Math.abs(delta) < 0.05)) {
     deltaRiskBadge = (
       <Chip
-        label="Delta Neutral"
+        label={`Δ Near-Neutral${deltaThresholdReady ? ` (${deltaExposureStr})` : ''}`}
         size="small"
         color="success"
         variant="outlined"
         sx={{ height: 20, fontSize: '0.67rem', fontWeight: 800 }}
       />
     );
-  } else if (hasGreeks && Math.abs(delta) >= 3 && Math.abs(delta) < 7) {
+  } else if (hasGreeks && (deltaThresholdReady ? absDeltaExposure >= 1000 && absDeltaExposure < 5000 : Math.abs(delta) >= 0.05 && Math.abs(delta) < 3)) {
     deltaRiskBadge = (
       <Chip
-        label={`Delta Elevated (≈${deltaExposureStr})`}
+        label={`Δ Moderate (${deltaExposureStr})`}
+        size="small"
+        color="info"
+        variant="outlined"
+        sx={{ height: 20, fontSize: '0.67rem', fontWeight: 800 }}
+      />
+    );
+  } else if (hasGreeks && (deltaThresholdReady ? absDeltaExposure >= 5000 && absDeltaExposure < 15000 : Math.abs(delta) >= 3 && Math.abs(delta) < 7)) {
+    deltaRiskBadge = (
+      <Chip
+        label={`Δ Elevated (${deltaExposureStr})`}
         size="small"
         color="warning"
         variant="outlined"
         sx={{ height: 20, fontSize: '0.67rem', fontWeight: 800 }}
       />
     );
-  } else if (hasGreeks && Math.abs(delta) >= 7) {
+  } else if (hasGreeks && (deltaThresholdReady ? absDeltaExposure >= 15000 : Math.abs(delta) >= 7)) {
     deltaRiskBadge = (
       <Chip
-        label={`Delta Critical (${delta.toFixed(2)})`}
+        label={`Δ Critical (${deltaExposureStr})`}
         size="small"
         color="error"
         variant="outlined"
@@ -429,9 +451,9 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           )}
         </Box>
 
-        {/* Greeks */}
-        <Box sx={panelSx(ACCENT_CYAN)}>
-          <Box sx={panelHeaderSx(ACCENT_CYAN)}>
+        {/* Greeks — card accent shifts green/red with delta direction */}
+        <Box sx={panelSx(greeksCardAccent)}>
+          <Box sx={panelHeaderSx(greeksCardAccent)}>
             <Box className="header-left">
               <Box className="header-dot" />
               <Typography variant="caption" sx={panelTitleSx}>Portfolio Greeks</Typography>
@@ -450,11 +472,20 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
                 </Box>
               </Tooltip>
 
-              <Tooltip title="Portfolio theta (daily time decay)" arrow>
+              <Tooltip title="Portfolio theta — daily time decay in USD. BTC options trade 24h/day so theta decays continuously." arrow>
                 <Box sx={metricRowSx}>
-                  <Typography sx={metricLabelSx}>Theta</Typography>
+                  <Typography sx={metricLabelSx}>Theta/Day</Typography>
                   <Typography sx={metricValueSx(theta >= 0 ? '#4ade80' : '#f87171')}>
                     {theta >= 0 ? '+' : ''}{theta.toFixed(2)}
+                  </Typography>
+                </Box>
+              </Tooltip>
+
+              <Tooltip title={`Theta per hour = ${theta >= 0 ? '+' : ''}${(theta / 24).toFixed(3)}/hr — BTC options decay continuously 24 h/day, 7 days/week.`} arrow>
+                <Box sx={metricRowSx}>
+                  <Typography sx={metricLabelSx}>Theta/Hr</Typography>
+                  <Typography sx={metricValueSx(theta >= 0 ? alpha('#4ade80', 0.75) : alpha('#f87171', 0.75))}>
+                    {theta >= 0 ? '+' : ''}{(theta / 24).toFixed(3)}
                   </Typography>
                 </Box>
               </Tooltip>

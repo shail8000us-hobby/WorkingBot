@@ -216,36 +216,7 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
   const strategyType = resolveStrategyType(session);
   const reverseSupportedByStrategy = REVERSE_SUPPORTED_STRATEGIES.has(strategyType);
 
-  if (!reverseSupportedByStrategy) {
-    return (
-      <Alert severity="info" sx={{ mt: 1 }}>
-        Reverse Mode is not available for <strong>{strategyType}</strong> sessions.
-      </Alert>
-    );
-  }
-
-  // Pull reverse state from heartbeat (live) with storage fallback
-  const params = session?.params || {};
-  const reverseEnabled = params.reverse_enabled || false;
-  const reverseState = heartbeat?._reverse || session?._reverse || {};
-  const active = reverseState.active || false;
-
-  const slotsUsed = reverseState.slots_used ?? 0;
-  const slotsRemaining = reverseState.slots_remaining ?? (params.reverse_num_slots || 5);
-  const totalSlots = slotsUsed + slotsRemaining;
-  const lastSide = reverseState.last_reverse_side;
-  const adjustmentCount = reverseState.adjustment_count ?? 0;
-  const totalLots = reverseState.total_lots ?? 0;
-  const totalPremiumCollected = reverseState.total_premium_collected ?? 0;
-  const realizedPnl = reverseState.realized_pnl ?? 0;
-  const unrealizedPnl = reverseState.unrealized_pnl ?? 0;
-  const netPnl = reverseState.net_pnl ?? 0;
-  const deltaExposure = reverseState.delta_exposure ?? 0;
-  const positions = reverseState.positions || [];
-  const disableReason = reverseState.disable_reason;
-  const enabledAt = reverseState.enabled_at;
-  const disabledAt = reverseState.disabled_at;
-
+  // All hooks must be called before any early return (Rules of Hooks)
   const handleEnable = useCallback(async () => {
     if (!sessionId) return;
     setLoading(true);
@@ -288,6 +259,36 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
       setLoading(false);
     }
   }, [sessionId]);
+
+  if (!reverseSupportedByStrategy) {
+    return (
+      <Alert severity="info" sx={{ mt: 1 }}>
+        Reverse Mode is not available for <strong>{strategyType}</strong> sessions.
+      </Alert>
+    );
+  }
+
+  // Pull reverse state from heartbeat (live) with storage fallback
+  const params = session?.params || {};
+  const reverseEnabled = params.reverse_enabled || false;
+  const reverseState = heartbeat?._reverse || session?._reverse || {};
+  const active = reverseState.active || false;
+
+  const slotsUsed = reverseState.slots_used ?? 0;
+  const slotsRemaining = reverseState.slots_remaining ?? (params.reverse_num_slots || 5);
+  const totalSlots = slotsUsed + slotsRemaining;
+  const lastSide = reverseState.last_reverse_side;
+  const adjustmentCount = reverseState.adjustment_count ?? 0;
+  const totalLots = reverseState.total_lots ?? 0;
+  const totalPremiumCollected = reverseState.total_premium_collected ?? 0;
+  const realizedPnl = reverseState.realized_pnl ?? 0;
+  const unrealizedPnl = reverseState.unrealized_pnl ?? 0;
+  const netPnl = reverseState.net_pnl ?? 0;
+  const deltaExposure = reverseState.delta_exposure ?? 0;
+  const positions = reverseState.positions || [];
+  const disableReason = reverseState.disable_reason;
+  const enabledAt = reverseState.enabled_at;
+  const disabledAt = reverseState.disabled_at;
 
   return (
     <Box sx={{ p: 1 }}>
@@ -448,7 +449,6 @@ export default function MMMReverseModePanel({ session, heartbeat }) {
           { label: 'Close At', value: `$${params.reverse_close_at_threshold ?? 8}` },
           { label: 'Cooldown', value: `${params.reverse_cooldown_mins ?? 5}m` },
           { label: 'Max Adj', value: params.reverse_max_adjustments ?? 3 },
-          { label: 'Mode', value: params.reverse_mode_type || 'strict_alternating' },
         ].map(({ label, value }) => (
           <Chip
             key={label}

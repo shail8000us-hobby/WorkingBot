@@ -1813,6 +1813,7 @@ def remove_expiry_max_loss(expiry_code):
 
 
 @options_bp.route('/monitoring-activity', methods=['GET'])
+@sealed
 def get_monitoring_activity():
     """
     Get real-time monitoring activity log.
@@ -1845,10 +1846,12 @@ def get_monitoring_activity():
         if monitor:
             monitor_status = monitor.get_status()
         
-        # Get current max loss limits for context
+        # Get current max loss limits for context — only enabled (actively monitored) ones.
+        # get_all_*() returns enabled=1 OR triggered=1 for UI history; filter here so the
+        # monitoring-activity panel only shows limits where monitoring is actually running.
         manager = get_max_loss_manager()
-        strike_limits = manager.get_all_strike_max_loss()
-        expiry_limits = manager.get_all_expiry_max_loss()
+        strike_limits = [s for s in manager.get_all_strike_max_loss() if s.get('enabled')]
+        expiry_limits = [e for e in manager.get_all_expiry_max_loss() if e.get('enabled')]
         
         hedge_events_snapshot = get_hedge_events_snapshot(20)
 

@@ -33,13 +33,23 @@ class MetricsLogger:
     def __init__(self):
         self.db_path = DB_PATH
         self.lock = Lock()
+        self._conn = None  # Persistent connection — avoids per-call open/close on large DB
         self._init_db()
+        self.cleanup_old_metrics(days=30)  # Prune on startup to keep file size bounded
         log.info(f"Metrics logger initialized: {self.db_path}")
     
+    def _get_conn(self) -> sqlite3.Connection:
+        """Return the persistent connection, creating it if needed."""
+        if self._conn is None:
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn.execute('PRAGMA journal_mode=WAL')
+            self._conn.execute('PRAGMA synchronous=NORMAL')
+        return self._conn
+
     def _init_db(self):
         """Initialize SQLite database and tables"""
         try:
-            conn = sqlite3.connect(self.db_path)
+            conn = self._get_conn()
             conn.execute('''
                 CREATE TABLE IF NOT EXISTS metrics (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,14 +61,13 @@ class MetricsLogger:
                     metadata TEXT
                 )
             ''')
-            
+
             # Create indexes for faster queries
             conn.execute('CREATE INDEX IF NOT EXISTS idx_timestamp ON metrics(timestamp)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_type ON metrics(metric_type)')
             conn.execute('CREATE INDEX IF NOT EXISTS idx_name ON metrics(metric_name)')
-            
+
             conn.commit()
-            conn.close()
             log.info("Metrics database initialized successfully")
         except Exception as e:
             log.error(f"Failed to initialize metrics database: {e}")
@@ -76,13 +85,12 @@ class MetricsLogger:
         """
         with self.lock:
             try:
-                conn = sqlite3.connect(self.db_path)
+                conn = self._get_conn()
                 conn.execute(
                     'INSERT INTO metrics (timestamp, metric_type, metric_name, value, status, metadata) VALUES (?, ?, ?, ?, ?, ?)',
                     (datetime.now().isoformat(), metric_type, metric_name, value, status, metadata)
                 )
                 conn.commit()
-                conn.close()
             except Exception as e:
                 log.error(f"Failed to log metric: {e}")
     
@@ -98,35 +106,32 @@ class MetricsLogger:
         Returns:
             List of tuples: (timestamp, metric_type, metric_name, value, status)
         """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            
-            if metric_type:
-                cursor = conn.execute(
-                    '''SELECT timestamp, metric_type, metric_name, value, status, metadata
-                       FROM metrics 
-                       WHERE metric_type = ? 
-                       AND timestamp > datetime('now', '-' || ? || ' hours')
-                       ORDER BY timestamp DESC
-                       LIMIT ?''',
-                    (metric_type, hours, limit)
-                )
-            else:
-                cursor = conn.execute(
-                    '''SELECT timestamp, metric_type, metric_name, value, status, metadata
-                       FROM metrics 
-                       WHERE timestamp > datetime('now', '-' || ? || ' hours')
-                       ORDER BY timestamp DESC
-                       LIMIT ?''',
-                    (hours, limit)
-                )
-            
-            results = cursor.fetchall()
-            conn.close()
-            return results
-        except Exception as e:
-            log.error(f"Failed to get recent metrics: {e}")
-            return []
+        with self.lock:
+            try:
+                conn = self._get_conn()
+                if metric_type:
+                    cursor = conn.execute(
+                        '''SELECT timestamp, metric_type, metric_name, value, status, metadata
+                           FROM metrics
+                           WHERE metric_type = ?
+                           AND timestamp > datetime('now', '-' || ? || ' hours')
+                           ORDER BY timestamp DESC
+                           LIMIT ?''',
+                        (metric_type, hours, limit)
+                    )
+                else:
+                    cursor = conn.execute(
+                        '''SELECT timestamp, metric_type, metric_name, value, status, metadata
+                           FROM metrics
+                           WHERE timestamp > datetime('now', '-' || ? || ' hours')
+                           ORDER BY timestamp DESC
+                           LIMIT ?''',
+                        (hours, limit)
+                    )
+                return cursor.fetchall()
+            except Exception as e:
+                log.error(f"Failed to get recent metrics: {e}")
+                return []
     
     def get_metric_summary(self, metric_type: str, metric_name: str, hours: int = 24):
         """
@@ -140,36 +145,35 @@ class MetricsLogger:
         Returns:
             dict with avg, min, max, count
         """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                '''SELECT 
-                    AVG(value) as avg,
-                    MIN(value) as min,
-                    MAX(value) as max,
-                    COUNT(*) as count
-                   FROM metrics 
-                   WHERE metric_type = ? 
-                   AND metric_name = ?
-                   AND timestamp > datetime('now', '-' || ? || ' hours')''',
-                (metric_type, metric_name, hours)
-            )
-            
-            row = cursor.fetchone()
-            conn.close()
-            
-            if row and row[3] > 0:  # count > 0
-                return {
-                    'avg': round(row[0], 2) if row[0] else 0,
-                    'min': round(row[1], 2) if row[1] else 0,
-                    'max': round(row[2], 2) if row[2] else 0,
-                    'count': row[3]
-                }
-            else:
-                return {'avg': 0, 'min': 0, 'max': 0, 'count': 0}
-        except Exception as e:
-            log.error(f"Failed to get metric summary: {e}")
-            return {'avg': 0, 'min': 0, 'max': 0, 'count': 0, 'error': str(e)}
+        with self.lock:
+            try:
+                conn = self._get_conn()
+                cursor = conn.execute(
+                    '''SELECT
+                        AVG(value) as avg,
+                        MIN(value) as min,
+                        MAX(value) as max,
+                        COUNT(*) as count
+                       FROM metrics
+                       WHERE metric_type = ?
+                       AND metric_name = ?
+                       AND timestamp > datetime('now', '-' || ? || ' hours')''',
+                    (metric_type, metric_name, hours)
+                )
+                row = cursor.fetchone()
+
+            except Exception as e:
+                log.error(f"Failed to get metric summary: {e}")
+                return {'avg': 0, 'min': 0, 'max': 0, 'count': 0, 'error': str(e)}
+
+        if row and row[3] > 0:  # count > 0
+            return {
+                'avg': round(row[0], 2) if row[0] else 0,
+                'min': round(row[1], 2) if row[1] else 0,
+                'max': round(row[2], 2) if row[2] else 0,
+                'count': row[3]
+            }
+        return {'avg': 0, 'min': 0, 'max': 0, 'count': 0}
     
     def cleanup_old_metrics(self, days: int = 7):
         """
@@ -181,22 +185,24 @@ class MetricsLogger:
         Returns:
             Number of records deleted
         """
-        try:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.execute(
-                '''DELETE FROM metrics 
-                   WHERE timestamp < datetime('now', '-' || ? || ' days')''',
-                (days,)
-            )
-            deleted_count = cursor.rowcount
-            conn.commit()
-            conn.close()
-            
-            log.info(f"Cleaned up {deleted_count} old metrics (older than {days} days)")
-            return deleted_count
-        except Exception as e:
-            log.error(f"Failed to cleanup old metrics: {e}")
-            return 0
+        with self.lock:
+            try:
+                conn = self._get_conn()
+                cursor = conn.execute(
+                    '''DELETE FROM metrics
+                       WHERE timestamp < datetime('now', '-' || ? || ' days')''',
+                    (days,)
+                )
+                deleted_count = cursor.rowcount
+                conn.commit()
+                if deleted_count > 0:
+                    conn.execute('VACUUM')
+                    conn.commit()
+                log.info(f"Cleaned up {deleted_count} old metrics (older than {days} days)")
+                return deleted_count
+            except Exception as e:
+                log.error(f"Failed to cleanup old metrics: {e}")
+                return 0
 
 
 # Global singleton instance

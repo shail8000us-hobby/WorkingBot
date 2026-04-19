@@ -80,9 +80,11 @@ const mmmService = {
   /**
    * Start a session
    * @param {string} sessionId
+   * @param {boolean} forceStart - Pass true to override invariant/cap violations (recovery use only)
    */
-  async startSession(sessionId) {
-    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/start`);
+  async startSession(sessionId, forceStart = false) {
+    const body = forceStart ? { force_start: true } : undefined;
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/start`, body);
     return data;
   },
 
@@ -122,6 +124,18 @@ const mmmService = {
    */
   async exitAllSession(sessionId, reason = 'user_requested') {
     const { data } = await api.post(`${BASE_URL}/session/${sessionId}/exit_all`, { reason });
+    return data;
+  },
+
+  /**
+   * Emergency Kill Switch — square off ALL positions for this session immediately.
+   * Marks session _kill_switch_triggered=true, sets EXITING, forces heartbeat.
+   * Idempotent: safe to call multiple times.
+   * @param {string} sessionId
+   * @param {string} [reason]
+   */
+  async killSwitch(sessionId, reason = 'kill_switch') {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/kill_switch`, { reason });
     return data;
   },
 
@@ -175,23 +189,6 @@ const mmmService = {
   // =========================================================================
   // Phase 3+: Monitor Control
   // =========================================================================
-
-  /**
-   * Get monitor status for a session
-   * @param {string} sessionId
-   */
-  async getMonitorStatus(sessionId) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/monitor`);
-    return data;
-  },
-
-  /**
-   * Get all active monitors
-   */
-  async getAllMonitors() {
-    const { data } = await api.get(`${BASE_URL}/monitors`);
-    return data;
-  },
 
   /**
    * Force an immediate heartbeat for a running session.
@@ -303,45 +300,6 @@ const mmmService = {
   // =========================================================================
 
   /**
-   * Get current positions for a session (active, adjustment, frozen)
-   * @param {string} sessionId
-   */
-  async getPositions(sessionId) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/positions`);
-    return data;
-  },
-
-  /**
-   * Get current trigger data for a session
-   * @param {string} sessionId
-   */
-  async getTriggerData(sessionId) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/triggers`);
-    return data;
-  },
-
-  /**
-   * Get P&L timeline data
-   * @param {string} sessionId
-   * @param {number} [limit=100] - Max data points
-   */
-  async getPnLTimeline(sessionId, limit = 100) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/pnl-timeline`, {
-      params: { limit },
-    });
-    return data;
-  },
-
-  /**
-   * Get safety status for a session
-   * @param {string} sessionId
-   */
-  async getSafetyStatus(sessionId) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/safety`);
-    return data;
-  },
-
-  /**
    * Get session analytics (exposure tracking, milestones, etc.)
    * @param {string} sessionId
    */
@@ -364,14 +322,6 @@ const mmmService = {
    */
   async getSessionPerformance(sessionId) {
     const { data } = await api.get(`${BASE_URL}/session/${sessionId}/performance`);
-    return data;
-  },
-
-  /**
-   * Get aggregated performance summary across all sessions
-   */
-  async getPerformanceSummary() {
-    const { data } = await api.get(`${BASE_URL}/performance/summary`);
     return data;
   },
 
@@ -423,31 +373,6 @@ const mmmService = {
   },
 
   // =========================================================================
-  // History & Diagnostics
-  // =========================================================================
-
-  /**
-   * Get adjustment history and P&L timeline
-   * @param {string} sessionId
-   * @param {number} [limit=200]
-   */
-  async getSessionHistory(sessionId, limit = 200) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/history`, {
-      params: { limit },
-    });
-    return data;
-  },
-
-  /**
-   * Get full CE/PE state for diagnostics
-   * @param {string} sessionId
-   */
-  async getSessionState(sessionId) {
-    const { data } = await api.get(`${BASE_URL}/session/${sessionId}/state`);
-    return data;
-  },
-
-  // =========================================================================
   // Phase 2: Initialization — Strike Selection & Entry
   // =========================================================================
 
@@ -495,16 +420,6 @@ const mmmService = {
 
   async previewAtmStraddle({ expiry, underlying = 'BTC' }) {
     const { data } = await api.post(`${BASE_URL}/preview_atm_straddle`, { expiry, underlying });
-    return data;
-  },
-
-  /**
-   * Check bid-side liquidity for an option symbol
-   * @param {string} symbol - Option symbol (e.g. 'C-BTC-100000-150226')
-   * @param {number} lots - Number of lots to sell
-   */
-  async checkLiquidity(symbol, lots) {
-    const { data } = await api.post(`${BASE_URL}/check-liquidity`, { symbol, lots });
     return data;
   },
 
@@ -628,36 +543,6 @@ const mmmService = {
     return data;
   },
 
-  /**
-   * Emergency close all positions (optionally scoped to selected sessions).
-   * WARNING: This uses emergency market close behavior on backend.
-   *
-   * @param {string} reason
-   * @param {string[]|null} [sessionIds=null]
-   * @param {boolean} [dryRun=false]
-   */
-  async emergencyCloseAllPositions(reason, sessionIds = null, dryRun = false) {
-    const payload = {
-      reason,
-      dry_run: dryRun,
-    };
-    if (Array.isArray(sessionIds) && sessionIds.length > 0) {
-      payload.session_ids = sessionIds;
-    }
-
-    const { data } = await api.post(`${BASE_URL}/emergency/close-all-positions`, payload);
-    return data;
-  },
-
-  /**
-   * Emergency hard kill for all bot processes.
-   * @param {string} [reason]
-   */
-  async emergencyKillAllBots(reason = 'mobile_emergency_kill_all') {
-    const { data } = await api.post('/api/emergency/kill-all', { reason });
-    return data;
-  },
-
   // =========================================================================
   // Background Activities
   // =========================================================================
@@ -672,28 +557,6 @@ const mmmService = {
     const params = { limit, ...(filters || {}) };
     if (sessionId) params.session_id = sessionId;
     const { data } = await api.get(`${BASE_URL}/activities`, { params });
-    return data;
-  },
-
-  /**
-   * Get aggregated activity stats for dashboards.
-   * @param {Object} [params]
-   */
-  async getActivityStats(params = {}) {
-    const { data } = await api.get(`${BASE_URL}/activities/stats`, { params });
-    return data;
-  },
-
-  /**
-   * Get warning/error/critical activity feed.
-   * @param {number} [limit=50]
-   * @param {string|null} [sessionId=null]
-   * @param {Object} [filters]
-   */
-  async getCriticalActivities(limit = 50, sessionId = null, filters = {}) {
-    const params = { limit, ...(filters || {}) };
-    if (sessionId) params.session_id = sessionId;
-    const { data } = await api.get(`${BASE_URL}/activities/critical`, { params });
     return data;
   },
 
@@ -768,17 +631,6 @@ const mmmService = {
   // =========================================================================
   // Perp Delta Hedge (Section 26)
   // =========================================================================
-
-  /**
-   * Get perp hedge status for a session
-   * @param {string} sessionId
-   */
-  async getPerpHedgeStatus(sessionId) {
-    const { data } = await api.get(
-      `${BASE_URL}/session/${sessionId}/hedge/status`
-    );
-    return data;
-  },
 
   /**
    * Toggle perp hedge enabled/disabled

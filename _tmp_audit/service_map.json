@@ -1,0 +1,876 @@
+{
+  "mmm": [
+    {
+      "method": "getSessions",
+      "line": 27,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/sessions`, {"
+        }
+      ]
+    },
+    {
+      "method": "getSession",
+      "line": 39,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}`, {"
+        }
+      ]
+    },
+    {
+      "method": "createSession",
+      "line": 53,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/create`, config);"
+        }
+      ]
+    },
+    {
+      "method": "deleteSession",
+      "line": 62,
+      "calls": [
+        {
+          "verb": "DELETE",
+          "expr": "`${BASE_URL}/session/${sessionId}`);"
+        }
+      ]
+    },
+    {
+      "method": "startSession",
+      "line": 84,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/start`);"
+        }
+      ]
+    },
+    {
+      "method": "pauseSession",
+      "line": 93,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/pause`);"
+        }
+      ]
+    },
+    {
+      "method": "resumeSession",
+      "line": 102,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/resume`);"
+        }
+      ]
+    },
+    {
+      "method": "stopSession",
+      "line": 112,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/stop`, { reason });"
+        }
+      ]
+    },
+    {
+      "method": "exitAllSession",
+      "line": 123,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/exit_all`, { reason });"
+        }
+      ]
+    },
+    {
+      "method": "killSwitch",
+      "line": 135,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/kill_switch`, { reason });"
+        }
+      ]
+    },
+    {
+      "method": "resolvePartialEntry",
+      "line": 147,
+      "calls": []
+    },
+    {
+      "method": "retryPartialLeg",
+      "line": 160,
+      "calls": []
+    },
+    {
+      "method": "submitBothSidesDecision",
+      "line": 179,
+      "calls": []
+    },
+    {
+      "method": "getMonitorStatus",
+      "line": 195,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/monitor`);"
+        }
+      ]
+    },
+    {
+      "method": "getAllMonitors",
+      "line": 203,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/monitors`);"
+        }
+      ]
+    },
+    {
+      "method": "forceHeartbeat",
+      "line": 213,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/force-heartbeat`);"
+        }
+      ]
+    },
+    {
+      "method": "getBeatHealth",
+      "line": 223,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/beat-health`);"
+        }
+      ]
+    },
+    {
+      "method": "reducePosition",
+      "line": 241,
+      "calls": []
+    },
+    {
+      "method": "injectPosition",
+      "line": 257,
+      "calls": []
+    },
+    {
+      "method": "setActiveStrike",
+      "line": 274,
+      "calls": []
+    },
+    {
+      "method": "adjustActiveLots",
+      "line": 290,
+      "calls": []
+    },
+    {
+      "method": "closeStrike",
+      "line": 305,
+      "calls": []
+    },
+    {
+      "method": "getPositions",
+      "line": 321,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/positions`);"
+        }
+      ]
+    },
+    {
+      "method": "getTriggerData",
+      "line": 330,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/triggers`);"
+        }
+      ]
+    },
+    {
+      "method": "getPnLTimeline",
+      "line": 340,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/pnl-timeline`, {"
+        }
+      ]
+    },
+    {
+      "method": "getSafetyStatus",
+      "line": 351,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/safety`);"
+        }
+      ]
+    },
+    {
+      "method": "getSessionAnalytics",
+      "line": 360,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/analytics`);"
+        }
+      ]
+    },
+    {
+      "method": "getAggregatedAnalytics",
+      "line": 369,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/analytics/aggregated`);"
+        }
+      ]
+    },
+    {
+      "method": "getSessionPerformance",
+      "line": 377,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/performance`);"
+        }
+      ]
+    },
+    {
+      "method": "getPerformanceSummary",
+      "line": 385,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/performance/summary`);"
+        }
+      ]
+    },
+    {
+      "method": "getParamsInfo",
+      "line": 397,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/params/info`);"
+        }
+      ]
+    },
+    {
+      "method": "getDTEPresets",
+      "line": 405,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/dte-presets`);"
+        }
+      ]
+    },
+    {
+      "method": "getAggregatePnL",
+      "line": 413,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/aggregate-pnl`);"
+        }
+      ]
+    },
+    {
+      "method": "getSessionParams",
+      "line": 422,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/params`);"
+        }
+      ]
+    },
+    {
+      "method": "updateSessionParams",
+      "line": 432,
+      "calls": [
+        {
+          "verb": "PATCH",
+          "expr": "`${BASE_URL}/session/${sessionId}/params`, params);"
+        }
+      ]
+    },
+    {
+      "method": "getSessionHistory",
+      "line": 446,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/history`, {"
+        }
+      ]
+    },
+    {
+      "method": "getSessionState",
+      "line": 457,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/state`);"
+        }
+      ]
+    },
+    {
+      "method": "getExpiries",
+      "line": 470,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/expiries`, {"
+        }
+      ]
+    },
+    {
+      "method": "getSpotPrice",
+      "line": 481,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/spot-price`, {"
+        }
+      ]
+    },
+    {
+      "method": "previewStrikes",
+      "line": 498,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/preview-strikes`, {"
+        }
+      ]
+    },
+    {
+      "method": "previewAtmStraddle",
+      "line": 508,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/preview_atm_straddle`, { expiry, underlying });"
+        }
+      ]
+    },
+    {
+      "method": "checkLiquidity",
+      "line": 518,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/check-liquidity`, { symbol, lots });"
+        }
+      ]
+    },
+    {
+      "method": "initSessionFresh",
+      "line": 536,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/init-fresh`, entry);"
+        }
+      ]
+    },
+    {
+      "method": "initSessionImport",
+      "line": 556,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/init-import`, entry);"
+        }
+      ]
+    },
+    {
+      "method": "getExchangePositions",
+      "line": 566,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/exchange-positions`, { params });"
+        }
+      ]
+    },
+    {
+      "method": "adoptPositions",
+      "line": 579,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/adopt`, {"
+        }
+      ]
+    },
+    {
+      "method": "getChainData",
+      "line": 597,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/chain-data`, {"
+        }
+      ]
+    },
+    {
+      "method": "validateSelection",
+      "line": 613,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/validate-selection`, {"
+        }
+      ]
+    },
+    {
+      "method": "executeEntry",
+      "line": 626,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/execute-entry`, { mode });"
+        }
+      ]
+    },
+    {
+      "method": "healthCheck",
+      "line": 638,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/health`);"
+        }
+      ]
+    },
+    {
+      "method": "emergencyCloseAllPositions",
+      "line": 651,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/emergency/close-all-positions`, payload);"
+        }
+      ]
+    },
+    {
+      "method": "emergencyKillAllBots",
+      "line": 668,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "'/api/emergency/kill-all', { reason });"
+        }
+      ]
+    },
+    {
+      "method": "getActivities",
+      "line": 683,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/activities`, { params });"
+        }
+      ]
+    },
+    {
+      "method": "getActivityStats",
+      "line": 694,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/activities/stats`, { params });"
+        }
+      ]
+    },
+    {
+      "method": "getCriticalActivities",
+      "line": 705,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/activities/critical`, { params });"
+        }
+      ]
+    },
+    {
+      "method": "getWalkthrough",
+      "line": 720,
+      "calls": []
+    },
+    {
+      "method": "getGreeksIV",
+      "line": 736,
+      "calls": []
+    },
+    {
+      "method": "getRegimeStatus",
+      "line": 747,
+      "calls": []
+    },
+    {
+      "method": "getMarginStatus",
+      "line": 763,
+      "calls": []
+    },
+    {
+      "method": "getExchangeMargin",
+      "line": 775,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/exchange/margin`);"
+        }
+      ]
+    },
+    {
+      "method": "getPerpHedgeStatus",
+      "line": 788,
+      "calls": []
+    },
+    {
+      "method": "togglePerpHedge",
+      "line": 799,
+      "calls": []
+    },
+    {
+      "method": "closePerpHedge",
+      "line": 810,
+      "calls": []
+    },
+    {
+      "method": "getAuditTrades",
+      "line": 822,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/audit/trades`);"
+        }
+      ]
+    },
+    {
+      "method": "getAuditStrikeSummary",
+      "line": 828,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/audit/strike_summary`);"
+        }
+      ]
+    },
+    {
+      "method": "getAuditPnL",
+      "line": 834,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/audit/pnl`);"
+        }
+      ]
+    },
+    {
+      "method": "getAuditReconcile",
+      "line": 840,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/audit/reconcile`);"
+        }
+      ]
+    },
+    {
+      "method": "getAuditEvents",
+      "line": 846,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/audit/events`);"
+        }
+      ]
+    },
+    {
+      "method": "getExecutionEvents",
+      "line": 852,
+      "calls": []
+    },
+    {
+      "method": "getOptionChain",
+      "line": 860,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`${BASE_URL}/session/${sessionId}/option-chain`);"
+        }
+      ]
+    },
+    {
+      "method": "pinTrigger",
+      "line": 875,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/pin-trigger`, body);"
+        }
+      ]
+    },
+    {
+      "method": "enableReverseMode",
+      "line": 890,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/reverse/enable`);"
+        }
+      ]
+    },
+    {
+      "method": "disableReverseMode",
+      "line": 901,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/reverse/disable`, { reason });"
+        }
+      ]
+    },
+    {
+      "method": "closeAllReversePositions",
+      "line": 912,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`${BASE_URL}/session/${sessionId}/reverse/close`, { reason });"
+        }
+      ]
+    }
+  ],
+  "mmmx": [
+    {
+      "method": "createSession",
+      "line": 22,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "'/session'"
+        }
+      ]
+    },
+    {
+      "method": "listSessions",
+      "line": 23,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/sessions${status ? `?status=${status}` : ''}`)"
+        }
+      ]
+    },
+    {
+      "method": "getSession",
+      "line": 24,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/session/${id}`)"
+        }
+      ]
+    },
+    {
+      "method": "hotReloadParams",
+      "line": 27,
+      "calls": [
+        {
+          "verb": "PATCH",
+          "expr": "`/session/${id}/params`"
+        }
+      ]
+    },
+    {
+      "method": "stopSession",
+      "line": 30,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/stop`"
+        }
+      ]
+    },
+    {
+      "method": "killSwitch",
+      "line": 31,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "'/kill-switch'"
+        }
+      ]
+    },
+    {
+      "method": "pauseSession",
+      "line": 33,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/pause`"
+        }
+      ]
+    },
+    {
+      "method": "resumeSession",
+      "line": 34,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/resume`"
+        }
+      ]
+    },
+    {
+      "method": "startMonitor",
+      "line": 35,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/start-monitor`"
+        }
+      ]
+    },
+    {
+      "method": "forceHeartbeat",
+      "line": 36,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/force-heartbeat`"
+        }
+      ]
+    },
+    {
+      "method": "deployTranche1",
+      "line": 40,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/deploy_tranche1`"
+        }
+      ]
+    },
+    {
+      "method": "profitBook",
+      "line": 41,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/profit_book`"
+        }
+      ]
+    },
+    {
+      "method": "reconcile",
+      "line": 43,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/reconcile`"
+        }
+      ]
+    },
+    {
+      "method": "scanStrikes",
+      "line": 44,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/session/${id}/scan_strikes?otm_pct=${otmPct}`)"
+        }
+      ]
+    },
+    {
+      "method": "getAuditLog",
+      "line": 47,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/session/${id}/audit?limit=${limit}`)"
+        }
+      ]
+    },
+    {
+      "method": "getActivityLog",
+      "line": 48,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/session/${id}/activity?limit=${limit}`)"
+        }
+      ]
+    },
+    {
+      "method": "getParamHistory",
+      "line": 49,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "`/session/${id}/param-history?limit=${limit}`)"
+        }
+      ]
+    },
+    {
+      "method": "confirmReconcile",
+      "line": 52,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/confirm-reconcile`"
+        }
+      ]
+    },
+    {
+      "method": "checkGates",
+      "line": 60,
+      "calls": [
+        {
+          "verb": "POST",
+          "expr": "`/session/${id}/check-gates`"
+        }
+      ]
+    },
+    {
+      "method": "getHealth",
+      "line": 64,
+      "calls": [
+        {
+          "verb": "GET",
+          "expr": "'/health')"
+        }
+      ]
+    },
+    {
+      "method": "getExpirations",
+      "line": 68,
+      "calls": [
+        {
+          "verb": "GET?",
+          "expr": "`/api/options-chain/expirations?underlying=${underlying}`)"
+        }
+      ]
+    }
+  ]
+}

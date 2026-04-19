@@ -23,6 +23,8 @@ import time
 from typing import Dict, Any, Optional, Callable
 from datetime import datetime, timedelta, timezone
 
+from webui.backend.sealed import sealed  # Hard stop guard is sealed — do not remove
+
 import random
 
 from .mmm_state import recompute_side_lots, get_session_summary
@@ -155,6 +157,12 @@ class MMMMonitor:
         self._thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._force_event = threading.Event()   # Force-heartbeat signal
+        # ── Hard Stop Guard ──────────────────────────────────────────────────
+        # Independent thread that enforces max_loss regardless of heartbeat speed.
+        # _hard_stop_fired prevents double-fire when both heartbeat and guard detect
+        # the same breach at the same time.
+        self._hard_stop_guard_thread: Optional[threading.Thread] = None
+        self._hard_stop_fired = threading.Event()
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._heartbeat_in_progress = False  # AUDIT FIX BUG5: re-entrancy guard
         # C-2 fix: protects self.session pointer swap in the heartbeat thread
@@ -164,6 +172,11 @@ class MMMMonitor:
         # H-4 fix: generation stamp set in start(); saves are rejected if a
         # newer monitor has already claimed a higher generation number.
         self._my_generation = 0
+
+        # R3 fix: consecutive margin-check failure counter.
+        # Fail-open is intentional (L-2 design), but persistent failures
+        # across many beats indicate a real API/infra outage — escalate.
+        self._margin_check_fail_count = 0
 
         self._engine = get_engine()
         self._safety = get_safety()
@@ -553,6 +566,8 @@ class MMMMonitor:
             daemon=True,
         )
         self._thread.start()
+        self._hard_stop_fired.clear()
+        self._start_hard_stop_guard()
         self._start_close_watcher()
         self._start_price_ticker()
 
@@ -673,6 +688,24 @@ class MMMMonitor:
             get_performance_storage().save(perf_record)
         except Exception as e:
             log.error(f"Failed to save performance record for {self.session_id}: {e}")
+
+        # SESSION EVENT: write terminal lifecycle event so session_event_log
+        # always has a 'stopped' record regardless of stop path (API vs internal
+        # crash/watchdog stops both reach here; API stop also writes one, which
+        # is harmless duplication).
+        try:
+            from .mmm_audit_log import get_event_log as _get_evl
+            from .mmm_audit_remark import build_event_remark as _ber
+            _get_evl().enqueue_event(
+                session_id=self.session_id,
+                event_category='SESSION_LIFECYCLE',
+                event_type='stopped',
+                severity='INFO',
+                remark=_ber('SESSION_LIFECYCLE', 'stopped', reason=reason),
+                details={'reason': reason, 'new_status': 'STOPPED', 'source': 'monitor_stop'},
+            )
+        except Exception:
+            pass
 
         emit_status_change(
             self.session_id, old_status, 'STOPPED', reason
@@ -1270,6 +1303,23 @@ class MMMMonitor:
                             self._circuit.summary(),
                         )
 
+                    # Circuit breaker auto-pause: after AUTO_PAUSE_CONSECUTIVE_OPENS
+                    # consecutive OPEN episodes, pause the session to prevent it from
+                    # running as a zombie (RUNNING but effectively unmonitored).
+                    if self._circuit.should_auto_pause and not self._paused:
+                        _cb_summary = self._circuit.summary()
+                        _cb_opens = _cb_summary.get('consecutive_opens', '?')
+                        log.critical(
+                            f"[{self.session_id}] Circuit breaker AUTO-PAUSE: "
+                            f"{_cb_opens} consecutive OPEN episodes without recovery "
+                            f"(depth={self._circuit.open_depth}) — pausing session"
+                        )
+                        self.pause(
+                            f'Circuit breaker auto-pause: {_cb_opens} consecutive OPEN episodes '
+                            f'(depth={self._circuit.open_depth}). '
+                            f'Exchange unreachable — manual review required.'
+                        )
+
                     # Health record the error beat
                     self._health.record_beat(
                         'error',
@@ -1640,8 +1690,9 @@ class MMMMonitor:
                 (float(session.get('pe', {}).get('active_strike', 0)), 'put'), None
             )
 
-            if cached_ce is not None and cached_pe is not None:
-                # Run close-at-5 + safety using stale cached prices
+            if cached_ce is not None and cached_pe is not None and self._circuit.partial_beat_allowed:
+                # Run close-at-5 + safety using stale cached prices.
+                # Only for circuit depth <= 2; deeper backoff skips to conserve resources.
                 log.warning(
                     f"[{sid}] PARTIAL BEAT: using cached prices "
                     f"CE={cached_ce:.2f} PE={cached_pe:.2f} "
@@ -1676,6 +1727,7 @@ class MMMMonitor:
                         log.critical(
                             f"[{sid}] SAFETY AUTO-CLOSE on partial beat: {reason}"
                         )
+                        self._hard_stop_fired.set()  # Prevent guard thread double-fire
                         await self._auto_close_all(reason, emergency=True)
                         self._save_my_session(session)
                         return
@@ -1693,6 +1745,21 @@ class MMMMonitor:
                     ce_premium=cached_ce, pe_premium=cached_pe,
                 )
                 _partial_safety_checked = True  # P1-A: safety already ran above
+            elif cached_ce is not None and cached_pe is not None:
+                # cached prices available but partial_beat_allowed=False (deep backoff,
+                # depth > 2) — skip partial beat entirely to conserve resources
+                log.warning(
+                    f"[{sid}] DEEP BACKOFF BEAT: circuit depth={self._circuit.open_depth} "
+                    f"— skipping partial beat (partial_beat_allowed=False)"
+                )
+                log_activity('heartbeat_miss',
+                            f'💤 Deep Backoff Beat: circuit depth={self._circuit.open_depth} — '
+                            f'skipping partial beat to conserve resources',
+                            sid, 'warning',
+                            {'circuit_state': self._circuit.state.value,
+                             'open_depth': self._circuit.open_depth})
+                latency_ms = (time.monotonic() - beat_start_mono) * 1000
+                self._health.record_beat('miss', latency_ms=latency_ms)
             else:
                 log.warning(f"[{sid}] MISS BEAT: no cached prices available, skipping entirely")
                 log_activity('heartbeat_miss',
@@ -1729,6 +1796,7 @@ class MMMMonitor:
                         log.critical(
                             f"[{sid}] SAFETY AUTO-CLOSE on miss beat: {reason}"
                         )
+                        self._hard_stop_fired.set()  # Prevent guard thread double-fire
                         await self._auto_close_all(reason, emergency=True)
                         self._save_my_session(session)
                         return
@@ -2019,6 +2087,7 @@ class MMMMonitor:
                             {'spot': spot_price, 'triggered_side': atm_triggered_side,
                              'triggered_strike': triggered_strike}
                         )
+                        self._hard_stop_fired.set()  # Prevent guard thread double-fire
                         await self._auto_close_all(
                             f'ATM auto-close: Spot ${spot_price:.0f} at {atm_triggered_side} '
                             f'original strike ${triggered_strike:.0f}',
@@ -2529,6 +2598,7 @@ class MMMMonitor:
             reason, action_type = get_block_action(safety_events)
             if action_type == 'auto_close':
                 # auto_close = max_loss breach or near-expiry close — NEVER bypassed
+                self._hard_stop_fired.set()  # Prevent guard thread from double-firing
                 await self._auto_close_all(reason, emergency=True)
                 # H-5 fix: run cleanup before returning
                 try:
@@ -3070,10 +3140,27 @@ class MMMMonitor:
         # Fix A1 (March 12 incident): proactive shift previously ran BEFORE safety
         # checks, bypassing lot_velocity, asymmetry, margin tier, and regime blocks.
         # Now gated behind _skip_to_pnl so all safety mechanisms are respected.
-        # STRADDLE_WITH_ADJUSTMENT: proactive shift is disabled. Both legs are opened
-        # at the original ATM strike intentionally — proactive shifting would move one
-        # leg to a new (lower-premium) OTM strike, breaking the straddle structure.
-        if not _skip_to_pnl and not _is_straddle_adj and session.get('params', {}).get('proactive_shift_enabled', True):
+        # STRADDLE_WITH_ADJUSTMENT: proactive shift is disabled at SESSION START to
+        # preserve the ATM straddle structure (both legs start at the same ATM strike).
+        # Once the straddle is asymmetric (any non-original active position exists, OR
+        # adjustment_count > 0), proactively shifting the decayed hedge is CORRECT and
+        # necessary. Without this, theta acceleration (50% → 80% trigger) delays the
+        # aggressor trigger for long periods while the hedge premium decays below
+        # shift_threshold — leaving the shift candidate pool empty by the time
+        # _process_adjustment finally runs check_shift_needed.
+        # 2026-04-18 incident (mmm18apr26-3): CE decayed to $37 vs threshold $70;
+        # shift_fallback fired with no valid OTM CE candidate; user forced manual lots.
+        # Structural check (more reliable than adjustment_count across restarts):
+        # if either side has any non-original active position, the straddle is already
+        # asymmetric and proactive shift is safe.
+        def _straddle_is_asymmetric() -> bool:
+            for _s in ('ce', 'pe'):
+                for _p in session.get(_s, {}).get('positions', []):
+                    if _p.get('status') == 'active' and _p.get('type') != 'original':
+                        return True
+            return session.get('adjustment_count', 0) > 0
+        _straddle_adj_allow_proactive = _is_straddle_adj and _straddle_is_asymmetric()
+        if not _skip_to_pnl and (not _is_straddle_adj or _straddle_adj_allow_proactive) and session.get('params', {}).get('proactive_shift_enabled', True):
             session.pop('_proactive_shifted_ce', None)
             session.pop('_proactive_shifted_pe', None)
             await self._proactive_shift_scan(ce_now, pe_now)
@@ -3785,6 +3872,7 @@ class MMMMonitor:
                 await alert_max_loss_breach(sid, current_total_pnl, max_loss_amount)
             except Exception:
                 pass
+            self._hard_stop_fired.set()  # Prevent guard thread double-fire
             await self._auto_close_all(
                 f'Max loss breached: P&L ${current_total_pnl:.2f} <= -${max_loss_amount:.2f}',
                 emergency=True,
@@ -4892,6 +4980,30 @@ class MMMMonitor:
                 # frozen positions to recycle).  Freeze current active positions
                 # and shift to a new strike — this resets active_lots to 0 so
                 # the algo can continue selling.
+                #
+                # HARD CAP GUARD (user directive 2026-04-19): max_lots_per_side
+                # is now a hard ceiling on active+frozen. If already at that
+                # ceiling, freezing+shifting would not free capacity (frozen
+                # still counts) — so short-circuit with a capacity-full alert
+                # instead of starting a useless shift.
+                _max_cap = session.get('params', {}).get('max_lots_per_side', 0)
+                _total_now = session.get(hedge, {}).get('total_lots', 0)
+                if _max_cap > 0 and _total_now >= _max_cap:
+                    if self._should_emit_warning(f'capacity_full:{hedge}'):
+                        msg = (
+                            f'⛔ Capacity Full: {hedge.upper()} at '
+                            f'{_total_now}/{_max_cap} lots (active+frozen). '
+                            f'No further adjustment possible — raise '
+                            f'max_lots_per_side or wait for close_at_5 / '
+                            f'M1 harvest to drain frozen lots.'
+                        )
+                        log.warning(f"[{sid}] {msg}")
+                        log_activity('capacity_full', msg, sid, 'critical',
+                            {'side': hedge.upper(), 'total_lots': _total_now,
+                             'max_lots_per_side': _max_cap})
+                        emit_safety(sid, 'capacity_full', 'alert', msg)
+                    return
+
                 log.info(
                     f"[{sid}] CAP AUTO-SHIFT: {hedge.upper()} capped at "
                     f"{session.get(hedge, {}).get('active_lots', 0)} lots, "
@@ -5315,9 +5427,12 @@ class MMMMonitor:
         # enforce a minimum OTM distance so the new strike is further from spot.
         _gamma_shift_min_otm = 0.0
         _g6_params = session.get('params', {})
+        _is_straddle_adj_shift = (
+            _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        )
         if (_g6_params.get('gamma_severity_multiplier_enabled', False) and
                 session.get('_gamma_result', {}).get('gamma_zone') == 'DANGER' and
-                spot_price > 0):
+                spot_price > 0 and not _is_straddle_adj_shift):
             _shift_mult = _g6_params.get('gamma_severity_shift_distance_mult', 1.2)
             _base_pct   = _g6_params.get('gamma_danger_distance_pct', 1.5) / 100.0
             _gamma_shift_min_otm = spot_price * _base_pct * _shift_mult
@@ -5325,6 +5440,49 @@ class MMMMonitor:
                 f"[{sid}] F6 shift widening: min_otm={_gamma_shift_min_otm:.0f} "
                 f"(spot={spot_price:.0f} × {_base_pct:.3f} × {_shift_mult:.2f})"
             )
+
+            # Starvation guard: F6 pushes the NEW strike further from spot to
+            # reduce gamma. That works when the CURRENT strike is outside the
+            # floor — the shift moves outward. But when the current strike is
+            # ALREADY INSIDE the floor (premium has already decayed at a near-ATM
+            # strike), enforcing F6 on the new strike forces all candidates to be
+            # even further OTM than the current, where premium is strictly lower
+            # than the already-decayed current premium. Result: zero candidates
+            # clear shift_threshold, and the hedge starves. See incident
+            # mmm19apr26-1: old_strike=76000, spot≈75502 (distance=498), F6 floor
+            # ≈1359 → new strike forced > 76861, all candidates rejected for 10+
+            # beats while 75600 ($186) and 75800 ($109) sat unused.
+            if _gamma_shift_min_otm > 0:
+                _current_distance = (
+                    old_strike - spot_price if side == 'ce'
+                    else spot_price - old_strike
+                )
+                if old_strike > 0 and _current_distance < _gamma_shift_min_otm:
+                    log.warning(
+                        f"[{sid}] F6 shift widening DISABLED for {side.upper()}: "
+                        f"current strike {old_strike} is already inside the gamma "
+                        f"floor (distance={_current_distance:.0f} < floor="
+                        f"{_gamma_shift_min_otm:.0f}). Enforcing F6 would starve "
+                        f"the shift — falling back to base shift scan."
+                    )
+                    _gamma_shift_min_otm = 0.0
+        elif _is_straddle_adj_shift and (
+                _g6_params.get('gamma_severity_multiplier_enabled', False) and
+                session.get('_gamma_result', {}).get('gamma_zone') == 'DANGER'):
+            # STRADDLE_WITH_ADJUSTMENT: F6 shift widening is structurally incompatible
+            # with this strategy — the straddle is anchored at ATM, so gamma_zone is
+            # always DANGER and the F6 floor would always push the new strike further
+            # OTM than the existing straddle legs (where premium is lower than the
+            # threshold). Hedge shift is a reactive operation; blocking it here
+            # leaves the position unhedged and violates the strategy's adjustment
+            # invariant. Same rationale as the Fix 8 projected-gamma bypass at
+            # _process_adjustment (2026-04-17).
+            if self._should_emit_warning(f'straddle_adj_bypass_f6_shift:{side}'):
+                log.warning(
+                    f"[{sid}] STRADDLE+ADJ: F6 shift widening BYPASSED for {side.upper()} "
+                    f"— ATM gamma is structural to the strategy, F6 floor would "
+                    f"starve every shift."
+                )
 
         # Step 1: Use the pre-scanned candidate from this heartbeat's pre-scan.
         # pre_scan_shift_candidates() ran unconditionally earlier this beat
@@ -6648,8 +6806,11 @@ class MMMMonitor:
             session['pe'] = pe_state
 
         # Step 7: Update session tracking
-        premium_collected_ce = ce_fill * lots * LOT_SIZE_BTC
-        premium_collected_pe = pe_fill * lots * LOT_SIZE_BTC if pe_result.get('success') else 0
+        # Fix C (profitability audit): Use actual filled lots for premium accounting.
+        # On partial fills, `lots` (requested) would overstate collected premium and
+        # distort breakeven/profitability metrics downstream.
+        premium_collected_ce = ce_fill * ce_filled_lots * LOT_SIZE_BTC
+        premium_collected_pe = pe_fill * pe_filled_lots * LOT_SIZE_BTC if pe_result.get('success') else 0
         total_premium = premium_collected_ce + premium_collected_pe
         session['total_premium_collected'] = session.get('total_premium_collected', 0) + total_premium
         session['ce_premium_collected'] = session.get('ce_premium_collected', 0) + premium_collected_ce
@@ -6776,8 +6937,17 @@ class MMMMonitor:
                 log.warning(f"[{sid}] Replenish: prior {closed_side.upper()} order still open "
                             f"on exchange — skipping to prevent duplicate")
                 return False
+            elif _pg_result == 'error':
+                # Treat unverifiable order state as blocking — same as adjustment path.
+                # Placing a new order when prior order state is unknown risks accumulation.
+                log.warning(f"[{sid}] Replenish: pending-order guard returned 'error' for "
+                            f"{closed_side.upper()} — treating as open (conservative), skipping")
+                return False
         except Exception as _pg_err:
-            log.warning(f"[{sid}] Replenish: pending-order check failed ({_pg_err}) — proceeding")
+            # Fail-safe: if guard itself throws, do not proceed (matches adjustment path).
+            log.warning(f"[{sid}] Replenish: pending-order guard failed ({_pg_err}) — "
+                        f"skipping replenish (fail-safe)")
+            return False
 
         # Step 3–5: Find strike + execute — with retry on transient failures.
         #
@@ -8159,10 +8329,30 @@ class MMMMonitor:
         # Choose executor method
         async def _execute_close(symbol, lots):
             if emergency:
-                return await self.executor.emergency_execute(
-                    symbol=symbol, side='buy', size=lots,
-                    reduce_only=True, session_id=sid,
+                # HARD STOP: use true market_order (not IOC limit).
+                # place_market_order_immediate sends order_type='market_order' to Delta
+                # Exchange — fills at any price immediately. No repricing, no slippage cap.
+                # Returns raw exchange response; normalize it to the same dict shape that
+                # smart_execute/emergency_execute return so all callers above work unchanged.
+                raw = await self.executor.place_market_order_immediate(
+                    symbol=symbol, side='buy', size=lots, reduce_only=True,
                 )
+                order_id = str(raw.get('id', ''))
+                if not order_id:
+                    return {'success': False,
+                            'error': f"Market order returned no ID: {raw}"}
+                return {
+                    'success': True,
+                    'fill_price': float(
+                        raw.get('average_fill_price') or
+                        raw.get('fill_price') or 0
+                    ),
+                    'filled_size': int(
+                        raw.get('filled_size') or raw.get('size') or lots
+                    ),
+                    'order_id': order_id,
+                    'order_details': raw,
+                }
             else:
                 _reprice_max = self.session.get('params', {}).get('max_reprice_attempts', None)
                 return await self.executor.smart_execute(
@@ -8256,10 +8446,21 @@ class MMMMonitor:
                         closed = True
                         break
                     else:
+                        _err_str = str(result.get('error', ''))
+                        if 'no_position_for_reduce_only' in _err_str:
+                            # Exchange says there is no position to reduce — position is
+                            # already gone (e.g. closed by another system or max_loss_manager).
+                            # This is NOT a failure — treat as success and continue.
+                            log.warning(
+                                f"[{sid}] Auto-close active {side_key.upper()} @ {active_strike}: "
+                                f"no_position_for_reduce_only — position already gone on exchange. "
+                                f"Counting as closed."
+                            )
+                            closed = True
+                            break
                         log.warning(
                             f"[{sid}] Auto-close active {side_key.upper()} "
-                            f"attempt {attempt}/{max_retries} failed: "
-                            f"{result.get('error', 'unknown')}"
+                            f"attempt {attempt}/{max_retries} failed: {_err_str or 'unknown'}"
                         )
                 except Exception as e:
                     log.error(
@@ -8327,6 +8528,15 @@ class MMMMonitor:
                             closed = True
                             break
                         else:
+                            _fz_err_str = str(result.get('error', ''))
+                            if 'no_position_for_reduce_only' in _fz_err_str:
+                                log.warning(
+                                    f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike}: "
+                                    f"no_position_for_reduce_only — position already gone on exchange. "
+                                    f"Counting as closed."
+                                )
+                                closed = True
+                                break
                             log.warning(
                                 f"[{sid}] Auto-close frozen {side_key.upper()} @ {frozen_strike} "
                                 f"attempt {attempt}/{max_retries} failed"
@@ -8449,6 +8659,7 @@ class MMMMonitor:
                     await alert_emergency_close(sid, f'MARGIN CRITICAL: {util:.1f}%', tier, util)
                 except Exception:
                     pass
+                self._hard_stop_fired.set()  # Prevent guard thread double-fire
                 await self._auto_close_all(
                     f'MARGIN CRITICAL: {util:.1f}% utilization — survival mode',
                     emergency=True,
@@ -8479,6 +8690,7 @@ class MMMMonitor:
                 except Exception:
                     pass
                 # Emergency close all positions to reduce margin quickly
+                self._hard_stop_fired.set()  # Prevent guard thread double-fire
                 await self._auto_close_all(
                     f'MARGIN RED: {util:.1f}% utilization — emergency reduce',
                     emergency=True,
@@ -8496,14 +8708,31 @@ class MMMMonitor:
                 except Exception:
                     pass
 
+            self._margin_check_fail_count = 0  # reset on success
             return result
 
         except Exception as e:
+            self._margin_check_fail_count += 1
             log.error(f"[{sid}] Margin guardian check failed: {e}")
             # L-2: Intentional fail-open design — if margin check crashes,
             # heartbeat continues normally. Rationale: a transient API error
             # should not halt the entire strategy. The next heartbeat will
             # retry the margin check.
+            #
+            # R3 fix: If failures persist across N consecutive beats, fire a
+            # critical alert so the operator knows margin oversight is degraded.
+            _MARGIN_FAIL_ALERT_THRESHOLD = 5
+            if self._margin_check_fail_count == _MARGIN_FAIL_ALERT_THRESHOLD:
+                log.critical(
+                    f"[{sid}] MARGIN GUARDIAN: {self._margin_check_fail_count} consecutive "
+                    f"check failures — margin oversight is DEGRADED. Last error: {e}"
+                )
+                emit_safety(
+                    sid, 'margin_guardian_degraded', 'critical',
+                    f'Margin guardian has failed {self._margin_check_fail_count} consecutive beats — '
+                    f'margin oversight is degraded. Last error: {e}',
+                    {'consecutive_failures': self._margin_check_fail_count},
+                )
             return None
 
     def _get_other_sessions_lots_at_symbol(self, symbol: str) -> int:
@@ -8690,15 +8919,22 @@ class MMMMonitor:
             # Emit safety alert for human review
             try:
                 from .mmm_websocket import emit_safety
-                emit_safety(self.session_id, 'POSITION_MISSING_FROM_EXCHANGE', {
-                    'side': _side_label,
-                    'strike': strike,
-                    'lots': removed_lots,
-                    'reason': reason,
-                    'action': 'HUMAN_REVIEW — use manual close to book P&L',
-                })
-            except Exception:
-                pass
+                emit_safety(
+                    self.session_id,
+                    'POSITION_MISSING_FROM_EXCHANGE',
+                    'critical',
+                    f'RECON: {removed_lots} phantom {_side_label} lots @ {strike} removed '
+                    f'(not found on exchange). HUMAN REVIEW required — use manual close to book P&L.',
+                    {
+                        'side': _side_label,
+                        'strike': strike,
+                        'lots': removed_lots,
+                        'reason': reason,
+                        'action': 'HUMAN_REVIEW — use manual close to book P&L',
+                    }
+                )
+            except Exception as _es_err:
+                log.warning(f"[{self.session_id}] RECON: emit_safety failed: {_es_err}")
             log_activity('reconciliation_autocorrect',
                 f'RECON-FLAG: removed {removed_lots} phantom '
                 f'{_side_label} lots @ {strike} '
@@ -9969,6 +10205,203 @@ class MMMMonitor:
             testnet=testnet,
         )
 
+    # =========================================================================
+    # ██████████████████████████████████████████████████████████████████████
+    # ██                                                                  ██
+    # ██   HARD STOP GUARD — SEALED — DO NOT MODIFY                      ██
+    # ██                                                                  ██
+    # ██   This section exists because on 2026-04-17 the heartbeat-      ██
+    # ██   embedded max_loss check ran at 97-111 second intervals while  ██
+    # ██   the market moved hard against open positions. The hard stop   ██
+    # ██   did not fire in time.                                         ██
+    # ██                                                                  ██
+    # ██   This guard is an INDEPENDENT thread that checks max_loss      ██
+    # ██   every HARD_STOP_INTERVAL seconds — regardless of heartbeat   ██
+    # ██   speed, watchdog restarts, or exchange latency.               ██
+    # ██                                                                  ██
+    # ██   MODIFICATION REQUIRES EXPLICIT WRITTEN PERMISSION FROM THE   ██
+    # ██   REPO OWNER. Any AI or automated tool MUST NOT change these   ██
+    # ██   functions without that permission. This is a real-money       ██
+    # ██   safety invariant.                                             ██
+    # ██                                                                  ██
+    # ██   SEALED INVARIANTS (all must stay intact):                     ██
+    # ██   1. Guard runs every HARD_STOP_INTERVAL=10s, not tied to HB   ██
+    # ██   2. Uses compute_current_total_pnl — same formula as safety   ██
+    # ██   3. On breach: Telegram → emergency close → stop. All three.  ██
+    # ██   4. _hard_stop_fired Event prevents double-fire with HB path  ██
+    # ██   5. Uses real OS thread (not eventlet greenlet)               ██
+    # ██   6. Creates its own asyncio event loop for the close call     ██
+    # ██                                                                  ██
+    # ██████████████████████████████████████████████████████████████████████
+    # =========================================================================
+
+    # HARD_STOP_INTERVAL: seconds between max_loss checks in the guard thread.
+    # Must remain at 10s or lower. Increasing this weakens the safety invariant.
+    HARD_STOP_INTERVAL = 10  # DO NOT INCREASE — sealed 2026-04-17
+
+    def _start_hard_stop_guard(self):
+        """Launch the independent hard stop guard thread.
+
+        SEALED — DO NOT MODIFY.
+        """
+        try:
+            from eventlet.patcher import original as _ep_original
+            _RealThread = _ep_original('threading').Thread
+        except (ImportError, AttributeError):
+            _RealThread = threading.Thread
+
+        self._hard_stop_guard_thread = _RealThread(
+            target=self._run_hard_stop_guard,
+            name=f"mmm-hard-stop-guard-{self.session_id}",
+            daemon=True,
+        )
+        self._hard_stop_guard_thread.start()
+        log.info(
+            f"[{self.session_id}] Hard stop guard started "
+            f"(interval={self.HARD_STOP_INTERVAL}s)"
+        )
+
+    @sealed
+    def _run_hard_stop_guard(self):
+        """Independent max-loss enforcement thread.
+
+        SEALED — DO NOT MODIFY WITHOUT EXPLICIT OWNER PERMISSION.
+
+        Runs every HARD_STOP_INTERVAL seconds completely independent of the
+        heartbeat loop. If the heartbeat is slow, stuck, or crashed, this
+        thread STILL fires the hard stop.
+
+        Invariants (must remain intact — see block comment above):
+        1. Runs every HARD_STOP_INTERVAL seconds, not tied to heartbeat.
+        2. Uses compute_current_total_pnl(session) — identical formula to
+           check_max_loss in mmm_safety.py.
+        3. On breach: Telegram alert → _auto_close_all(emergency=True) → stop.
+           All three steps must execute even if one of them raises.
+        4. _hard_stop_fired prevents double-fire with the heartbeat path.
+        5. Never silently swallows a close failure — logs CRITICAL on error.
+        6. Default max_loss_amount MUST match mmm_safety.py (5000.0) — if the
+           param is missing, the guard must still protect the session.
+        7. Guard does NOT set _running=False before _auto_close_all. The
+           _auto_close_all function calls self.stop() at the end, which
+           properly sets _running=False, saves session status=STOPPED, and
+           fires the stop Telegram alert. Setting _running=False early would
+           cause stop() to no-op (if not self._running: return).
+        8. When P&L approaches max_loss (≥70%), guard forces a fresh heartbeat
+           via _force_event so unrealized_pnl cache is refreshed. Without this,
+           cached unrealized_pnl may be 30-111s stale and the guard would miss
+           a fast-moving market.
+        """
+        sid = self.session_id
+        # Default must match mmm_safety.check_max_loss (5000.0).
+        # DO NOT change this to 0 — that would disable the guard for any
+        # session where max_loss_amount is not explicitly configured.
+        _GUARD_DEFAULT_MAX_LOSS = 5000.0
+
+        # Brief startup delay: give the first heartbeat time to populate
+        # session['unrealized_pnl'] before we start checking against it.
+        for _ in range(self.HARD_STOP_INTERVAL):
+            if not self._running or self._stop_event.is_set():
+                return
+            time.sleep(1)
+
+        while self._running and not self._stop_event.is_set():
+            try:
+                session = self.session
+                params = session.get('params', {})
+                max_loss = float(params.get('max_loss_amount', _GUARD_DEFAULT_MAX_LOSS) or _GUARD_DEFAULT_MAX_LOSS)
+
+                if max_loss > 0 and not self._hard_stop_fired.is_set():
+                    from .mmm_pnl_core import compute_current_total_pnl as _hs_pnl
+                    total_pnl = _hs_pnl(session)
+
+                    if total_pnl <= -max_loss:
+                        # ── Claim the breach — prevent heartbeat double-fire ───
+                        if self._hard_stop_fired.is_set():
+                            # Heartbeat already claimed it — exit cleanly
+                            break
+                        self._hard_stop_fired.set()
+
+                        reason = (
+                            f"HARD STOP GUARD: P&L ${total_pnl:.2f} breached "
+                            f"-${max_loss:.2f} limit "
+                            f"(detected by independent guard thread at "
+                            f"{self.HARD_STOP_INTERVAL}s interval)"
+                        )
+                        log.critical(f"[{sid}] 🛑 {reason}")
+
+                        # ── Step 1: Signal heartbeat to stop (but do NOT set
+                        #    _running=False — _auto_close_all→stop() needs it) ──
+                        self._stop_event.set()
+
+                        # ── Step 2: Telegram alert ────────────────────────────
+                        try:
+                            alert_max_loss_breach(sid, total_pnl, max_loss)
+                        except Exception as _tg_e:
+                            log.error(
+                                f"[{sid}] Hard stop guard: Telegram alert failed "
+                                f"(continuing with close): {_tg_e}"
+                            )
+
+                        # ── Step 3: Emergency close in own event loop ─────────
+                        # _auto_close_all calls self.stop() at the end which
+                        # sets _running=False, saves session, fires stop alert.
+                        _hs_loop = None
+                        try:
+                            _hs_loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(_hs_loop)
+                            _hs_loop.run_until_complete(
+                                self._auto_close_all(reason, emergency=True)
+                            )
+                        except Exception as _close_e:
+                            log.critical(
+                                f"[{sid}] HARD STOP GUARD: _auto_close_all raised "
+                                f"— MANUAL INTERVENTION REQUIRED: {_close_e}"
+                            )
+                            # _auto_close_all crashed before reaching stop().
+                            # Force-stop the session so it doesn't restart.
+                            try:
+                                self.stop(reason)
+                            except Exception:
+                                self._running = False
+                        finally:
+                            if _hs_loop is not None:
+                                try:
+                                    _hs_loop.close()
+                                except Exception:
+                                    pass
+
+                        # Guard's work is done — exit the loop
+                        break
+
+                    elif total_pnl <= -max_loss * 0.7:
+                        # ── APPROACHING MAX LOSS — force heartbeat to refresh
+                        #    unrealized_pnl cache so next guard check sees fresh
+                        #    data. Without this, cached P&L could be 30-111s stale
+                        #    and the guard would miss a fast-moving market. ──────
+                        if not self._force_event.is_set():
+                            self._force_event.set()
+                            log.warning(
+                                f"[{sid}] Hard stop guard: P&L ${total_pnl:.2f} "
+                                f"at {abs(total_pnl / max_loss) * 100:.0f}% of "
+                                f"-${max_loss:.2f} limit. Forced fresh heartbeat "
+                                f"to update unrealized P&L cache."
+                            )
+
+            except Exception as _guard_e:
+                log.error(
+                    f"[{sid}] Hard stop guard check error (non-fatal, will retry): "
+                    f"{_guard_e}"
+                )
+
+            # Wait for next check — sleep in 1s increments so stop_event is
+            # detected quickly without burning CPU.
+            for _ in range(self.HARD_STOP_INTERVAL):
+                if not self._running or self._stop_event.is_set():
+                    return
+                time.sleep(1)
+
+        log.debug(f"[{sid}] Hard stop guard exited cleanly")
+
     # ── Proactive Close-at-5 Watcher ──────────────────────────────────────────
     # Runs independently of the main heartbeat on a shorter interval.
     # Detects when any position's bid drops to close_at_threshold and immediately
@@ -10011,27 +10444,33 @@ class MMMMonitor:
             except (TypeError, ValueError):
                 near_expiry_interval = 10
 
-            force_enabled = bool(params.get('close_at_watcher_force_enabled', False))
+            _fe_raw = params.get('close_at_watcher_force_enabled', False)
+            force_enabled = str(_fe_raw).lower() in ('true', '1', 'yes', 'on')  # F4: safe bool
             try:
                 hours_before = float(params.get('close_at_watch_hours_before_expiry', 3.0) or 3.0)
             except (TypeError, ValueError):
                 hours_before = 3.0
 
-            # Check if we're within the auto-activate window
+            # Check if we're within the auto-activate window.
+            # Fix B (profitability audit): hours_before=0 means "always on" per docs/config.
+            # The old code used `hours_before > 0` which made 0 evaluate to never-in-window,
+            # silently disabling proactive close triggers whenever the param was set to 0.
             mins_to_exp = self._get_minutes_to_expiry()
-            in_window = (
+            near_expiry_window = (
                 hours_before > 0
                 and mins_to_exp is not None
                 and mins_to_exp <= hours_before * 60
             )
+            in_window = (hours_before == 0) or near_expiry_window  # 0 = always on
 
             if not force_enabled and not in_window:
                 # Neither force-enabled nor in expiry window — sleep and recheck in 60s
                 self._stop_event.wait(timeout=60)
                 continue
 
-            # Use faster interval when in expiry window
-            interval = near_expiry_interval if in_window else normal_interval
+            # Use faster near-expiry interval only when actually near expiry.
+            # When always-on (hours_before=0), use normal_interval to avoid unnecessary churn.
+            interval = near_expiry_interval if near_expiry_window else normal_interval
             if interval <= 0:
                 self._stop_event.wait(timeout=60)
                 continue
@@ -10865,51 +11304,100 @@ _monitors: Dict[str, MMMMonitor] = {}
 _monitors_lock = threading.Lock()
 
 
-def start_session_monitor(session_id: str, session: Dict) -> MMMMonitor:
-    """Start a monitor for a session. Thread-safe (C-1 fix)."""
+def start_session_monitor(
+    session_id: str,
+    session: Dict,
+    context: str = 'monitor_start',
+) -> MMMMonitor:
+    """Start a monitor for a session. Thread-safe (C-1 fix).
+
+    context='monitor_start'   — user/API initiated start; strategy violations hard-block.
+    context='monitor_restore' — backend restart auto-restore; shape violations warn but
+                                do NOT block, so safety guards (max-loss, stale gen) keep
+                                running even when CE/PE strikes have drifted due to manual
+                                operator_inject actions.
+    """
     _strategy_type = _session_strategy_type(session)
     _start_violations = validate_session_for_strategy(session, _strategy_type)
     if _start_violations:
         _start_msg = '; '.join(_start_violations)
-        # Upgrade from warning to error — violations must not be ignored at start time.
-        log.error(
-            f"[{session_id}] Strategy validation (monitor_start) BLOCKED: {_start_msg}"
-        )
-        try:
-            log_activity(
-                'strategy_validation',
-                f'🚫 Monitor start BLOCKED — strategy invariant violated: {_start_msg}',
-                session_id,
-                'error',
-                {
-                    'strategy_type': _strategy_type,
-                    'context': 'monitor_start',
-                    'violations': _start_violations,
-                },
+        if context == 'monitor_restore':
+            # On backend restart, log a CRITICAL warning but allow the monitor to
+            # start so that max-loss, stale-gen, and other safety guards remain active.
+            # The operator must reconcile the shape mismatch manually.
+            log.critical(
+                f"[{session_id}] Strategy shape violation on restore (monitor will run in "
+                f"degraded state — reconcile manually): {_start_msg}"
             )
-        except Exception:
-            pass
-        try:
-            emit_safety(
-                session_id,
-                'strategy_invariant',
-                'critical',
-                f'Monitor start BLOCKED: strategy invariant violated — {_start_msg}',
-                {
-                    'strategy_type': _strategy_type,
-                    'context': 'monitor_start',
-                    'violations': _start_violations,
-                },
+            try:
+                log_activity(
+                    'strategy_validation',
+                    f'⚠️ Monitor restored with shape violation — reconcile manually: {_start_msg}',
+                    session_id,
+                    'warning',
+                    {
+                        'strategy_type': _strategy_type,
+                        'context': context,
+                        'violations': _start_violations,
+                    },
+                )
+            except Exception:
+                pass
+            try:
+                emit_safety(
+                    session_id,
+                    'strategy_invariant',
+                    'warning',
+                    f'Monitor restored with shape violation — reconcile CE/PE strikes manually: {_start_msg}',
+                    {
+                        'strategy_type': _strategy_type,
+                        'context': context,
+                        'violations': _start_violations,
+                    },
+                )
+            except Exception:
+                pass
+            # Fall through — allow monitor to start despite violation.
+        else:
+            # User-initiated start: hard block as before.
+            log.error(
+                f"[{session_id}] Strategy validation (monitor_start) BLOCKED: {_start_msg}"
             )
-        except Exception:
-            pass
-        # PREFLIGHT GATE: raise so all callers are forced to handle this.
-        # The API endpoints are wrapped in try/except Exception → 400/500 response.
-        # Background thread callers (retry-partial-entry) will log and die,
-        # which is safer than running a monitor on a structurally invalid session.
-        raise ValueError(
-            f'[{session_id}] Monitor start blocked — strategy invariant violated: {_start_msg}'
-        )
+            try:
+                log_activity(
+                    'strategy_validation',
+                    f'🚫 Monitor start BLOCKED — strategy invariant violated: {_start_msg}',
+                    session_id,
+                    'error',
+                    {
+                        'strategy_type': _strategy_type,
+                        'context': context,
+                        'violations': _start_violations,
+                    },
+                )
+            except Exception:
+                pass
+            try:
+                emit_safety(
+                    session_id,
+                    'strategy_invariant',
+                    'critical',
+                    f'Monitor start BLOCKED: strategy invariant violated — {_start_msg}',
+                    {
+                        'strategy_type': _strategy_type,
+                        'context': context,
+                        'violations': _start_violations,
+                    },
+                )
+            except Exception:
+                pass
+            # PREFLIGHT GATE: raise so all callers are forced to handle this.
+            # The API endpoints are wrapped in try/except Exception → 400/500 response.
+            # Background thread callers (retry-partial-entry) will log and die,
+            # which is safer than running a monitor on a structurally invalid session.
+            raise ValueError(
+                f'[{session_id}] Monitor start blocked — strategy invariant violated: {_start_msg}'
+            )
 
     # Check-then-stop under lock to prevent TOCTOU race
     with _monitors_lock:

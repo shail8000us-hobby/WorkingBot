@@ -400,6 +400,7 @@ export default function MMMXDashboard() {
                   onStop={id => requestSessionAction('stop', id)}
                   onDeploy={id => requestDeployAction(id)}
                   onForceHB={id => requestSessionAction('force_heartbeat', id)}
+                  onKillSwitch={id => runControl(`kill_switch:${id}`, () => mmmxService.killSwitch({ scope: 'session', session_id: id, reason: 'card kill switch' }))}
                   controlSafety={cardSafety}
                   allSessions={allSessions}
                 />

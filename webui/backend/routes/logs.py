@@ -54,9 +54,9 @@ def get_logs():
         from pathlib import Path
         BASE_DIR = Path(__file__).parent.parent.parent.parent
         
-        lines = request.args.get('lines', 30, type=int)
+        lines = request.args.get('lines', 200, type=int)
         instance = request.args.get('instance')
-        
+
         # Cap at reasonable limit to prevent memory issues
         lines = min(lines, 10000)
         
@@ -142,7 +142,7 @@ def get_logs_recent():
         from pathlib import Path
         BASE_DIR = Path(__file__).parent.parent.parent.parent
         
-        lines = request.args.get('lines', 30, type=int)
+        lines = request.args.get('lines', 200, type=int)
         bot_type = request.args.get('bot_type', 'trading', type=str)
         log_file = request.args.get('log_file', None, type=str)
         instance = request.args.get('instance')

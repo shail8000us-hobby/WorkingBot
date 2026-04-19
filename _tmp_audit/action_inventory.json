@@ -1,0 +1,890 @@
+[
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAlgoCalculations.js",
+    "line": 365,
+    "call": "mmmService.getWalkthrough",
+    "handler": "fetchWalkthrough",
+    "button_label_hint": null,
+    "line_text": "const resp = await mmmService.getWalkthrough(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMGreeksPanel.js",
+    "line": 86,
+    "call": "mmmService.getGreeksIV",
+    "handler": "fetchGreeks",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getGreeksIV(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+    "line": 157,
+    "call": "mmmService.getChainData",
+    "handler": "fetchChain",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getChainData(expiry);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMStrikeSelector.js",
+    "line": 217,
+    "call": "mmmService.validateSelection",
+    "handler": "handleValidate",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.validateSelection({"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+    "line": 440,
+    "call": "mmmService.getExchangeMargin",
+    "handler": "fetchExchangeMargin",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getExchangeMargin();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+    "line": 458,
+    "call": "mmmService.getMarginStatus",
+    "handler": "fetchGuardianStatus",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getMarginStatus(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMMarginGuardianPanel.js",
+    "line": 480,
+    "call": "mmmService.updateSessionParams",
+    "handler": "handleToggleGuardian",
+    "button_label_hint": null,
+    "line_text": "await mmmService.updateSessionParams(sessionId, {"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMPerformancePanel.js",
+    "line": 76,
+    "call": "mmmService.getSessionPerformance",
+    "handler": "fetchPerformance",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getSessionPerformance(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+    "line": 225,
+    "call": "mmmService.enableReverseMode",
+    "handler": "handleEnable",
+    "button_label_hint": null,
+    "line_text": "await mmmService.enableReverseMode(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+    "line": 239,
+    "call": "mmmService.disableReverseMode",
+    "handler": "handleDisable",
+    "button_label_hint": null,
+    "line_text": "await mmmService.disableReverseMode(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMReverseModePanel.js",
+    "line": 254,
+    "call": "mmmService.closeAllReversePositions",
+    "handler": "handleCloseAll",
+    "button_label_hint": null,
+    "line_text": "await mmmService.closeAllReversePositions(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+    "line": 398,
+    "call": "mmmService.togglePerpHedge",
+    "handler": "handleToggle",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.togglePerpHedge(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMPerpHedgePanel.js",
+    "line": 419,
+    "call": "mmmService.closePerpHedge",
+    "handler": "handleClose",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.closePerpHedge(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 73,
+    "call": "mmmService.getAuditTrades",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAuditTrades(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 188,
+    "call": "mmmService.getAuditStrikeSummary",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAuditStrikeSummary(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 279,
+    "call": "mmmService.getAuditPnL",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAuditPnL(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 358,
+    "call": "mmmService.getAuditEvents",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAuditEvents(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 444,
+    "call": "mmmService.getAuditReconcile",
+    "handler": "run",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAuditReconcile(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTradeAuditPanel.js",
+    "line": 574,
+    "call": "mmmService.getAuditReconcile",
+    "handler": "ReconcileBanner",
+    "button_label_hint": null,
+    "line_text": "mmmService.getAuditReconcile(sessionId)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+    "line": 121,
+    "call": "mmmService.getExchangePositions",
+    "handler": "handleScan",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getExchangePositions(null);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+    "line": 282,
+    "call": "mmmService.adoptPositions",
+    "handler": "handleAdopt",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.adoptPositions("
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAdoptPanel.js",
+    "line": 300,
+    "call": "mmmService.startSession",
+    "handler": "handleAdopt",
+    "button_label_hint": null,
+    "line_text": "const startResult = await mmmService.startSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMExecutionLogPanel.js",
+    "line": 110,
+    "call": "mmmService.getExecutionEvents",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getExecutionEvents(sessionId, 100);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAnalyticsTable.js",
+    "line": 45,
+    "call": "mmmService.getSessionAnalytics",
+    "handler": "fetchAnalytics",
+    "button_label_hint": null,
+    "line_text": "const data = await mmmService.getSessionAnalytics(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAnalyticsSummary.js",
+    "line": 46,
+    "call": "mmmService.getSessionAnalytics",
+    "handler": "fetchAnalytics",
+    "button_label_hint": null,
+    "line_text": "const data = await mmmService.getSessionAnalytics(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMAnalyticsPanel.js",
+    "line": 106,
+    "call": "mmmService.getSessionAnalytics",
+    "handler": "fetchAnalytics",
+    "button_label_hint": null,
+    "line_text": "const response = await mmmService.getSessionAnalytics(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMActivityFeed.js",
+    "line": 469,
+    "call": "mmmService.getActivities",
+    "handler": "fetchActivities",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getActivities(80, sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+    "line": 925,
+    "call": "mmmService.getSession",
+    "handler": "fetchSessionData",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMSettingsDialog.js",
+    "line": 1100,
+    "call": "mmmService.updateSessionParams",
+    "handler": "sessionStatus",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.updateSessionParams(sessionId, changedParams);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 274,
+    "call": "mmmService.getExpiries",
+    "handler": "fetchExpiries",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getExpiries();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 297,
+    "call": "mmmService.getSpotPrice",
+    "handler": "fetchSpotPrice",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSpotPrice();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 335,
+    "call": "mmmService.previewStrikes",
+    "handler": "handlePreviewStrikes",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.previewStrikes({"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 378,
+    "call": "mmmService.previewAtmStraddle",
+    "handler": "handlePreviewAtmStraddle",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.previewAtmStraddle({ expiry: selectedExpiry });"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 419,
+    "call": "mmmService.initSessionFresh",
+    "handler": "handleInitFresh",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.initSessionFresh(sessionId, {"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 438,
+    "call": "mmmService.startSession",
+    "handler": "handleInitFresh",
+    "button_label_hint": null,
+    "line_text": "const startResult = await mmmService.startSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 500,
+    "call": "mmmService.initSessionImport",
+    "handler": "handleInitImport",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.initSessionImport(sessionId, {"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 518,
+    "call": "mmmService.startSession",
+    "handler": "handleInitImport",
+    "button_label_hint": null,
+    "line_text": "const startResult = await mmmService.startSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 570,
+    "call": "mmmService.initSessionFresh",
+    "handler": "handleManualSelectionComplete",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.initSessionFresh(sessionId, {"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 588,
+    "call": "mmmService.startSession",
+    "handler": "handleManualSelectionComplete",
+    "button_label_hint": null,
+    "line_text": "const startResult = await mmmService.startSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMConfigPanel.js",
+    "line": 631,
+    "call": "mmmService.executeEntry",
+    "handler": "handleExecuteEntry",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.executeEntry(sessionId, mode);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+    "line": 160,
+    "call": "mmmService.pinTrigger",
+    "handler": "handleMouseUp",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.pinTrigger(sessionId, side, null, true);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+    "line": 173,
+    "call": "mmmService.pinTrigger",
+    "handler": "handleMouseUp",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.pinTrigger(sessionId, side, finalVal);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMTriggerGauge.js",
+    "line": 189,
+    "call": "mmmService.pinTrigger",
+    "handler": "handleUnpin",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.pinTrigger(sessionId, side, null, true);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 130,
+    "call": "mmmService.getAggregatePnL",
+    "handler": "fetchAgg",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getAggregatePnL();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 1354,
+    "call": "mmmService.getExpiries",
+    "handler": "fetchData",
+    "button_label_hint": null,
+    "line_text": "mmmService.getExpiries().catch(() => ({ success: false })),"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 1355,
+    "call": "mmmService.getSpotPrice",
+    "handler": "fetchData",
+    "button_label_hint": null,
+    "line_text": "mmmService.getSpotPrice().catch(() => ({ success: false })),"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 1356,
+    "call": "mmmService.getDTEPresets",
+    "handler": "fetchData",
+    "button_label_hint": null,
+    "line_text": "mmmService.getDTEPresets().catch(() => ({ success: false })),"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 1518,
+    "call": "mmmService.createSession",
+    "handler": "handleCreate",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.createSession(config);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 1882,
+    "call": "mmmService.getBeatHealth",
+    "handler": "fetchHealth",
+    "button_label_hint": null,
+    "line_text": "const data = await mmmService.getBeatHealth(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2132,
+    "call": "mmmService.reducePosition",
+    "handler": "handleSubmit",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.reducePosition(session.session_id, side, lots, strike);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2360,
+    "call": "mmmService.getOptionChain",
+    "handler": "fetchChain",
+    "button_label_hint": null,
+    "line_text": "const data = await mmmService.getOptionChain(session.session_id);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2403,
+    "call": "mmmService.injectPosition",
+    "handler": "handleSubmit",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.injectPosition("
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2795,
+    "call": "mmmService.updateSessionParams",
+    "handler": "handleDangerousModeToggle",
+    "button_label_hint": null,
+    "line_text": "await mmmService.updateSessionParams(session.session_id, { dangerous_mode: false });"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2808,
+    "call": "mmmService.updateSessionParams",
+    "handler": "handleDangerConfirm",
+    "button_label_hint": null,
+    "line_text": "await mmmService.updateSessionParams(session.session_id, { dangerous_mode: true });"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2932,
+    "call": "mmmService.setActiveStrike",
+    "handler": "handleSetActiveStrike",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.setActiveStrike(session.session_id, sideKey, strike);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2953,
+    "call": "mmmService.closeStrike",
+    "handler": "handleCloseStrikeConfirm",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.closeStrike(session.session_id, closeStrikeDlg.side, closeStrikeDlg.strike);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 2983,
+    "call": "mmmService.adjustActiveLots",
+    "handler": "handleAdjustLotsConfirm",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.adjustActiveLots(session.session_id, side, delta);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4500,
+    "call": "mmmService.getSession",
+    "handler": "fetchFullSession",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSession(selectedSessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4602,
+    "call": "mmmService.startSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.startSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4606,
+    "call": "mmmService.pauseSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.pauseSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4609,
+    "call": "mmmService.resumeSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.resumeSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4612,
+    "call": "mmmService.stopSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.stopSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4615,
+    "call": "mmmService.forceHeartbeat",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.forceHeartbeat(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4631,
+    "call": "mmmService.exitAllSession",
+    "handler": "peLots",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.exitAllSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4635,
+    "call": "mmmService.killSwitch",
+    "handler": "peLots",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.killSwitch(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4639,
+    "call": "mmmService.deleteSession",
+    "handler": "peLots",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.deleteSession(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4653,
+    "call": "mmmService.retryPartialLeg",
+    "handler": "peLots",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.retryPartialLeg(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4667,
+    "call": "mmmService.resolvePartialEntry",
+    "handler": "peLots",
+    "button_label_hint": null,
+    "line_text": "result = await mmmService.resolvePartialEntry(sessionId, ceFill, peFill);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMDashboard.js",
+    "line": 4709,
+    "call": "mmmService.submitBothSidesDecision",
+    "handler": "handleBothSidesDecision",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.submitBothSidesDecision(alertSessionId, decision, params);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMRegimePanel.js",
+    "line": 415,
+    "call": "mmmService.getRegimeStatus",
+    "handler": "fetchRegime",
+    "button_label_hint": null,
+    "line_text": "const data = await mmmService.getRegimeStatus(session.session_id);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMContext.js",
+    "line": 191,
+    "call": "mmmService.getSessions",
+    "handler": "fetchSessions",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSessions(false, true);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMContext.js",
+    "line": 268,
+    "call": "mmmService.getSessions",
+    "handler": "fetchActiveSessions",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSessions(true, true);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMContext.js",
+    "line": 303,
+    "call": "mmmService.healthCheck",
+    "handler": "checkHealth",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.healthCheck();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/MMMContext.js",
+    "line": 316,
+    "call": "mmmService.getParamsInfo",
+    "handler": "fetchParamsInfo",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getParamsInfo();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+    "line": 43,
+    "call": "mmmService.getSessionParams",
+    "handler": "fetchParams",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.getSessionParams(sessionId);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmm/hooks/useMMMParams.js",
+    "line": 97,
+    "call": "mmmService.updateSessionParams",
+    "handler": "save",
+    "button_label_hint": null,
+    "line_text": "const result = await mmmService.updateSessionParams(sessionId, changedParams);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+    "line": 48,
+    "call": "mmmxService.getExpirations",
+    "handler": "MMMXCreateSessionDialog",
+    "button_label_hint": null,
+    "line_text": "mmmxService.getExpirations('BTC').then(res => {"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+    "line": 71,
+    "call": "mmmxService.createSession",
+    "handler": "handleCreate",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.createSession(form);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+    "line": 245,
+    "call": "mmmxService.scanStrikes",
+    "handler": "blankForm",
+    "button_label_hint": null,
+    "line_text": "mmmxService.scanStrikes(sessionId, otmPct)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXCreateSessionDialog.js",
+    "line": 315,
+    "call": "mmmxService.deployTranche1",
+    "handler": "handleDeploy",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.deployTranche1(sessionId, payload);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+    "line": 272,
+    "call": "mmmxService.getSession",
+    "handler": "loadSession",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.getSession(id);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXContext.js",
+    "line": 306,
+    "call": "mmmxService.getActivityLog",
+    "handler": "loadActivity",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.getActivityLog(id, 50);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 123,
+    "call": "mmmxService.listSessions",
+    "handler": "fetchSessions",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.listSessions();"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 168,
+    "call": "mmmxService.pauseSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 168,
+    "call": "mmmxService.resumeSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 168,
+    "call": "mmmxService.stopSession",
+    "handler": "handleControl",
+    "button_label_hint": null,
+    "line_text": "const fn = { pause: () => mmmxService.pauseSession(sid), resume: () => mmmxService.resumeSession(sid), stop: () => mmmxService.stopSession(sid) }[action];"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 177,
+    "call": "mmmxService.forceHeartbeat",
+    "handler": "handleForceHeartbeat",
+    "button_label_hint": null,
+    "line_text": "await runControl(`force_heartbeat:${sid}`, () => mmmxService.forceHeartbeat(sid));"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 190,
+    "call": "mmmxService.reconcile",
+    "handler": "run",
+    "button_label_hint": null,
+    "line_text": "const out = await mmmxService.reconcile(sid);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 263,
+    "call": "mmmxService.killSwitch",
+    "handler": "handleKillSession",
+    "button_label_hint": null,
+    "line_text": "await runControl(`kill_switch:${session.session_id}`, () => mmmxService.killSwitch({ scope: 'session', session_id: session.session_id, reason: 'operator kill switch' }));"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 277,
+    "call": "mmmxService.killSwitch",
+    "handler": "handleKillGlobal",
+    "button_label_hint": null,
+    "line_text": "await runControl('kill_switch:global', () => mmmxService.killSwitch({ scope: 'global', reason: 'operator global kill switch' }));"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 403,
+    "call": "mmmxService.killSwitch",
+    "handler": "executeConfirmedAction",
+    "button_label_hint": null,
+    "line_text": "onKillSwitch={id => runControl(`kill_switch:${id}`, () => mmmxService.killSwitch({ scope: 'session', session_id: id, reason: 'card kill switch' }))}"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/MMMXDashboard.js",
+    "line": 510,
+    "call": "mmmxService.forceHeartbeat",
+    "handler": "executeConfirmedAction",
+    "button_label_hint": null,
+    "line_text": "onForceHeartbeat={id => mmmxService.forceHeartbeat(id)}"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+    "line": 19,
+    "call": "mmmxService.reconcile",
+    "handler": "runRecon",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.reconcile(session.session_id);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXReconcileTab.js",
+    "line": 36,
+    "call": "mmmxService.confirmReconcile",
+    "handler": "run",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.confirmReconcile(session.session_id, divId, action);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXProfitBookingTab.js",
+    "line": 24,
+    "call": "mmmxService.profitBook",
+    "handler": "apply",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.profitBook(session.session_id, trancheId, pct);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 71,
+    "call": "mmmxService.getHealth",
+    "handler": "MMMXStatusTab",
+    "button_label_hint": null,
+    "line_text": "mmmxService.getHealth().then(r => { if (r.ok) setHealth(r.data); }).catch(() => {});"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 82,
+    "call": "mmmxService.scanStrikes",
+    "handler": "MMMXStatusTab",
+    "button_label_hint": null,
+    "line_text": "mmmxService.scanStrikes(id, otmPct)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 88,
+    "call": "mmmxService.checkGates",
+    "handler": "MMMXStatusTab",
+    "button_label_hint": null,
+    "line_text": "mmmxService.checkGates(id, session.expiry_ddmmyy)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 156,
+    "call": "mmmxService.scanStrikes",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": "mmmxService.scanStrikes(session.session_id, p.otm_distance_pct ?? 15)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 254,
+    "call": "mmmxService.scanStrikes",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": "mmmxService.scanStrikes(session.session_id, p.otm_distance_pct ?? 15)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 259,
+    "call": "mmmxService.checkGates",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": "mmmxService.checkGates(session.session_id, expiry)"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 427,
+    "call": "mmmxService.pauseSession",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": ": act('pause', () => mmmxService.pauseSession(session.session_id), 'Paused')}>"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 439,
+    "call": "mmmxService.forceHeartbeat",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": "() => (onForceHeartbeat ? onForceHeartbeat(session.session_id) : mmmxService.forceHeartbeat(session.session_id)),"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 448,
+    "call": "mmmxService.resumeSession",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": ": act('resume', () => mmmxService.resumeSession(session.session_id), 'Resumed')}>"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 456,
+    "call": "mmmxService.stopSession",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": ": act('stop', () => mmmxService.stopSession(session.session_id), 'Stopped')}>"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXStatusTab.js",
+    "line": 463,
+    "call": "mmmxService.reconcile",
+    "handler": "act",
+    "button_label_hint": null,
+    "line_text": ": act('reconcile', () => mmmxService.reconcile(session.session_id), 'Reconcile triggered')}>"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+    "line": 15,
+    "call": "mmmxService.getParamHistory",
+    "handler": "ParamHistory",
+    "button_label_hint": null,
+    "line_text": "mmmxService.getParamHistory(sessionId, 20).then(r => { if (r.ok) setHistory(r.data ?? []); }).catch(() => {});"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+    "line": 53,
+    "call": "mmmxService.hotReloadParams",
+    "handler": "apply",
+    "button_label_hint": null,
+    "line_text": "? () => runControl(controlKey, () => mmmxService.hotReloadParams(session.session_id, patch))"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/tabs/MMMXParametersTab.js",
+    "line": 54,
+    "call": "mmmxService.hotReloadParams",
+    "handler": "apply",
+    "button_label_hint": null,
+    "line_text": ": () => mmmxService.hotReloadParams(session.session_id, patch);"
+  },
+  {
+    "file": "webui/frontend/src/components/mmmx/panels/MMMXTradeAuditPanel.js",
+    "line": 35,
+    "call": "mmmxService.getAuditLog",
+    "handler": "load",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmxService.getAuditLog(session.session_id, limit);"
+  },
+  {
+    "file": "webui/frontend/src/components/MMMInstitutionalAnalytics.js",
+    "line": 54,
+    "call": "mmmService.getAggregatedAnalytics",
+    "handler": "fetch",
+    "button_label_hint": null,
+    "line_text": "const res = await mmmService.getAggregatedAnalytics();"
+  }
+]

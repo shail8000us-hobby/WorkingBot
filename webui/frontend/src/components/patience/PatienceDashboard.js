@@ -621,6 +621,7 @@ export default function PatienceDashboard() {
   const [editCard,     setEditCard]     = useState(null);
   const [error,        setError]        = useState(null);
   const [showKillModal, setShowKillModal] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState({ open: false, title: '', message: '', danger: false, onConfirm: null });
   const [executingRound, setExecutingRound] = useState(null);
   const [wsEvents,     setWsEvents]     = useState([]);
   const [ivPct,        setIvPct]        = useState(() => readWarmJSON('/api/patience/iv/current')?.percentile ?? null);
@@ -747,23 +748,38 @@ export default function PatienceDashboard() {
   const disarmCard   = async id => { try { await patienceAPI.disarmCard(id);   fetchCards(); } catch (e) { setError(e.message); } };
   const resumeCard   = async id => { try { await patienceAPI.resumeCard(id);   fetchCards(); } catch (e) { setError(e.message); } };
   const pauseCard    = async id => { try { await patienceAPI.pauseCard(id);    fetchCards(); } catch (e) { setError(e.message); } };
-  const cancelCard   = async id => {
-    if (!window.confirm('Cancel this card?')) return;
-    try { await patienceAPI.cancelCard(id); fetchCards(); setSelectedCard(s => s?.card_id === id ? null : s); }
-    catch (e) { setError(e.message); }
+  const cancelCard   = id => {
+    setConfirmDialog({
+      open: true, title: 'Cancel Card?', message: 'Cancel this card?', danger: false,
+      onConfirm: async () => {
+        setConfirmDialog(d => ({ ...d, open: false }));
+        try { await patienceAPI.cancelCard(id); fetchCards(); setSelectedCard(s => s?.card_id === id ? null : s); }
+        catch (e) { setError(e.message); }
+      },
+    });
   };
-  const deleteCard   = async id => {
-    if (!window.confirm('Permanently delete this card and all its legs?')) return;
-    try { await patienceAPI.deleteCard(id); fetchCards(); setSelectedCard(s => s?.card_id === id ? null : s); }
-    catch (e) { setError(e.message); }
+  const deleteCard   = id => {
+    setConfirmDialog({
+      open: true, title: 'Delete Card?', message: 'Permanently delete this card and all its legs?', danger: true,
+      onConfirm: async () => {
+        setConfirmDialog(d => ({ ...d, open: false }));
+        try { await patienceAPI.deleteCard(id); fetchCards(); setSelectedCard(s => s?.card_id === id ? null : s); }
+        catch (e) { setError(e.message); }
+      },
+    });
   };
   const executeNowCard = async id => {
     try {
       const res = await patienceAPI.getStatus();
       if (!res.data?.running) { setError('Engine not running — start it first.'); return; }
     } catch {}
-    if (!window.confirm('Execute NOW (bypass trigger)?')) return;
-    try { await patienceAPI.executeNow(id); fetchCards(); } catch (e) { setError(e.message); }
+    setConfirmDialog({
+      open: true, title: 'Execute Now?', message: 'Execute NOW (bypass trigger)?', danger: true,
+      onConfirm: async () => {
+        setConfirmDialog(d => ({ ...d, open: false }));
+        try { await patienceAPI.executeNow(id); fetchCards(); } catch (e) { setError(e.message); }
+      },
+    });
   };
   const cloneCard = async card => {
     const now  = new Date();
@@ -787,15 +803,25 @@ export default function PatienceDashboard() {
     const card = cards.find(c => c.card_id === id);
     if (card) setFullDetailCard(card);
   };
-  const armAll = async () => {
-    if (!window.confirm('ARM ALL draft cards?')) return;
-    try { const r = await patienceAPI.armAll(); alert(`Armed ${r.data.armed} cards.`); fetchCards(); }
-    catch (e) { setError(e.message); }
+  const armAll = () => {
+    setConfirmDialog({
+      open: true, title: 'Arm All Draft Cards?', message: 'ARM ALL draft cards?', danger: false,
+      onConfirm: async () => {
+        setConfirmDialog(d => ({ ...d, open: false }));
+        try { const r = await patienceAPI.armAll(); addWsEvent('success', `Armed ${r.data.armed} cards.`); fetchCards(); }
+        catch (e) { setError(e.message); }
+      },
+    });
   };
-  const disarmAll = async () => {
-    if (!window.confirm('DISARM ALL armed/waiting cards?')) return;
-    try { const r = await patienceAPI.disarmAll(); alert(`Disarmed ${r.data.disarmed} cards.`); fetchCards(); }
-    catch (e) { setError(e.message); }
+  const disarmAll = () => {
+    setConfirmDialog({
+      open: true, title: 'Disarm All Cards?', message: 'DISARM ALL armed/waiting cards?', danger: false,
+      onConfirm: async () => {
+        setConfirmDialog(d => ({ ...d, open: false }));
+        try { const r = await patienceAPI.disarmAll(); addWsEvent('success', `Disarmed ${r.data.disarmed} cards.`); fetchCards(); }
+        catch (e) { setError(e.message); }
+      },
+    });
   };
   const killSwitch = async () => {
     setShowKillModal(false);
@@ -1116,6 +1142,36 @@ export default function PatienceDashboard() {
                 padding: '8px 24px', borderRadius: 6, border: 'none',
                 background: '#dc2626', color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 14,
               }}>CONFIRM KILL SWITCH</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Generic Confirm Dialog ────────────────────────────────── */}
+      {confirmDialog.open && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 2000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            background: '#0f172a',
+            border: `2px solid ${confirmDialog.danger ? '#dc2626' : '#334155'}`,
+            borderRadius: 12, padding: 24, maxWidth: 400, width: '90vw',
+          }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: confirmDialog.danger ? '#ef4444' : '#e2e8f0', marginBottom: 10 }}>
+              {confirmDialog.title}
+            </div>
+            <p style={{ color: '#94a3b8', fontSize: 13, margin: '0 0 18px' }}>{confirmDialog.message}</p>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+              <button onClick={() => setConfirmDialog(d => ({ ...d, open: false }))} style={{
+                padding: '7px 18px', borderRadius: 6, border: '1px solid #334155',
+                background: 'transparent', color: '#94a3b8', cursor: 'pointer', fontSize: 13,
+              }}>Cancel</button>
+              <button onClick={confirmDialog.onConfirm} style={{
+                padding: '7px 20px', borderRadius: 6, border: 'none',
+                background: confirmDialog.danger ? '#dc2626' : '#3b82f6',
+                color: '#fff', fontWeight: 700, cursor: 'pointer', fontSize: 13,
+              }}>Confirm</button>
             </div>
           </div>
         </div>

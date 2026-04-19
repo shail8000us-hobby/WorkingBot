@@ -331,7 +331,10 @@ def test_c17_premium_equal_to_threshold_included():
     assert len(result) == 1
 
 
-def test_c18_sort_order_frozen_before_adj_before_original_same_side():
+def test_c18_sort_order_profit_first_then_type_then_side():
+    # Fix A (profitability audit): profit is the primary sort key.
+    # original: (50-2)*5*LOT = $0.240, adjustment: (30-2)*2*LOT = $0.056, frozen: (20-2)*3*LOT = $0.054
+    # Expected order: original (highest profit) → adjustment → frozen
     ce = _side(
         original_lots=5, original_premium=50.0, original_strike=80000,
         positions=[_pos_entry('p1', 'original')],
@@ -341,9 +344,9 @@ def test_c18_sort_order_frozen_before_adj_before_original_same_side():
     result = scan_closeable_positions(_session(ce=ce), _fixed_premium(2.0))
     assert len(result) == 3
     ce_items = [r for r in result if r['side'] == 'ce']
-    assert ce_items[0]['type'] == 'frozen'
+    assert ce_items[0]['type'] == 'original'
     assert ce_items[1]['type'] == 'adjustment'
-    assert ce_items[2]['type'] == 'original'
+    assert ce_items[2]['type'] == 'frozen'
 
 
 # ─── CA1–CA12: close_position ─────────────────────────────────────────────────

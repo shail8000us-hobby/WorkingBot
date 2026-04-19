@@ -1491,6 +1491,174 @@ const OptionsPanel = () => {
     return greeks;
   }, [sortedPositions, indexPrices]);
 
+  // Header advisory (display-only): moved from Portfolio Greeks card to top header center
+  const headerAdvisory = useMemo(() => {
+    if (!sortedPositions || sortedPositions.length === 0) return null;
+
+    const parseEpochMs = (value) => {
+      if (!value) return 0;
+      const asNumber = Number(value);
+      if (Number.isFinite(asNumber) && asNumber > 0) return asNumber;
+      const asDate = Date.parse(String(value));
+      return Number.isFinite(asDate) ? asDate : 0;
+    };
+
+    const hasGreeks = (Number(aggregatedGreeks?.count) || 0) > 0;
+    const delta = Number(aggregatedGreeks?.delta) || 0;
+    const theta = Number(aggregatedGreeks?.theta) || 0;
+    const gamma = Number(aggregatedGreeks?.gamma) || 0;
+    const vega = Number(aggregatedGreeks?.vega) || 0;
+    const btcDelta = Number(aggregatedGreeks?.btcDelta) || 0;
+    const ethDelta = Number(aggregatedGreeks?.ethDelta) || 0;
+    const btcSpot = indexPrices?.BTC || 0;
+    const ethSpot = indexPrices?.ETH || 0;
+    // Dollar-equivalent directional exposure — used for scale-invariant delta scoring.
+    // Positive = long exposure (portfolio profits if price rises).
+    const dollarDeltaExposure = Math.abs(btcDelta) * btcSpot + Math.abs(ethDelta) * ethSpot;
+
+    const dataAgeSec = Math.floor((Date.now() - (lastDataUpdate || Date.now())) / 1000);
+    const isStale = dataAgeSec > 30;
+    const isWarning = dataAgeSec > 10 && dataAgeSec <= 30;
+
+    const positionsWithGreeks = sortedPositions.filter((p) => {
+      const g = p?.greeks;
+      if (!g) return false;
+      return ['delta', 'gamma', 'theta', 'vega'].some((k) => {
+        const v = Number(g[k]);
+        return Number.isFinite(v);
+      });
+    }).length;
+
+    const positionsWithQuotes = sortedPositions.filter(
+      (p) => (Number(p.best_bid) || 0) > 0 && (Number(p.best_ask) || 0) > 0
+    ).length;
+
+    const positionsWithRecentTicks = sortedPositions.filter((p) => {
+      const ts = parseEpochMs(p.ws_updated);
+      return ts > 0 && (Date.now() - ts) <= 20000;
+    }).length;
+
+    const greekCoveragePct = sortedPositions.length > 0
+      ? (positionsWithGreeks / sortedPositions.length) * 100
+      : 0;
+
+    const quoteCoveragePct = sortedPositions.length > 0
+      ? (positionsWithQuotes / sortedPositions.length) * 100
+      : 0;
+
+    const recentTickCoveragePct = sortedPositions.length > 0
+      ? (positionsWithRecentTicks / sortedPositions.length) * 100
+      : 0;
+
+    const recomputedGreeks = sortedPositions.reduce((acc, p) => {
+      const g = p?.greeks || {};
+      const size = Number(p?.size) || 0;
+      const perContractDelta = Number(g.delta) || 0;
+      const perContractGamma = Number(g.gamma) || 0;
+      const perContractTheta = Number(g.theta) || 0;
+      const perContractVega = Number(g.vega) || 0;
+      const LOT_MULT = 0.001;
+      acc.delta += perContractDelta * size * LOT_MULT;
+      acc.gamma += perContractGamma * Math.abs(size) * LOT_MULT;
+      acc.theta += (perContractTheta / 1000) * size;
+      acc.vega += (perContractVega / 1000) * Math.abs(size);
+      return acc;
+    }, { delta: 0, gamma: 0, theta: 0, vega: 0 });
+
+    const greekDrift = {
+      delta: Math.abs(delta - recomputedGreeks.delta),
+      gamma: Math.abs(gamma - recomputedGreeks.gamma),
+      theta: Math.abs(theta - recomputedGreeks.theta),
+      vega: Math.abs(vega - recomputedGreeks.vega),
+    };
+
+    // Delta may differ slightly due live gamma correction in OptionsPanel,
+    // so drift warning prioritizes theta/gamma/vega consistency.
+    const driftFlag = greekDrift.theta > 0.5 || greekDrift.gamma > 0.00005 || greekDrift.vega > 0.5;
+
+    const freshnessPct = isStale ? 0 : isWarning ? 60 : 100;
+    const driftPenalty = driftFlag ? 15 : 0;
+    const dataConfidencePct = Math.max(0, Math.min(
+      100,
+      (greekCoveragePct * 0.5)
+      + (quoteCoveragePct * 0.3)
+      + (freshnessPct * 0.2)
+      - driftPenalty
+    ));
+
+    const hasMarginData = !!(marginData && marginData.wallet_balance_usd > 0);
+    const blockedMargin = hasMarginData ? Number(marginData.blocked_margin_usd) || 0 : 0;
+    const walletBalance = hasMarginData ? Number(marginData.wallet_balance_usd) || 1 : 1;
+    const marginUtilPct = hasMarginData
+      ? Math.min((blockedMargin / walletBalance) * 100, 100)
+      : 0;
+
+    // Dollar-weighted delta score: score = 1.0 at $5K exposure, caps at 2.0 ($10K+).
+    // Falls back to BTC-unit comparison if spot price is unavailable.
+    const deltaScore = btcSpot > 0
+      ? Math.min(dollarDeltaExposure / 5000, 2)
+      : Math.min(Math.abs(delta) / 0.25, 2);
+    const gammaScore = Math.min(Math.abs(gamma) / 0.0012, 2);
+    const marginScore = hasMarginData ? Math.min(marginUtilPct / 70, 2) : 0;
+    const thetaCredit = theta > 0 ? Math.min(theta / 600, 1) : 0;
+    const advisoryScore = (0.42 * deltaScore) + (0.28 * gammaScore) + (0.22 * marginScore) - (0.12 * thetaCredit);
+
+    let signalState = 'GREEN';
+    if (!hasGreeks || isStale || dataConfidencePct < 55) {
+      signalState = 'HOLD';
+    } else if (advisoryScore >= 1.0) {
+      signalState = 'RED';
+    } else if (advisoryScore >= 0.65) {
+      signalState = 'YELLOW';
+    }
+
+    const signalMeta = {
+      GREEN: {
+        label: 'Monitor',
+        color: '#4ade80',
+        action: 'No immediate adjustment needed.',
+      },
+      YELLOW: {
+        label: 'Prepare',
+        color: '#f59e0b',
+        action: 'Prepare a light hedge or rebalance if drift persists.',
+      },
+      RED: {
+        label: 'Adjust',
+        color: '#ef4444',
+        action: 'Adjustment recommended: reduce directional or gamma risk.',
+      },
+      HOLD: {
+        label: 'Hold',
+        color: '#94a3b8',
+        action: 'Signal paused until market data confidence recovers.',
+      },
+    };
+
+    const signalReasons = [];
+    if (Math.abs(delta) >= 0.01) {
+      const deltaSign = delta >= 0 ? '+' : '';
+      const dollarStr = dollarDeltaExposure >= 1000
+        ? `≈$${(dollarDeltaExposure / 1000).toFixed(1)}K`
+        : `≈$${dollarDeltaExposure.toFixed(0)}`;
+      signalReasons.push(`Δ ${deltaSign}${delta.toFixed(4)} (${dollarStr})`);
+    }
+    if (Math.abs(gamma) >= 0.0010) signalReasons.push(`Γ ${Math.abs(gamma).toFixed(6)}`);
+    if (hasMarginData && marginUtilPct >= 60) signalReasons.push(`Margin ${marginUtilPct.toFixed(0)}%`);
+    if (isWarning || isStale) signalReasons.push(`Data age ${dataAgeSec}s`);
+    if (driftFlag) signalReasons.push('Calc drift');
+    if (signalReasons.length === 0) signalReasons.push('Balanced exposure');
+
+    return {
+      signalState,
+      label: signalMeta[signalState].label,
+      color: signalMeta[signalState].color,
+      action: signalMeta[signalState].action,
+      confidence: Math.round(dataConfidencePct),
+      reasons: signalReasons.join(' • '),
+    };
+  }, [sortedPositions, aggregatedGreeks, marginData, lastDataUpdate, indexPrices]);
+
   // Intelligent position scaling calculator
   const calculateSmartScaling = useCallback(
     (position) => {
@@ -3516,6 +3684,7 @@ const OptionsPanel = () => {
         status={status}
         positions={positions}
         positionsCount={positions.length}
+        advisory={headerAdvisory}
         customOrderCount={customOrder.length}
         hiddenCount={hiddenPositions.length}
         payoffSelectedCount={selectedPositionsForPayoff.length}

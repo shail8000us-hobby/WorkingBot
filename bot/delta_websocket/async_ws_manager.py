@@ -798,14 +798,20 @@ class AsyncWebSocketManager:
         if msg_type in self._handlers:
             handler_count = len(self._handlers[msg_type])
             
-            # Rate-limit ticker routing logs (too frequent)
-            should_log = msg_type != "v2/ticker" or (time.time() - getattr(self, '_last_ticker_route_log', 0) > 60)
-            
+            # Rate-limit high-frequency message type routing logs (v2/ticker and
+            # l1_orderbook fire dozens of times per second and bloat error logs).
+            _HIGH_FREQ_TYPES = ("v2/ticker", "l1_orderbook")
+            if msg_type in _HIGH_FREQ_TYPES:
+                _ts_key = f'_last_{msg_type.replace("/", "_")}_route_log'
+                should_log = (time.time() - getattr(self, _ts_key, 0) > 60)
+                if should_log:
+                    setattr(self, _ts_key, time.time())
+            else:
+                should_log = True
+
             if should_log:
                 log.debug(f"Routing {msg_type} to {handler_count} handler(s)")  # Keep for AI/system
                 human_log.message_routed(msg_type, handler_count)  # Trader-friendly
-                if msg_type == "v2/ticker":
-                    self._last_ticker_route_log = time.time()
             
             for handler in self._handlers[msg_type]:
                 try:
