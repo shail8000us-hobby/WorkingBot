@@ -104,6 +104,11 @@ from .mmm_strategy_dispatch import (
     resolve_strategy_type as _resolve_strategy_type,
     validate_session_for_strategy,
 )
+from .mmm_whipsaw import (
+    get_whipsaw_decision as _get_whipsaw_decision,
+    WhipsawCtx as _WhipsawCtx,
+    WhipsawDecision as _WhipsawDecision,
+)
 
 # L-2 fix: module-level import removes per-call import-lock overhead on every heartbeat.
 # Wrapped in try/except to avoid blocking startup if the activity module fails.
@@ -206,6 +211,10 @@ class MMMMonitor:
         except Exception as e:
             log.warning(f"[{session_id}] God layer init failed (non-fatal): {e}")
             self._god = None
+
+        # Per-beat whipsaw decision cache — set at Step 6, consumed at Step 7.
+        # Reset to None at the top of each _heartbeat_inner() call.
+        self._beat_whipsaw_decision = None
 
         # Regime Engine (pre-adjustment risk controls)
         self._regime_engine = MMMRegimeEngine()
@@ -1473,6 +1482,7 @@ class MMMMonitor:
         session = self.session
         sid = self.session_id
         safety_events = []  # Initialize here so it's always defined even on early returns
+        self._beat_whipsaw_decision = None  # Cleared each beat; set at Step 6
 
         # H-10 fix (redundant read removed): _run_loop already loads the full fresh
         # session from storage and sets self.session = fresh_session before calling
@@ -2494,6 +2504,23 @@ class MMMMonitor:
 
         # Step 3: Safety checks (§13-14)
         minutes_to_expiry = self._get_minutes_to_expiry()
+
+        # Phase 6: Evaluate Smart whipsaw BEFORE safety checks so its block_adjustment
+        # can gate adjustments alongside legacy safety events. Result cached on
+        # self._beat_whipsaw_decision; Step 6 reuses it (no double append_sample).
+        try:
+            self._beat_whipsaw_decision = _get_whipsaw_decision(
+                session,
+                _WhipsawCtx(
+                    ce_now=ce_now,
+                    pe_now=pe_now,
+                    spot=float(session.get('_regime_spot_price') or 0.0),
+                ),
+            )
+        except Exception as _wsd_err:
+            log.warning(f'[{sid}] Early whipsaw decision failed (non-fatal): {_wsd_err}')
+            self._beat_whipsaw_decision = None
+
         safety_events = self._safety.run_all_checks(
             session, minutes_to_expiry
         )
@@ -2686,6 +2713,35 @@ class MMMMonitor:
                             f'Auto-resumed: {event.get("message", "")}',
                             sid, 'success')
                 self.resume(event.get('message', 'Auto-resume'))
+
+        # Phase 6: Smart whipsaw block gate — runs AFTER legacy safety but before regime.
+        # If Smart engine decided to block (LOCKDOWN/OBSERVE) AND legacy did not block,
+        # honor Smart's decision here (same bypass rules: dangerous_mode, straddle_adj).
+        if (
+            not _skip_to_pnl
+            and self._beat_whipsaw_decision is not None
+            and self._beat_whipsaw_decision.block_adjustment
+            and not _dangerous_mode
+            and not _is_straddle_adj
+        ):
+            _smart_mode = self._beat_whipsaw_decision.mode
+            _smart_score = self._beat_whipsaw_decision.score
+            log.info(
+                f'[{sid}] Smart whipsaw BLOCK: mode={_smart_mode} score={_smart_score:.3f} '
+                f'— adjustments skipped this beat'
+            )
+            log_activity(
+                'whipsaw_smart_block',
+                f'Smart whipsaw engine blocked adjustments: {_smart_mode} (score={_smart_score:.3f})',
+                sid, 'warning',
+                {'engine': 'SMART', 'mode': _smart_mode, 'score': _smart_score},
+            )
+            emit_safety(
+                sid, 'whipsaw_smart_block', 'warning',
+                f'Smart whipsaw: {_smart_mode} (score={_smart_score:.3f}) — adjustments blocked',
+                {'engine': 'SMART', 'mode': _smart_mode, 'score': _smart_score},
+            )
+            _skip_to_pnl = True
 
         # ────────────────── NEW: Regime Controls ──────────────────
         # Step 3.5: Portfolio Delta/Gamma + Volatility Regime + Trend Detection
@@ -3335,18 +3391,24 @@ class MMMMonitor:
             # Step 6: Evaluate triggers (§7)
             # NOTE: Trigger snapshot healing moved earlier (runs even when paused).
 
-            # Adaptive Whipsaw Guard: widen triggers based on score
-            _ws_score = session.get('_whipsaw_score', 0)
-            _ws_params = session.get('params', {})
-            _ws_caution = _ws_params.get('whipsaw_caution_score', 2)
-            _ws_restrict = _ws_params.get('whipsaw_restrict_score', 3)
-            if _ws_score >= _ws_restrict:
-                _ws_factor = 2.0
-            elif _ws_score >= _ws_caution:
-                _ws_factor = 1.5
+            # Adaptive Whipsaw Guard: widen triggers based on dispatcher decision.
+            # Decision evaluated early at Step 3 and cached; reuse here to avoid
+            # a second append_sample() call on the same beat.
+            if self._beat_whipsaw_decision is not None:
+                _wsd = self._beat_whipsaw_decision
             else:
-                _ws_factor = 1.0
-            if _ws_factor > 1.0 and not _is_straddle_adj:
+                # Fallback: early evaluation failed (exception at Step 3) — evaluate now.
+                _wsd = _get_whipsaw_decision(
+                    session,
+                    _WhipsawCtx(
+                        ce_now=ce_now,
+                        pe_now=pe_now,
+                        spot=float(session.get('_regime_spot_price') or 0.0),
+                    ),
+                )
+                self._beat_whipsaw_decision = _wsd
+            _ws_params = session.get('params', {})
+            if _wsd.trigger_widen_factor > 1.0 and not _is_straddle_adj:
                 # Always use the raw config param as base for whipsaw widening.
                 # _effective_min_trigger_move may already carry theta-acceleration
                 # (applied earlier in the heartbeat near expiry).  Multiplying that
@@ -3357,7 +3419,7 @@ class MMMMonitor:
                 # adjustments fire less often.  For straddle, under-adjusting in a
                 # whipsaw market compounds the loss on both legs simultaneously.
                 _raw_trigger = _ws_params.get('min_trigger_move', 10.0)
-                _ws_widened = _raw_trigger * _ws_factor
+                _ws_widened = _raw_trigger * _wsd.trigger_widen_factor
                 _theta_widened = session.get('_effective_min_trigger_move', _raw_trigger)
                 session['_effective_min_trigger_move'] = max(_ws_widened, _theta_widened)
                 session['_whipsaw_trigger_widened'] = True
@@ -4919,15 +4981,22 @@ class MMMMonitor:
         # STRADDLE_WITH_ADJUSTMENT: bypassed — whipsaw conditions in a straddle
         # mean price is bouncing, exactly when both legs need full-size hedging.
         # Halving lots leaves the straddle systematically under-hedged.
-        _ws_score = session.get('_whipsaw_score', 0)
-        _ws_restrict = session.get('params', {}).get('whipsaw_restrict_score', 3)
-        if _ws_score >= _ws_restrict and lots > 1 and not _straddle_adj:
+        _wsd = getattr(self, '_beat_whipsaw_decision', None)
+        _ws_lot_scalar = (
+            _wsd.lot_scalar if isinstance(_wsd, _WhipsawDecision)
+            else (
+                0.5 if session.get('_whipsaw_score', 0) >=
+                session.get('params', {}).get('whipsaw_restrict_score', 3)
+                else 1.0
+            )
+        )
+        if _ws_lot_scalar < 1.0 and lots > 1 and not _straddle_adj:
             _ws_orig_lots = lots
-            lots = max(1, int(lots * 0.5))
+            lots = max(1, int(lots * _ws_lot_scalar))
             constraint_msg = (constraint_msg or '') + f' [whipsaw lot reduction {_ws_orig_lots}→{lots}]'
             log.info(
                 f"[{sid}] Whipsaw RESTRICT lot reduction: "
-                f"{_ws_orig_lots} → {lots} lots (score={_ws_score})"
+                f"{_ws_orig_lots} → {lots} lots (score={session.get('_whipsaw_score', 0)})"
             )
 
         # ── IMP-5: Consecutive same-direction adjustment limiter ──────────

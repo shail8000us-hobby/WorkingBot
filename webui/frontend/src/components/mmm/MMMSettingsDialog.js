@@ -154,8 +154,19 @@ const PARAM_GROUPS = {
   safety: {
     title: 'Safety Limits',
     color: '#ff9800',
-    blurb: 'Guard rails to prevent runaway exposure. Adjust carefully.',
-    params: ['whipsaw_window_mins', 'whipsaw_spot_move_pct', 'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score', 'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled'],
+    blurb: 'Guard rails to prevent runaway exposure . Adjust carefully.',
+    params: [
+      'whipsaw_engine', 'whipsaw_engine_shadow', 'whipsaw_smart_enabled',
+      'smart_ws_score_defensive', 'smart_ws_score_observe', 'smart_ws_score_lockdown',
+      'smart_ws_gate_count_normal', 'smart_ws_gate_count_defensive',
+      'smart_ws_size_scalar_defensive', 'smart_ws_size_scalar_observe',
+      'smart_ws_tokens_per_session',
+      'smart_ws_flip_window_mins', 'smart_ws_er_window_mins',
+      'smart_ws_oscillation_sensitivity_pct', 'smart_ws_rv_iv_ratio_floor',
+      'smart_ws_flip_penalty', 'smart_ws_cooldown_base_beats',
+      'whipsaw_window_mins', 'whipsaw_spot_move_pct', 'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score',
+      'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled',
+    ],
   },
   expiry: {
     title: 'Close-at-Expiry',
@@ -573,6 +584,9 @@ const PARAM_TOOLTIPS = {
   whipsaw_caution_score: 'Whipsaw score threshold for CAUTION level: triggers widened +50%. Default 2.',
   whipsaw_restrict_score: 'Whipsaw score threshold for RESTRICT level: triggers widened +100%, lots halved. Default 3.',
   whipsaw_cooldown_score: 'Whipsaw score threshold for COOLDOWN: skip one interval, then score drops by 2. Default 4.',
+  whipsaw_engine: 'Whipsaw engine selector: LEGACY (default, current behavior), SMART (new intelligent engine — requires whipsaw_smart_enabled=True to bind decisions), OFF (disable all whipsaw logic). Hot-reloadable. Emergency rollback: set env MMM_WHIPSAW_FORCE_LEGACY=1.',
+  whipsaw_engine_shadow: 'Run the non-active engine in observe-only mode. Its decisions are logged for comparison but never applied. Enable before switching engines to collect comparison data.',
+  whipsaw_smart_enabled: 'Final enable gate for Smart engine. Even if whipsaw_engine=SMART, Smart decisions only bind when this is True. Keep False until shadow-mode data review is complete.',
   max_lots_per_side: HELP.position_cap || 'Maximum total lots allowed per side (CE or PE). With Split Ledger, only ACTIVE lots count against this cap — frozen (shifted) lots do not. Prevents runaway accumulation of productive adjustments.',
   max_total_exposure: 'Split Ledger: Absolute ceiling on active + frozen lots per side. 0 = auto (2× max_lots_per_side). A safety net for the safety net — prevents runaway total exposure even if frozen lots don\'t block the active cap. Fires "Total exposure ceiling" error which does NOT trigger M2 recycling.',
   trailing_stop_pct: HELP.trailing_profit || 'Once P&L hits a peak, if it drops more than this % from that peak, the algo alerts you. Protects profits from giving back too much.',
@@ -1298,6 +1312,11 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       replenish_lot_mode: [
         { value: 'match_active', label: 'Match Active — match open side lot count' },
         { value: 'initial', label: 'Initial — use session initial_lots' },
+      ],
+      whipsaw_engine: [
+        { value: 'LEGACY', label: 'LEGACY — count-based alternation engine (shadow)' },
+        { value: 'SMART',  label: 'SMART — 7-detector intelligent engine (active default)' },
+        { value: 'OFF',    label: 'OFF — disable all whipsaw logic' },
       ],
     };
 

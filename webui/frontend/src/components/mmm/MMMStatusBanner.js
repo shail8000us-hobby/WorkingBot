@@ -344,6 +344,46 @@ export default function MMMStatusBanner({ session, heartbeat, onBothSidesAction,
           </Tooltip>
         )}
 
+        {/* Whipsaw Engine Badge — only shown when non-default */}
+        {(() => {
+          const wsEngine = session?.params?.whipsaw_engine || 'LEGACY';
+          const isSmartPrimary = wsEngine === 'SMART';
+          // Use Smart state keys when Smart is primary; legacy keys otherwise.
+          const wsScore = isSmartPrimary
+            ? (session?._smart_ws_score ?? 0)
+            : (session?._whipsaw_score ?? 0);
+          const wsMode = isSmartPrimary
+            ? (session?._smart_ws_mode || 'NORMAL')
+            : (wsScore >= (session?.params?.whipsaw_cooldown_score || 4)
+              ? 'COOLDOWN'
+              : wsScore >= (session?.params?.whipsaw_restrict_score || 3)
+                ? 'RESTRICT'
+                : wsScore >= (session?.params?.whipsaw_caution_score || 2)
+                  ? 'CAUTION'
+                  : 'NORMAL');
+          const smartModeColors = { LOCKDOWN: '#f44336', OBSERVE: '#ff9800', DEFENSIVE: '#ffc107' };
+          const legacyModeColors = { COOLDOWN: '#f44336', RESTRICT: '#ff9800', CAUTION: '#ffc107' };
+          const modeColor = isSmartPrimary ? (smartModeColors[wsMode] || null) : (legacyModeColors[wsMode] || null);
+          // Always show in non-NORMAL mode; show in non-NORMAL engine too
+          if (wsMode === 'NORMAL' && wsEngine === 'LEGACY') return null;
+          return (
+            <Tooltip title={`Whipsaw engine: ${wsEngine}. Current mode: ${wsMode} (score: ${typeof wsScore === 'number' ? wsScore.toFixed(isSmartPrimary ? 3 : 0) : wsScore}).`}>
+              <Chip
+                label={`WS: ${wsEngine}${wsMode !== 'NORMAL' ? ` / ${wsMode}` : ''}`}
+                size="small"
+                sx={{
+                  cursor: 'help',
+                  bgcolor: modeColor ? `${modeColor}18` : 'rgba(100,100,100,0.1)',
+                  color: modeColor || 'text.secondary',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  border: modeColor ? `1px solid ${modeColor}60` : '1px solid rgba(100,100,100,0.3)',
+                }}
+              />
+            </Tooltip>
+          );
+        })()}
+
         {/* Spacer */}
         <Box sx={{ flexGrow: 1 }} />
 

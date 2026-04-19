@@ -8583,3 +8583,168 @@ def close_reverse_positions_api(session_id: str):
     except Exception as e:
         log.exception(f"Failed to close reverse positions for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Whipsaw comparison endpoints
+# ---------------------------------------------------------------------------
+
+@mmm_bp.route('/whipsaw/shadow-diff/<session_id>', methods=['GET'])
+def whipsaw_shadow_diff(session_id: str):
+    """
+    GET /api/mmm/whipsaw/shadow-diff/<session_id>
+
+    Returns the most recent shadow-mode disagreement snapshot plus the last
+    N heartbeats' shadow state from _smart_ws_series.  Used by
+    MMMWhipsawCompareTab to show legacy-vs-smart divergence in real time.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            # Fall back to live monitor session if running
+            monitor = get_monitor(session_id)
+            if monitor and getattr(monitor, 'session', None):
+                session = monitor.session
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        # When Smart is primary → shadow data is in _ws_legacy_shadow_last.
+        # When Legacy is primary → shadow data is in _smart_ws_shadow_last.
+        shadow_last = session.get('_ws_legacy_shadow_last') or session.get('_smart_ws_shadow_last') or {}
+        series = session.get('_smart_ws_series', [])
+
+        # Last 100 samples for the timeline chart
+        recent = series[-100:] if len(series) > 100 else series
+        timeline = [
+            {
+                'ts': s.get('ts', ''),
+                'spot': s.get('spot', 0),
+                'legacy_score': None,
+                'smart_score': None,
+            }
+            for s in recent
+        ]
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'shadow_last': shadow_last,
+            'timeline': timeline,
+            'legacy_state': {
+                'score': session.get('_whipsaw_score', 0),
+                'mode': session.get('_whipsaw_state', 'NORMAL'),
+            },
+            'smart_state': {
+                'score': session.get('_smart_ws_score'),
+                'mode': session.get('_smart_ws_mode'),
+                'tokens': session.get('_smart_ws_tokens'),
+                'last_decision': session.get('_smart_ws_last_decision'),
+            },
+        })
+
+    except Exception as exc:
+        log.exception(f'Failed whipsaw shadow-diff for {session_id}')
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@mmm_bp.route('/whipsaw/metrics/<session_id>', methods=['GET'])
+def whipsaw_metrics(session_id: str):
+    """
+    GET /api/mmm/whipsaw/metrics/<session_id>
+
+    Aggregate whipsaw metrics computed from the stored _smart_ws_series and
+    shadow diff history. Returns block counts, disagreement frequency, and
+    per-mode time breakdown for the operator comparison dashboard.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            monitor = get_monitor(session_id)
+            if monitor and getattr(monitor, 'session', None):
+                session = monitor.session
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        from webui.backend.routes.mmm.mmm_whipsaw_replay import replay_session
+
+        report = replay_session(session)
+        beats = report.get('beats', [])
+        summary = report.get('summary', {})
+
+        # Per-mode time breakdown for SMART
+        smart_modes = {}
+        for b in beats:
+            m = b.get('smart_mode') or 'NORMAL'
+            smart_modes[m] = smart_modes.get(m, 0) + 1
+
+        # Legacy mode breakdown
+        legacy_modes = {}
+        for b in beats:
+            m = b.get('legacy_mode') or 'NORMAL'
+            legacy_modes[m] = legacy_modes.get(m, 0) + 1
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'summary': summary,
+            'smart_mode_breakdown': smart_modes,
+            'legacy_mode_breakdown': legacy_modes,
+            'series_length': len(session.get('_smart_ws_series', [])),
+            'engine_config': {
+                'engine': session.get('params', {}).get('whipsaw_engine', 'LEGACY'),
+                'smart_enabled': session.get('params', {}).get('whipsaw_smart_enabled', False),
+                'shadow_enabled': session.get('params', {}).get('whipsaw_engine_shadow', False),
+            },
+        })
+
+    except Exception as exc:
+        log.exception(f'Failed whipsaw metrics for {session_id}')
+        return jsonify({'success': False, 'error': str(exc)}), 500
+
+
+@mmm_bp.route('/whipsaw/replay/<session_id>', methods=['GET'])
+def whipsaw_replay(session_id: str):
+    """
+    GET /api/mmm/whipsaw/replay/<session_id>
+
+    Run the full replay harness and return beat-by-beat comparison.
+    Query params:
+        engine_a: str (default LEGACY)
+        engine_b: str (default SMART)
+        limit: int   (max beats to return, default 200)
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            monitor = get_monitor(session_id)
+            if monitor and getattr(monitor, 'session', None):
+                session = monitor.session
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        engine_a = request.args.get('engine_a', 'LEGACY').upper()
+        engine_b = request.args.get('engine_b', 'SMART').upper()
+        limit    = min(int(request.args.get('limit', 200)), 500)
+
+        from webui.backend.routes.mmm.mmm_whipsaw_replay import replay_session
+
+        report = replay_session(session, engine_a=engine_a, engine_b=engine_b)
+        beats = report.get('beats', [])
+        if len(beats) > limit:
+            beats = beats[-limit:]
+
+        return jsonify({
+            'success': True,
+            'session_id': session_id,
+            'engine_a': engine_a,
+            'engine_b': engine_b,
+            'beats': beats,
+            'summary': report.get('summary', {}),
+        })
+
+    except Exception as exc:
+        log.exception(f'Failed whipsaw replay for {session_id}')
+        return jsonify({'success': False, 'error': str(exc)}), 500

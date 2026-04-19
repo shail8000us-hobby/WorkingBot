@@ -5192,3 +5192,178 @@ Registered `capacity_full` in `ACTIVITY_TYPES` ("Capacity Full") and in `ACTIVIT
 **Files changed:** `webui/backend/routes/mmm/mmm_engine.py`, `webui/backend/routes/mmm/mmm_monitor.py`, `webui/backend/routes/mmm/mmm_activity.py`, `webui/backend/routes/mmm/tests/test_sealed_calculate_lots_to_sell.py`
 **Tests:** All MMM sealed tests — **1456 passed / 0 failed**
 **Risk:** MEDIUM. Hard cap is a behavior change; CAP AUTO-SHIFT is effectively disabled when `max_total_exposure` is not set above `max_lots_per_side`. Operators must watch for `capacity_full` alerts and raise the budget or drain frozen lots when they fire.
+
+## 2026-04-19 — Phase 1: Smart Whipsaw Engine — Legacy Dispatcher Extraction
+
+**Plan:** `mmm_whipsaw_implementation.md` Phase 1 — Extract legacy whipsaw logic into a dispatcher abstraction layer (`mmm_whipsaw.py`) with zero behavior change.
+
+**What changed:**
+- **CREATE `mmm_whipsaw.py`**: Dispatcher module with `WhipsawDecision` dataclass, `WhipsawCtx`, `LegacyWhipsawEngine` (wraps `MMMSafety.check_whipsaw()`), `NullWhipsawEngine`, `WHIPSAW_ENGINE_DISPATCH`, `select_engine()`, `whipsaw_decide()`, `get_whipsaw_decision()`. Env kill-switch `MMM_WHIPSAW_FORCE_LEGACY=1` checked on every call. Default engine = `LEGACY`.
+- **MODIFY `mmm_safety.py` `run_all_checks()`** (~line 65): Added Phase 1 gate `if not session.get('_whipsaw_dispatcher_ran')` before `check_whipsaw()`. Gate always False in Phase 1 — original call path fully preserved.
+- **MODIFY `mmm_monitor.py`**: Added import of `_get_whipsaw_decision`, `_WhipsawCtx`, `_WhipsawDecision`. Added `self._beat_whipsaw_decision = None` to `__init__` and reset at top of `_heartbeat_inner()`. Replaced inline score/factor logic at lines 3344–3369 with dispatcher call + `_wsd.trigger_widen_factor`. Replaced inline lot reduction at lines 4925–4938 with `isinstance`-guarded `_wsd.lot_scalar` (falls back to inline calculation if decision is not present for resilience against test mocks).
+- **CREATE `tests/test_mmm_whipsaw_legacy_parity.py`**: 9 parity tests (all pass).
+
+**Hard invariants verified:**
+- `check_whipsaw()` body unchanged
+- Trigger widen factors: CAUTION=1.5×, RESTRICT=2.0× — identical to prior inline code
+- Lot scalar: RESTRICT=0.5 — identical to prior inline code
+- STRADDLE_WITH_ADJUSTMENT bypass: both scalars remain 1.0 regardless of score
+- Env kill-switch forces LEGACY engine
+- Stale-monitor guards (CLAUDE.md §4), reverse-mode if/else (§5) — untouched (grep confirmed)
+
+**Files changed:** `mmm_whipsaw.py` (new), `mmm_safety.py`, `mmm_monitor.py`, `tests/test_mmm_whipsaw_legacy_parity.py` (new)
+**Tests:** All MMM sealed tests — **1465 passed / 0 failed** (baseline 1456 + 9 new)
+**Risk:** LOW. Dispatcher delegates to existing `check_whipsaw()` unchanged. The only behavioral difference is that `LegacyWhipsawEngine.evaluate()` may call `check_whipsaw()` a second time per beat (idempotent — second call finds no new history entries). Fallback inline calculation preserved at lot-reduction site for mock-test resilience.
+
+## 2026-04-19 — Phase 2: Smart Whipsaw Engine — Settings Plumbing & Mutex UI
+
+**Plan:** `mmm_whipsaw_implementation.md` Phase 2 — Add hot-reloadable engine selector params, update `select_engine()` logic, add WebUI controls and engine badge.
+
+**What changed:**
+- **MODIFY `mmm_state.py` `DEFAULT_PARAMS`**: Added `whipsaw_engine='LEGACY'`, `whipsaw_engine_shadow=False`, `whipsaw_smart_enabled=False` after `whipsaw_cooldown_score`.
+- **MODIFY `mmm_state.py` `HOT_RELOAD_PARAMS`**: Added all three new param names so hot-reload applies without restart.
+- **MODIFY `mmm_config.py` `PARAM_RULES`**: Added `whipsaw_engine` (str), `whipsaw_engine_shadow` (bool), `whipsaw_smart_enabled` (bool) — all hot=True.
+- **MODIFY `mmm_config.py` `_ADJUSTMENT_ENGINE_ONLY_PARAMS`**: Added all three new params.
+- **MODIFY `mmm_config.py` `_interdependency_checks()`**: Added enum validation (`whipsaw_engine` must be LEGACY|SMART|OFF) and shadow-only warning (engine=SMART + smart_enabled=False → `[WARNING]` in errors list).
+- **MODIFY `mmm_config.py` `PARAM_DESCRIPTIONS`**: Added human-readable descriptions for all three new params.
+- **MODIFY `mmm_whipsaw.py` `select_engine()`**: Added `whipsaw_smart_enabled` guard — if `engine=SMART` and `smart_enabled=False`, returns LEGACY as primary (double belt on top of engine param).
+- **MODIFY `MMMSettingsDialog.js`**: Added `whipsaw_engine` to `STRING_SELECT_OPTIONS` (LEGACY/SMART/OFF dropdown). Added all three params to `safety` section params list. Added tooltip descriptions for all three.
+- **MODIFY `MMMStatusBanner.js`**: Added whipsaw engine badge chip showing `WS: {ENGINE}` / `WS: {ENGINE} / {MODE}`. Hidden when LEGACY+NORMAL (default); visible on non-default engine or non-NORMAL mode with mode-appropriate color (yellow=CAUTION, orange=RESTRICT, red=COOLDOWN).
+- **CREATE `tests/test_mmm_whipsaw_params.py`**: 5 Phase-2 tests (all pass).
+
+**Hard invariants verified:**
+- `DEFAULT_ENGINE='LEGACY'` unchanged
+- All 3 new params in both DEFAULT_PARAMS and HOT_RELOAD_PARAMS (trap from plan §0.9)
+- `select_engine()` kill-switch still checked first, before params
+- SMART + smart_enabled=False → LEGACY primary (shadow-only, no binding)
+- engine=OFF → NullWhipsawEngine, scalars 1.0, no state writes
+- Phase 1 parity tests still pass
+
+**Files changed:** `mmm_state.py`, `mmm_config.py`, `mmm_whipsaw.py`, `MMMSettingsDialog.js`, `MMMStatusBanner.js`, `tests/test_mmm_whipsaw_params.py` (new)
+**Tests:** All MMM sealed tests — **1470 passed / 0 failed** (1465 Phase 1 baseline + 5 new)
+**Risk:** LOW. Default behavior identical — engine='LEGACY', shadow=False, smart_enabled=False all default to pre-Phase-2 code path. New select_engine() SMART guard is additive, never changes LEGACY path.
+
+## 2026-04-19 — Phase 3: Smart Whipsaw Engine — Shadow-Only Skeleton
+
+**Plan:** `mmm_whipsaw_implementation.md` Phase 3 — Implement SmartWhipsawEngine (shadow-only; whipsaw_smart_enabled=False default means decisions never bind).
+
+**What changed:**
+- **CREATE `mmm_whipsaw_spot_log.py`**: Rolling price log (spot/CE/PE/IV), capped at 240 samples, writes to `_smart_ws_series`. `append_sample()`, `get_series(window_mins)`, `extract_spots()`, `extract_premiums()`.
+- **CREATE `mmm_whipsaw_smart.py`**: `SmartWhipsawEngine` with full §10 decision framework:
+  - 7 detectors: `flip_counter_score` (recency-decayed flips), `efficiency_ratio_score` (Kaufman ER), `oscillation_score` (local extrema), `premium_symmetry_score` (dominance sign-changes), `adjustment_outcome_score` (recent alternation rate), `rv_iv_divergence_score` (RV/IV divergence), `gamma_zone_score` (proximity-weighted oscillation).
+  - `compute_composite()` with spec weights (0.30/0.20/0.10/0.10/0.15/0.10/0.05).
+  - `mode_from_score()` with §9.2 expiry tightening (DEFENSIVE floor drops to 0.20 within 30 min of expiry).
+  - `multi_gate_decide()`: 3-of-5 (NORMAL) / 4-of-5 (DEFENSIVE) / always-block (OBSERVE/LOCKDOWN). Asymmetric gate: +1 required when adding to thinner side.
+  - `TokenBudget` dataclass: `spend()`, `credit_patience()`, `cost_for_mode()`, session load/save.
+  - `compute_cooldown_beats()`: exponential `base × 2^flips`.
+  - `_check_pressure_override()`: bypass if margin tier ORANGE+ or loss velocity > $50/min.
+  - STRADDLE_WITH_ADJUSTMENT bypass: both scalars reset to 1.0, block=False.
+  - Writes ONLY to `_smart_ws_*` state namespace.
+- **MODIFY `mmm_whipsaw.py`**:
+  - `WhipsawCtx`: added `aggressor: str = ''` and `premium_trigger_fired: bool = False` fields (backward-compatible defaults).
+  - `WHIPSAW_ENGINE_DISPATCH`: added `'SMART': SmartWhipsawEngine()` via lazy `_build_dispatch()` factory.
+  - `whipsaw_decide()`: now appends spot-log sample every beat (so Smart has data when promoted). Calls `_maybe_run_shadow()`.
+  - `_maybe_run_shadow()`: deepcopy session → run Smart → store result in `_smart_ws_shadow_last`. Triggered when `whipsaw_engine_shadow=True` OR when `engine=SMART + smart_enabled=False`. Never affects primary decision.
+- **MODIFY `mmm_state.py`**: Added 14 `smart_ws_*` params to DEFAULT_PARAMS + HOT_RELOAD_PARAMS.
+- **MODIFY `mmm_config.py`**: Added 14 `smart_ws_*` PARAM_RULES, VALID_PARAMS entries, descriptions, and ordering validation for score thresholds.
+- **CREATE `tests/test_smart_whipsaw_detectors.py`**: 7 detectors × 3-5 scenarios = 30 tests.
+- **CREATE `tests/test_smart_whipsaw_score.py`**: Composite weights sum to 1.0; boundary transitions at 0.3/0.6/0.8; expiry tightening.
+- **CREATE `tests/test_smart_whipsaw_gates.py`**: 3-of-5 / 4-of-5 matrix; asymmetric gate; OBSERVE/LOCKDOWN always block; cooldown arithmetic.
+- **CREATE `tests/test_smart_whipsaw_token_budget.py`**: spend/credit/cost/session round-trip.
+- **CREATE `tests/test_smart_whipsaw_shadow_does_not_bind.py`**: 8 integration tests confirming Smart never affects primary LEGACY decision; _whipsaw_* state isolation; spot log always appended; Smart mode labels absent from primary decision.
+
+**Hard invariants verified:**
+- No write to any `_whipsaw_*` key by SmartWhipsawEngine (shadow runs on deepcopy)
+- STRADDLE_WITH_ADJUSTMENT bypass works in Smart engine
+- engine=SMART + smart_enabled=False → LEGACY primary (double belt)
+- Kill-switch `MMM_WHIPSAW_FORCE_LEGACY=1` still tested and passes
+- Phase 1 parity tests still pass; Phase 2 param tests still pass
+- All 14 smart_ws params in both DEFAULT_PARAMS and HOT_RELOAD_PARAMS
+
+**Files changed:** `mmm_whipsaw_spot_log.py` (new), `mmm_whipsaw_smart.py` (new), `mmm_whipsaw.py`, `mmm_state.py`, `mmm_config.py`, 5 new test files
+**Tests:** All MMM sealed tests — **1553 passed / 0 failed** (1470 Phase 2 baseline + 83 new)
+**Risk:** LOW. Default engine=LEGACY, smart_enabled=False — Smart engine is fully dark. Shadow only runs when operator explicitly enables it.
+
+## 2026-04-19 — Phase 4: Comparison tools & operator dashboards
+
+**Session goal:** Implement Phase 4 of the Smart Whipsaw rollout — replay harness, comparison API endpoints, frontend compare tab, and fix the hardcoded Safety Panel whipsaw indicator.
+
+**Critical review findings before Phase 4:**
+- Phase 3 left `MMMSafetyPanel.js` whipsaw indicator hardcoded at `value=0 / level=ok` (never showed real score). Fixed in this session.
+- Phase 3 left `MMMSafetyPanel.js` with no Smart mode display. Fixed in this session.
+- No Phase 4 code existed at session start. `mmm_whipsaw_replay.py` did not exist.
+
+**What changed:**
+
+- **CREATE `mmm_whipsaw_replay.py`**: Deterministic replay harness. `replay_session(snapshot, engine_a, engine_b, param_overrides)` walks the `_smart_ws_series` beat-by-beat, builds isolated sub-sessions for each beat (trimming adjustment_history to the beat's timestamp), runs both engines, returns `{beats: [...], summary: {...}}`. Deterministic: same input always produces same output. No monitor changes needed.
+
+- **MODIFY `mmm_api.py`** (appended 3 new route handlers at end of file, zero existing logic changed):
+  - `GET /api/mmm/whipsaw/shadow-diff/<session_id>` — returns live `_smart_ws_shadow_last`, current legacy vs smart state, last 100 series samples.
+  - `GET /api/mmm/whipsaw/metrics/<session_id>` — runs full replay, returns aggregate disagree counts, per-mode breakdowns, engine config.
+  - `GET /api/mmm/whipsaw/replay/<session_id>` — returns beat-by-beat diff (capped at 500, default 200).
+
+- **CREATE `MMMWhipsawCompareTab.js`**: React component for tab 18 in MMMDashboard. Shows live legacy vs smart state chips, shadow disagree alert, aggregate metrics table (block counts, disagree %), and Smart detector score breakdown from `_smart_ws_last_decision`. Fetches `/api/mmm/whipsaw/metrics/<session_id>`. Graceful when no shadow data.
+
+- **MODIFY `MMMDashboard.js`**:
+  - Added `import MMMWhipsawCompareTab` 
+  - Added `<Tab label="Whipsaw" />` at fixed index 18 (always visible)
+  - Reverse Mode tab shifts from 18 → 19 (updated `useEffect` guard and tab panel `detailTab === 18/19`)
+  - Added `{detailTab === 18 && <MMMWhipsawCompareTab session={session} heartbeat={heartbeat} />}`
+
+- **MODIFY `MMMSafetyPanel.js`** (whipsaw indicator lines ~274-283):
+  - Before: hardcoded `value=0`, `maxValue=params.whipsaw_limit||3`, `level="ok"`
+  - After: reads `session._whipsaw_score`, `session._whipsaw_state`; level reflects actual state (CAUTION→warning, RESTRICT→warning, COOLDOWN→alert); displayText includes Smart mode suffix when Smart is active.
+
+- **CREATE `tests/test_mmm_whipsaw_replay.py`**: 8 tests — empty series, single beat, determinism, summary arithmetic, unknown engine error, param overrides, many beats (20), empty summary keys.
+
+**Hard invariants verified:**
+- No modification to any existing API handler (append-only change to mmm_api.py)
+- Reverse Mode tab guard updated from `detailTab === 18` to `detailTab === 19` — Reverse Mode still works
+- `mmm_whipsaw_replay.py` uses deferred imports to avoid circular import at module load
+- `_sub_session()` resets all `_whipsaw_*` and `_smart_ws_*` (except series) for clean per-beat replay
+- STRADDLE bypass untouched; no monitor lines modified; stale-monitor 3-layer fix intact
+
+**Files changed:** `mmm_whipsaw_replay.py` (new), `mmm_api.py` (+3 endpoints appended), `MMMWhipsawCompareTab.js` (new), `MMMDashboard.js`, `MMMSafetyPanel.js`, `test_mmm_whipsaw_replay.py` (new)
+**Tests:** All MMM sealed tests — **1561 passed / 0 failed** (1553 Phase 3 baseline + 8 new)
+**Risk:** LOW. No live decision paths changed. Replay runs on session snapshots. New API endpoints are read-only. UI tab is additive.
+
+## 2026-04-19 — Phase 5 (Skipped) + Phase 6: Smart Whipsaw Engine promoted to live primary
+
+**Operator decision:** skipped shadow observation period; Smart engine promoted directly to live trading.
+
+**Changes:**
+- `mmm_state.py` DEFAULT_PARAMS: `whipsaw_engine='SMART'`, `whipsaw_smart_enabled=True`, `whipsaw_engine_shadow=True` — Smart is now the default primary engine; Legacy runs as shadow
+- `mmm_whipsaw.py` line 166: `DEFAULT_ENGINE = 'SMART'`
+- `mmm_whipsaw.py` `_maybe_run_shadow()`: added Case B — when Smart is primary and shadow_enabled=True, Legacy runs on deepcopy and result stored in `_ws_legacy_shadow_last`
+- `MMMSafetyPanel.js`: whipsaw safety indicator now shows Smart score/mode as primary when `whipsaw_engine=SMART`; Legacy supplemental shown as `| LEG:<state>` when non-NORMAL
+- `tests/test_mmm_whipsaw_params.py` `test_param_defaults`: updated assertions to new defaults (SMART/True/True)
+- `tests/test_smart_whipsaw_shadow_does_not_bind.py`: added Test 9 `test_phase6_smart_primary_legacy_in_shadow`
+- `mmm_whipsaw_implementation.md`: Phase 5 marked SKIPPED, Phase 6 marked ✅ DONE
+
+**Rollback procedures:**
+1. Instant: `export MMM_WHIPSAW_FORCE_LEGACY=1` — next heartbeat uses Legacy
+2. Fast: flip `whipsaw_engine=LEGACY` in Settings → Safety (hot reload)
+3. Full: revert this commit
+
+**Files changed:** `mmm_state.py`, `mmm_whipsaw.py`, `MMMSafetyPanel.js`, `test_mmm_whipsaw_params.py`, `test_smart_whipsaw_shadow_does_not_bind.py`, `mmm_whipsaw_implementation.md`
+**Tests:** All MMM sealed tests — **1562 passed / 0 failed** (1561 Phase 4 baseline + 1 new Phase 6 test)
+**Risk:** MEDIUM. Smart decisions now bind on lot sizing and trigger widening. Instant rollback available via env var with no restart.
+
+## 2026-04-20 — Fix: 3 whipsaw integration issues from audit (W-01, W-04, W-05)
+
+Investigated 5 issues flagged in `whipsaw_audit.md`. Findings:
+- W-01 CONFIRMED: `_whipsaw_dispatcher_ran` flag was never set by dispatcher. Safety path always double-called legacy `check_whipsaw()` even when engine=OFF or SMART — meaning legacy score accumulated and could block even with NullEngine.
+- W-02 NOT FIXED: `premium_trigger_fired=False` in pre-call at Step 3 is by design (trigger hasn't fired yet). Gate 3 reads `adjustment_history` not `ctx.aggressor`. Gate 5 has spot-range fallback when `iv=0`. No live trading impact.
+- W-03 NOT FIXED: Hard-coded gate counts (3/4) and scalars (0.5/1.0) match the exposed defaults. Enhancement for future, not a live bug.
+- W-04 CONFIRMED: Compare tab/API read `_smart_ws_shadow_last` but Smart-primary writes `_ws_legacy_shadow_last` — different key. Compare tab showed nothing in Smart-primary mode.
+- W-05 CONFIRMED: Status badge read `_whipsaw_score` regardless of engine. When Smart is primary, badge showed wrong/stale mode. Tooltip had stale "shadow-only" text.
+
+**Fixes applied:**
+1. `mmm_whipsaw.py::whipsaw_decide()` — set `session['_whipsaw_dispatcher_ran'] = True` after engine.evaluate(). Prevents safety path from re-running legacy check_whipsaw() on same beat.
+2. `mmm_api.py::whipsaw_shadow_diff()` — reads `_ws_legacy_shadow_last or _smart_ws_shadow_last` (covers both primary directions).
+3. `MMMWhipsawCompareTab.js` — reads `_ws_legacy_shadow_last || _smart_ws_shadow_last`.
+4. `MMMStatusBanner.js` — badge reads `_smart_ws_score`/`_smart_ws_mode` when engine=SMART; uses Smart mode colors (DEFENSIVE/OBSERVE/LOCKDOWN); removed stale "shadow-only" tooltip.
+
+**Files changed:** `mmm_whipsaw.py`, `mmm_api.py`, `MMMWhipsawCompareTab.js`, `MMMStatusBanner.js`
+**Tests:** 1562 passed / 0 failed
+**Risk:** LOW. W-01 fix is additive (sets a flag, doesn't change engine logic). W-04/W-05 are UI/API reads only.

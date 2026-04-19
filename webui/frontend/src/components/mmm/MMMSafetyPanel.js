@@ -273,14 +273,46 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
 
         {/* Whipsaw */}
         <Grid item xs={6} sm={4} md={3}>
-          <SafetyIndicator
-            label="Whipsaw"
-            value={0}
-            maxValue={params.whipsaw_limit || 3}
-            displayText={`0 / ${params.whipsaw_limit || 3}`}
-            level="ok"
-            tooltip="Whipsaw = market oscillating rapidly, causing alternating adjustments (CE→PE→CE). If 3 alternating adjustments happen in a row, the algo detects the choppy market and pauses. This prevents burning premium on trading fees in sideways conditions."
-          />
+          {(() => {
+            const isSmartPrimary = params.whipsaw_engine === 'SMART' && params.whipsaw_smart_enabled !== false;
+            const smartScore = session._smart_ws_score;
+            const smartMode  = session._smart_ws_mode || 'NORMAL';
+            const legScore   = session._whipsaw_score ?? 0;
+            const legState   = session._whipsaw_state || 'NORMAL';
+            const wsMax      = params.whipsaw_cooldown_score || params.whipsaw_limit || 4;
+
+            if (isSmartPrimary) {
+              // Smart is primary — show Smart data, Legacy in supplemental
+              const score  = smartScore ?? 0;
+              const wsLevel = smartMode === 'LOCKDOWN' ? 'alert' : smartMode === 'OBSERVE' ? 'warning' : smartMode === 'DEFENSIVE' ? 'warning' : 'ok';
+              const legSupp = legState !== 'NORMAL' ? ` | LEG:${legState}` : '';
+              return (
+                <SafetyIndicator
+                  label="Whipsaw (SMART)"
+                  value={score}
+                  maxValue={1.0}
+                  displayText={`${score.toFixed(2)} ${smartMode}${legSupp}`}
+                  level={wsLevel}
+                  tooltip={`Smart engine: score ${score.toFixed(3)}, mode ${smartMode}. DEFENSIVE≥${params.smart_ws_score_defensive || 0.30}, OBSERVE≥${params.smart_ws_score_observe || 0.60}, LOCKDOWN≥${params.smart_ws_score_lockdown || 0.80}. Legacy shadow: ${legState} (${legScore}/${wsMax}). Instant rollback: set whipsaw_engine=LEGACY.`}
+                />
+              );
+            }
+            // Legacy is primary — show Legacy data, Smart as supplemental
+            const wsLevel = legState === 'COOLDOWN' ? 'alert' : legState === 'RESTRICT' ? 'warning' : legState === 'CAUTION' ? 'warning' : 'ok';
+            const smartSupp = smartMode !== 'NORMAL'
+              ? ` | SMART:${smartMode}`
+              : (smartScore != null ? ` | S:${smartScore.toFixed(2)}` : '');
+            return (
+              <SafetyIndicator
+                label="Whipsaw"
+                value={legScore}
+                maxValue={wsMax}
+                displayText={`${legScore}/${wsMax} ${legState}${smartSupp}`}
+                level={wsLevel}
+                tooltip={`Legacy whipsaw score: ${legScore}/${wsMax} (${legState}). CAUTION≥${params.whipsaw_caution_score || 2}, RESTRICT≥${params.whipsaw_restrict_score || 3}, COOLDOWN≥${wsMax}.${smartMode !== 'NORMAL' ? ` Smart shadow: ${smartMode} (score ${(smartScore || 0).toFixed(2)}).` : ''}`}
+              />
+            );
+          })()}
         </Grid>
 
         {/* Expiry */}

@@ -62,7 +62,11 @@ class MMMSafety:
         events.extend(self.check_total_exposure(session))   # Split Ledger
         events.extend(self.check_max_adjustments(session))
         events.extend(self.check_max_loss(session))
-        events.extend(self.check_whipsaw(session))
+        # Phase 1 gate: always False in Phase 1 (dispatcher delegates here).
+        # Phase 2+ will set _whipsaw_dispatcher_ran=True when the dispatcher
+        # has already consumed check_whipsaw() so we skip the direct call.
+        if not session.get('_whipsaw_dispatcher_ran'):
+            events.extend(self.check_whipsaw(session))
         events.extend(self.check_asymmetry(session))
 
         if minutes_to_expiry is not None:

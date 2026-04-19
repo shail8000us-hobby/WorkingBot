@@ -210,6 +210,7 @@ ACTIVITY_TYPES = {
     'rebalance_boost': 'Rebalance Boost',
     'trend_boost': 'Trend Boost',
     'whipsaw_guard': 'Whipsaw Guard',
+    'whipsaw_smart_block': 'Smart Whipsaw Block',
     'atm_shield': 'ATM Shield',
 
     # Fill sync
@@ -340,7 +341,7 @@ ACTIVITY_CATEGORIES = {
                 'regime_control', 'regime_block', 'regime_emergency', 'regime_pause',
                 'regime_auto_resume', 'ocs_auto_resume', 'both_sides_closed_awake',
                'stale_price_warning', 'heartbeat_partial', 'heartbeat_miss', 'heartbeat_error',
-                'whipsaw_guard', 'atm_shield', 'ghost_close_recovered',
+                'whipsaw_guard', 'whipsaw_smart_block', 'atm_shield', 'ghost_close_recovered',
                'breakeven_zone_change', 'breakeven_band_contracting', 'breakeven_narrow_band',
                'gamma_zone_change', 'gamma_danger_detected',
                'reverse_disabled'},

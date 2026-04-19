@@ -439,6 +439,25 @@ DEFAULT_PARAMS = {
     'whipsaw_caution_score': 2,          # score to widen triggers +50%
     'whipsaw_restrict_score': 3,         # score to widen triggers +100% and halve lots
     'whipsaw_cooldown_score': 4,         # score to skip one interval (NOT full pause)
+    # Whipsaw Engine Dispatcher — Phase 2
+    'whipsaw_engine': 'SMART',            # active engine: LEGACY | SMART | OFF
+    'whipsaw_engine_shadow': False,      # run non-active engine in observe-only mode; OFF by default (enable for compare tab)
+    'whipsaw_smart_enabled': True,       # Smart decisions bind — promoted to primary (Phase 6)
+    # Smart Whipsaw Engine params — Phase 3 (shadow-only until Phase 6)
+    'smart_ws_score_defensive': 0.30,   # composite score floor for DEFENSIVE mode
+    'smart_ws_score_observe': 0.60,     # composite score floor for OBSERVE mode
+    'smart_ws_score_lockdown': 0.80,    # composite score floor for LOCKDOWN mode
+    'smart_ws_tokens_per_session': 10.0, # adjustment token budget per session
+    'smart_ws_gate_count_normal': 3,    # gates required in NORMAL mode (of 5)
+    'smart_ws_gate_count_defensive': 4, # gates required in DEFENSIVE mode (of 5)
+    'smart_ws_flip_window_mins': 30,    # rolling window for aggressor-flip counter
+    'smart_ws_er_window_mins': 30,      # rolling window for Kaufman ER detector
+    'smart_ws_oscillation_sensitivity_pct': 0.15,  # min % move to count as extremum
+    'smart_ws_rv_iv_ratio_floor': 0.6,  # rv/iv below this → vol-divergence gate fires
+    'smart_ws_size_scalar_defensive': 0.5,   # lot scalar in DEFENSIVE mode
+    'smart_ws_size_scalar_observe': 0.25,    # lot scalar in OBSERVE mode
+    'smart_ws_flip_penalty': 0.5,       # multiply size by this per aggressor flip
+    'smart_ws_cooldown_base_beats': 1,  # base heartbeats for exponential cooldown
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
     'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
@@ -758,6 +777,13 @@ HOT_RELOAD_PARAMS = {
     # Adaptive Whipsaw Guard
     'whipsaw_window_mins', 'whipsaw_spot_move_pct',
     'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score',
+    'whipsaw_engine', 'whipsaw_engine_shadow', 'whipsaw_smart_enabled',
+    'smart_ws_score_defensive', 'smart_ws_score_observe', 'smart_ws_score_lockdown',
+    'smart_ws_tokens_per_session', 'smart_ws_gate_count_normal', 'smart_ws_gate_count_defensive',
+    'smart_ws_flip_window_mins', 'smart_ws_er_window_mins',
+    'smart_ws_oscillation_sensitivity_pct', 'smart_ws_rv_iv_ratio_floor',
+    'smart_ws_size_scalar_defensive', 'smart_ws_size_scalar_observe',
+    'smart_ws_flip_penalty', 'smart_ws_cooldown_base_beats',
     'adaptive_interval_enabled',
     'wind_down_enabled', 'wind_down_hours_before_expiry',
     'wind_down_buyback_pct', 'wind_down_close_threshold',

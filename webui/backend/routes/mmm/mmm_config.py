@@ -58,6 +58,25 @@ PARAM_RULES = {
     'whipsaw_caution_score':   {'type': int,   'min': 1,    'max': 10,    'hot': True},
     'whipsaw_restrict_score':  {'type': int,   'min': 2,    'max': 15,    'hot': True},
     'whipsaw_cooldown_score':  {'type': int,   'min': 3,    'max': 20,    'hot': True},
+    # Whipsaw Engine Dispatcher — Phase 2
+    'whipsaw_engine':          {'type': str,   'min': None, 'max': None,  'hot': True},
+    'whipsaw_engine_shadow':   {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'whipsaw_smart_enabled':   {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Smart Whipsaw Engine — Phase 3
+    'smart_ws_score_defensive':        {'type': float, 'min': 0.05, 'max': 0.59, 'hot': True},
+    'smart_ws_score_observe':          {'type': float, 'min': 0.10, 'max': 0.79, 'hot': True},
+    'smart_ws_score_lockdown':         {'type': float, 'min': 0.20, 'max': 1.0,  'hot': True},
+    'smart_ws_tokens_per_session':     {'type': float, 'min': 1.0,  'max': 50.0, 'hot': True},
+    'smart_ws_gate_count_normal':      {'type': int,   'min': 1,    'max': 5,    'hot': True},
+    'smart_ws_gate_count_defensive':   {'type': int,   'min': 1,    'max': 5,    'hot': True},
+    'smart_ws_flip_window_mins':       {'type': int,   'min': 5,    'max': 120,  'hot': True},
+    'smart_ws_er_window_mins':         {'type': int,   'min': 5,    'max': 120,  'hot': True},
+    'smart_ws_oscillation_sensitivity_pct': {'type': float, 'min': 0.01, 'max': 2.0, 'hot': True},
+    'smart_ws_rv_iv_ratio_floor':      {'type': float, 'min': 0.1,  'max': 1.5,  'hot': True},
+    'smart_ws_size_scalar_defensive':  {'type': float, 'min': 0.1,  'max': 1.0,  'hot': True},
+    'smart_ws_size_scalar_observe':    {'type': float, 'min': 0.0,  'max': 1.0,  'hot': True},
+    'smart_ws_flip_penalty':           {'type': float, 'min': 0.1,  'max': 1.0,  'hot': True},
+    'smart_ws_cooldown_base_beats':    {'type': int,   'min': 1,    'max': 10,   'hot': True},
     'trailing_stop_pct':       {'type': float, 'min': 0,    'max': 1.0,   'hot': True},
     'theta_acceleration_window': {'type': int, 'min': 0,    'max': 1440,  'hot': True},
     'close_at_atm':              {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -366,6 +385,23 @@ _ADJUSTMENT_ENGINE_ONLY_PARAMS = {
     'whipsaw_caution_score',
     'whipsaw_restrict_score',
     'whipsaw_cooldown_score',
+    'whipsaw_engine',
+    'whipsaw_engine_shadow',
+    'whipsaw_smart_enabled',
+    'smart_ws_score_defensive',
+    'smart_ws_score_observe',
+    'smart_ws_score_lockdown',
+    'smart_ws_tokens_per_session',
+    'smart_ws_gate_count_normal',
+    'smart_ws_gate_count_defensive',
+    'smart_ws_flip_window_mins',
+    'smart_ws_er_window_mins',
+    'smart_ws_oscillation_sensitivity_pct',
+    'smart_ws_rv_iv_ratio_floor',
+    'smart_ws_size_scalar_defensive',
+    'smart_ws_size_scalar_observe',
+    'smart_ws_flip_penalty',
+    'smart_ws_cooldown_base_beats',
     'harvest_enabled',
     'harvest_profit_pct',
     'harvest_min_age_mins',
@@ -580,6 +616,29 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             f"whipsaw_restrict_score ({ws_restrict}) must be < whipsaw_cooldown_score ({ws_cooldown})"
         )
 
+    # whipsaw_engine must be a known enum value
+    ws_engine = validated.get('whipsaw_engine')
+    if ws_engine is not None and ws_engine not in ('LEGACY', 'SMART', 'OFF'):
+        errors.append(
+            f"whipsaw_engine must be one of LEGACY | SMART | OFF, got '{ws_engine}'"
+        )
+    # engine=SMART + smart_enabled=False is valid (shadow-only mode); no error needed —
+    # select_engine() automatically returns LEGACY as primary in this case, and the
+    # banner badge shows "WS: SMART" to make the state visible to the operator.
+
+    # smart whipsaw score ordering: defensive < observe < lockdown
+    sw_def = validated.get('smart_ws_score_defensive')
+    sw_obs = validated.get('smart_ws_score_observe')
+    sw_lck = validated.get('smart_ws_score_lockdown')
+    if sw_def is not None and sw_obs is not None and sw_def >= sw_obs:
+        errors.append(
+            f"smart_ws_score_defensive ({sw_def}) must be < smart_ws_score_observe ({sw_obs})"
+        )
+    if sw_obs is not None and sw_lck is not None and sw_obs >= sw_lck:
+        errors.append(
+            f"smart_ws_score_observe ({sw_obs}) must be < smart_ws_score_lockdown ({sw_lck})"
+        )
+
     # auto_close_mins should be <= stop_adjustment_mins (stop adjusting before closing)
     auto_close = validated.get('auto_close_mins')
     stop_adj = validated.get('stop_adjustment_mins')
@@ -711,6 +770,23 @@ def get_param_info() -> Dict[str, Dict]:
         'whipsaw_caution_score': 'Whipsaw score to enter CAUTION: widen triggers by +50%. Score decays -1 per interval without new noise alternation.',
         'whipsaw_restrict_score': 'Whipsaw score to enter RESTRICT: widen triggers by +100% and halve lot sizes.',
         'whipsaw_cooldown_score': 'Whipsaw score to enter COOLDOWN: skip one interval, then score drops by 2. Never a full session PAUSE.',
+        'whipsaw_engine': 'Active whipsaw engine: LEGACY (current behavior, default), SMART (new intelligent engine — requires whipsaw_smart_enabled=True to bind), OFF (disable all whipsaw logic). Hot-reloadable. Emergency override: set env MMM_WHIPSAW_FORCE_LEGACY=1.',
+        'whipsaw_engine_shadow': 'Run the non-active engine in observe-only mode: its decisions are logged and stored in _smart_ws_shadow_last but never applied to lot sizing or trigger widening. Useful for comparison before promoting Smart.',
+        'whipsaw_smart_enabled': 'Final gate for Smart engine: decisions bind only when both whipsaw_engine=SMART AND this=True. When False, Smart runs in shadow-only mode regardless of the engine param. Flip this after reviewing shadow-mode data.',
+        'smart_ws_score_defensive': 'Smart engine: composite whipsaw score threshold to enter DEFENSIVE mode (half size, stricter gates). Default 0.30.',
+        'smart_ws_score_observe': 'Smart engine: composite score threshold to enter OBSERVE mode (no new sells, closes/harvests still allowed). Default 0.60.',
+        'smart_ws_score_lockdown': 'Smart engine: composite score threshold to enter LOCKDOWN mode (freeze all adjustment activity for cooldown period). Default 0.80.',
+        'smart_ws_tokens_per_session': 'Smart engine: total adjustment tokens per session. Each adjustment spends tokens; whipsaw flips cost double. When exhausted, only closes allowed. Default 10.',
+        'smart_ws_gate_count_normal': 'Smart engine: number of 5 gates required to fire an adjustment in NORMAL mode. Default 3 (3-of-5).',
+        'smart_ws_gate_count_defensive': 'Smart engine: gates required in DEFENSIVE mode. Default 4 (4-of-5). Adding to the thinner side adds +1 to the requirement.',
+        'smart_ws_flip_window_mins': 'Smart engine: rolling window (minutes) for the aggressor-flip counter. Flips older than this are ignored. Default 30.',
+        'smart_ws_er_window_mins': 'Smart engine: rolling window (minutes) for Kaufman Efficiency Ratio computation. Default 30.',
+        'smart_ws_oscillation_sensitivity_pct': 'Smart engine: minimum % spot move between two points to count as a local extremum in the oscillation detector. Default 0.15%.',
+        'smart_ws_rv_iv_ratio_floor': 'Smart engine: if realized_vol / implied_vol drops below this ratio, the vol-divergence detector fires (triggers are likely noise). Default 0.6.',
+        'smart_ws_size_scalar_defensive': 'Smart engine: lot size scalar in DEFENSIVE mode. Default 0.5 (half size).',
+        'smart_ws_size_scalar_observe': 'Smart engine: lot size scalar in OBSERVE mode. Default 0.25 (quarter size, for closes only).',
+        'smart_ws_flip_penalty': 'Smart engine: per-flip lot size multiplier (applied exponentially). Default 0.5 (halve size per flip).',
+        'smart_ws_cooldown_base_beats': 'Smart engine: base heartbeats for exponential cooldown after aggressor flips. base × 2^flips. Default 1.',
         'trailing_stop_pct': 'Protect profit at this percentage of peak P&L',
         'theta_acceleration_window': 'Minutes before expiry to widen triggers',
         'close_at_atm': 'Auto-close all if original strike becomes ATM (spot ≈ strike)',

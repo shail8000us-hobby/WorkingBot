@@ -100,6 +100,7 @@ import MMMActivityFeed from './MMMActivityFeed';
 import MMMExecutionLogPanel from './MMMExecutionLogPanel';
 import MMMReverseModePanel from './MMMReverseModePanel';
 import MMMSettingsDialog from './MMMSettingsDialog';
+import MMMWhipsawCompareTab from './MMMWhipsawCompareTab';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
 import MMMGreeksPanel from './MMMGreeksPanel';
 import MMMAnalyticsSummary from './MMMAnalyticsSummary';
@@ -3033,7 +3034,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const showReverseModeTab = reverseEnabledForSession && reverseSupportedByStrategy;
 
   useEffect(() => {
-    if (!showReverseModeTab && detailTab === 18) {
+    if (!showReverseModeTab && detailTab === 19) {
       setDetailTab(0);
     }
   }, [showReverseModeTab, detailTab]);
@@ -3149,6 +3150,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <Tab label="Performance" />
         <Tab label="Audit" />
         <Tab label="Exec Log" />
+        <Tab label="Whipsaw" />
         {showReverseModeTab && <Tab label="Reverse Mode" />}
       </Tabs>
 
@@ -4185,8 +4187,13 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         </Box>
       )}
 
-      {/* Tab 18: Reverse Mode — Controlled premium harvesting overlay */}
-      {showReverseModeTab && detailTab === 18 && (
+      {/* Tab 18: Whipsaw Compare — Legacy vs Smart engine comparison */}
+      {detailTab === 18 && (
+        <MMMWhipsawCompareTab session={session} heartbeat={heartbeat} />
+      )}
+
+      {/* Tab 19: Reverse Mode — Controlled premium harvesting overlay */}
+      {showReverseModeTab && detailTab === 19 && (
         <Box>
           <MMMReverseModePanel session={session} heartbeat={heartbeat} />
         </Box>
