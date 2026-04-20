@@ -2,7 +2,7 @@
   "files": {
     "main.css": "/static/css/main.2165428e.css",
     "main.js": "/static/js/main.8e43adf1.js",
-    "runtime.js": "/static/js/runtime.1af5068a.js",
+    "runtime.js": "/static/js/runtime.97574498.js",
     "static/js/8161.7018d8d8.chunk.js": "/static/js/8161.7018d8d8.chunk.js",
     "static/js/317.a1c60eab.chunk.js": "/static/js/317.a1c60eab.chunk.js",
     "static/js/6701.0d6aa088.chunk.js": "/static/js/6701.0d6aa088.chunk.js",
@@ -70,7 +70,7 @@
     "utils.js": "/static/js/utils.2263d961.js",
     "vendors.css": "/static/css/vendors.d5a3d36d.css",
     "vendors.js": "/static/js/vendors.0de90a28.js",
-    "common.js": "/static/js/common.4064a6de.chunk.js",
+    "common.js": "/static/js/common.8e0025e9.chunk.js",
     "static/media/inter-latin-ext-wght-normal.woff2": "/static/media/inter-latin-ext-wght-normal.8bff79fbfaa8b8167a0b.woff2",
     "static/media/inter-latin-wght-normal.woff2": "/static/media/inter-latin-wght-normal.4f2981d82860061bca3e.woff2",
     "static/media/roboto-mono-cyrillic-ext-wght-normal.woff2": "/static/media/roboto-mono-cyrillic-ext-wght-normal.cd30fdc68dded55b066a.woff2",
@@ -87,7 +87,7 @@
     "index.html": "/index.html"
   },
   "entrypoints": [
-    "static/js/runtime.1af5068a.js",
+    "static/js/runtime.97574498.js",
     "static/js/vendor.a3736ee3.js",
     "static/js/ui-libs.523630e4.js",
     "static/js/icons.a84f2590.js",

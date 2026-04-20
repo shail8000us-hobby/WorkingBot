@@ -458,6 +458,8 @@ DEFAULT_PARAMS = {
     'smart_ws_size_scalar_observe': 0.25,    # lot scalar in OBSERVE mode
     'smart_ws_flip_penalty': 0.5,       # multiply size by this per aggressor flip
     'smart_ws_cooldown_base_beats': 1,  # base heartbeats for exponential cooldown
+    'smart_ws_late_session_relax_mins': 180, # DTE below this → eased detector weights
+    'smart_ws_token_refresh_per_hour': 1.0,  # tokens dripped back per hour of elapsed session
     'theta_acceleration_window': 120,   # minutes before expiry to widen triggers
     'shift_threshold_pct': 0.0,            # dynamic shift: max(shift_threshold, hedge_premium * pct). 0 = disabled
     'shift_match_opposite_lots': True,     # delta-neutral: match opposite side's lot count on strike shift
@@ -784,6 +786,7 @@ HOT_RELOAD_PARAMS = {
     'smart_ws_oscillation_sensitivity_pct', 'smart_ws_rv_iv_ratio_floor',
     'smart_ws_size_scalar_defensive', 'smart_ws_size_scalar_observe',
     'smart_ws_flip_penalty', 'smart_ws_cooldown_base_beats',
+    'smart_ws_late_session_relax_mins', 'smart_ws_token_refresh_per_hour',
     'adaptive_interval_enabled',
     'wind_down_enabled', 'wind_down_hours_before_expiry',
     'wind_down_buyback_pct', 'wind_down_close_threshold',

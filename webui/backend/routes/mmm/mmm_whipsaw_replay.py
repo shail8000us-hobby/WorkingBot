@@ -32,25 +32,44 @@ def _ts_to_utc(ts_str: str) -> Optional[datetime]:
 
 
 def _sub_session(session: dict, series_up_to: list, beat_ts: Optional[datetime]) -> dict:
-    """Build an isolated session copy for a single replay beat."""
+    """Build an isolated session copy for a single replay beat.
+
+    Kept for backward compatibility / testing. The main replay_session() now uses
+    stateful accumulation via _build_replay_state() instead of calling this per beat.
+    """
     sub = deepcopy(session)
     sub['_smart_ws_series'] = list(series_up_to)
-    # Trim adjustment_history to entries at or before this beat's timestamp
     if beat_ts is not None:
         adj_hist = session.get('adjustment_history', [])
         sub['adjustment_history'] = [
             h for h in adj_hist
             if _ts_before_or_equal(h.get('timestamp', ''), beat_ts)
         ]
-    # Reset legacy whipsaw state for clean replay of each engine
     for k in ('_whipsaw_score', '_whipsaw_state', '_whipsaw_skip_until',
               '_whipsaw_last_checked_idx', '_whipsaw_last_noise_at'):
         sub.pop(k, None)
-    # Reset smart state so each beat is computed fresh
     for k in list(sub.keys()):
         if k.startswith('_smart_ws_') and k != '_smart_ws_series':
             del sub[k]
     return sub
+
+
+def _build_replay_state(session_snapshot: dict) -> dict:
+    """Build an initial running state for stateful replay.
+
+    Clears both engine states for a fair start — engines will accumulate state
+    naturally beat-by-beat just as they would in production.
+    """
+    state = deepcopy(session_snapshot)
+    # Clear legacy state (fair start — don't carry stale live-session score)
+    for k in ('_whipsaw_score', '_whipsaw_state', '_whipsaw_skip_until',
+              '_whipsaw_last_checked_idx', '_whipsaw_last_noise_at'):
+        state.pop(k, None)
+    # Clear smart state except the series (will be sliced per beat)
+    for k in list(state.keys()):
+        if k.startswith('_smart_ws_') and k != '_smart_ws_series':
+            del state[k]
+    return state
 
 
 def _ts_before_or_equal(ts_str: str, cutoff: datetime) -> bool:
@@ -92,6 +111,18 @@ def replay_session(
             'error': f'Unknown engine: {unknown}',
         }
 
+    adj_hist = session_snapshot.get('adjustment_history', [])
+
+    # Use stateful running copies so engines accumulate state across beats exactly as in
+    # production. Legacy needs this to reach threshold (score 0→1→2→3→block at 4).
+    # A per-beat fresh state systematically under-counts Legacy blocks (audit High-1).
+    state_a = _build_replay_state(session_snapshot)
+    state_b = _build_replay_state(session_snapshot)
+
+    if param_overrides:
+        state_a.setdefault('params', {}).update(param_overrides)
+        state_b.setdefault('params', {}).update(param_overrides)
+
     beats: List[dict] = []
     for i, sample in enumerate(series):
         spot = float(sample.get('spot') or 0.0)
@@ -103,20 +134,21 @@ def replay_session(
         beat_ts = _ts_to_utc(ts)
         ctx = WhipsawCtx(ce_now=ce, pe_now=pe, spot=spot, iv=iv)
 
-        sub_a = _sub_session(session_snapshot, series[:i + 1], beat_ts)
-        sub_b = _sub_session(session_snapshot, series[:i + 1], beat_ts)
-
-        if param_overrides:
-            sub_a.setdefault('params', {}).update(param_overrides)
-            sub_b.setdefault('params', {}).update(param_overrides)
+        # Update running state with series slice and adj_history up to this beat
+        state_a['_smart_ws_series'] = series[:i + 1]
+        state_b['_smart_ws_series'] = series[:i + 1]
+        if beat_ts is not None:
+            trimmed = [h for h in adj_hist if _ts_before_or_equal(h.get('timestamp', ''), beat_ts)]
+            state_a['adjustment_history'] = trimmed
+            state_b['adjustment_history'] = trimmed
 
         try:
-            dec_a = eng_a.evaluate(sub_a, ctx)
+            dec_a = eng_a.evaluate(state_a, ctx)
         except Exception as exc:
             log.warning(f'Replay beat {i} engine_a ({engine_a}) error: {exc}')
             continue
         try:
-            dec_b = eng_b.evaluate(sub_b, ctx)
+            dec_b = eng_b.evaluate(state_b, ctx)
         except Exception as exc:
             log.warning(f'Replay beat {i} engine_b ({engine_b}) error: {exc}')
             continue

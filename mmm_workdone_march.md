@@ -5367,3 +5367,243 @@ Investigated 5 issues flagged in `whipsaw_audit.md`. Findings:
 **Files changed:** `mmm_whipsaw.py`, `mmm_api.py`, `MMMWhipsawCompareTab.js`, `MMMStatusBanner.js`
 **Tests:** 1562 passed / 0 failed
 **Risk:** LOW. W-01 fix is additive (sets a flag, doesn't change engine logic). W-04/W-05 are UI/API reads only.
+
+## 2026-04-20 — Smart Whipsaw: fix 2 bugs + implement 3 late-session proposals
+
+**Context:** First live ODTE session using Smart whipsaw confirmed it works. Investigation
+found 2 confirmed bugs and 3 design gaps in late-session behavior (last 3-7h of ODTE).
+
+**Bug 1 fixed — `_minutes_to_expiry` never stored in session:**
+- Monitor computed `minutes_to_expiry` as local var but never wrote it to session.
+- Smart engine read `session.get('_minutes_to_expiry')` → always `None`.
+- Expiry tightening logic (§9.2 — tighten thresholds at ≤30 min / ≤5 min) was dead code.
+- Fix: `mmm_monitor.py` Step 3 — store `session['_minutes_to_expiry'] = minutes_to_expiry`
+  before calling `_get_whipsaw_decision()`.
+
+**Bug 2 fixed — `_smart_ws_loss_velocity` never written:**
+- `_check_pressure_override()` reads `_smart_ws_loss_velocity` but nothing ever set it.
+- Loss-velocity pressure-release override (allow hedging when P&L crashing) never fired.
+- Fix: `mmm_monitor.py` Step 3 — compute `(_pnl_prev - _pnl_now) / beat_mins` each beat
+  and store as `_smart_ws_loss_velocity`. Also track `_smart_ws_pnl_prev`.
+
+**Proposal 1 — Late-session permissive detector weights:**
+- When 30 < DTE ≤ `smart_ws_late_session_relax_mins` (default 180 min = last 3h):
+  flip weight 0.30→0.20, ER weight 0.20→0.10, gamma weight 0.05→0.15, outcome 0.15→0.25.
+  Near expiry, gamma-driven repositioning looks like whipsaw. Lower flip/ER sensitivity,
+  higher outcome/gamma weight. `compute_composite()` now accepts optional `weights` dict.
+- Stored as `session['_smart_ws_late_session']` for observability.
+
+**Proposal 2 — Token budget time-drip:**
+- `_load_budget()` now accepts `refresh_per_hour` and `interval_mins` params.
+- Each beat: drip `(interval_mins / 60) × refresh_per_hour` tokens back (capped at initial).
+- Default `smart_ws_token_refresh_per_hour = 1.0` → 1 token restored per hour.
+- Prevents late-session budget starvation without eliminating the budget constraint.
+
+**Proposal 3 — Cooldown enforcement (§8 was spec'd but unimplemented):**
+- When gates block in NORMAL/DEFENSIVE, set `_smart_ws_cooldown_until` timestamp.
+- Duration: `cooldown_beats × adjustment_interval` seconds (exponential: base × 2^flips).
+- During cooldown: block is forced even if gates would pass. Pressure override bypasses.
+- Cooldown cleared when adjustment is genuinely allowed (prevents stale lock).
+- STRADDLE_WITH_ADJUSTMENT bypasses cooldown (strategy-level bypass preserved).
+
+**New params (hot-reloadable):**
+- `smart_ws_late_session_relax_mins`: default 180, range 30–420
+- `smart_ws_token_refresh_per_hour`: default 1.0, range 0.0–5.0
+
+**Files changed:** `mmm_monitor.py`, `mmm_whipsaw_smart.py`, `mmm_state.py`,
+  `mmm_config.py`, `MMMSettingsDialog.js`
+**Tests:** 1562 passed / 0 failed
+**Risk:** LOW. All changes are additive or activate previously-dead code paths.
+  Late-session weights ease sensitivity (safer for real hedging). Cooldown prevents
+  rapid retry loops. Token drip prevents starvation.
+
+
+## 2026-04-20 — VIPSO Audit verification + C1/C2/High-1 fixes
+
+Investigated all 6 audit claims from VIPSO_AUDIT_REPORT.md from source before touching anything.
+
+**C1 (REAL) — Smart enable-gate UI drift:**
+- `select_engine()` uses `whipsaw_engine` only; `whipsaw_smart_enabled` is not a runtime gate
+- `MMMWhipsawCompareTab.js:125` `isSmartActive` and `MMMSafetyPanel.js:277` `isSmartPrimary` both incorrectly gated on `whipsaw_smart_enabled`
+- Fix: removed `&& smartEnabled` / `&& params.whipsaw_smart_enabled !== false` from both components
+- Fix: removed stale step 3 from `select_engine()` docstring
+- Note: MMMStatusBanner.js was already fixed in prior session
+
+**C2 (REAL) — 5 dead control knobs:**
+- `smart_ws_gate_count_normal/defensive`, `smart_ws_size_scalar_defensive/observe`, `smart_ws_flip_penalty` all in defaults/hot-reload/UI but `multi_gate_decide()` hardcoded all values
+- Fix in `mmm_whipsaw_smart.py`: `multi_gate_decide()` now reads gate counts and size scalars from params
+- Fix: `smart_ws_flip_penalty` now applied in `evaluate()` after multi_gate_decide() — `lot_scalar *= flip_penalty ** flip_count` (capped at 0.1)
+- Default values unchanged (3, 4, 0.5, 0.25, 0.5) — no behavior change at defaults
+
+**High-1 (REAL) — Replay legacy bias:**
+- `_sub_session()` cleared `_whipsaw_score` etc. every beat — Legacy can never accumulate to threshold in replay
+- Fix in `mmm_whipsaw_replay.py`: replaced per-beat `_sub_session()` calls with stateful running copies (`state_a`, `state_b`) via new `_build_replay_state()`
+- Both engines now accumulate state across beats (series slice updated each beat, adj_history trimmed per beat)
+- `_sub_session()` retained for backward compat, not called from main path
+
+**Dismissed:**
+- Medium-1 (timeline None fields): requires per-beat score storage during live operation — architectural change, not a live safety issue
+- Medium-2 (test gaps): existing 1562 tests all pass
+
+All 1562 tests passed.
+
+## 2026-04-20 — MMM phasewise audit execution (Phase 00 complete, Phase 01 started)
+
+**Mode:** Audit-only (read-only analysis). No runtime code changes.
+
+- Executed **Phase 00** from `MMM_FULLSTACK_PHASEWISE_AUDIT_PLAN.md` and generated complete manifests:
+  - `audit/mmm/MANIFEST_BACKEND_FILES.md`
+  - `audit/mmm/MANIFEST_BACKEND_FUNCTIONS.md`
+  - `audit/mmm/MANIFEST_API_ENDPOINTS.md`
+  - `audit/mmm/MANIFEST_FRONTEND_FILES.md`
+  - `audit/mmm/MANIFEST_WS_EVENTS.md`
+  - `audit/mmm/MANIFEST_TESTS.md`
+- Published phase report: `audit/mmm/phases/phase_00_report.md`
+- Baseline counts confirmed:
+  - Backend modules: 57 (`mmm_*.py`) + 1 support file
+  - Backend function/method entries: 866
+  - API routes: 93
+  - Frontend production files: 38 (+3 frontend test files under same folder)
+  - Backend test files: 75
+  - WS parity snapshot: 25 matched, 12 backend-only, 1 frontend-only (`connect`)
+
+- Started **Phase 01** and audited first file: `webui/backend/routes/mmm/mmm_constants.py`
+  - Report: `audit/mmm/file_reports/backend/phase_01_mmm_constants_audit.md`
+  - Result: PASS (no P0/P1 findings)
+  - Noted low-risk maintainability point: Decimal-helper convention duplicated across multiple modules.
+
+- Updated audit continuity files:
+  - `audit/mmm/phases/phase_00_setup.md` (checklist completed)
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+
+## 2026-04-20 — MMM full-stack phasewise audit plan + context-safe scaffolding
+
+- Read `MMM_LAST_3_SESSIONS.md` and aligned planning with current stale-monitor/reverse/whipsaw invariants.
+- Built an inventory-backed audit strategy for context-window-constrained AI sessions (backend + API + frontend + tests + wiring).
+- Created master plan: `MMM_FULLSTACK_PHASEWISE_AUDIT_PLAN.md` with 13 phases (Phase 00–12), strict sequencing, chunk budgets, function-level and wiring-level audit loops, severity model, and completion criteria.
+- Added execution scaffolding:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+  - `audit/mmm/TEMPLATE_FILE_AUDIT_REPORT.md`
+  - `audit/mmm/phases/phase_00_setup.md`
+  - `audit/mmm/phases/TEMPLATE_PHASE_REPORT.md`
+- No trading logic or runtime behavior changed in this session; this was planning/documentation and audit process setup only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_config.py` chunk 02 completed (audit-only)
+
+- Continued Phase 01 audit with a function-layer pass of `webui/backend/routes/mmm/mmm_config.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_config_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - `_normalize_strategy_namespace_key`, `get_strategy_param_namespace`, `get_forbidden_params_for_strategy`
+  - `validate_params`, `_interdependency_checks`, `get_hot_reload_params`, `get_param_info`
+- Recorded two new findings:
+  - `F01-P1-006`: cross-parameter interdependency checks currently run on patch subsets, allowing invalid merged states to pass PATCH validation.
+  - `F01-P2-007`: create-session path silently drops unknown keys (typo risk masked by defaults).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_reversal.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a reversal/cooldown pass of `webui/backend/routes/mmm/mmm_reversal.py` (`lines 1–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_reversal_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - reversal detection + cooldown lifecycle (`detect_reversal`, `is_cooldown_active`, `activate_cooldown`)
+  - reversal skip gate + state transition bookkeeping (`should_skip_reversal_adjustment`, `record_reversal`, `handle_reversal_skip_transition`)
+- Recorded one new finding:
+  - `F01-P2-015`: malformed cooldown state (`cooldown_active=True`, `cooldown_until=None`) can remain sticky and block future cooldown activation.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_trigger.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a trigger-core pass of `webui/backend/routes/mmm/mmm_trigger.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_trigger_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - primary trigger evaluator (`evaluate_triggers`)
+  - frozen-loss fallback trigger (`check_frozen_pnl_trigger`)
+  - trigger ratchet updater (`update_trigger_snapshots`, partial in this chunk)
+- Recorded two new findings:
+  - `F01-P1-013`: cross-side active-key skip in `update_trigger_snapshots` can block frozen snapshot ratcheting when strike equals opposite side active strike.
+  - `F01-P2-014`: one-side missing trigger snapshot currently suppresses both sides (`OUTCOME_NONE`) in `evaluate_triggers`.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_state.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a structural/state-model pass of `webui/backend/routes/mmm/mmm_state.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_state_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - `_migrate_side_to_positions`, `create_side_state`, `recompute_side_lots`
+  - `_normalize_strategy_type`, `derive_strategy_type`
+- Recorded one new maintainability finding:
+  - `F01-P3-008`: strategy identity normalization logic is duplicated across `mmm_state` and `mmm_config`, creating alias-drift risk over time.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_state.py` chunk 02 completed (audit-only)
+
+- Continued Phase 01 audit with a state-contract pass of `webui/backend/routes/mmm/mmm_state.py` (`lines 451–1436`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_state_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - `create_session`, `initialize_side_from_entry`, `_backfill_side_premiums`, `get_session_summary`
+  - `HOT_RELOAD_PARAMS` + `DEFAULT_PARAMS` tail contract against config validation layer
+- Recorded one new high-priority finding:
+  - `F01-P1-009`: `mmm_state.HOT_RELOAD_PARAMS` and `mmm_config.PARAM_RULES` have a split hot-reload contract (20 state-hot keys are silently dropped by config validation).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_storage.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a persistence-foundations pass of `webui/backend/routes/mmm/mmm_storage.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_storage_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - DB setup/migration/backfill paths (`__init__`, `_init_db`, `_migrate_from_json`, strategy-type backfill helpers)
+  - row decode + checksum gate (`_validate_checksum_raw`, `_row_to_session`)
+- Recorded two new findings:
+  - `F01-P1-010`: malformed JSON row fragility in decode path can make `get_session` return `None` and collapse `list_sessions` output to `[]`.
+  - `F01-P2-011`: migration source-path coupling — `_migrate_from_json` uses module-global legacy path instead of instance-scoped `db_path` context.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_storage.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_storage.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_storage_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - checksum helpers + validation path (`_calculate_checksum*`, `_validate_checksum`)
+  - CRUD and atomic update paths (`save_session`, `get_session`, `list_sessions`, `update_session`)
+  - compact SQL summary path + fallback (`list_session_summaries`, `_row_to_summary_fallback`)
+- Recorded one new finding:
+  - `F01-P2-012`: `save_session` hot-reload arbitration can persist newer DB params while leaving caller in-memory params stale until next reload.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_trigger.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_trigger.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_trigger_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - acceleration/adaptive tier functions (`apply_theta_acceleration`, `compute_adaptive_interval`, `compute_adaptive_interval_v2`, `apply_theta_acceleration_v2`)
+  - remainder of snapshot updater (`update_trigger_snapshots` pruning + return path)
+- New findings in this chunk:
+  - None (carry-forward findings from chunk 01 remain open: `F01-P1-013`, `F01-P2-014`).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+

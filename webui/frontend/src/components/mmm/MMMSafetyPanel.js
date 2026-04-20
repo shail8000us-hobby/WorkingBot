@@ -274,7 +274,7 @@ export default function MMMSafetyPanel({ session, safetyEvents = [], minutesToEx
         {/* Whipsaw */}
         <Grid item xs={6} sm={4} md={3}>
           {(() => {
-            const isSmartPrimary = params.whipsaw_engine === 'SMART' && params.whipsaw_smart_enabled !== false;
+            const isSmartPrimary = params.whipsaw_engine === 'SMART';
             const smartScore = session._smart_ws_score;
             const smartMode  = session._smart_ws_mode || 'NORMAL';
             const legScore   = session._whipsaw_score ?? 0;

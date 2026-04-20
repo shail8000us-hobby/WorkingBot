@@ -2505,6 +2505,18 @@ class MMMMonitor:
         # Step 3: Safety checks (§13-14)
         minutes_to_expiry = self._get_minutes_to_expiry()
 
+        # Bug 1 fix: store DTE in session so Smart engine expiry tightening fires.
+        session['_minutes_to_expiry'] = minutes_to_expiry
+
+        # Bug 2 fix: compute P&L loss velocity for Smart pressure-release override.
+        # _check_pressure_override() reads _smart_ws_loss_velocity; without this
+        # write the loss-velocity path was always 0 and never triggered.
+        _pnl_now  = float(session.get('unrealized_pnl') or 0.0)
+        _pnl_prev = float(session.get('_smart_ws_pnl_prev', _pnl_now))
+        _beat_mins = max(float(session.get('params', {}).get('adjustment_interval', 300)) / 60.0, 1.0)
+        session['_smart_ws_loss_velocity'] = max(0.0, (_pnl_prev - _pnl_now) / _beat_mins)
+        session['_smart_ws_pnl_prev'] = _pnl_now
+
         # Phase 6: Evaluate Smart whipsaw BEFORE safety checks so its block_adjustment
         # can gate adjustments alongside legacy safety events. Result cached on
         # self._beat_whipsaw_decision; Step 6 reuses it (no double append_sample).

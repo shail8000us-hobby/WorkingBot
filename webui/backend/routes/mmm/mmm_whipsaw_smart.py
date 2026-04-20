@@ -75,12 +75,26 @@ class TokenBudget:
         return base
 
 
-def _load_budget(session: dict, tokens_per_session: float) -> TokenBudget:
-    """Load token budget from session, initializing if absent."""
+def _load_budget(
+    session: dict,
+    tokens_per_session: float,
+    refresh_per_hour: float = 0.0,
+    interval_mins: float = 5.0,
+) -> TokenBudget:
+    """Load token budget from session, initializing if absent.
+
+    When refresh_per_hour > 0, drips tokens back each beat proportionally.
+    This prevents late-session starvation in long ODTE sessions.
+    """
     remaining = session.get('_smart_ws_tokens', None)
     if remaining is None:
         remaining = tokens_per_session
-    return TokenBudget(tokens_remaining=float(remaining), tokens_per_session=tokens_per_session)
+    else:
+        remaining = float(remaining)
+        if refresh_per_hour > 0.0 and remaining < tokens_per_session:
+            drip = (interval_mins / 60.0) * refresh_per_hour
+            remaining = min(tokens_per_session, remaining + drip)
+    return TokenBudget(tokens_remaining=remaining, tokens_per_session=tokens_per_session)
 
 
 def _save_budget(session: dict, budget: TokenBudget) -> None:
@@ -308,16 +322,30 @@ def gamma_zone_score(
 # §3.8 Composite Score
 # ---------------------------------------------------------------------------
 
-def compute_composite(scores: Dict[str, float]) -> float:
-    """Weighted sum of detector scores → [0,1]. §3.8"""
+def compute_composite(
+    scores: Dict[str, float],
+    weights: Optional[Dict[str, float]] = None,
+) -> float:
+    """Weighted sum of detector scores → [0,1]. §3.8
+
+    weights: optional override dict — any key missing falls back to module defaults.
+    Late-session overrides come from evaluate() via Proposal 1.
+    """
+    w_flip = weights.get('flip',        _W_FLIP)        if weights else _W_FLIP
+    w_er   = weights.get('er',          _W_ER)          if weights else _W_ER
+    w_osc  = weights.get('oscillation', _W_OSCILLATION) if weights else _W_OSCILLATION
+    w_sym  = weights.get('symmetry',    _W_SYMMETRY)    if weights else _W_SYMMETRY
+    w_out  = weights.get('outcome',     _W_OUTCOME)     if weights else _W_OUTCOME
+    w_rviv = weights.get('rviv',        _W_RVIV)        if weights else _W_RVIV
+    w_gam  = weights.get('gamma',       _W_GAMMA)       if weights else _W_GAMMA
     return min(1.0, max(0.0, round(
-        _W_FLIP        * scores.get('flip', 0.0)
-        + _W_ER        * scores.get('er', 0.0)
-        + _W_OSCILLATION * scores.get('oscillation', 0.0)
-        + _W_SYMMETRY  * scores.get('symmetry', 0.0)
-        + _W_OUTCOME   * scores.get('outcome', 0.0)
-        + _W_RVIV      * scores.get('rviv', 0.0)
-        + _W_GAMMA     * scores.get('gamma', 0.0),
+        w_flip * scores.get('flip', 0.0)
+        + w_er   * scores.get('er', 0.0)
+        + w_osc  * scores.get('oscillation', 0.0)
+        + w_sym  * scores.get('symmetry', 0.0)
+        + w_out  * scores.get('outcome', 0.0)
+        + w_rviv * scores.get('rviv', 0.0)
+        + w_gam  * scores.get('gamma', 0.0),
         6,
     )))
 
@@ -440,6 +468,11 @@ def multi_gate_decide(
     §5.3 pressure-release override: if pressure indicators critical, bypass.
     """
     events = []
+    params        = session.get('params', {})
+    gate_normal   = int(params.get('smart_ws_gate_count_normal',    3))
+    gate_def      = int(params.get('smart_ws_gate_count_defensive', 4))
+    scalar_def    = float(params.get('smart_ws_size_scalar_defensive', 0.5))
+    scalar_obs    = float(params.get('smart_ws_size_scalar_observe',   0.25))
 
     if mode == 'LOCKDOWN':
         events.append({
@@ -459,7 +492,7 @@ def multi_gate_decide(
             'message': f'Smart whipsaw OBSERVE (score {composite_score:.2f}): new sells paused, closes/harvests still allowed.',
             'source': 'SMART',
         })
-        return True, 2.0, 0.25, events
+        return True, 2.0, scalar_obs, events
 
     # Evaluate gates 1–5
     g1 = getattr(ctx, 'premium_trigger_fired', True)   # Gate 1: trigger fired
@@ -470,7 +503,7 @@ def multi_gate_decide(
     gates_passed = sum([g1, g2, g3, g4, g5])
 
     # §5.4 asymmetric: adding to thinner side → +1 required
-    required = 4 if mode == 'DEFENSIVE' else 3
+    required = gate_def if mode == 'DEFENSIVE' else gate_normal
     if _is_adding_to_thinner_side(session):
         required += 1
         required = min(required, 5)  # cap at 5
@@ -480,7 +513,7 @@ def multi_gate_decide(
     # Size scalars
     if mode == 'DEFENSIVE':
         trigger_widen = 1.5
-        lot_scalar    = 0.5
+        lot_scalar    = scalar_def
     else:  # NORMAL
         trigger_widen = 1.0
         lot_scalar    = 1.0
@@ -561,6 +594,23 @@ class SmartWhipsawEngine:
         osc_sens      = float(params.get('smart_ws_oscillation_sensitivity_pct', 0.15))
         rv_floor      = float(params.get('smart_ws_rv_iv_ratio_floor', 0.6))
         base_beats    = int(params.get('smart_ws_cooldown_base_beats', 1))
+        relax_mins    = float(params.get('smart_ws_late_session_relax_mins', 180.0))
+        refresh_rate  = float(params.get('smart_ws_token_refresh_per_hour', 1.0))
+        interval_mins = float(params.get('adjustment_interval', 300)) / 60.0
+
+        # ── [Proposal 3] §8 Cooldown enforcement — check before detectors ────
+        _in_cooldown = False
+        _now = datetime.now(timezone.utc)
+        cooldown_until_str = session.get('_smart_ws_cooldown_until')
+        if cooldown_until_str:
+            try:
+                cooldown_until_ts = datetime.fromisoformat(cooldown_until_str)
+                if _now < cooldown_until_ts:
+                    _in_cooldown = True
+                else:
+                    session.pop('_smart_ws_cooldown_until', None)
+            except (ValueError, TypeError):
+                session.pop('_smart_ws_cooldown_until', None)
 
         # ── Step 1: compute state ───────────────────────────────────────────
         series = get_series(session, window_mins=max(flip_window, er_window))
@@ -583,9 +633,29 @@ class SmartWhipsawEngine:
             'symmetry': sym_sc, 'outcome': out_sc, 'rviv': rviv_sc,
             'gamma': gam_sc,
         }
-        composite = compute_composite(all_scores)
 
         dte = session.get('_minutes_to_expiry')
+
+        # ── [Proposal 1] Late-session weight adjustment ──────────────────────
+        # In the last 3 hours (30 < DTE < relax_mins): flip/ER detectors are less
+        # reliable (gamma-driven repositioning looks like whipsaw). Shift weight
+        # toward gamma zone and adjustment outcome, which are more predictive.
+        _late_session = dte is not None and 30.0 < dte <= relax_mins
+        if _late_session:
+            composite_weights = {
+                'flip':        0.20,  # 0.30 → repositioning near expiry is real
+                'er':          0.10,  # 0.20 → gamma chop is real, not noise
+                'oscillation': 0.10,
+                'symmetry':    0.10,
+                'outcome':     0.25,  # 0.15 → adjustment history more predictive
+                'rviv':        0.10,
+                'gamma':       0.15,  # 0.05 → near-strike moves more significant
+            }
+        else:
+            composite_weights = None  # use module-level defaults
+
+        composite = compute_composite(all_scores, weights=composite_weights)
+
         mode = mode_from_score(
             composite,
             defensive=defensive_thr, observe=observe_thr, lockdown=lockdown_thr,
@@ -593,8 +663,6 @@ class SmartWhipsawEngine:
         )
 
         # ── Step 2: pressure-release override (§5.3) ────────────────────────
-        # If any critical pressure indicator fires, override mode to NORMAL
-        # (gates will still be evaluated but not block).
         pressure_override = _check_pressure_override(session)
         if pressure_override:
             mode = 'NORMAL'
@@ -604,18 +672,44 @@ class SmartWhipsawEngine:
         block, trigger_widen_factor, lot_scalar, events = multi_gate_decide(
             session, ctx, series, mode, composite,
         )
+        # Track gate-count blocks for cooldown (OBSERVE/LOCKDOWN self-sustain; no extra cooldown needed)
+        gate_count_blocked = block and mode in ('NORMAL', 'DEFENSIVE')
 
-        # STRADDLE_WITH_ADJUSTMENT bypass (§0 rule 6)
+        # §5.4 flip penalty: reduce lot scalar for recent aggressor flip activity.
+        # Only applied when not a straddle adj (straddle bypass resets lot_scalar=1.0 below).
+        flip_count_approx = int(flip_sc * 3)
+        flip_penalty_val  = float(params.get('smart_ws_flip_penalty', 0.5))
+        if not is_straddle_adj and flip_count_approx > 0 and flip_sc > 0.1 and lot_scalar > 0:
+            lot_scalar = max(0.1, lot_scalar * (flip_penalty_val ** flip_count_approx))
+
+        # ── [Proposal 3] Enforce active cooldown (pressure override bypasses) ─
+        if _in_cooldown and not pressure_override and not is_straddle_adj:
+            if not block:
+                block = True
+                events.append({
+                    'type': 'smart_whipsaw',
+                    'level': 'info',
+                    'action': 'warn',
+                    'message': f'Smart whipsaw cooldown active (until {cooldown_until_str[:19]}Z). Adjustment suppressed.',
+                    'source': 'SMART',
+                })
+
+        # STRADDLE_WITH_ADJUSTMENT bypass (§0 rule 6) — overrides all smart limits
         if is_straddle_adj:
             trigger_widen_factor = 1.0
             lot_scalar = 1.0
             block = False
 
         # ── Step 5: token budget ────────────────────────────────────────────
-        budget = _load_budget(session, tokens_init)
+        budget = _load_budget(session, tokens_init, refresh_per_hour=refresh_rate, interval_mins=interval_mins)
         recent_is_flip = flip_sc > 0.05
         token_cost = budget.cost_for_mode(mode, is_flip=recent_is_flip)
-        if not block and not budget.spend(token_cost):
+        if is_straddle_adj:
+            # STRADDLE bypass also skips token spend — token budget must not
+            # override the §0 rule 6 invariant that gamma never blocks adjustment.
+            # No spend, no credit — _load_budget already applied the beat drip.
+            pass
+        elif not block and not budget.spend(token_cost):
             block = True
             events.append({
                 'type': 'smart_whipsaw',
@@ -628,17 +722,31 @@ class SmartWhipsawEngine:
             budget.credit_patience()  # §4.3 patience bonus
         _save_budget(session, budget)
 
-        # ── Cooldown beats (§8) — stored for info, not yet applied to heartbeat ──
-        flip_count_approx = int(flip_sc * 3)
+        # ── §8 Cooldown beats — now enforced, not just informational ─────────
+        # flip_count_approx already computed above (flip penalty section)
         cooldown_beats = compute_cooldown_beats(flip_count_approx, base_beats)
+
+        # ── [Proposal 3] Set cooldown expiry when gate-blocking fresh ─────────
+        if gate_count_blocked and not is_straddle_adj and not _in_cooldown:
+            cooldown_secs = cooldown_beats * (interval_mins * 60.0)
+            _cooldown_until = _now + timedelta(seconds=cooldown_secs)
+            session['_smart_ws_cooldown_until'] = _cooldown_until.isoformat()
+            log.debug(
+                f'Smart: cooldown set {cooldown_beats} beats ({cooldown_secs:.0f}s) '
+                f'until {_cooldown_until.isoformat()[:19]}'
+            )
+        elif not block and not is_straddle_adj:
+            # Adjustment genuinely allowed — clear any stale cooldown
+            session.pop('_smart_ws_cooldown_until', None)
 
         # ── Write smart state ────────────────────────────────────────────────
         session['_smart_ws_score']  = composite
         session['_smart_ws_mode']   = mode
+        session['_smart_ws_late_session'] = _late_session
         session['_smart_ws_last_flip_at'] = session.get('_smart_ws_last_flip_at', '')
         session['_smart_ws_flip_count_30m'] = flip_count_approx
         session['_smart_ws_last_decision'] = {
-            'ts': datetime.now(timezone.utc).isoformat(),
+            'ts': _now.isoformat(),
             'score': composite,
             'mode': mode,
             'scores': all_scores,
@@ -646,8 +754,11 @@ class SmartWhipsawEngine:
             'trigger_widen_factor': trigger_widen_factor,
             'lot_scalar': lot_scalar,
             'cooldown_beats': cooldown_beats,
+            'in_cooldown': _in_cooldown,
             'token_remaining': budget.tokens_remaining,
             'pressure_override': pressure_override,
+            'late_session': _late_session,
+            'weights': 'late_session' if _late_session else 'default',
         }
 
         return WhipsawDecision(

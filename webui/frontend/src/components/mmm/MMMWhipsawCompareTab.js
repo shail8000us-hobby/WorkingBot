@@ -122,8 +122,9 @@ export default function MMMWhipsawCompareTab({ session, heartbeat }) {
 
   const seriesLength = session?._smart_ws_series?.length ?? 0;
 
-  const isSmartActive = wsEngine === 'SMART' && smartEnabled;
-  const isShadow      = !isSmartActive && (shadowEnabled || wsEngine === 'SMART');
+  // Backend select_engine() uses whipsaw_engine param only — smartEnabled is not a gate.
+  const isSmartActive = wsEngine === 'SMART';
+  const isShadow      = !isSmartActive && shadowEnabled;
 
   return (
     <Box sx={{ p: 2 }}>

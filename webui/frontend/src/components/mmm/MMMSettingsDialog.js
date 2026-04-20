@@ -164,6 +164,7 @@ const PARAM_GROUPS = {
       'smart_ws_flip_window_mins', 'smart_ws_er_window_mins',
       'smart_ws_oscillation_sensitivity_pct', 'smart_ws_rv_iv_ratio_floor',
       'smart_ws_flip_penalty', 'smart_ws_cooldown_base_beats',
+      'smart_ws_late_session_relax_mins', 'smart_ws_token_refresh_per_hour',
       'whipsaw_window_mins', 'whipsaw_spot_move_pct', 'whipsaw_caution_score', 'whipsaw_restrict_score', 'whipsaw_cooldown_score',
       'max_lots_per_side', 'max_total_exposure', 'trailing_stop_pct', 'premium_buffer_pct', 'close_at_atm', 'itm_guard_enabled',
     ],

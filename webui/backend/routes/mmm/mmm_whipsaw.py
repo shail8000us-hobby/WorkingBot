@@ -175,9 +175,8 @@ def select_engine(session: dict) -> Any:
 
     Priority:
       1. MMM_WHIPSAW_FORCE_LEGACY env var (emergency kill-switch)
-      2. session['params']['whipsaw_engine'] param
-      3. whipsaw_smart_enabled guard: engine=SMART + smart_enabled=False → LEGACY as primary
-      4. DEFAULT_ENGINE fallback
+      2. session['params']['whipsaw_engine'] param  (SMART | LEGACY | OFF)
+      3. DEFAULT_ENGINE fallback
     """
     if os.environ.get('MMM_WHIPSAW_FORCE_LEGACY') == '1':
         return WHIPSAW_ENGINE_DISPATCH['LEGACY']
