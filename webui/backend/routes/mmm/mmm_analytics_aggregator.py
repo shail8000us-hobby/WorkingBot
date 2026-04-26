@@ -80,7 +80,7 @@ class MMMAnalyticsAggregator:
             # Separate completed sessions (have a final outcome)
             completed = [
                 s for s in sessions
-                if s.get('session_status') not in ('IDLE', 'RUNNING', None)
+                if s.get('session_status') in ('STOPPED', 'CLOSED', 'EXITED')
             ]
 
             return {

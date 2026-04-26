@@ -186,6 +186,38 @@ class TestEvaluateTriggers:
         assert result['ce_excess'] == pytest.approx(30.0, abs=0.01)
         assert result['ce_excess_pct'] == pytest.approx(15.0, abs=0.01)
 
+    def test_f01_p2_014_ce_missing_snapshot_does_not_suppress_valid_pe_trigger(self):
+        """Regression F01-P2-014: one side missing snapshot must not blind the other side.
+
+        CE snapshot=0 (e.g. right after a CE strike shift). PE snapshot valid and
+        PE premium is +30% above PE trigger. Before the fix, OUTCOME_NONE was returned.
+        After the fix, CE is disabled but PE fires correctly → OUTCOME_PE.
+        """
+        session = _make_session(ce_snapshot=0.0, pe_snapshot=100.0, min_trigger_move=15.0)
+        # PE: pe_now=135, pe_trigger=100 → excess_pct=35% > 15% → fired
+        result = _trigger.evaluate_triggers(session, ce_now=200.0, pe_now=135.0)
+        assert result['outcome'] == OUTCOME_PE, (
+            "Valid PE trigger suppressed when CE snapshot was missing (F01-P2-014 regression)"
+        )
+        assert result['pe_triggered'] is True
+        assert result['ce_triggered'] is False
+
+    def test_f01_p2_014_pe_missing_snapshot_does_not_suppress_valid_ce_trigger(self):
+        """Mirror of above: PE missing, CE valid and triggered."""
+        session = _make_session(ce_snapshot=100.0, pe_snapshot=0.0, min_trigger_move=15.0)
+        result = _trigger.evaluate_triggers(session, ce_now=135.0, pe_now=200.0)
+        assert result['outcome'] == OUTCOME_CE
+        assert result['ce_triggered'] is True
+        assert result['pe_triggered'] is False
+
+    def test_f01_p2_014_both_missing_returns_outcome_none(self):
+        """Both snapshots missing/zero → OUTCOME_NONE (unchanged early-exit behaviour)."""
+        session = _make_session(ce_snapshot=0.0, pe_snapshot=0.0, min_trigger_move=15.0)
+        result = _trigger.evaluate_triggers(session, ce_now=200.0, pe_now=200.0)
+        assert result['outcome'] == OUTCOME_NONE
+        assert result['ce_triggered'] is False
+        assert result['pe_triggered'] is False
+
 
 # ─── update_trigger_snapshots tests ───────────────────────────────────────────
 
@@ -235,6 +267,58 @@ class TestUpdateTriggerSnapshots:
         del session['ce']['trigger_snapshot']
         _trigger.update_trigger_snapshots(session, 220.0, 190.0)
         assert 'trigger_snapshot' in session['ce']
+
+    def test_f01_p1_013_ce_frozen_at_pe_active_strike_still_updated(self):
+        """Regression F01-P1-013: cross-side active key must not skip CE frozen snapshot.
+
+        CE has a frozen position at strike 95000, which is also PE's active strike.
+        Before the fix, active_keys={ce_active, pe_active} caused this CE frozen
+        snapshot to be silently skipped. After the fix, only ce_active is excluded
+        from CE frozen updates, so the CE frozen snapshot at 95000 is correctly updated.
+        """
+        ce_strike = 100000
+        pe_strike = 95000
+        frozen_strike = 95000  # Same value as PE active strike (cross-side collision)
+
+        sk_ce = _constants.strike_key(ce_strike)
+        sk_pe = _constants.strike_key(pe_strike)
+        sk_frozen = _constants.strike_key(frozen_strike)
+
+        session = {
+            'session_id': 'trig-p1-013',
+            'strategy_status': 'RUNNING',
+            'params': {'min_trigger_move': 10.0, 'adjustment_interval': 300},
+            'ce': {
+                'active_strike': ce_strike,
+                'trigger_snapshot': {sk_ce: 200.0},
+                'active_lots': 5,
+                'frozen_positions': [
+                    {'strike': frozen_strike, 'lots': 10, 'entry_premium': 100.0}
+                ],
+            },
+            'pe': {
+                'active_strike': pe_strike,
+                'trigger_snapshot': {sk_pe: 180.0},
+                'active_lots': 5,
+                'frozen_positions': [],
+            },
+        }
+
+        new_frozen_premium = 130.0
+
+        def fetch_fn(strike, option_type):
+            if strike == frozen_strike and option_type == 'call':
+                return new_frozen_premium
+            return 100.0
+
+        _trigger.update_trigger_snapshots(session, 230.0, 200.0, fetch_premium_fn=fetch_fn)
+
+        # CE frozen snapshot at sk_frozen must be updated (not skipped due to PE active key)
+        assert session['ce']['trigger_snapshot'].get(sk_frozen) == new_frozen_premium, (
+            "CE frozen snapshot at PE-active-strike was incorrectly skipped (F01-P1-013 regression)"
+        )
+        # PE active snapshot must still be updated normally
+        assert session['pe']['trigger_snapshot'][sk_pe] == 200.0
 
 
 # ─── apply_theta_acceleration tests ───────────────────────────────────────────

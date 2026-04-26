@@ -84,7 +84,6 @@ export default function MMMWhipsawCompareTab({ session, heartbeat }) {
 
   const sessionId = session?.session_id;
   const wsEngine = session?.params?.whipsaw_engine || 'LEGACY';
-  const smartEnabled = session?.params?.whipsaw_smart_enabled || false;
   const shadowEnabled = session?.params?.whipsaw_engine_shadow || false;
 
   const fetchMetrics = useCallback(async () => {

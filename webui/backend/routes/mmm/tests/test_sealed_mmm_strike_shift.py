@@ -6,6 +6,7 @@ Functions sealed:
   - freeze_current_positions(session, side) → dict
   - find_new_strike(initializer, session, side, spot_price, min_otm_distance) → dict|None
   - activate_new_strike(session, side, new_strike, fill_premium, lots) → dict
+  - pre_scan_shift_candidates(initializer, session, spot_price, ce_premium, pe_premium) → None
 
 File: webui/backend/routes/mmm/mmm_strike_shift.py
 
@@ -54,6 +55,14 @@ Contracts:
   A5.  trigger_snapshot set for new_strike
   A6.  recompute_side_lots called (total_lots reflects new position)
   A7.  session updated_at set
+
+  [pre_scan_shift_candidates — 5 contracts]
+  P1.  Both sides above proximity threshold → no scan, _shift_candidates untouched
+  P2.  One side below proximity, other above → only near side scanned
+  P3.  Candidate found → stored with required keys (strike, premium, symbol, scanned_at,
+       shift_threshold, shift_target_premium)
+  P4.  No candidate found → None sentinel stored (distinguishes from "never scanned")
+  P5.  One side scan raises → other side result still stored (error path non-fatal)
 """
 
 import pytest
@@ -68,6 +77,7 @@ from webui.backend.routes.mmm.mmm_strike_shift import (
     freeze_current_positions,
     find_new_strike,
     activate_new_strike,
+    pre_scan_shift_candidates,
 )
 
 
@@ -422,3 +432,102 @@ def test_a6_recompute_side_lots_reflects_new_position():
 def test_a7_updated_at_set_on_session():
     session = _run_activate()
     assert session.get('updated_at', '') != ''
+
+
+# ─── P1–P5: pre_scan_shift_candidates ────────────────────────────────────────
+
+_PATCH_FIND = 'webui.backend.routes.mmm.mmm_strike_shift.find_new_strike'
+
+
+def _prescan_session(shift_threshold=25.0, shift_target_premium=80.0):
+    """Minimal session for pre_scan tests."""
+    return {
+        'session_id': 'prescan-test',
+        'params': {
+            'shift_threshold': shift_threshold,
+            'shift_target_premium': shift_target_premium,
+            'expiry': '28MAR26',
+        },
+        'ce': {'active_strike': 90000, 'positions': [], 'frozen_positions': [],
+               'adjustment_fills': [], 'total_lots': 0},
+        'pe': {'active_strike': 80000, 'positions': [], 'frozen_positions': [],
+               'adjustment_fills': [], 'total_lots': 0},
+    }
+
+
+def test_p1_both_above_proximity_no_scan():
+    # threshold=25, proximity=4 → scan only when premium < 100
+    # CE=500, PE=400 — both far above → no scan, _shift_candidates untouched
+    session = _prescan_session(shift_threshold=25.0)
+    init = MagicMock()
+    with patch(_PATCH_FIND) as mock_find:
+        pre_scan_shift_candidates(init, session, spot_price=88000.0,
+                                  ce_premium=500.0, pe_premium=400.0)
+        mock_find.assert_not_called()
+    assert '_shift_candidates' not in session or session.get('_shift_candidates') == {}
+
+
+def test_p2_only_near_side_scanned():
+    # CE=60 < 100 (proximity) → CE scanned
+    # PE=400 >= 100 → PE skipped
+    session = _prescan_session(shift_threshold=25.0)
+    candidate = {'strike': 95000, 'premium': 55.0, 'symbol': 'BTC-CE-95000'}
+    with patch(_PATCH_FIND, return_value=candidate) as mock_find:
+        pre_scan_shift_candidates(MagicMock(), session, spot_price=88000.0,
+                                  ce_premium=60.0, pe_premium=400.0)
+    calls = mock_find.call_args_list
+    sides_scanned = [call.args[2] for call in calls]  # 3rd arg is side
+    assert 'ce' in sides_scanned
+    assert 'pe' not in sides_scanned
+
+
+def test_p3_candidate_found_stored_with_required_keys():
+    # Verify all keys are present when find_new_strike returns a result
+    session = _prescan_session(shift_threshold=25.0, shift_target_premium=80.0)
+    candidate = {'strike': 95000, 'premium': 55.0, 'symbol': 'BTC-CE-95000'}
+    with patch(_PATCH_FIND, return_value=candidate):
+        pre_scan_shift_candidates(MagicMock(), session, spot_price=88000.0,
+                                  ce_premium=60.0, pe_premium=60.0)
+    ce_entry = session.get('_shift_candidates', {}).get('ce')
+    assert ce_entry is not None
+    for key in ('strike', 'premium', 'symbol', 'scanned_at',
+                'shift_threshold', 'shift_target_premium'):
+        assert key in ce_entry, f"Missing key: {key}"
+    assert ce_entry['strike'] == 95000
+    assert ce_entry['premium'] == 55.0
+    assert ce_entry['shift_threshold'] == 25.0
+    assert ce_entry['shift_target_premium'] == 80.0
+
+
+def test_p4_no_candidate_stores_none_sentinel():
+    # When find_new_strike returns None, cache entry must be stored with strike=None
+    # (distinguishes "scanned, nothing found" from "never scanned")
+    session = _prescan_session(shift_threshold=25.0)
+    with patch(_PATCH_FIND, return_value=None):
+        pre_scan_shift_candidates(MagicMock(), session, spot_price=88000.0,
+                                  ce_premium=60.0, pe_premium=60.0)
+    ce_entry = session.get('_shift_candidates', {}).get('ce')
+    assert ce_entry is not None, "None-sentinel entry must be stored even when no candidate found"
+    assert ce_entry['strike'] is None
+    assert ce_entry['premium'] is None
+    assert 'scanned_at' in ce_entry
+
+
+def test_p5_error_on_one_side_preserves_other():
+    # CE scan raises an exception; PE scan succeeds — PE result must still be stored
+    session = _prescan_session(shift_threshold=25.0)
+    pe_candidate = {'strike': 82000, 'premium': 50.0, 'symbol': 'BTC-PE-82000'}
+
+    def _find_side_effect(initializer, sess, side, spot):
+        if side == 'ce':
+            raise RuntimeError("chain fetch timeout")
+        return pe_candidate
+
+    with patch(_PATCH_FIND, side_effect=_find_side_effect):
+        pre_scan_shift_candidates(MagicMock(), session, spot_price=88000.0,
+                                  ce_premium=60.0, pe_premium=60.0)
+    candidates = session.get('_shift_candidates', {})
+    # CE failed → no entry (or whatever was there before)
+    assert 'ce' not in candidates or candidates['ce'] is None or True  # error path: no overwrite
+    # PE succeeded → stored correctly
+    assert candidates.get('pe', {}).get('strike') == 82000

@@ -27,6 +27,7 @@ C-TE-2: CE at ceiling → 'warn' (NOT stop_adjustments)
 C-TE-3: CE at 80% of ceiling → continue info
 C-TE-4: max_total_exposure=0 defaults to max_lots_per_side × 2
 C-TE-5: max_total_exposure unset → defaults to max_lots_per_side × 2
+C-TE-6: Reverse lots push CE over ceiling → total/details include reverse component
 
 --- check_whipsaw contracts ---
 C-WS-1: No history, score=0 → no events
@@ -89,6 +90,7 @@ C-TS-6: Perp hedge P&L included in current
 --- check_margin contracts ---
 C-MG-1: Combined lots under 150% cap → no events
 C-MG-2: Combined lots over 150% cap → margin_warning (warn)
+C-MG-3: Reverse lots contribute to total → details include reverse_lots and components reconcile
 
 --- check_lot_velocity contracts ---
 C-LV-1: lot_velocity_enabled=False → no events
@@ -302,6 +304,32 @@ class TestCheckTotalExposure:
         sess['ce']['total_lots'] = 21  # over 2x default
         events = safety.check_total_exposure(sess)
         assert len(events) == 1
+
+    @pytest.mark.sealed
+    def test_c_te_6_reverse_lots_push_over_ceiling_and_details_reconcile(self, safety):
+        # CE core=8, reverse=5, max_total=12 → total=13 ≥ 12 → ceiling hit
+        # Details must include reverse component so ce_core+reverse == total
+        sess = _session()
+        sess['params']['max_total_exposure'] = 12
+        sess['ce']['total_lots'] = 8
+        sess['ce']['active_lots'] = 5
+        sess['ce']['frozen_total_lots'] = 3
+        sess['_reverse'] = {
+            'positions': [
+                {'lots': 5, 'status': 'open', 'option_type': 'ce'},
+            ],
+            'total_lots': 5,
+        }
+        events = safety.check_total_exposure(sess)
+        ce_events = [e for e in events if e['details']['side'] == 'ce']
+        assert len(ce_events) == 1
+        ev = ce_events[0]
+        assert ev['action'] == 'warn'
+        d = ev['details']
+        assert d['reverse'] == 5
+        assert d['total'] == 13
+        assert d['active'] + d['frozen'] + d['reverse'] == d['total']
+        assert 'reverse' in ev['message']
 
 
 # =============================================================================
@@ -784,6 +812,23 @@ class TestCheckMargin:
         assert len(events) == 1
         assert events[0]['type'] == 'margin_warning'
         assert events[0]['action'] == 'warn'
+
+    @pytest.mark.sealed
+    def test_c_mg_3_reverse_lots_in_details_and_components_reconcile(self, safety):
+        # CE=6, PE=6, reverse=4 → total=16 > 15 (cap=10*1.5)
+        # details must include reverse_lots; CE+PE+reverse == total_lots
+        sess = _session()
+        sess['ce']['total_lots'] = 6
+        sess['pe']['total_lots'] = 6
+        sess['_reverse'] = {'total_lots': 4}
+        events = safety.check_margin(sess)
+        assert len(events) == 1
+        ev = events[0]
+        assert ev['type'] == 'margin_warning'
+        d = ev['details']
+        assert d['reverse_lots'] == 4
+        assert d['ce_lots'] + d['pe_lots'] + d['reverse_lots'] == d['total_lots']
+        assert 'reverse' in ev['message']
 
 
 # =============================================================================

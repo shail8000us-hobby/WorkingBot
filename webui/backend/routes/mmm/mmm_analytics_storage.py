@@ -17,6 +17,8 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from pathlib import Path
 
+from .mmm_pnl_core import compute_current_total_pnl
+
 log = logging.getLogger('mmm_analytics_storage')
 
 # Use same database as session storage
@@ -111,10 +113,7 @@ class MMMAnalyticsStorage:
             'final_pe_lots': session.get('pe', {}).get('total_lots', 0),
             'final_realized_pnl': session.get('realized_pnl', 0),
             'final_unrealized_pnl': session.get('unrealized_pnl', 0),
-            'final_total_pnl': (
-                session.get('realized_pnl', 0) + 
-                session.get('unrealized_pnl', 0)
-            ),
+            'final_total_pnl': compute_current_total_pnl(session),
             'total_adjustments': session.get('adjustment_count', 0),
             'total_reversals': session.get('reversal_count', 0),
             'total_shifts': session.get('shift_count', 0),

@@ -421,6 +421,9 @@ async def close_position(
                         if pos.get('id') == pos_id:
                             pos.pop('_being_closed', None)
                             break
+                elif _content_match_view is not None:
+                    _content_match_view.pop('_being_closed', None)
+                    _content_match_view.pop('_being_closed_at', None)
                 return {'success': False, 'error': f"Market order returned no ID: {mkt_result}"}
             # Actual filled lots — market orders may partially fill (F3 fix)
             actual_lots = int(mkt_result.get('filled_size') or mkt_result.get('size') or lots)
@@ -767,6 +770,7 @@ def _partial_close_position(
     remaining = max(0, position.get('lots', 0) - closed_lots)
 
     if pos_id:
+        _found = False
         for pos in side_state.get('positions', []):
             if pos.get('id') == pos_id:
                 pos['lots'] = remaining
@@ -779,7 +783,13 @@ def _partial_close_position(
                     # Edge-case: became 0 through rounding — treat as fully closed
                     pos['status'] = 'closed'
                     pos['closed_at'] = datetime.now(timezone.utc).isoformat()
+                _found = True
                 break
+        if not _found:
+            log.warning(
+                f"Partial close ID-miss: pos_id={pos_id} not found in positions[] "
+                f"(side={side}, remaining={remaining}). State may be inconsistent."
+            )
     else:
         # Content-match fallback (pre-migration sessions)
         if pos_type == 'original':

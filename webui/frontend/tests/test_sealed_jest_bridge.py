@@ -219,6 +219,34 @@ class TestJestSealedMMMSessionCard:
         )
 
 
+class TestJestSealedWsBidAskUpdater:
+    """
+    @sealed — applyTickerUpdate / wsTickerUpdater.js (entry #74)
+    Runs: webui/frontend/src/hooks/__tests__/test_sealed_ws_bidask_updater.test.js
+
+    Contracts BU1–BU12: bid/ask update, mid fallbacks, PnL calc, short sign inversion,
+    BTC/ETH multiplier, string parsing, timestamp stamp, field preservation.
+    """
+
+    def test_all_ws_bidask_updater_contracts_pass(self):
+        """
+        CONTRACT: applyTickerUpdate must pass all 12 Jest contract tests.
+        FAILURE = live bid/ask + PnL recalculation is broken. Do NOT ignore.
+        """
+        result = _run_jest("test_sealed_ws_bidask_updater")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed applyTickerUpdate tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_ws_bidask_updater"
+        )
+
+
 class TestJestSealedKillSwitchAndHardStop:
     """
     @sealed — Kill Switch + Hard Stop UI contracts (entry #77)

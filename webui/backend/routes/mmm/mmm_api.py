@@ -2608,6 +2608,20 @@ def update_session_params(session_id: str):
         # Merge with existing params
         # M-8 fix: shallow copy to avoid mutating session dict before persist succeeds
         current_params = dict(session.get('params', {}))
+
+        # Cross-param check on effective merged config — validate_params() only sees submitted
+        # keys, so a single-key patch can silently violate a constraint with an existing param.
+        from .mmm_config import _interdependency_checks as _ic
+        _merged_errors: list = []
+        _ic({**current_params, **validated}, _merged_errors)
+        if _merged_errors:
+            log.warning(f"[{session_id}] Effective merged params failed constraint check: {_merged_errors}")
+            return jsonify({
+                'success': False,
+                'error': 'Parameter update would violate cross-parameter constraints',
+                'details': _merged_errors,
+            }), 400
+
         changed_keys = []
 
         for key, value in validated.items():

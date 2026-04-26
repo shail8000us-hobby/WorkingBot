@@ -225,22 +225,22 @@ def _maybe_run_shadow(
     """Run the non-active engine in observe-only mode and store its result.
 
     Two directions:
-      A) LEGACY is primary → run SMART as shadow (triggered when shadow_enabled=True
-         or engine=SMART but smart_enabled=False).  Stores _smart_ws_shadow_last.
-      B) SMART is primary → run LEGACY as shadow (triggered when shadow_enabled=True).
+      A) LEGACY (or OFF) is primary → shadow-run Smart when whipsaw_engine_shadow=True.
+         Stores _smart_ws_shadow_last.
+      B) SMART is primary → shadow-run Legacy when whipsaw_engine_shadow=True.
          Stores _ws_legacy_shadow_last for compare-tab rollback reference.
+
+    Single control: whipsaw_engine_shadow.  whipsaw_smart_enabled is deprecated and
+    has no effect on shadow routing (see select_engine() docstring).
 
     Shadow engine always runs on deepcopy; state writes discarded.
     """
     params = session.get('params', {})
-    engine_param   = params.get('whipsaw_engine', DEFAULT_ENGINE)
-    smart_enabled  = params.get('whipsaw_smart_enabled', False)
     shadow_enabled = params.get('whipsaw_engine_shadow', False)
 
     if primary_engine.name != 'SMART':
         # Case A: Legacy (or OFF) is primary → shadow-run Smart only when explicitly enabled
-        want_smart_shadow = shadow_enabled
-        if not want_smart_shadow:
+        if not shadow_enabled:
             return
         smart_engine = WHIPSAW_ENGINE_DISPATCH.get('SMART')
         if smart_engine is None:

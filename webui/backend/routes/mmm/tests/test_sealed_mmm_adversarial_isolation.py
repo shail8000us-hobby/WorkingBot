@@ -27,6 +27,8 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch, call
 
 import pytest
+
+pytestmark = pytest.mark.sealed
 from flask import Flask
 
 from webui.backend.routes.mmm.mmm_api import mmm_bp

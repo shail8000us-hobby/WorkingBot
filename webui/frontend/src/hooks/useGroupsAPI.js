@@ -46,53 +46,73 @@ export default function useGroupsAPI() {
 
     const init = async () => {
       try {
-        // Step 1: Check if we need to migrate localStorage data
-        const migrated = localStorage.getItem(LS_MIGRATED_KEY);
-        if (!migrated) {
-          const lsData = localStorage.getItem(LS_KEY);
-          if (lsData) {
-            try {
-              const parsed = JSON.parse(lsData);
-              if (parsed && Object.keys(parsed).length > 0) {
-                console.log('[useGroupsAPI] Migrating localStorage groups to server...', Object.keys(parsed).length, 'expiry keys');
-                const migRes = await fetch(`${API_BASE}/bulk`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ data: parsed }),
-                });
-                if (migRes.ok) {
-                  console.log('[useGroupsAPI] Migration successful! Removing localStorage key.');
-                  localStorage.setItem(LS_MIGRATED_KEY, new Date().toISOString());
-                  // Keep LS_KEY as backup for 30 days, but mark as migrated
-                  localStorage.setItem(LS_KEY + '_backup', lsData);
-                  localStorage.removeItem(LS_KEY);
-                } else {
-                  console.error('[useGroupsAPI] Migration failed, keeping localStorage as fallback');
-                }
-              } else {
-                // Nothing to migrate
-                localStorage.setItem(LS_MIGRATED_KEY, new Date().toISOString());
-              }
-            } catch (parseErr) {
-              console.error('[useGroupsAPI] Failed to parse localStorage for migration:', parseErr);
-              localStorage.setItem(LS_MIGRATED_KEY, 'parse_error');
-            }
-          } else {
-            localStorage.setItem(LS_MIGRATED_KEY, 'no_data');
-          }
-        }
-
-        // Step 2: Load from server
+        // Step 1: Load from server first — this is the source of truth.
         const res = await fetch(`${API_BASE}/`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
+        const serverData = json.data || {};
+        const serverHasData = Object.keys(serverData).length > 0;
+
+        // Step 2: Migrate localStorage → server ONLY if server is completely empty.
+        // SAFETY: Never call /bulk when server has data — it does DELETE ALL + reinsert
+        // and would wipe groups created after the last localStorage snapshot.
+        const migrated = localStorage.getItem(LS_MIGRATED_KEY);
+        if (!migrated) {
+          if (serverHasData) {
+            // Server already has groups — mark migration as done, do NOT overwrite.
+            console.log('[useGroupsAPI] Server has data, skipping localStorage migration to prevent overwrite.');
+            localStorage.setItem(LS_MIGRATED_KEY, new Date().toISOString() + '_server_had_data');
+            localStorage.removeItem(LS_KEY); // clean up stale LS data
+          } else {
+            // Server is empty — safe to migrate from localStorage if we have data.
+            const lsData = localStorage.getItem(LS_KEY);
+            if (lsData) {
+              try {
+                const parsed = JSON.parse(lsData);
+                if (parsed && Object.keys(parsed).length > 0) {
+                  console.log('[useGroupsAPI] Server empty — migrating localStorage groups...', Object.keys(parsed).length, 'expiry keys');
+                  const migRes = await fetch(`${API_BASE}/bulk`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ data: parsed }),
+                  });
+                  if (migRes.ok) {
+                    console.log('[useGroupsAPI] Migration successful!');
+                    localStorage.setItem(LS_MIGRATED_KEY, new Date().toISOString());
+                    localStorage.setItem(LS_KEY + '_backup', lsData);
+                    localStorage.removeItem(LS_KEY);
+                    // Reload server data after migration
+                    const res2 = await fetch(`${API_BASE}/`);
+                    if (res2.ok && !cancelled) {
+                      const json2 = await res2.json();
+                      const data2 = json2.data || {};
+                      setAllExpiryGroupDataLocal(data2);
+                      dataRef.current = data2;
+                      setLoaded(true);
+                      console.log('[useGroupsAPI] Post-migration load:', Object.keys(data2).length, 'expiry keys');
+                    }
+                    return;
+                  } else {
+                    console.error('[useGroupsAPI] Migration failed, keeping localStorage as fallback');
+                  }
+                } else {
+                  localStorage.setItem(LS_MIGRATED_KEY, new Date().toISOString());
+                }
+              } catch (parseErr) {
+                console.error('[useGroupsAPI] Failed to parse localStorage for migration:', parseErr);
+                localStorage.setItem(LS_MIGRATED_KEY, 'parse_error');
+              }
+            } else {
+              localStorage.setItem(LS_MIGRATED_KEY, 'no_data');
+            }
+          }
+        }
 
         if (!cancelled) {
-          const data = json.data || {};
-          setAllExpiryGroupDataLocal(data);
-          dataRef.current = data;
+          setAllExpiryGroupDataLocal(serverData);
+          dataRef.current = serverData;
           setLoaded(true);
-          console.log('[useGroupsAPI] Loaded', Object.keys(data).length, 'expiry keys from server');
+          console.log('[useGroupsAPI] Loaded', Object.keys(serverData).length, 'expiry keys from server');
         }
       } catch (err) {
         console.error('[useGroupsAPI] Failed to load groups:', err);

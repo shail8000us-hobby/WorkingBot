@@ -3008,7 +3008,13 @@ class MMMMonitor:
         # This can happen during fill processing where state momentarily shows 0
         # before fills are applied. If both sides have lots on the next heartbeat,
         # the hedge is intact — auto-resume and alert via Telegram.
-        if self._paused and not _skip_to_pnl:
+        # NOTE: intentionally NOT gated on `not _skip_to_pnl`. Lot-velocity and
+        # whipsaw safety blocks set _skip_to_pnl=True (lines ~2699/2756) BEFORE this
+        # check, which previously made the auto-heal unreachable when those blocks were
+        # active after a replenish — leaving the session permanently PAUSED. The three
+        # inner guards (_pause_reason prefix, _guardian exists, check_g3_healed) are
+        # sufficient; _skip_to_pnl is irrelevant to whether the hedge is restored.
+        if self._paused:
             _pause_reason = session.get('_paused_reason', '')
             if (
                 _pause_reason.startswith('Guardian violations:')

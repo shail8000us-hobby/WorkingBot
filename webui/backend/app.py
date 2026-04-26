@@ -1627,6 +1627,18 @@ if __name__ == '__main__':
                     with price_ws.subscribed_options_lock:
                         symbols = list(price_ws.subscribed_options.keys())
                     if not symbols:
+                        # Auto-populate subscriptions from the positions cache after restart.
+                        # Without this, subscribed_options stays empty until the frontend
+                        # re-sends subscribe_options_tickers (which only fires on reconnect).
+                        try:
+                            from webui.backend.routes.options.options_control import get_cached_positions
+                            cached = get_cached_positions(max_age=60)
+                            if cached:
+                                auto_syms = [p.get('product_symbol') for p in cached if p.get('product_symbol')]
+                                if auto_syms:
+                                    price_ws.subscribe_options(auto_syms)
+                        except Exception:
+                            pass
                         continue
 
                     # Use the bulk tickers cache from options_control (free if fresh)
@@ -1705,7 +1717,6 @@ if __name__ == '__main__':
                     'timestamp': time.time()
                 }
                 socketio.emit('state_snapshot', state_snapshot)
-                print(f"📤 Broadcasted state snapshot to all {len(socketio.server.eio.sids)} clients")
             except Exception as e:
                 print(f"⚠️  Error broadcasting state: {e}")
                 

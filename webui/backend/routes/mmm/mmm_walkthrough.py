@@ -160,6 +160,18 @@ def generate_heartbeat_walkthrough(
     pe_strike = pe.get('active_strike', 0)
     ce_trigger_val = ce.get('trigger_snapshot', {}).get(strike_key(ce_strike), 0)
     pe_trigger_val = pe.get('trigger_snapshot', {}).get(strike_key(pe_strike), 0)
+
+    # After adjustment, trigger_snapshot is ratcheted to fresh post-fill prices.
+    # Reading it here would show no excess even though the trigger fired.
+    # Use pre_adj_trigger (captured before the fill) so calc lines match the
+    # actual decision that was made rather than the post-update baseline.
+    if adjustment_info and adjustment_info.get('pre_adj_trigger') is not None:
+        adj_hedge_side = adjustment_info.get('side', '')
+        if adj_hedge_side == 'pe':    # hedge=PE means CE was aggressor
+            ce_trigger_val = float(adjustment_info['pre_adj_trigger'])
+        elif adj_hedge_side == 'ce':  # hedge=CE means PE was aggressor
+            pe_trigger_val = float(adjustment_info['pre_adj_trigger'])
+
     min_trigger = params.get('min_trigger_move', 3.0)
     shift_threshold = params.get('shift_threshold', 50.0)
     interval = params.get('adjustment_interval', 300)

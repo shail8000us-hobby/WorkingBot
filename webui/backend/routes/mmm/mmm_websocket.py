@@ -71,8 +71,9 @@ def _emit(event: str, data: Dict[str, Any]):
         return
 
     try:
-        data['timestamp'] = datetime.now(timezone.utc).isoformat()
-        _socketio.emit(event, data, namespace='/')
+        payload = dict(data)
+        payload.setdefault('timestamp', datetime.now(timezone.utc).isoformat())
+        _socketio.emit(event, payload, namespace='/')
         # M-2 fix: success resets under lock
         with _ws_lock:
             _consecutive_failures = 0

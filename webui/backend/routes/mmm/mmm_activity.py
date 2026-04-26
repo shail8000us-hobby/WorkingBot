@@ -583,22 +583,25 @@ class MMMActivityLog:
                 dir=os.path.dirname(ACTIVITY_FILE),
                 prefix='mmm_activity_',
             )
+            # Snapshot under lock then immediately release — disk I/O (json.dump/fsync/copy2)
+            # must NOT hold the lock or add() blocks on every heartbeat log call.
             with self._lock:
-                payload = {
-                    'activities': list(self._activities),
-                    'updated_at': datetime.now(timezone.utc).isoformat(),
-                }
-                with os.fdopen(fd, 'w') as f:
-                    json.dump(payload, f, indent=2, default=str)
-                    f.flush()
-                    os.fsync(f.fileno())
-                if os.path.exists(ACTIVITY_FILE):
-                    try:
-                        shutil.copy2(ACTIVITY_FILE, ACTIVITY_BACKUP_FILE)
-                    except Exception as be:
-                        log.debug(f"Could not refresh activity log backup: {be}")
-                # Atomic rename — survives crash between write and rename
-                os.replace(tmp_file, ACTIVITY_FILE)
+                snapshot = list(self._activities)
+            payload = {
+                'activities': snapshot,
+                'updated_at': datetime.now(timezone.utc).isoformat(),
+            }
+            with os.fdopen(fd, 'w') as f:
+                json.dump(payload, f, indent=2, default=str)
+                f.flush()
+                os.fsync(f.fileno())
+            if os.path.exists(ACTIVITY_FILE):
+                try:
+                    shutil.copy2(ACTIVITY_FILE, ACTIVITY_BACKUP_FILE)
+                except Exception as be:
+                    log.debug(f"Could not refresh activity log backup: {be}")
+            # Atomic rename — survives crash between write and rename
+            os.replace(tmp_file, ACTIVITY_FILE)
         except Exception as e:
             log.warning(f"Could not save activity log: {e}")
             # Clean up temp file if rename failed
@@ -879,6 +882,11 @@ class MMMActivityLog:
                 self._activities.clear()
                 for a in to_keep:
                     self._activities.append(a)
+                # Purge dedup cache for this session so post-clear events aren't suppressed
+                # (k = (type, session_id, message_prefix) — index 1 is session_id)
+                self._dedup_cache = {
+                    k: v for k, v in self._dedup_cache.items() if k[1] != session_id
+                }
             else:
                 self._activities.clear()
                 self._dedup_cache.clear()
@@ -896,13 +904,13 @@ class MMMActivityLog:
                 return True
             return False
 
-        before = len(self._activities)
         with self._lock:  # M-24 fix: atomic resolve under lock
+            before = len(self._activities)
             to_keep = [a for a in self._activities if should_keep(a)]
             self._activities.clear()
             for a in to_keep:
                 self._activities.append(a)
-        removed = before - len(self._activities)
+            removed = before - len(self._activities)
         if removed > 0:
             log.info(f"Resolved {removed} progress activities for session {session_id}")
             self._save_to_disk()

@@ -104,11 +104,25 @@ def evaluate_triggers(
     # AUDIT FIX BUG4: Guard against 0/missing trigger snapshots.
     # When trigger is 0, any positive premium produces enormous excess_pct
     # via TRIGGER_PCT_FLOOR, causing false triggers.
-    if ce_trigger <= 0 or pe_trigger <= 0:
+    # Each side is validated independently so a missing snapshot on one side
+    # does not blind the algo to a valid trigger on the other side.
+    # (e.g. right after a CE strike shift, CE snapshot=0 but PE may be triggered)
+    ce_valid = ce_trigger > 0
+    pe_valid = pe_trigger > 0
+
+    if not ce_valid:
         log.warning(
-            f"Trigger snapshot missing/zero (CE={ce_trigger}, PE={pe_trigger}) "
-            f"— skipping evaluation to prevent false triggers"
+            f"CE trigger snapshot missing/zero ({ce_trigger}) "
+            f"— CE evaluation disabled, PE evaluated independently"
         )
+    if not pe_valid:
+        log.warning(
+            f"PE trigger snapshot missing/zero ({pe_trigger}) "
+            f"— PE evaluation disabled, CE evaluated independently"
+        )
+
+    if not ce_valid and not pe_valid:
+        log.warning("Both trigger snapshots missing/zero — skipping evaluation")
         return {
             'outcome': OUTCOME_NONE,
             'ce_excess': 0, 'pe_excess': 0,
@@ -122,15 +136,15 @@ def evaluate_triggers(
             'min_trigger_dollar': min_trigger_dollar,
         }
 
-    # Calculate absolute excess above trigger
-    ce_excess = ce_now - ce_trigger
-    pe_excess = pe_now - pe_trigger
+    # Calculate absolute excess above trigger (zero for invalid side)
+    ce_excess = (ce_now - ce_trigger) if ce_valid else 0.0
+    pe_excess = (pe_now - pe_trigger) if pe_valid else 0.0
 
     # Calculate percentage excess (using floor to prevent div-by-zero)
     ce_base = max(ce_trigger, TRIGGER_PCT_FLOOR)
     pe_base = max(pe_trigger, TRIGGER_PCT_FLOOR)
-    ce_excess_pct = (ce_excess / ce_base) * 100
-    pe_excess_pct = (pe_excess / pe_base) * 100
+    ce_excess_pct = ((ce_excess / ce_base) * 100) if ce_valid else 0.0
+    pe_excess_pct = ((pe_excess / pe_base) * 100) if pe_valid else 0.0
 
     # Dollar floor: compute active-strike USD loss for each side.
     # Uses active_lots only (frozen positions are not monitored here).
@@ -142,9 +156,10 @@ def evaluate_triggers(
     ce_dollar_triggered = (min_trigger_dollar > 0) and (ce_dollar_excess > min_trigger_dollar)
     pe_dollar_triggered = (min_trigger_dollar > 0) and (pe_dollar_excess > min_trigger_dollar)
 
-    # Apply trigger: percentage-based OR dollar-floor (whichever fires first)
-    ce_triggered = ce_excess_pct > min_trigger_move or ce_dollar_triggered
-    pe_triggered = pe_excess_pct > min_trigger_move or pe_dollar_triggered
+    # Apply trigger: percentage-based OR dollar-floor (whichever fires first).
+    # Explicit ce_valid/pe_valid guard ensures disabled side never triggers.
+    ce_triggered = ce_valid and (ce_excess_pct > min_trigger_move or ce_dollar_triggered)
+    pe_triggered = pe_valid and (pe_excess_pct > min_trigger_move or pe_dollar_triggered)
 
     # Determine outcome (§4.7)
     if ce_triggered and pe_triggered:
@@ -383,21 +398,22 @@ def update_trigger_snapshots(
     # §6.2: Also snapshot ALL strikes with open frozen positions.
     # This makes frozen position loss INCREMENTAL (since last hedge)
     # instead of lifetime (since entry), preventing double-counting.
-    # AUDIT FIX: Skip frozen strikes that match active strike (prevents overwrite)
+    # AUDIT FIX: Skip frozen strikes that match THIS SIDE's active strike (prevents overwrite).
+    # Use side-local active key only — a CE frozen position at PE's active strike
+    # is in a different trigger_snapshot dict and must NOT be skipped.
     # AUDIT FIX: Validate fetch_premium_fn return value (skip 0/None/negative)
-    active_keys = {ce_active, pe_active}
     if fetch_premium_fn:
-        for side_key, side_state, option_type in [
-            ('ce', ce_side, 'call'),
-            ('pe', pe_side, 'put'),
+        for side_key, side_state, option_type, side_active in [
+            ('ce', ce_side, 'call', ce_active),
+            ('pe', pe_side, 'put', pe_active),
         ]:
             for frozen_pos in side_state.get('frozen_positions', []):
                 f_strike = frozen_pos.get('strike', 0)
                 if f_strike <= 0 or frozen_pos.get('lots', 0) <= 0:
                     continue
                 f_strike_key = strike_key(f_strike)
-                # AUDIT FIX BUG1: Don't overwrite active strike trigger
-                if f_strike_key in active_keys:
+                # Don't overwrite this side's own active strike trigger
+                if f_strike_key == side_active:
                     continue
                 try:
                     f_current = fetch_premium_fn(f_strike, option_type)

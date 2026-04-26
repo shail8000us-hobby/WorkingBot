@@ -2,9 +2,9 @@
 
 ## Session summary
 
-- Date: 2026-04-20
+- Date: 2026-04-23
 - Auditor/AI: GitHub Copilot
-- Phase: Phase 00 complete; Phase 01 in progress
+- Phase: Phase 00–02 complete; Phase 03 in progress
 - File(s) + chunk(s) completed:
 	- Phase 00 manifests (full set)
 	- `webui/backend/routes/mmm/mmm_constants.py` (chunk 1/1)
@@ -17,6 +17,43 @@
 	- `webui/backend/routes/mmm/mmm_trigger.py` (chunk 1: lines 1–450)
 	- `webui/backend/routes/mmm/mmm_trigger.py` (chunk 2: lines 451–EOF; file complete)
 	- `webui/backend/routes/mmm/mmm_reversal.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_strike_shift.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_strike_shift.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_close_at_5.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_close_at_5.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_harvester.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_recycler.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_recycler.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_wind_down.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_dte_presets.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_safety.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_safety.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_telegram.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_websocket.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_websocket.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_activity.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_activity.py` (chunk 2: lines 451–900)
+	- `webui/backend/routes/mmm/mmm_activity.py` (chunk 3: lines 901–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_audit_log.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_audit_log.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_audit_remark.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_analytics_storage.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_analytics_aggregator.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_analytics_aggregator.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_performance.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_performance.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_walkthrough.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_walkthrough.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_pnl_core.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_pnl_core.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_observer.py` (chunk 1: lines 1–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 2: lines 451–900)
+	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 3: lines 901–1350)
+	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 4: lines 1351–1800)
+	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 5: lines 1801–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_initializer.py` (chunk 1: lines 1–450)
+	- `webui/backend/routes/mmm/mmm_initializer.py` (chunk 2: lines 451–EOF; file complete)
 
 ## What was audited
 
@@ -82,6 +119,162 @@
 	- `mmm_reversal.should_skip_reversal_adjustment`
 	- `mmm_reversal.record_reversal`
 	- `mmm_reversal.handle_reversal_skip_transition`
+	- `mmm_strike_shift.check_shift_needed`
+	- `mmm_strike_shift.freeze_current_positions`
+	- `mmm_strike_shift.find_new_strike`
+	- `mmm_strike_shift._scan_chain`
+	- `mmm_strike_shift.activate_new_strike` (partial)
+	- `mmm_strike_shift.pre_scan_shift_candidates`
+	- `mmm_close_at_5._D`
+	- `mmm_close_at_5._check_stale_being_closed`
+	- `mmm_close_at_5.scan_closeable_positions`
+	- `mmm_close_at_5.close_position` (partial)
+	- `mmm_close_at_5.close_position` (complete)
+	- `mmm_close_at_5._partial_close_position`
+	- `mmm_close_at_5._remove_closed_position`
+	- `mmm_close_at_5.check_side_fully_closed`
+	- `mmm_close_at_5.check_both_sides_closed`
+	- `mmm_harvester.get_effective_harvest_params`
+	- `mmm_harvester.scan_harvestable_positions`
+	- `mmm_recycler.select_recyclable_positions`
+	- `mmm_recycler.check_recycle_viability`
+	- `mmm_recycler.execute_lot_recycling`
+	- `mmm_wind_down.is_wind_down_active`
+	- `mmm_wind_down.get_wind_down_status`
+	- `mmm_wind_down.compute_wind_down_action`
+	- `mmm_wind_down.get_lifo_close_fills`
+	- `mmm_wind_down.apply_lifo_removals`
+	- `mmm_wind_down.get_wind_down_close_threshold`
+	- `mmm_dte_presets.build_straddle_adjustment_preset`
+	- `mmm_dte_presets.get_preset`
+	- `mmm_dte_presets.list_presets`
+	- `mmm_dte_presets.build_straddle_roll_preset`
+	- `mmm_dte_presets.apply_preset`
+	- `mmm_dte_presets.compute_total_dte_hours`
+	- `mmm_dte_presets.infer_dte_category`
+	- `mmm_dte_presets.check_aggregate_pnl`
+	- `mmm_dte_presets.check_chain_liquidity`
+	- `mmm_safety.run_all_checks`
+	- `mmm_safety.check_position_cap`
+	- `mmm_safety.check_max_adjustments`
+	- `mmm_safety.check_max_loss`
+	- `mmm_safety.check_max_loss_sizing`
+	- `mmm_safety.check_whipsaw` (partial)
+	- `mmm_safety.check_total_exposure`
+	- `mmm_safety.check_asymmetry`
+	- `mmm_safety.check_near_expiry`
+	- `mmm_safety.check_near_expiry_v2`
+	- `mmm_safety.check_pnl_guardrail`
+	- `mmm_safety.check_margin`
+	- `mmm_safety.check_lot_velocity`
+	- `mmm_safety.check_trailing_stop`
+	- `mmm_safety.update_peak_pnl`
+	- `mmm_safety.reset_peak_pnl_on_reversal`
+	- `mmm_safety.should_block_adjustment`
+	- `mmm_safety.get_block_action`
+	- `mmm_safety.should_pause`
+	- `mmm_safety.get_safety`
+	- `mmm_telegram._get_telegram_credentials`
+	- `mmm_telegram._get_notifier`
+	- `mmm_telegram._should_send`
+	- `mmm_telegram._send_async`
+	- `mmm_telegram.alert_margin_tier_change`
+	- `mmm_telegram.alert_half_roll_detected`
+	- `mmm_telegram._alert_half_roll_detected_async`
+	- `mmm_telegram.alert_half_roll_recovery_needed`
+	- `mmm_telegram._alert_half_roll_recovery_needed_async`
+	- `mmm_telegram.alert_straddle_roll_executed`
+	- `mmm_telegram._alert_straddle_roll_executed_async`
+	- `mmm_telegram.alert_emergency_close`
+	- `mmm_telegram.alert_session_stopped`
+	- `mmm_telegram.alert_rapid_check_activated`
+	- `mmm_telegram.alert_max_loss_breach`
+	- `mmm_telegram.alert_guardian_violation`
+	- `mmm_telegram.alert_guardian_healed`
+	- `mmm_telegram.alert_stale_monitor`
+	- `mmm_telegram.alert_ghost_positions_growing`
+	- `mmm_telegram.alert_both_sides_up`
+	- `mmm_telegram.alert_both_sides_closed_awake`
+	- `mmm_telegram.alert_offhours_unhedged_stop`
+	- `mmm_telegram.alert_active_hours_unhedged_pause`
+	- `mmm_telegram.alert_god_correction`
+	- `mmm_pnl_core._ensure_ledger`
+	- `mmm_pnl_core._migrate_existing_pnl`
+	- `mmm_pnl_core.record_close`
+	- `mmm_pnl_core.confirm_fill`
+	- `mmm_pnl_core.rollback_close`
+	- `mmm_pnl_core.flag_discrepancy`
+	- `mmm_pnl_core.manual_close`
+	- `mmm_pnl_core.record_fee` (partial)
+	- `mmm_pnl_core.rollback_closes_since`
+	- `mmm_pnl_core.ledger_snapshot`
+	- `mmm_pnl_core.compute_realized_pnl`
+	- `mmm_pnl_core.compute_confirmed_pnl`
+	- `mmm_pnl_core.compute_fees`
+	- `mmm_pnl_core.compute_unrealized_pnl`
+	- `mmm_pnl_core.compute_attribution`
+	- `mmm_pnl_core._oldest_estimate_age_sec`
+	- `mmm_pnl_core.compute_net_premium`
+	- `mmm_pnl_core.get_pnl`
+	- `mmm_pnl_core.compute_current_total_pnl`
+	- `mmm_pnl_core.check_stale_estimates`
+	- `mmm_pnl_core._sync_session_fields`
+	- `mmm_observer.MMMStrategyObserver.__init__`
+	- `mmm_observer.MMMStrategyObserver.validate_close`
+	- `mmm_observer.MMMStrategyObserver.record_close`
+	- `mmm_observer.MMMStrategyObserver.clear_session`
+	- `mmm_observer.MMMStrategyObserver._check_price_consistency`
+	- `mmm_observer.MMMStrategyObserver._check_ledger_integrity`
+	- `mmm_observer.get_observer`
+	- `mmm_executor._log_activity`
+	- `mmm_executor._parse_fill_price`
+	- `mmm_executor.MMMExecutor.__init__`
+	- `mmm_executor.MMMExecutor.client`
+	- `mmm_executor.MMMExecutor._create_rest_client`
+	- `mmm_executor.MMMExecutor.smart_execute` (partial: chunks 01/02)
+	- `mmm_executor.MMMExecutor.emergency_execute`
+	- `mmm_executor.MMMExecutor.execute_entry` (partial: chunk 03)
+	- `mmm_executor.MMMExecutor.execute_entry` (tail: chunk 04)
+	- `mmm_executor.MMMExecutor.execute_adjustment` (chunk 04)
+	- `mmm_executor.MMMExecutor._h2_exchange_fill_lookup` (chunk 04)
+	- `mmm_executor.MMMExecutor._fetch_quotes` (chunk 04)
+	- `mmm_executor.MMMExecutor._calculate_mid_price` (chunk 04)
+	- `mmm_executor.MMMExecutor.get_mid_price` (chunk 04)
+	- `mmm_executor.MMMExecutor._place_limit_order` (chunk 04)
+	- `mmm_executor.MMMExecutor.place_market_order_immediate` (full: chunk 05)
+	- `mmm_executor.MMMExecutor._amend_order` (chunk 05)
+	- `mmm_executor.MMMExecutor._cancel_order` (chunk 05)
+	- `mmm_executor.MMMExecutor._get_order_status` (chunk 05)
+	- `mmm_executor.MMMExecutor._is_filled` (chunk 05)
+	- `mmm_executor.MMMExecutor._wait_for_fill` (chunk 05)
+	- `mmm_executor.MMMExecutor._failure` (chunk 05)
+	- `mmm_executor.get_executor` (chunk 05)
+	- `mmm_initializer.expiry_to_utc_datetime` (chunk 01)
+	- `mmm_initializer.normalize_expiry` (chunk 01)
+	- `mmm_initializer.expiry_to_symbol_suffix` (chunk 01)
+	- `mmm_initializer.MMMInitializer.__init__` (chunk 01)
+	- `mmm_initializer.MMMInitializer.get_available_expiries` (chunk 01)
+	- `mmm_initializer.MMMInitializer.get_spot_price` (chunk 01)
+	- `mmm_initializer.MMMInitializer.get_full_chain` (chunk 01)
+	- `mmm_initializer.MMMInitializer.preview_strikes` (chunk 01)
+	- `mmm_initializer.MMMInitializer.preview_atm_straddle` (chunk 01)
+	- `mmm_initializer.MMMInitializer.validate_manual_selection` (partial start: chunk 01)
+	- `mmm_initializer.MMMInitializer.validate_manual_selection` (tail completion: chunk 02)
+	- `mmm_initializer.MMMInitializer.build_symbol` (chunk 02)
+	- `mmm_initializer.MMMInitializer._rank_strikes` (chunk 02)
+	- `mmm_initializer.MMMInitializer._enrich_option` (chunk 02)
+	- `mmm_initializer.MMMInitializer._get_moneyness` (chunk 02)
+	- `mmm_initializer.MMMInitializer._extract_ticker_data` (chunk 02)
+	- `mmm_initializer.MMMInitializer.check_liquidity` (chunk 02)
+	- `mmm_initializer.MMMInitializer.calculate_total_premium` (chunk 02)
+	- `mmm_initializer.MMMInitializer.calculate_lots_with_buffer` (chunk 02)
+	- `mmm_initializer.get_initializer` (chunk 02)
+	- `mmm_pending_orders.register_pending` (chunk 01)
+	- `mmm_pending_orders.clear_pending` (chunk 01)
+	- `mmm_pending_orders.get_pending` (chunk 01)
+	- `mmm_pending_orders.clear_all` (chunk 01)
+	- `mmm_pending_orders.check_and_resolve_pending` (chunk 01)
+	- All top-level functions/methods in `mmm_websocket.py`, `mmm_activity.py`, `mmm_audit_log.py`, `mmm_audit_remark.py`, `mmm_analytics_storage.py`, `mmm_analytics_aggregator.py`, `mmm_performance.py`, and `mmm_walkthrough.py` (`137` additional symbols; see respective chunk reports for full per-function inventory)
 - Wiring contracts audited:
 	- API endpoint manifest generated (`93` routes)
 	- WS event parity baseline generated (`37` backend emitted names, `26` frontend listener names; `25` currently matched)
@@ -103,6 +296,32 @@
 	- `webui/backend/routes/mmm/tests/test_sealed_compute_adaptive_interval.py` (sealed adaptive-tier contracts)
 	- `webui/backend/routes/mmm/tests/test_sealed_mmm_reversal.py` (reversal/cooldown contracts)
 	- `webui/backend/routes/mmm/tests/test_mmm_reversal.py` (reversal behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_strike_shift.py` (strike-shift contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_strike_shift.py` (strike-shift behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_close_at_5.py` (close-at-5 contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_close_at_5.py` (close-at-5 behavior smoke)
+	- `webui/backend/routes/mmm/tests/test_sealed_check_side_fully_closed.py` (side-closed helpers contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_straddle_roll_pure.py` (`PHS-2` market close caller contract)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_harvester.py` (harvester contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_harvester.py` (harvester behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_recycler.py` (recycler contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_wind_down.py` (wind-down contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_wind_down.py` (wind-down behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_dte_presets.py` (DTE preset contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_dte_presets.py` (DTE preset behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_safety.py` (sealed safety contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_safety.py` (safety behavior coverage)
+	- `webui/backend/routes/mmm/tests/test_sealed_check_max_loss.py` (max-loss canonical P&L contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_check_max_loss_sizing.py` (max-loss sizing warning contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_whipsaw_legacy_parity.py` (legacy whipsaw parity checks)
+	- `webui/backend/routes/mmm/tests/test_active_hours_shutdown.py` (awake/off-hours Telegram message + flag contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_activity.py` (activity-log persistence/filtering contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_execution_events.py` (event-log enqueue/query/orphan contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_mmm_pnl_core.py` (P&L-core sealed contracts)
+	- `webui/backend/routes/mmm/tests/test_mmm_observer.py` (observer price/ledger/singleton contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py` (executor-adjacent remediation contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py` (hard-stop market-order invariants; executor emergency-call exclusion contracts)
+	- `webui/backend/routes/mmm/tests/test_sealed_straddle_adjustment.py` (initializer-consumer straddle preview contracts)
 
 ## Findings
 
@@ -114,6 +333,19 @@
 	- `F01-P1-009`: `mmm_state.HOT_RELOAD_PARAMS` and `mmm_config.PARAM_RULES` hot contract drift — 20 state-hot keys are silently dropped by config validation
 	- `F01-P1-010`: storage decode resilience gap — one malformed JSON row can make `get_session` return `None` and collapse `list_sessions` to `[]`
 	- `F01-P1-013`: trigger snapshot ratchet integrity gap — cross-side active-key skip can block frozen snapshot updates when strike equals opposite side active strike
+	- `F01-P1-020`: `_pos_id`-present but `positions[]`-missing mismatch can break partial-fill state integrity (session may flatten while residual exchange lots remain)
+	- `F01-P1-025`: `recycle_max_pct` cap can be exceeded when the first selected candidate lot size is larger than remaining cap allowance
+	- `F01-P1-027`: recycler success path can report positive planned net gain while actual executed net-lot outcome is negative after partial Phase A
+	- `F01-P1-030`: wind-down partial-fill state integrity gap — caller can remove full requested lots from session state even when exchange confirms smaller `filled_size`
+	- `F01-P1-039`: startup half-roll recovery Telegram can be silently dropped (`asyncio.create_task` called from sync startup path with no running loop)
+	- `F01-P1-040`: max-loss Telegram wiring drift — guard thread call is unscheduled async; pure-roll callsite uses invalid `current_loss` keyword (TypeError)
+	- `F02-P1-050`: reverse-close attribution failure — `compute_attribution` lacks `pnl_reverse` bucket while source map includes `reverse_close`, producing `KeyError('pnl_reverse')`; failed sync leaves toxic ledger entries that can break subsequent `get_pnl`
+	- `F03-P1-056`: `smart_execute` continuation/cancel-replace path uses original `size` after `_current_order_size` is reduced, risking replacement over-placement and cancel-path filled-size misreport in partial-fill races
+	- `F03-P1-059`: `execute_entry` can mark entry success when a leg is only partially filled because `all_success` checks boolean `success` only, not full-lot parity (`filled_size == lots`)
+	- `F03-P1-060`: CE rollback branch in `execute_entry` buys requested `lots` instead of successful-leg `filled_size`, increasing reject/escalation/orphan risk when the successful leg was partial
+	- `F03-P1-063`: `_place_limit_order` buy post-only retry sets price to `best_ask` while keeping `post_only=True`, a contradictory reprice that can repeatedly cross/reject and exhaust close/rollback retries
+	- `F03-P1-066`: `_cancel_order` returns false on cancel-400 paths and attempts-exhausted flow can return failure without a final status reconciliation, allowing false-failure/duplicate-retry risk
+	- `F03-P1-068`: manual-selection validation path accepts expiry/underlying contract inputs but does not enforce CE/PE symbol parity to requested expiry/underlying before symbols are persisted into session state
 - P2:
 	- Inventory-scope nuance: backend has `57` module files + `1` support file
 	- Inventory-scope nuance: frontend has `38` production files + `3` frontend test files
@@ -124,10 +356,53 @@
 	- `F01-P2-012`: `save_session` hot-reload arbitration can persist newer DB params while leaving caller in-memory params stale until next reload
 	- `F01-P2-014`: one-side missing trigger snapshot currently suppresses both sides (`OUTCOME_NONE`), creating partial-data blindness
 	- `F01-P2-015`: cooldown state integrity gap — `cooldown_active=True` with missing `cooldown_until` can remain stuck and block future cooldown activation
+	- `F01-P2-018`: legacy original close path can emit `_pos_id=None` payloads without a fallback in-flight guard, leaving duplicate-close protection incomplete in scalar-only states
+	- `F01-P2-021`: market no-ID failure cleanup is asymmetric; content-match `_being_closed` markers can remain set until TTL, delaying retry during emergency market flows
+	- `F01-P2-022`: M3 returns `harvest_max_per_beat` override but runtime harvest cap remains static session param in monitor, reducing dominant-side drain throughput under asymmetry
+	- `F01-P2-023`: no-ID in-flight guard gap in harvester scan — `_being_closed` marker does not suppress entries when `_pos_id` is missing
+	- `F01-P2-026`: no-ID in-flight guard gap in recycler selection — `_being_closed` marker does not suppress entries when `_pos_id` is missing
+	- `F01-P2-028`: recycler success payload can retain planned viability metrics (`net_lot_gain`, `buyback_cost`, `viability_details`) after partial execution
+	- `F01-P2-031`: wind-down status parity drift — `get_wind_down_status` can report inactive while regime-triggered `is_wind_down_active` is true
+	- `F01-P2-034`: whipsaw safety-path suppression drift — `_whipsaw_dispatcher_ran` is set by dispatcher and not reset, so standalone safety beats can skip `check_whipsaw`
+	- `F01-P2-035`: position-cap signaling drift — `check_position_cap` uses `active_lots` while engine hard-cap uses `total_lots` (active+frozen)
+	- `F01-P2-036`: total-exposure telemetry component drift — effective exposure includes reverse lots, but event payload omits reverse component in details/message
+	- `F01-P2-037`: margin telemetry component drift — margin total includes reverse lots while CE/PE fields omit reverse component
+	- `F01-P2-041`: pure-roll Gate-6 exhaustion Telegram import drift — `send_telegram_message` is imported but not exported by `mmm_telegram`
+	- `F01-P2-044`: event-log writer resilience gap — `MMMSessionEventLog._writer_loop` DB error path rolls back but does not clear failed batch/reset connection, risking retry lock and queue backpressure
+	- `F01-P2-045`: analytics completion-classification drift — negative filter can include paused/non-terminal sessions in completed KPI aggregates
+	- `F01-P2-046`: walkthrough trigger-fidelity drift — heartbeat narration can use post-update trigger snapshots instead of pre-decision trigger values
+	- `F02-P2-048`: zero-net migration trigger gap in `_ensure_ledger` — legacy sessions with non-zero attribution buckets but `realized_pnl=0` and `total_fees=0` skip ledger migration and can lose historical bucket attribution fidelity on first write
+	- `F03-P2-054`: `smart_execute` duplicate-coid recovery checks open orders only; if first order is already terminal before lookup, flow can return `ORDER_FAILED` despite live exchange execution
+	- `F03-P2-057`: `smart_execute` attempts-exhausted failure path can return without writing terminal `EXECUTION_INTENT` event, leaving potential dangling `ORDER_INTENT` rows for reconciliation/orphan diagnostics
+	- `F03-P2-061`: `emergency_execute` currently assumes full fill when `unfilled_size` is missing/unparseable in filled-state path, which can overstate closed lots under exchange payload races
+	- `F03-P2-064`: `execute_adjustment` recovery re-sell sizes from requested `close_lots` (not actual close `filled_size`), so partial-close/open-fail scenarios can over-restore lots (latent helper risk)
+	- `F03-P2-070`: auto-mode preview→init flow can accept zero-bid ranked legs because `_rank_strikes` uses penalty ranking (not hard rejection) and auto init path does not run manual validate-selection gate
 - P3:
 	- Decimal helper convention duplication across modules (low-risk maintainability issue)
 	- `F01-P3-005`: large manual `_ADJUSTMENT_ENGINE_ONLY_PARAMS` list is currently consistent but drift-prone
 	- `F01-P3-008`: strategy identity normalization logic is duplicated across `mmm_state` and `mmm_config` and may drift on future alias additions
+	- `F01-P3-016`: dynamic strike-shift threshold derivation duplicated across check/filter paths (maintainability drift risk)
+	- `F01-P3-017`: pre-scan shift cache/proximity path has no dedicated contract tests (coverage gap)
+	- `F01-P3-019`: `close_position` market-order branch lacks direct sealed coverage (success/partial/no-ID/pending-verification semantics)
+	- `F01-P3-024`: harvester fallback/default and operator-doc semantics drift (`active_lots` implementation vs `total_lots` docs; fallback defaults differ from canonical state defaults)
+	- `F01-P3-029`: recycler lacks dedicated contract coverage for partial Phase A + successful Phase B with post-execution metric reconciliation
+	- `F01-P3-032`: wind-down coverage gap — no direct tests for `get_wind_down_status` parity and no partial-fill lot-parity regression for wind-down monitor path
+	- `F01-P3-033`: DTE preset contract-doc drift — `build_straddle_adjustment_preset` docstring still states `2–12h` / `<2,>12` reject while runtime/tests enforce `>=1h` and warning-only for `>24h`
+	- `F01-P3-038`: reverse-inclusive safety coverage gap — no dedicated assertions for `_reverse`-inclusive telemetry parity in `check_total_exposure` / `check_margin`
+	- `F01-P3-042`: Telegram coverage gap — no dedicated sealed contracts for sync-wrapper scheduling, dedup semantics, and critical max-loss caller compatibility
+	- `F01-P3-043`: websocket payload mutation contract drift — `_emit` mutates caller dict and may overwrite explicit timestamp fields
+	- `F01-P3-047`: performance coverage gap — no direct sealed tests found for session scoring/classification/storage evolution paths
+	- `F02-P3-049`: `_migrate_existing_pnl` does not explicitly migrate legacy `pnl_reverse`; reverse legacy values can be folded into `adjustment` attribution via gap fallback
+	- `F02-P3-051`: sealed coverage gap — no direct contract test for `record_close(source='reverse_close')` / reverse attribution stability in `mmm_pnl_core`
+	- `F02-P3-052`: observer/guardian contract-doc drift — observer now enforces price+ledger only, but nearby comments/docs still claim four observer checks (continuity/velocity included)
+	- `F02-P3-053`: observer coverage gap — non-sealed tests only and no direct `shift_recycle` branch assertions found
+	- `F03-P3-055`: no direct sealed coverage for `smart_execute` duplicate `client_order_id` recovery/open-order lookup branch
+	- `F03-P3-058`: no direct sealed coverage for continuation-order cancel/replace size handling and attempts-exhausted execution-intent terminal closure
+	- `F03-P3-062`: remediation-suite contract drift for executor chunk-03 surface — header claims H-1/H-3 coverage but implemented body is H-2 only, with no direct `execute_entry` branch tests
+	- `F03-P3-065`: no direct sealed coverage for `_place_limit_order` buy post-only retry branch or `MMMExecutor.execute_adjustment` recovery lot-normalization semantics
+	- `F03-P3-067`: no direct sealed helper contracts for `_cancel_order` cancel-400 reconciliation, `_wait_for_fill` dead/timeout transitions, or `get_executor` singleton semantics
+	- `F03-P3-069`: initializer core parsing/selection/manual-validation branches lack direct sealed contracts; current coverage is mostly consumer-level and mocked
+	- `F03-P3-071`: chunk-02 initializer helper surfaces (`build_symbol`, `_extract_ticker_data`, `check_liquidity`, premium helpers) lack direct sealed contracts
 
 ## Artifacts created/updated
 
@@ -149,6 +424,44 @@
 	- `audit/mmm/file_reports/backend/phase_01_mmm_trigger_chunk_01_audit.md`
 	- `audit/mmm/file_reports/backend/phase_01_mmm_trigger_chunk_02_audit.md`
 	- `audit/mmm/file_reports/backend/phase_01_mmm_reversal_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_strike_shift_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_strike_shift_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_harvester_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_recycler_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_recycler_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_wind_down_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_dte_presets_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_safety_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_safety_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_telegram_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_websocket_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_websocket_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_03_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_audit_log_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_audit_log_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_audit_remark_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_analytics_storage_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_analytics_aggregator_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_analytics_aggregator_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_performance_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_performance_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_walkthrough_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_01_mmm_walkthrough_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_02_mmm_pnl_core_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_02_mmm_pnl_core_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_02_mmm_observer_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_03_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_04_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_05_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_02_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_pending_orders_chunk_01_audit.md`
 - Updated:
 	- `audit/mmm/phases/phase_00_setup.md`
 	- `audit/mmm/00_MASTER_INDEX.md`
@@ -163,4 +476,4 @@
 
 ## Exact next step
 
-- Audit `webui/backend/routes/mmm/mmm_strike_shift.py` chunk 01 and publish the next chunk report.
+- Continue Phase 03 execution-primitives audit with `webui/backend/routes/mmm/mmm_trigger.py` chunk 01.

@@ -895,7 +895,7 @@ async def execute_pure_straddle_roll(
                 from .mmm_telegram import alert_max_loss_breach
                 await alert_max_loss_breach(
                     session_id=sid,
-                    current_loss=abs(total_pnl),
+                    total_pnl=total_pnl,
                     max_loss=max_loss_amount,
                 )
             except Exception:

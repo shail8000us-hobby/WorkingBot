@@ -664,6 +664,58 @@ def test_compute_attribution_empty_ledger():
     assert all(v == 0.0 for v in attr.values())
 
 
+# F02-P1-050: reverse_close attribution — was raising KeyError('pnl_reverse')
+def test_compute_attribution_reverse_close_routes_to_pnl_reverse():
+    s = _session()
+    record_close(s, 'o1', 'C', 'ce', 70000, 10, 100, 50, 0, 'reverse_close')
+    attr = compute_attribution(s)
+    expected_pnl = pytest.approx((100 - 50) * 10 * LOT_SIZE_BTC)
+    assert attr['pnl_reverse'] == expected_pnl
+    assert attr['pnl_adjustment'] == pytest.approx(0.0)
+
+
+def test_compute_attribution_reverse_close_no_keyerror_in_sync():
+    # _sync_session_fields calls compute_attribution; must not raise
+    s = _session()
+    record_close(s, 'o1', 'C', 'ce', 70000, 5, 80, 30, 0, 'reverse_close')
+    assert s.get('pnl_reverse') == pytest.approx((80 - 30) * 5 * LOT_SIZE_BTC)
+
+
+def test_get_pnl_stable_after_reverse_close():
+    # get_pnl calls compute_attribution; must not raise after reverse_close row
+    s = _session()
+    record_close(s, 'o1', 'C', 'ce', 70000, 5, 80, 30, 0, 'reverse_close')
+    result = get_pnl(s)
+    expected = pytest.approx((80 - 30) * 5 * LOT_SIZE_BTC)
+    assert result['attribution']['pnl_reverse'] == expected
+    assert result['realized'] == expected
+
+
+# F02-P2-048: zero-net sessions with non-zero buckets must still migrate
+def test_ensure_ledger_migrates_zero_net_session_with_nonzero_buckets():
+    s = _session()
+    s['realized_pnl'] = 0.0      # net zero
+    s['total_fees'] = 0.0
+    s['pnl_initial'] = 1.0
+    s['pnl_adjustment'] = -1.0
+    from webui.backend.routes.mmm.mmm_pnl_core import _ensure_ledger
+    ledger = _ensure_ledger(s)
+    assert len(ledger) >= 2, "migration should have seeded rows for non-zero buckets"
+    assert s.get('_pnl_migrated') is True
+
+
+# F02-P3-049: legacy pnl_reverse should migrate as reverse_close, not adjustment
+def test_migrate_existing_pnl_preserves_pnl_reverse_attribution():
+    s = _session()
+    s['realized_pnl'] = 0.5
+    s['pnl_reverse'] = 0.5       # entire realized is from reverse
+    from webui.backend.routes.mmm.mmm_pnl_core import _ensure_ledger
+    _ensure_ledger(s)
+    attr = compute_attribution(s)
+    assert attr['pnl_reverse'] == pytest.approx(0.5)
+    assert attr['pnl_adjustment'] == pytest.approx(0.0)
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # compute_net_premium
 # ─────────────────────────────────────────────────────────────────────────────

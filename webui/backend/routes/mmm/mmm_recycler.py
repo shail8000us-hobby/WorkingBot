@@ -350,6 +350,8 @@ async def execute_lot_recycling(
     for cand in priced_candidates:
         if selected_lots >= max_recyclable_lots:
             break
+        if selected_lots + cand['lots'] > max_recyclable_lots:
+            continue  # Would overshoot recycle_max_pct cap; try next smaller candidate
         selected.append(cand)
         selected_lots += cand['lots']
         if selected_lots >= target_freed:
@@ -381,7 +383,6 @@ async def execute_lot_recycling(
         }
 
     new_lots_needed = viability_details['new_lots_needed']
-    buyback_cost = viability_details['buyback_cost']
 
     log.info(
         f"[{session_id}] Recycle viable: recycling {selected_lots} lots "
@@ -569,7 +570,7 @@ async def execute_lot_recycling(
     session['_last_recycle_at'] = datetime.now(timezone.utc).isoformat()
     session['updated_at'] = datetime.now(timezone.utc).isoformat()
 
-    net_lot_gain = viability_details['net_lot_gain']
+    net_lot_gain = phase_a_lots - phase_b_lots  # Actual outcome, not pre-planned estimate
     log.info(
         f"[{session_id}] Recycle COMPLETE: "
         f"freed {phase_a_lots} lots, sold {phase_b_lots} @ {new_strike} "
@@ -580,7 +581,7 @@ async def execute_lot_recycling(
         'success': True,
         'recycled_lots': phase_a_lots,
         'new_lots_sold': phase_b_lots,
-        'buyback_cost': buyback_cost,
+        'buyback_cost': actual_buyback_cost,  # Actual Phase A cost, not pre-planned
         'new_strike': new_strike,
         'new_premium': new_premium,
         'net_lot_gain': net_lot_gain,

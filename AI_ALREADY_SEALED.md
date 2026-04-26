@@ -18,15 +18,32 @@
 
 ---
 
-## RUN ALL SEALED TESTS — ONE COMMAND
+## TWO TIERS OF TESTS
+
+### TIER 1 — Sealed (run every day)
+Functions verified on live trading, code locked. These are the daily safety gate.
 
 ```bash
 python3 -m pytest webui/ bot/ -m sealed -v
 ```
 
-> This runs every sealed function test across the entire project automatically.
-> Every new sealed function is tagged with `@pytest.mark.sealed` — no manual path tracking needed.
-> Run this before every deployment, every morning, and after any code change.
+> Every sealed function is tagged `@pytest.mark.sealed` — no manual path tracking needed.
+> Run before every deployment, every morning, and after any code change.
+
+### TIER 2 — Pending (run before promoting to sealed)
+Tests that exist for functions not yet verified on live trading. Code is written and tested in isolation but has not completed a live trading session. These are candidates for sealing — once you confirm a function works correctly in live trading, run the seal protocol and promote it to Tier 1.
+
+```bash
+python3 -m pytest webui/ bot/ -m "not sealed" -v
+```
+
+> Run this when reviewing candidates for sealing, or when you want full test coverage across the entire project.
+> Tier 2 tests are self-maintaining — any test file without `@pytest.mark.sealed` is automatically included. No list to update.
+
+### Promotion path
+```
+Tier 2 (pending) → live trading verified → fill Section A in AI_SEAL.md → "Seal this" → Tier 1 (sealed)
+```
 
 ---
 
@@ -112,6 +129,7 @@ python3 -m pytest webui/ bot/ -m sealed -v
 | 76 | `kill_switch API endpoint` + `run_exit_all routing` + `_close_one_side emergency path` | `webui/backend/routes/mmm/mmm_api.py` + `webui/backend/routes/mmm/mmm_exit_all.py` + `webui/backend/routes/mmm/mmm_monitor.py` | v1.0.0 | Apr 17, 2026 | `webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py` | **SEALED** | 20 contracts in 3 groups. T1–T10: Kill switch API — RUNNING→202+EXITING+_kill_switch_triggered; idempotent on EXITING; graceful on STOPPED/IDLE; 404 on unknown; session isolation. EX1–EX3: run_exit_all routing — _kill_switch_triggered→use_market_orders=True; False→False; cancel-pending called before exit rounds. CS1–CS7: CORE SAFETY — emergency=True calls place_market_order_immediate (NOT emergency_execute); emergency=False calls smart_execute; success/fail shape correct; CS7 asserts emergency_execute.call_count==0 (critical invariant). |
 | 77 | `SessionCard Kill Switch + Hard Stop UI` | `webui/frontend/src/components/mmm/MMMDashboard.js` | v1.0.0 | Apr 17, 2026 | `webui/frontend/src/components/mmm/__tests__/test_sealed_kill_switch_and_hard_stop.test.js` | **SEALED** | 18 contracts. KS1–KS8: Kill Switch button rendered for RUNNING+PAUSED; NOT rendered for STOPPED+IDLE; click opens dialog with "square off" text; Cancel does NOT call onControl('kill_switch'); "Confirm Exit All" calls onControl('kill_switch', sessionId); click does NOT propagate to card. HS1–HS6+HS2b+HS2c+HS3b+HS4b: Hard Stop shows "$X" when max_loss_amount>0; "Disabled" when 0 or params absent; reads top-level max_loss_amount as fallback (summary mode); "Hard Stop Hit" shown when |net_pnl|≥max_loss_amount; color orange(#ff9800) when not hit, red(#f44336) when hit. **Jest test** — bridge in test_sealed_jest_bridge.py. |
 | 78 | `get_monitoring_activity` | `webui/backend/routes/options/options_control.py` | v1.0.0 | Apr 18, 2026 | `webui/backend/routes/options/tests/test_sealed_monitoring_activity_filter.py` | **SEALED** | GET /monitoring-activity. Bug fixed: was returning triggered/expired limits (enabled=False, triggered=True) in strikeLimits/expiryLimits/activeLimits counts, making settled contracts show as actively monitored. Fix: filters to enabled=True only before building response. C1: triggered strike excluded from strikeLimits. C2: triggered expiry excluded from expiryLimits. C3: activeLimits.strike = enabled count only. C4: activeLimits.expiry = enabled count only. C5: activeLimits.total = strike+expiry (enabled only). C6: always returns success=True and timestamp. 6 contracts. |
+| 79 | `applyTickerUpdate` | `webui/frontend/src/hooks/wsTickerUpdater.js` | v1.0.0 | Apr 20, 2026 | `webui/frontend/src/hooks/__tests__/test_sealed_ws_bidask_updater.test.js` | **SEALED** | Pure function: applies one `options_ticker_update` WS event to a matched position. BU1: best_bid/best_ask updated. BU2: mid=(bid+ask)/2 when both>0. BU3: mid falls back to mark_price when one side zero. BU4: mid falls back to pos.mid_price when all zero. BU5: unrealized_pnl=(mid−entry)×size×0.001 for BTC. BU6: pnl unchanged when entry_price=0 (no divide-by-zero). BU7: pnl_pct positive for profitable long. BU8: pnl_pct sign inverted for short (size<0). BU9: multiplier=0.001 for BTC+ETH, default=0.001 for unknown. BU10: string bid/ask/mark parsed via parseFloat. BU11: ws_updated=data.timestamp. BU12: all other pos fields preserved via spread. `@sealed` decorator omitted — JS function. **Jest test** — bridge: TestJestSealedWsBidAskUpdater in test_sealed_jest_bridge.py. 12 contracts. |
 
 ---
 

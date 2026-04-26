@@ -22,6 +22,36 @@ from .mmm_constants import strike_key as _strike_key
 log = logging.getLogger('mmm_strike_shift')
 
 
+def _compute_shift_effective_threshold(
+    session: Dict,
+    side: str,
+    params: Dict,
+) -> Tuple[float, float]:
+    """
+    Compute (effective_threshold, hedge_entry_premium) for the given side.
+
+    Priority order for hedge_entry_premium:
+      1. _initial_hedge_premium (set once at first freeze, never overwritten)
+      2. original_premium (pre-recompute fallback)
+      3. latest adjustment_fills entry premium
+
+    When shift_threshold_pct == 0, returns (floor, 0.0) immediately.
+    """
+    threshold_floor = params.get('shift_threshold', 50.0)
+    threshold_pct = params.get('shift_threshold_pct', 0.0)
+    if threshold_pct <= 0:
+        return threshold_floor, 0.0
+    side_state = session.get(side, {})
+    hedge_entry_premium = side_state.get('_initial_hedge_premium', 0)
+    if hedge_entry_premium == 0:
+        hedge_entry_premium = side_state.get('original_premium', 0)
+    if hedge_entry_premium == 0:
+        fills = side_state.get('adjustment_fills', [])
+        if fills:
+            hedge_entry_premium = fills[-1].get('premium', 0)
+    return max(threshold_floor, hedge_entry_premium * threshold_pct), hedge_entry_premium
+
+
 def check_shift_needed(
     session: Dict,
     side: str,
@@ -48,25 +78,12 @@ def check_shift_needed(
     
     sid = session.get('session_id', 'unknown')
 
-    # Dynamic threshold: use hedge entry premium * pct if configured
-    effective_threshold = threshold_floor
-    hedge_entry_premium = 0
-    
+    effective_threshold, hedge_entry_premium = _compute_shift_effective_threshold(
+        session, side, params
+    )
+
     if threshold_pct > 0:
-        side_state = session.get(side, {})
-        # AUDIT FIX: Use persistent _initial_hedge_premium to prevent threshold
-        # collapse after shifts (original_premium goes to 0 after first shift)
-        hedge_entry_premium = side_state.get('_initial_hedge_premium', 0)
-        if hedge_entry_premium == 0:
-            hedge_entry_premium = side_state.get('original_premium', 0)
-        # If original was shifted, use latest adjustment fill premium
-        if hedge_entry_premium == 0:
-            fills = side_state.get('adjustment_fills', [])
-            if fills:
-                hedge_entry_premium = fills[-1].get('premium', 0)
         dynamic = hedge_entry_premium * threshold_pct
-        effective_threshold = max(threshold_floor, dynamic)
-        
         # DETAILED LOGGING for debugging
         log.info(
             f"[{sid}] 🔍 SHIFT CHECK: {side.upper()} | "
@@ -201,19 +218,7 @@ def find_new_strike(
     threshold_pct = params.get('shift_threshold_pct', 0.0)
     expiry = params.get('expiry', '')
 
-    # Dynamic threshold for candidate filtering
-    effective_threshold = threshold_floor
-    if threshold_pct > 0:
-        side_state = session.get(side, {})
-        # AUDIT FIX: Use persistent _initial_hedge_premium (same as check_shift_needed)
-        hedge_entry_premium = side_state.get('_initial_hedge_premium', 0)
-        if hedge_entry_premium == 0:
-            hedge_entry_premium = side_state.get('original_premium', 0)
-        if hedge_entry_premium == 0:
-            fills = side_state.get('adjustment_fills', [])
-            if fills:
-                hedge_entry_premium = fills[-1].get('premium', 0)
-        effective_threshold = max(threshold_floor, hedge_entry_premium * threshold_pct)
+    effective_threshold, _ = _compute_shift_effective_threshold(session, side, params)
 
     if not expiry:
         log.error("No expiry set in session params")

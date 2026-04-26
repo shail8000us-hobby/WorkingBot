@@ -81,9 +81,16 @@ def _ensure_ledger(session: Dict) -> List[Dict]:
     """Ensure the fill ledger exists. Migrate existing P&L on first access."""
     if '_fill_ledger' not in session:
         session['_fill_ledger'] = []
-        # If session already has P&L from before migration, seed the ledger
+        # If session already has P&L from before migration, seed the ledger.
+        # Check attribution buckets too: zero-net sessions (realized_pnl==0) can
+        # still have non-zero per-bucket values whose history must be preserved.
+        _LEGACY_ATTR_KEYS = (
+            'pnl_initial', 'pnl_adjustment', 'pnl_harvest',
+            'pnl_recycle', 'manual_reduction_pnl', 'pnl_reverse',
+        )
         if (session.get('realized_pnl', 0) != 0
-                or session.get('total_fees', 0) != 0):
+                or session.get('total_fees', 0) != 0
+                or any(session.get(k, 0) != 0 for k in _LEGACY_ATTR_KEYS)):
             _migrate_existing_pnl(session)
     return session['_fill_ledger']
 
@@ -95,11 +102,12 @@ def _migrate_existing_pnl(session: Dict) -> None:
 
     attributed_total = 0.0
     for source, attr_key in [
-        ('initial',    'pnl_initial'),
-        ('adjustment', 'pnl_adjustment'),
-        ('harvest',    'pnl_harvest'),
-        ('recycle',    'pnl_recycle'),
-        ('manual',     'manual_reduction_pnl'),
+        ('initial',       'pnl_initial'),
+        ('adjustment',    'pnl_adjustment'),
+        ('harvest',       'pnl_harvest'),
+        ('recycle',       'pnl_recycle'),
+        ('manual',        'manual_reduction_pnl'),
+        ('reverse_close', 'pnl_reverse'),
     ]:
         val = session.get(attr_key, 0)
         if val != 0:
@@ -701,9 +709,13 @@ def compute_attribution(session: Dict) -> Dict[str, float]:
         'pnl_harvest': 0.0,
         'pnl_recycle': 0.0,
         'manual_reduction_pnl': 0.0,
+        'pnl_reverse': 0.0,
     }
     for e in ledger:
         key = _SOURCE_TO_ATTR.get(e.get('source', ''), 'pnl_adjustment')
+        # Guard: unknown mapped keys (future sources) must not KeyError
+        if key not in attr:
+            attr[key] = 0.0
         attr[key] += e['pnl']
     return {k: round(v, 8) for k, v in attr.items()}
 

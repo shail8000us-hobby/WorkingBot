@@ -442,7 +442,7 @@ DEFAULT_PARAMS = {
     # Whipsaw Engine Dispatcher — Phase 2
     'whipsaw_engine': 'SMART',            # active engine: LEGACY | SMART | OFF
     'whipsaw_engine_shadow': False,      # run non-active engine in observe-only mode; OFF by default (enable for compare tab)
-    'whipsaw_smart_enabled': True,       # Smart decisions bind — promoted to primary (Phase 6)
+    'whipsaw_smart_enabled': True,       # DEPRECATED — no longer affects engine selection. whipsaw_engine is the single selector. Kept for session backward compat.
     # Smart Whipsaw Engine params — Phase 3 (shadow-only until Phase 6)
     'smart_ws_score_defensive': 0.30,   # composite score floor for DEFENSIVE mode
     'smart_ws_score_observe': 0.60,     # composite score floor for OBSERVE mode

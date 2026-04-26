@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
 import api from '../utils/apiShim';
 import { readWarmJSON, setWarmJSON } from '../utils/dataWarmCache';
+import { applyTickerUpdate } from './wsTickerUpdater';
 
 // Phase 5 Optimization: IV cache with 60s TTL to avoid 17+ external API calls per poll
 const IV_CACHE_TTL_MS = 60000;
@@ -102,6 +103,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   const hasPositionsRef = useRef(false);
   const activeIntervalsRef = useRef([]);
   const socketRef = useRef(null);
+  const subscribedSymbolsRef = useRef([]);
   const lastModifiedRef = useRef(null);
   const dashboardInFlightRef = useRef(false);
   const dashboardPendingRef = useRef(false);
@@ -469,7 +471,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (!socketRef.current) {
       socketRef.current = io({
         path: '/socket.io',
-        transports: ['polling'],
+        transports: ['websocket', 'polling'],
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 10,
@@ -477,46 +479,21 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
 
       socketRef.current.on('connect', () => {
         console.log('[useOptionsPositions] ⚡ Persistent WebSocket connected');
+        // Re-subscribe after backend restart — subscribed_options is cleared on restart
+        // positionSymbolsKey doesn't change on reconnect so the subscription useEffect
+        // doesn't re-fire; use a ref to re-send the last known symbol list instead.
+        if (subscribedSymbolsRef.current.length > 0) {
+          socketRef.current.emit('subscribe_options_tickers', { symbols: subscribedSymbolsRef.current });
+          console.log(`[useOptionsPositions] ⚡ Re-subscribed ${subscribedSymbolsRef.current.length} symbols after reconnect`);
+        }
       });
 
       socketRef.current.on('options_ticker_update', (data) => {
-        const { symbol, best_bid, best_ask, mark_price, timestamp } = data;
-
+        const { symbol } = data;
         setPositions((prevPositions) =>
-          prevPositions.map((pos) => {
-            if (pos.product_symbol === symbol) {
-              // BUG-7 / MISSING-2 FIX: recalculate unrealized PnL from live bid/ask
-              // so the PnL column updates in real-time (not just on the 5s HTTP poll)
-              const liveBid = parseFloat(best_bid) || 0;
-              const liveAsk = parseFloat(best_ask) || 0;
-              const liveMid = (liveBid > 0 && liveAsk > 0)
-                ? (liveBid + liveAsk) / 2
-                : parseFloat(mark_price) || pos.mid_price || 0;
-              const entryPrice = parseFloat(pos.entry_price) || 0;
-              const size = parseFloat(pos.size) || 0;
-              // Use 0.001 per contract (Delta Exchange India standard for BTC & ETH)
-              const parts = symbol.split('-');
-              const multiplierMap = { BTC: 0.001, ETH: 0.001 };
-              const multiplier = multiplierMap[(parts[1] || '').toUpperCase()] || 0.001;
-              const liveUnrealizedPnl = entryPrice > 0
-                ? (liveMid - entryPrice) * size * multiplier
-                : pos.unrealized_pnl;
-              const pnlPctRaw = entryPrice > 0 ? ((liveMid - entryPrice) / entryPrice) * 100 : 0;
-              const livePnlPct = size < 0 ? -pnlPctRaw : pnlPctRaw;
-
-              return {
-                ...pos,
-                best_bid: liveBid,
-                best_ask: liveAsk,
-                mark_price: parseFloat(mark_price) || pos.mark_price,
-                mid_price: liveMid,
-                unrealized_pnl: liveUnrealizedPnl,
-                pnl_percentage: livePnlPct,
-                ws_updated: timestamp,
-              };
-            }
-            return pos;
-          }),
+          prevPositions.map((pos) =>
+            pos.product_symbol === symbol ? applyTickerUpdate(pos, data) : pos,
+          ),
         );
       });
 
@@ -562,6 +539,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (!socketRef.current || positions.length === 0) return;
 
     const symbols = positions.map((p) => p.product_symbol);
+    subscribedSymbolsRef.current = symbols;
 
     if (socketRef.current.connected) {
       socketRef.current.emit('subscribe_options_tickers', { symbols });

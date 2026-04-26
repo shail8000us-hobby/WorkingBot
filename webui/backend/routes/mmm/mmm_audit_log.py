@@ -692,11 +692,18 @@ class MMMSessionEventLog:
                         batch.clear()
                         last_flush = now
                     except sqlite3.Error as e:
-                        log.error('event_log writer DB error: %s', e)
+                        log.error('event_log writer DB error: %s — dropping %d entries to prevent infinite retry', e, len(batch))
                         try:
                             conn.rollback()
                         except Exception:
                             pass
+                        batch.clear()
+                        try:
+                            if conn is not None:
+                                conn.close()
+                        except Exception:
+                            pass
+                        conn = None
             except Exception:
                 log.exception('event_log writer_loop unexpected error')
 

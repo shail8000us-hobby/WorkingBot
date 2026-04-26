@@ -12,13 +12,13 @@ instances:
     product_id: 27
     grid:
       geometry:
-        reference: 73500
-        lower: 66000
-        upper: 76002
+        reference: 78000
+        lower: 75000
+        upper: 81000
         step: 500
       limits:
         max_open_positions: 20
-        lot_size: 1
+        lot_size: 5
         max_open_orders: 20
         max_qty_per_order: 5
       behavior:
@@ -32,7 +32,7 @@ instances:
         order_type: limit
         max_levels: 3
     safety:
-      max_account_loss_inr: 25000
+      max_account_loss_inr: 250000
       min_liquidation_distance_pct: 50
       rsi:
         enabled: true
@@ -67,7 +67,7 @@ instances:
         order_type: limit
         max_levels: 3
     safety:
-      max_account_loss_inr: 25000
+      max_account_loss_inr: 250000
       min_liquidation_distance_pct: 50
       rsi:
         enabled: true
@@ -133,7 +133,7 @@ instances:
         order_type: limit
         max_levels: 3
     safety:
-      max_account_loss_inr: 25000
+      max_account_loss_inr: 250000
       min_liquidation_distance_pct: 50
       rsi:
         enabled: true
@@ -167,7 +167,7 @@ symbols:
         max_levels: 3
         enabled: false
     safety:
-      max_account_loss_inr: 25000
+      max_account_loss_inr: 250000
       min_liquidation_distance_pct: 50
       rsi:
         enabled: true
@@ -287,7 +287,7 @@ safety:
 guardian:
   enabled: true
   check_interval: 10
-  max_account_loss_inr: '25000'
+  max_account_loss_inr: '250000'
   usd_to_inr_rate: '85.0'
   liquidation_critical: 0.5
   auto_close_positions: true
@@ -488,7 +488,7 @@ webui:
   url:
     default: http://localhost:5555
 risk_limits:
-  max_account_loss_inr: 25000
+  max_account_loss_inr: 250000
   usd_to_inr_rate: 85.0
   max_drift_alerts: 10
   max_disruption_events: 5

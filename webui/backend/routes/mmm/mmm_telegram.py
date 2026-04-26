@@ -114,6 +114,12 @@ async def _send_async(text: str, key: str) -> bool:
         return False
 
 
+async def send_telegram_message(text: str, dedup_key: str = '') -> bool:
+    """Send a free-form Telegram message. Public wrapper around _send_async."""
+    key = dedup_key or f'manual_{hash(text) & 0xFFFF}'
+    return await _send_async(text, key)
+
+
 # ─────────────────────────────────────────────────────────────────────
 # Alert functions (called from mmm_monitor.py)
 # ─────────────────────────────────────────────────────────────────────
@@ -183,7 +189,17 @@ async def _alert_half_roll_detected_async(session_id: str, closed_side: str, fai
 def alert_half_roll_recovery_needed(session_id: str, state: str):
     """Alert on backend restart that a session needs manual recovery (sync wrapper)."""
     try:
-        asyncio.create_task(_alert_half_roll_recovery_needed_async(session_id, state))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(_alert_half_roll_recovery_needed_async(session_id, state))
+        except RuntimeError:
+            # No running event loop — startup context; dispatch via daemon thread
+            import threading
+            threading.Thread(
+                target=asyncio.run,
+                args=(_alert_half_roll_recovery_needed_async(session_id, state),),
+                daemon=True,
+            ).start()
     except Exception:
         pass
 

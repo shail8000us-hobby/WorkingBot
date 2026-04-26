@@ -116,6 +116,10 @@ class MMMStorage:
         After successful import, renames the JSON file to .json.migrated
         so it is never re-imported.
         """
+        # Migration only applies to the default DB path.  Custom db_path instances
+        # (e.g. test harnesses) must not touch the production legacy JSON file.
+        if self.db_path != DB_FILE:
+            return
         if not os.path.exists(LEGACY_JSON_FILE):
             return
 
@@ -426,7 +430,26 @@ class MMMStorage:
         else:
             session.pop('_checksum_warning', None)
         # Apply authoritative overrides (may mutate params and realized_pnl)
-        session['params'] = json.loads(row['params_json'])
+        # Use resilient decode for params_json: a malformed params blob should
+        # degrade to empty-dict (session continues with defaults) rather than
+        # crashing the entire read and hiding the session from control-plane views.
+        params_raw = row['params_json']
+        try:
+            decoded_params = json.loads(params_raw) if params_raw else {}
+            session['params'] = decoded_params if isinstance(decoded_params, dict) else {}
+            if not isinstance(decoded_params, dict):
+                session['_parse_warning'] = True
+                log.warning(
+                    f"Session {session.get('session_id', '?')}: params_json decoded to "
+                    f"non-dict — using empty dict"
+                )
+        except Exception:
+            session['params'] = {}
+            session['_parse_warning'] = True
+            log.warning(
+                f"Session {session.get('session_id', '?')}: malformed params_json — "
+                f"using empty dict (session will use runtime defaults)"
+            )
         self._backfill_session_side_premiums(session)
         self._correct_fillsync_double_booking(session)
         stored_strategy = row['strategy_type'] if 'strategy_type' in row.keys() else None
@@ -736,6 +759,10 @@ class MMMStorage:
         session['_checksum'] = s['_checksum']
         session['_checksum_v2'] = s['_checksum_v2']
         session['strategy_type'] = strategy_type
+        # Sync params so caller in-memory state matches what was actually persisted.
+        # When hot-reload arbitration chose newer DB params (final_params != params),
+        # the caller would otherwise run one cycle with stale params after save.
+        session['params'] = final_params
 
         return session_id
 
@@ -793,7 +820,14 @@ class MMMStorage:
                 rows = conn.execute(
                     "SELECT * FROM mmm_sessions ORDER BY created_at DESC"
                 ).fetchall()
-            return [self._row_to_session(r) for r in rows]
+            sessions = []
+            for r in rows:
+                try:
+                    sessions.append(self._row_to_session(r))
+                except Exception as row_e:
+                    sid = r['session_id'] if 'session_id' in r.keys() else '?'
+                    log.error(f"Skipping corrupt session row {sid} in list_sessions: {row_e}")
+            return sessions
         except Exception as e:
             log.error(f"Failed to list sessions: {e}")
             return []

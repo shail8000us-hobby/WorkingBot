@@ -5505,6 +5505,108 @@ All 1562 tests passed.
   - `audit/mmm/HANDOFF_LAST.md`
 - No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
 
+## 2026-04-20 — MMM phasewise audit: `mmm_pnl_core.py` chunk 02 completed (audit-only)
+
+- Completed Phase 02 audit for `webui/backend/routes/mmm/mmm_pnl_core.py` chunk 02 (`lines 451–EOF`), covering:
+  - `rollback_closes_since`, `ledger_snapshot`
+  - `compute_realized_pnl`, `compute_confirmed_pnl`, `compute_fees`
+  - `compute_unrealized_pnl`, `compute_attribution`, `_oldest_estimate_age_sec`
+  - `compute_net_premium`, `get_pnl`, `compute_current_total_pnl`
+  - `check_stale_estimates`, `_sync_session_fields`
+- Created report artifact:
+  - `audit/mmm/file_reports/backend/phase_02_mmm_pnl_core_chunk_02_audit.md`
+- Recorded new findings:
+  - `F02-P1-050`: reverse-close attribution runtime failure — `_SOURCE_TO_ATTR` maps `reverse_close -> pnl_reverse`, but `compute_attribution` accumulator omits `pnl_reverse`, producing `KeyError('pnl_reverse')`; failed sync can leave toxic ledger rows that break subsequent `get_pnl`.
+  - `F02-P3-051`: no sealed contract currently covers `record_close(source='reverse_close')` / reverse attribution stability.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_pnl_core.py -q` → `65 passed`.
+  - Deterministic runtime probes:
+    - `probe-reverse-attr-crash` (reproduced `KeyError('pnl_reverse')` on reverse-close write path).
+    - `probe-reverse-attr-toxic-ledger` (confirmed failed reverse-close sync leaves ledger row and subsequent `get_pnl` also raises `KeyError`).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+## 2026-04-20 — MMM phasewise audit: `mmm_pnl_core.py` chunk 01 completed (audit-only)
+
+- Started Phase 02 persistence/P&L kernel pass on `webui/backend/routes/mmm/mmm_pnl_core.py` (`lines 1–450`).
+- Created report artifact:
+  - `audit/mmm/file_reports/backend/phase_02_mmm_pnl_core_chunk_01_audit.md`
+- Audited and documented behavior for:
+  - `_ensure_ledger`, `_migrate_existing_pnl`
+  - `record_close`, `confirm_fill`, `rollback_close`
+  - `flag_discrepancy`, `manual_close`
+  - `record_fee` (partial, within chunk boundary)
+- Recorded new findings:
+  - `F02-P2-048`: zero-net legacy attribution migration trigger gap in `_ensure_ledger` (migration keyed only on non-zero `realized_pnl`/`total_fees`).
+  - `F02-P3-049`: legacy `pnl_reverse` migration can fall through to `adjustment` attribution via gap fallback in `_migrate_existing_pnl`.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_pnl_core.py -q` → `65 passed`.
+  - Deterministic runtime probes executed for both findings (`probe-zero-net`, `probe-reverse-mig`) and results captured in the report.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit artifact backfill (Phase-01 report restoration)
+
+- Backfilled missing Phase-01 report artifacts that were referenced in continuity docs but absent on disk:
+  - `audit/mmm/file_reports/backend/phase_01_mmm_constants_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_dte_presets_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_config_chunk_02_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_02_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_02_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_activity_chunk_03_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_analytics_storage_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_analytics_aggregator_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_analytics_aggregator_chunk_02_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_websocket_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_websocket_chunk_02_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_walkthrough_chunk_01_audit.md`
+  - `audit/mmm/file_reports/backend/phase_01_mmm_walkthrough_chunk_02_audit.md`
+- Re-validated expected artifact set for the completed foundation modules (`ALL_OK=True`) after backfill.
+- Re-validated all handoff-referenced backend report paths (`missing_reports=0`, `ALL_REFERENCED_REPORTS_PRESENT=True`).
+- Ran targeted verification:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_activity.py -q` → `3 passed`.
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_close_at_5.py webui/backend/routes/mmm/tests/test_sealed_mmm_close_at_5.py webui/backend/routes/mmm/tests/test_mmm_dte_presets.py webui/backend/routes/mmm/tests/test_sealed_mmm_dte_presets.py -q` → `104 passed`.
+  - import smoke checks for `mmm_websocket` and `mmm_walkthrough` passed.
+- No MMM runtime trading logic was modified in this backfill pass; this work was documentation/audit artifact integrity only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_recycler.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a recycler foundations pass of `webui/backend/routes/mmm/mmm_recycler.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_recycler_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - `select_recyclable_positions`
+  - `check_recycle_viability`
+  - `execute_lot_recycling` (partial: setup/selection/viability/Phase A)
+- Recorded two findings:
+  - `F01-P1-025`: `recycle_max_pct` cap can be exceeded when first selected candidate lots are larger than remaining cap allowance.
+  - `F01-P2-026`: no-ID in-flight guard gap in recycler selection (`_being_closed` does not suppress `_pos_id=None` entries).
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_recycler.py webui/backend/routes/mmm/tests/test_mmm_recycler.py -q` → `50 passed`.
+  - Runtime probes reproduced both findings with deterministic session payloads.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_strike_shift.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a strike-shift core pass of `webui/backend/routes/mmm/mmm_strike_shift.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_strike_shift_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - shift decision + freeze paths (`check_shift_needed`, `freeze_current_positions`)
+  - candidate selection path (`find_new_strike`, `_scan_chain`)
+  - early activate path (`activate_new_strike`, partial in this chunk)
+- Recorded one new finding:
+  - `F01-P3-016`: dynamic shift-threshold derivation is duplicated across check/filter paths (maintainability drift risk).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
 ## 2026-04-20 — MMM phasewise audit: `mmm_reversal.py` chunk 01 completed (audit-only)
 
 - Continued Phase 01 audit with a reversal/cooldown pass of `webui/backend/routes/mmm/mmm_reversal.py` (`lines 1–EOF`).
@@ -5602,6 +5704,346 @@ All 1562 tests passed.
   - remainder of snapshot updater (`update_trigger_snapshots` pruning + return path)
 - New findings in this chunk:
   - None (carry-forward findings from chunk 01 remain open: `F01-P1-013`, `F01-P2-014`).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_strike_shift.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_strike_shift.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_strike_shift_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - remainder of strike activation workflow (`activate_new_strike`)
+  - heartbeat pre-scan candidate cache path (`pre_scan_shift_candidates`)
+- Recorded one new finding:
+  - `F01-P3-017`: `pre_scan_shift_candidates` has no dedicated contract tests despite operational impact on shift latency/cache correctness.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_close_at_5.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a close-at-threshold foundations pass of `webui/backend/routes/mmm/mmm_close_at_5.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - `_D`, `_check_stale_being_closed`, `scan_closeable_positions`
+  - `close_position` entry/guardian-observer gating/in-flight guard + market-order branch
+- Recorded two new findings:
+  - `F01-P2-018`: legacy original close path can emit `_pos_id=None` payloads without a fallback in-flight guard, leaving duplicate-close protection incomplete in scalar-only states.
+  - `F01-P3-019`: `close_position` market-order branch lacks direct sealed contract coverage for success/partial/no-ID/pending-verification semantics.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_close_at_5.py -q` → `37 passed`.
+  - Runtime probes confirmed `_pos_id=None` original payload emission and no persisted in-flight marker in that legacy failure path.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_safety.py` chunk 01 completed (audit-only)
+
+- Continued Phase 01 audit with a safety-foundations pass of `webui/backend/routes/mmm/mmm_safety.py` (`lines 1–450`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_safety_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - `run_all_checks`, `check_position_cap`, `check_max_adjustments`
+  - `check_max_loss`, `check_max_loss_sizing`
+  - `check_whipsaw` (partial, within chunk boundary)
+- Recorded two new findings:
+  - `F01-P2-034`: whipsaw safety-path suppression drift — `_whipsaw_dispatcher_ran` is set by dispatcher and not reset, so standalone safety beats can skip `check_whipsaw`.
+  - `F01-P2-035`: position-cap signaling drift — `check_position_cap` uses `active_lots` while engine hard-cap uses `total_lots` (active+frozen).
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_safety.py webui/backend/routes/mmm/tests/test_mmm_safety.py webui/backend/routes/mmm/tests/test_sealed_check_max_loss.py -q` → `128 passed`.
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_check_max_loss_sizing.py webui/backend/routes/mmm/tests/test_mmm_whipsaw_legacy_parity.py -q` → `24 passed`.
+  - Runtime probes confirmed (a) whipsaw event suppression when `_whipsaw_dispatcher_ran=True`, and (b) no position-cap event when `active_lots=0` with `total_lots` at cap.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_close_at_5.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_close_at_5.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_close_at_5_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - remainder of `close_position` smart-execute success/failure path, ledger attribution, and audit/event hooks
+  - helper state mutators (`_partial_close_position`, `_remove_closed_position`)
+  - close-completion predicates (`check_side_fully_closed`, `check_both_sides_closed`)
+- Recorded two new findings:
+  - `F01-P1-020`: when payload `_pos_id` exists but corresponding `positions[]` row is missing, partial-fill path can under-track remaining exposure (session can collapse to flat while exchange residual may remain).
+  - `F01-P2-021`: market no-ID failure cleanup is asymmetric; content-match path can retain `_being_closed` lock until TTL, delaying retries in emergency close flows.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_close_at_5.py webui/backend/routes/mmm/tests/test_sealed_check_side_fully_closed.py -q` → `48 passed`.
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_straddle_roll_pure.py::test_phs_2_hard_stop_calls_market_order_not_smart_execute -q` → `1 passed`.
+  - Runtime probes reproduced both findings with deterministic payload/session setups.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+
+## 2026-04-20 — MMM phasewise audit: `mmm_harvester.py` chunk 01 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_harvester.py` (`lines 1–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_harvester_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - `get_effective_harvest_params`
+  - `scan_harvestable_positions`
+- Recorded three findings:
+  - `F01-P2-022`: M3 override includes `harvest_max_per_beat`, but runtime cap remains static session param in monitor.
+  - `F01-P2-023`: no-ID in-flight guard gap in harvester scan (`_being_closed` does not suppress `_pos_id=None` entries).
+  - `F01-P3-024`: fallback/default and operator-doc semantics drift (`active_lots` implementation vs `total_lots` docs; fallback defaults differ from canonical state defaults).
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_harvester.py webui/backend/routes/mmm/tests/test_mmm_harvester.py -q` → `47 passed`.
+  - Runtime probes confirmed M3 throughput-cap drift and no-ID in-flight guard bypass.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_recycler.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_recycler.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_recycler_chunk_02_audit.md`.
+- Audited and documented remainder of `execute_lot_recycling` (Phase B sizing, rollback handling, success payload semantics).
+- Recorded three findings:
+  - `F01-P1-027`: success path can report positive planned net gain while actual executed net-lot outcome is negative after partial Phase A.
+  - `F01-P2-028`: recycler success payload can retain planned viability metrics after partial execution.
+  - `F01-P3-029`: missing dedicated test coverage for partial Phase A + successful Phase B metric reconciliation.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_recycler.py webui/backend/routes/mmm/tests/test_mmm_recycler.py -q` → `50 passed`.
+  - Deterministic probe reproduced planned-vs-actual net-lot drift on partial Phase A success path.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_wind_down.py` chunk 01 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_wind_down.py` (`lines 1–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_wind_down_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - activation/status helpers (`is_wind_down_active`, `get_wind_down_status`, `get_wind_down_close_threshold`)
+  - buyback/LIFO helpers (`compute_wind_down_action`, `get_lifo_close_fills`, `apply_lifo_removals`)
+  - monitor wiring callsites in `mmm_monitor.py` (wind-down trigger path + buyback execution flow)
+- Recorded three findings:
+  - `F01-P1-030`: partial-fill state integrity gap in wind-down monitor wiring (full requested lots can be removed from session state when exchange confirms smaller `filled_size`).
+  - `F01-P2-031`: status parity drift (`get_wind_down_status` can report inactive while regime-triggered `is_wind_down_active` is true).
+  - `F01-P3-032`: coverage gap for status-parity and wind-down partial-fill lot-parity regression.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_wind_down.py webui/backend/routes/mmm/tests/test_mmm_wind_down.py -q` → `55 passed`.
+  - Runtime probes reproduced status parity mismatch and partial-fill lot-removal mismatch behavior.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_dte_presets.py` chunk 01 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_dte_presets.py` (`lines 1–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_dte_presets_chunk_01_audit.md`.
+- Audited and documented behavior for:
+  - dynamic preset builders (`build_straddle_adjustment_preset`, `build_straddle_roll_preset`)
+  - preset merge/routing helpers (`get_preset`, `list_presets`, `apply_preset`)
+  - DTE/aggregate safety utilities (`compute_total_dte_hours`, `infer_dte_category`, `check_aggregate_pnl`, `check_chain_liquidity`)
+  - wiring in `mmm_state.create_session` and `mmm_api` DTE/aggregate/liquidity endpoints
+- Recorded one finding:
+  - `F01-P3-033`: contract-doc drift — `build_straddle_adjustment_preset` docstring still advertises `2–12h` / `<2,>12` reject while runtime + sealed tests enforce `>=1h` and warning-only for `>24h`.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_dte_presets.py webui/backend/routes/mmm/tests/test_mmm_dte_presets.py -q` → `61 passed`.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_safety.py` chunk 02 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_safety.py` (`lines 451–EOF`).
+- Created report artifact: `audit/mmm/file_reports/backend/phase_01_mmm_safety_chunk_02_audit.md`.
+- Audited and documented behavior for:
+  - `check_total_exposure`, `check_asymmetry`, `check_near_expiry`, `check_near_expiry_v2`
+  - `check_pnl_guardrail`, `check_margin`, `check_lot_velocity`, `check_trailing_stop`
+  - helper APIs: `update_peak_pnl`, `reset_peak_pnl_on_reversal`, `should_block_adjustment`, `get_block_action`, `should_pause`, `get_safety`
+- Recorded three findings:
+  - `F01-P2-036`: reverse-inclusive total-exposure telemetry component drift (effective total includes reverse lots but emitted details omit reverse component).
+  - `F01-P2-037`: reverse-inclusive margin telemetry component drift (total includes reverse lots while CE/PE details omit reverse component).
+
+## 2026-04-21 — MMM phasewise audit: `mmm_observer.py` chunk 01 completed (audit-only)
+
+- Completed Phase 02 file pass for `webui/backend/routes/mmm/mmm_observer.py` (`lines 1–EOF`; single chunk, file complete).
+- Created report artifact:
+  - `audit/mmm/file_reports/backend/phase_02_mmm_observer_chunk_01_audit.md`
+- Audited and documented behavior for:
+  - `MMMStrategyObserver.__init__`, `validate_close`, `record_close`, `clear_session`
+  - `_check_price_consistency`, `_check_ledger_integrity`, `get_observer`
+- Recorded new findings:
+  - `F02-P3-052`: observer/guardian contract-doc drift — observer now enforces price+ledger only, but nearby comments/docs still claim four observer checks (continuity/velocity included).
+  - `F02-P3-053`: observer coverage gap — non-sealed tests only and no direct `shift_recycle` branch assertions found.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_observer.py -q` → `21 passed`.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- Phase 02 status:
+  - Completed (`mmm_state.py`, `mmm_storage.py`, `mmm_pnl_core.py`, `mmm_observer.py`).
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+  - `F01-P3-038`: coverage gap — no dedicated `_reverse` assertions in safety test suites for exposure/margin telemetry parity.
+- Validation performed:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_safety.py webui/backend/routes/mmm/tests/test_mmm_safety.py` → `108 passed`.
+  - Runtime probe reproduced both telemetry mismatches under reverse-lot scenarios (`total_exposure` and `margin_warning`).
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: `mmm_telegram.py` chunk 01 completed (audit-only)
+
+- Completed Phase 01 file pass for `webui/backend/routes/mmm/mmm_telegram.py` (`lines 1–EOF`; file complete) and created report artifact `audit/mmm/file_reports/backend/phase_01_mmm_telegram_chunk_01_audit.md`.
+- Audited Telegram dispatch contracts across monitor/guardian/roll callsites and validated behavior with targeted tests/probes (`python3 -m pytest ...test_active_hours_shutdown.py ...test_sealed_straddle_roll_pure.py -q` → `51 passed`).
+- Recorded new findings:
+  - `F01-P1-039`: startup half-roll recovery Telegram can be dropped when sync wrapper schedules with `asyncio.create_task` in no-loop context.
+  - `F01-P1-040`: max-loss Telegram wiring drift (guard thread unscheduled async call + pure-roll invalid `current_loss` keyword).
+  - `F01-P2-041`: missing `send_telegram_message` export used by pure-roll exhaustion path.
+  - `F01-P3-042`: Telegram contract coverage gap for sync-wrapper scheduling/signature compatibility.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-20 — MMM phasewise audit: remaining Phase-01 foundation files completed (audit-only)
+
+- Completed the remaining mapped Phase-01 foundation file audits and created all missing chunk artifacts for:
+  - `mmm_websocket.py` (chunks 01/02)
+  - `mmm_activity.py` (chunks 01/02/03)
+  - `mmm_audit_log.py` (chunks 01/02)
+  - `mmm_audit_remark.py` (chunk 01)
+  - `mmm_analytics_storage.py` (chunk 01)
+  - `mmm_analytics_aggregator.py` (chunks 01/02)
+  - `mmm_performance.py` (chunks 01/02)
+  - `mmm_walkthrough.py` (chunks 01/02)
+- Validated report completeness via chunk-presence check (`ALL_OK=True`) and ran targeted coverage tests:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_activity.py webui/backend/routes/mmm/tests/test_sealed_mmm_execution_events.py webui/backend/routes/mmm/tests/test_active_hours_shutdown.py -q` → `37 passed`.
+- Recorded new findings:
+  - `F01-P3-043`: websocket `_emit` payload mutation / timestamp overwrite contract drift.
+  - `F01-P2-044`: `MMMSessionEventLog._writer_loop` DB-error retry/backpressure resilience gap.
+  - `F01-P2-045`: analytics aggregator completed-session classification drift (non-terminal status inclusion risk).
+  - `F01-P2-046`: walkthrough trigger reconstruction can use post-update snapshots (forensic fidelity drift).
+  - `F01-P3-047`: no direct sealed test coverage for `mmm_performance` scoring/storage contracts.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-21 — Phase 03 audit: `mmm_executor.py` chunk 01 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_executor.py` chunk 01 (`lines 1–450`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_01_audit.md`.
+- Audited placement/intent/duplicate-coid recovery path in `MMMExecutor.smart_execute` (partial symbol coverage in chunk scope), plus helper symbols `_log_activity`, `_parse_fill_price`, `MMMExecutor.__init__`, `client`, `_create_rest_client`.
+- Ran targeted validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_smart_execute.py -q` → `9 passed`
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py -q` → `14 passed`
+- Recorded findings:
+  - `F03-P2-054`: duplicate `client_order_id` recovery currently searches open orders only; if first order is already terminal before lookup, flow can return `ORDER_FAILED` despite live exchange execution.
+  - `F03-P3-055`: no direct sealed contract coverage for duplicate-coid recovery/open-order lookup branch.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-21 — Phase 03 audit: `mmm_executor.py` chunk 02 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_executor.py` chunk 02 (`lines 451–900`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_02_audit.md`.
+- Audited `MMMExecutor.smart_execute` continuation paths: fill finalization, partial-fill continuation, aggressive repricing, cancel+replace fallback, and attempts-exhausted terminal handling.
+- Ran targeted validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_smart_execute.py webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py -q` → `23 passed`
+- Recorded findings:
+  - `F03-P1-056`: continuation/cancel-replace branch uses original `size` after `_current_order_size` is reduced, risking replacement over-placement and cancel-path filled-size misreport in partial-fill races.
+  - `F03-P2-057`: attempts-exhausted `smart_execute` path can return without terminal `EXECUTION_INTENT` closure event, leaving potential dangling `ORDER_INTENT` rows.
+  - `F03-P3-058`: no direct sealed coverage for continuation-order cancel/replace size handling and attempts-exhausted intent closure.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-21 — Phase 03 audit: `mmm_executor.py` chunk 03 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_executor.py` chunk 03 (`lines 901–1350`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_03_audit.md`.
+- Audited `MMMExecutor.emergency_execute` (full chunk coverage) and `MMMExecutor.execute_entry` (partial chunk coverage: concurrent entry + success aggregation + CE rollback branch start).
+- Ran targeted validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py webui/backend/routes/mmm/tests/test_sealed_smart_execute.py webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py -m sealed -v` → `43 passed, 5 warnings`
+- Recorded findings:
+  - `F03-P1-059`: `execute_entry` success aggregation checks boolean `success` only, so partial fills can still be treated as full entry success.
+  - `F03-P1-060`: CE rollback path buys requested `lots` rather than successful-leg `filled_size`, increasing reject/escalation/orphan risk when the successful leg was partial.
+  - `F03-P2-061`: `emergency_execute` assumes full fill when `unfilled_size` is missing/unparseable in filled-state path.
+  - `F03-P3-062`: remediation-suite drift and coverage gap — header claims H-1/H-3 for executor but implemented body is H-2 only; no direct `execute_entry` branch tests found.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-21 — Phase 03 audit: `mmm_executor.py` chunk 04 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_executor.py` chunk 04 (`lines 1351–1800`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_04_audit.md`.
+- Audited `MMMExecutor.execute_entry` tail and full helper coverage for `MMMExecutor.execute_adjustment`, `_h2_exchange_fill_lookup`, `_fetch_quotes`, `_calculate_mid_price`, `get_mid_price`, and `_place_limit_order` (plus partial `place_market_order_immediate` entry).
+- Ran targeted sealed validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py webui/backend/routes/mmm/tests/test_sealed_smart_execute.py webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py -m sealed -v` → `43 passed, 5 warnings`.
+- Recorded findings:
+  - `F03-P1-063`: `_place_limit_order` buy post-only retry sets price to `best_ask` while keeping `post_only=True`, creating a contradictory reprice path that can repeatedly cross/reject.
+  - `F03-P2-064`: `execute_adjustment` recovery path sizes re-sell from requested `close_lots` (not actual close `filled_size`), creating latent lot-normalization drift under partial-close/open-fail scenarios.
+  - `F03-P3-065`: no direct sealed coverage for `_place_limit_order` buy post-only retry branch or `MMMExecutor.execute_adjustment` recovery semantics.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-21 — Phase 03 audit: `mmm_executor.py` chunk 05 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_executor.py` chunk 05 (`lines 1801–EOF`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_executor_chunk_05_audit.md`.
+- Audited executor tail helpers: `place_market_order_immediate`, `_amend_order`, `_cancel_order`, `_get_order_status`, `_is_filled`, `_wait_for_fill`, `_failure`, and module singleton accessor `get_executor`.
+- Ran targeted sealed validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_execution_risk_remediation.py webui/backend/routes/mmm/tests/test_sealed_smart_execute.py webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py -m sealed -v` → `43 passed, 5 warnings`.
+- Recorded findings:
+  - `F03-P1-066`: `_cancel_order` returns false on cancel-400 paths and attempts-exhausted flow can return failure without final status reconciliation, enabling false-failure/duplicate-retry risk.
+  - `F03-P3-067`: no direct sealed helper contracts for `_cancel_order` cancel-400 reconciliation, `_wait_for_fill` dead/timeout transitions, or `get_executor` singleton behavior.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-22 — Phase 03 audit: `mmm_initializer.py` chunk 01 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_initializer.py` chunk 01 (`lines 1–450`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_01_audit.md`.
+- Audited initializer entry surfaces and helpers: `expiry_to_utc_datetime`, `normalize_expiry`, `expiry_to_symbol_suffix`, `MMMInitializer.__init__`, `get_available_expiries`, `get_spot_price`, `get_full_chain`, `preview_strikes`, `preview_atm_straddle`, and `validate_manual_selection` (partial start).
+- Ran targeted sealed validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_strike_shift.py webui/backend/routes/mmm/tests/test_sealed_straddle_adjustment.py -m sealed -v` → `58 passed, 6 warnings`.
+- Recorded findings:
+  - `F03-P1-068`: manual-selection validation path accepts expiry/underlying contract inputs but does not enforce CE/PE symbol parity to requested expiry/underlying before symbols are persisted into session state.
+  - `F03-P3-069`: initializer core parsing/selection/manual-validation branches lack direct sealed contracts; current coverage is mostly consumer-level and mocked.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-23 — Phase 03 audit: `mmm_initializer.py` chunk 02 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_initializer.py` chunk 02 (`lines 451–EOF`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_02_audit.md`.
+- Audited remaining initializer helper surfaces: `validate_manual_selection` tail, `build_symbol`, `_rank_strikes`, `_enrich_option`, `_get_moneyness`, `_extract_ticker_data`, `check_liquidity`, `calculate_total_premium`, `calculate_lots_with_buffer`, and singleton accessor `get_initializer`.
+- Ran targeted sealed validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_strike_shift.py webui/backend/routes/mmm/tests/test_sealed_straddle_adjustment.py -m sealed -v` → `58 passed, 6 warnings`.
+- Recorded findings:
+  - `F03-P2-070`: auto-mode preview→init flow can accept zero-bid ranked legs because `_rank_strikes` uses penalty ranking (not hard rejection) and auto init path does not run manual validate-selection gate.
+  - `F03-P3-071`: chunk-02 initializer helper surfaces (`build_symbol`, `_extract_ticker_data`, `check_liquidity`, premium helpers) lack direct sealed contracts.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-23 — Phase 03 audit: `mmm_pending_orders.py` chunk 01 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_pending_orders.py` chunk 01 (`lines 1–249`; file complete) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_pending_orders_chunk_01_audit.md`.
+- Audited pending-order registry helpers and exchange verification flow: `register_pending`, `clear_pending`, `get_pending`, `clear_all`, and `check_and_resolve_pending`.
+- Ran targeted sealed validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_mmm_pending_orders.py -q` → `16 passed, 5 warnings`.
+- Recorded findings:
+  - `F03-P2-072`: partially filled orders that later cancel/expire can be cleared without recording executed lots because the guard only handles all-or-nothing filled/dead states and never inspects `filled_size` / `unfilled_size`.
+  - `F03-P3-073`: no sealed contract exercises partial-fill terminal states or callback-failure idempotence in the pending-order recovery path; the suite only covers full fill/open/dead/error cases.
 - Updated continuity docs:
   - `audit/mmm/00_MASTER_INDEX.md`
   - `audit/mmm/HANDOFF_LAST.md`

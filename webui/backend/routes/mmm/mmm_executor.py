@@ -341,6 +341,22 @@ class MMMExecutor:
                             details={'order_id': matched['id'], 'client_order_id': client_order_id})
                         order_result = matched
                         break
+                    else:
+                        # Not in open orders — order is likely terminal (filled or cancelled).
+                        # Further retries will all get duplicate_client_order_id again.
+                        # Stop now to prevent duplicate placement; operator must reconcile.
+                        log.critical(
+                            f"🚨 {symbol}: duplicate_client_order_id={client_order_id} but order NOT in open orders "
+                            f"— order may be FILLED or CANCELLED on exchange. "
+                            f"Stopping retries to prevent duplicate placement. Manual review required."
+                        )
+                        _log_activity('order_failed',
+                            f"{side.upper()} {symbol}: duplicate_client_order_id not in open orders "
+                            f"— possible terminal fill. Manual review required.",
+                            session_id=session_id, severity='critical',
+                            details={'symbol': symbol, 'client_order_id': client_order_id})
+                        last_error = f"duplicate_coid_order_not_found:{client_order_id}"
+                        break
                 except Exception as _dup_e:
                     log.warning(f"Could not look up duplicate order: {_dup_e}")
 

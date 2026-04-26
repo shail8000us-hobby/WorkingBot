@@ -83,6 +83,8 @@ def is_cooldown_active(session: Dict) -> bool:
 
     cooldown_until = session.get('cooldown_until')
     if cooldown_until is None:
+        # cooldown_active=True but no expiry — invalid state; clear so activate_cooldown can re-arm
+        session['cooldown_active'] = False
         return False
 
     try:

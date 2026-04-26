@@ -65,7 +65,7 @@ class MMMSafety:
         # Phase 1 gate: always False in Phase 1 (dispatcher delegates here).
         # Phase 2+ will set _whipsaw_dispatcher_ran=True when the dispatcher
         # has already consumed check_whipsaw() so we skip the direct call.
-        if not session.get('_whipsaw_dispatcher_ran'):
+        if not session.pop('_whipsaw_dispatcher_ran', False):
             events.extend(self.check_whipsaw(session))
         events.extend(self.check_asymmetry(session))
 
@@ -586,11 +586,12 @@ class MMMSafety:
 
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
-            total = side_state.get('total_lots', 0)
+            core_total = side_state.get('total_lots', 0)
             frozen = side_state.get('frozen_total_lots', 0)
             active = side_state.get('active_lots', 0)
             # Add per-side reverse lots (CE reverse to CE, PE reverse to PE)
-            total = total + _reverse_lots_by_side.get(side_key, 0)
+            reverse = _reverse_lots_by_side.get(side_key, 0)
+            total = core_total + reverse
             ratio = total / max_total if max_total > 0 else 0
 
             if total >= max_total:
@@ -600,12 +601,13 @@ class MMMSafety:
                     'message': (
                         f"{side_key.upper()} TOTAL EXPOSURE CEILING: "
                         f"{total}/{max_total} lots "
-                        f"(active: {active}, frozen: {frozen})"
+                        f"(active: {active}, frozen: {frozen}, reverse: {reverse})"
                     ),
                     'action': 'warn',
                     'details': {
                         'side': side_key, 'total': total,
-                        'active': active, 'frozen': frozen, 'max': max_total,
+                        'active': active, 'frozen': frozen, 'reverse': reverse,
+                        'max': max_total,
                     },
                 })
             elif ratio >= 0.8:
@@ -619,7 +621,8 @@ class MMMSafety:
                     'action': 'continue',
                     'details': {
                         'side': side_key, 'total': total,
-                        'active': active, 'frozen': frozen, 'max': max_total,
+                        'active': active, 'frozen': frozen, 'reverse': reverse,
+                        'max': max_total,
                     },
                 })
 
@@ -953,7 +956,7 @@ class MMMSafety:
                 'level': 'alert',
                 'message': (
                     f"High margin utilization: {total_lots} total lots "
-                    f"(CE: {total_ce}, PE: {total_pe}). "
+                    f"(CE: {total_ce}, PE: {total_pe}, reverse: {reverse_lots}). "
                     f"Combined cap: {combined_cap:.0f}"
                 ),
                 'action': 'warn',
@@ -961,6 +964,7 @@ class MMMSafety:
                     'total_lots': total_lots,
                     'ce_lots': total_ce,
                     'pe_lots': total_pe,
+                    'reverse_lots': reverse_lots,
                     'combined_cap': combined_cap,
                 },
             })

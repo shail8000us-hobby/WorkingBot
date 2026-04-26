@@ -147,13 +147,13 @@ def build_straddle_adjustment_preset(hours_to_expiry: float) -> dict:
     See docs/STRADDLE_WITH_ADJUSTMENT.md for full design rationale.
 
     Args:
-        hours_to_expiry: Hours until expiry (2.0 to 12.0)
+        hours_to_expiry: Hours until expiry (>=1.0; warning logged for >24h)
 
     Returns:
         Complete parameter dict for the session
 
     Raises:
-        ValueError: if hours_to_expiry < 2 or > 12
+        ValueError: if hours_to_expiry < 1
     """
     H = hours_to_expiry
 

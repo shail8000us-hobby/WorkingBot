@@ -325,6 +325,37 @@ PARAM_RULES = {
     'god_pnl_threshold':                 {'type': float, 'min': 1.0,  'max': 500.0, 'hot': True},
     'god_min_silence_min':               {'type': int,   'min': 1,    'max': 120,   'hot': True},
     'god_cooldown_min':                  {'type': int,   'min': 5,    'max': 240,   'hot': True},
+    # ── F01-P1-009 fix: keys present in HOT_RELOAD_PARAMS but missing from PARAM_RULES ──
+    # Strike-shift cooldown
+    'shift_cooldown_sec':                {'type': int,   'min': 0,    'max': 3600,  'hot': True},
+    # Close-at price source (bid vs mark)
+    'close_at_use_bid':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Gamma-Aware Lot Multiplier (T3-2)
+    'gamma_aware_enabled':               {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'gamma_aware_max_multiplier':        {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    # Margin Guardian consecutive-critical escalation (T1-3)
+    'consecutive_critical_threshold':    {'type': int,   'min': 1,    'max': 20,    'hot': True},
+    # Perp hedge: option delta projection for lot estimation (T4-3)
+    'perp_hedge_project_adjustment':     {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'perp_hedge_approx_option_delta':    {'type': float, 'min': 0.1,  'max': 1.0,   'hot': True},
+    # Perp full-delta mode when position cap is hit (IMP-9)
+    'perp_full_delta_on_cap':            {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'perp_full_delta_max_lots':          {'type': int,   'min': 0,    'max': 500,   'hot': True},
+    # Reversal cooldown (P1-B)
+    'reversal_cooldown_seconds':         {'type': int,   'min': 0,    'max': 86400, 'hot': True},
+    # Asymmetry tiers (IMP-3)
+    'asymmetry_5to1_lot_reduction':      {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
+    'asymmetry_7to1_hard_block':         {'type': bool,  'min': None, 'max': None,  'hot': True},
+    # Consecutive direction limiter (IMP-5)
+    'consecutive_dir_limit':             {'type': int,   'min': 1,    'max': 30,    'hot': True},
+    'consecutive_dir_lot_cap_pct':       {'type': float, 'min': 0.05, 'max': 1.0,   'hot': True},
+    'consecutive_dir_block_after':       {'type': int,   'min': 1,    'max': 50,    'hot': True},
+    'consecutive_dir_auto_resume_mins':  {'type': int,   'min': 0,    'max': 120,   'hot': True},
+    # Strike-shift OTM lot scaling (IMP-4)
+    'strike_shift_use_lot_scaling':      {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'strike_shift_otm_tier1':            {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
+    'strike_shift_otm_tier2':            {'type': float, 'min': 0.2,  'max': 15.0,  'hot': True},
+    'strike_shift_otm_tier3':            {'type': float, 'min': 0.5,  'max': 20.0,  'hot': True},
 }
 
 
@@ -525,9 +556,8 @@ def validate_params(params: Dict[str, Any], hot_only: bool = False) -> Tuple[Dic
 
     for key, value in params.items():
         if key not in PARAM_RULES:
-            # Skip silently — DEFAULT_PARAMS contains internal/non-editable params
-            # (e.g. close_at_use_bid, shift_cooldown_sec) that don't need UI validation.
-            # Old sessions merge new defaults on dialog open, causing unknown keys to appear.
+            # Skip silently — truly internal/non-editable keys (e.g. _reverse, _fill_ledger)
+            # that appear when old sessions merge new defaults on dialog open.
             continue
 
         rule = PARAM_RULES[key]
@@ -773,9 +803,9 @@ def get_param_info() -> Dict[str, Dict]:
         'whipsaw_caution_score': 'Whipsaw score to enter CAUTION: widen triggers by +50%. Score decays -1 per interval without new noise alternation.',
         'whipsaw_restrict_score': 'Whipsaw score to enter RESTRICT: widen triggers by +100% and halve lot sizes.',
         'whipsaw_cooldown_score': 'Whipsaw score to enter COOLDOWN: skip one interval, then score drops by 2. Never a full session PAUSE.',
-        'whipsaw_engine': 'Active whipsaw engine: LEGACY (current behavior, default), SMART (new intelligent engine — requires whipsaw_smart_enabled=True to bind), OFF (disable all whipsaw logic). Hot-reloadable. Emergency override: set env MMM_WHIPSAW_FORCE_LEGACY=1.',
-        'whipsaw_engine_shadow': 'Run the non-active engine in observe-only mode: its decisions are logged and stored in _smart_ws_shadow_last but never applied to lot sizing or trigger widening. Useful for comparison before promoting Smart.',
-        'whipsaw_smart_enabled': 'Final gate for Smart engine: decisions bind only when both whipsaw_engine=SMART AND this=True. When False, Smart runs in shadow-only mode regardless of the engine param. Flip this after reviewing shadow-mode data.',
+        'whipsaw_engine': 'Active whipsaw engine: SMART (default — intelligent 7-detector engine), LEGACY (original score-based engine), OFF (disable all whipsaw logic). This is the single source of truth for engine selection. Hot-reloadable. Emergency override: set env MMM_WHIPSAW_FORCE_LEGACY=1.',
+        'whipsaw_engine_shadow': 'Run the non-active engine in observe-only mode: its decisions are logged but never applied. SMART primary → Legacy shadow in _ws_legacy_shadow_last. Legacy primary → Smart shadow in _smart_ws_shadow_last. Enables the Compare tab.',
+        'whipsaw_smart_enabled': '[DEPRECATED] This parameter is no longer functional. whipsaw_engine is the single engine selector. Kept for backward compatibility with existing sessions; changing it has no effect on runtime behavior.',
         'smart_ws_score_defensive': 'Smart engine: composite whipsaw score threshold to enter DEFENSIVE mode (half size, stricter gates). Default 0.30.',
         'smart_ws_score_observe': 'Smart engine: composite score threshold to enter OBSERVE mode (no new sells, closes/harvests still allowed). Default 0.60.',
         'smart_ws_score_lockdown': 'Smart engine: composite score threshold to enter LOCKDOWN mode (freeze all adjustment activity for cooldown period). Default 0.80.',
