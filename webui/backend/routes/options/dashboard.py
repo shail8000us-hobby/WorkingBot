@@ -200,12 +200,27 @@ def _fetch_dashboard_fresh(is_background=False):
         # Extract positions for Greeks calculation
         positions = positions_data.get('positions', [])
 
+        # Merge in server-side phantom positions (closed but not yet expired).
+        # This makes closed positions survive browser refreshes and localStorage clears.
+        try:
+            from .closed_position_store import get_closed_position_store
+            store = get_closed_position_store()
+            live_symbols = {p.get('product_symbol') for p in positions}
+            phantoms = store.get_phantom_positions(exclude_symbols=live_symbols)
+            if phantoms:
+                positions = list(positions) + phantoms
+                log.debug(f"[Dashboard] Merged {len(phantoms)} phantom closed positions")
+        except Exception as exc:
+            log.debug(f"[Dashboard] Phantom merge skipped: {exc}")
+
         # Calculate portfolio Greeks server-side (Phase 2 optimization)
-        portfolio_greeks = calculate_portfolio_greeks(positions)
+        # Exclude is_closed phantoms from Greeks — they have no live exposure
+        portfolio_greeks = calculate_portfolio_greeks([p for p in positions if not p.get('is_closed')])
 
         # Phase 5 Optimization: Use content-based last_modified
+        # Include is_closed flag so fingerprint changes when a position closes/reopens
         pos_fingerprint = '|'.join(
-            f"{p.get('product_symbol','')},{p.get('size',0)},{p.get('best_bid',0)},{p.get('best_ask',0)},{p.get('unrealized_pnl',0)}"
+            f"{p.get('product_symbol','')},{p.get('size',0)},{p.get('best_bid',0)},{p.get('best_ask',0)},{p.get('unrealized_pnl',0)},{p.get('is_closed',False)}"
             for p in positions
         )
         pending_orders_list = pending_data.get('orders', []) if isinstance(pending_data, dict) else []

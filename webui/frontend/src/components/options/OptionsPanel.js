@@ -1314,8 +1314,11 @@ const OptionsPanel = () => {
       best_ask: cp.last_ask || 0,
     }));
 
-    // Inject partial_realized_pnl into live positions so PnL column and payoff graph include it
+    // Inject partial_realized_pnl into live positions so PnL column and payoff graph include it.
+    // Skip backend-provided closed phantoms (is_closed=true) — they already carry the correct
+    // cumulative realized_pnl and overriding would cause a double-count with unrealized_pnl.
     const enrichedPositions = positions.map(p => {
+      if (p.is_closed) return p;
       const partialPnl = partialRealizedPnl[p.product_symbol]?.realized_pnl || 0;
       return partialPnl !== 0 ? { ...p, partial_realized_pnl: partialPnl } : p;
     });
@@ -1813,8 +1816,10 @@ const OptionsPanel = () => {
     return recs;
   }, [sortedPositions, calculateSmartScaling]);
 
-  // Clean up closed positions when they reappear as live positions
-  // This happens when user adds back to a closed position
+  // Clean up closed positions when they reappear as live positions (re-entry detected).
+  // CRITICAL: Before deleting the closed record, carry its realized_pnl forward into
+  // partialRealizedPnl so the re-entered position's PnL continues from where it left off
+  // rather than restarting from zero. Without this, every re-entry looks like a fresh position.
   useEffect(() => {
     if (positions.length === 0) return;
 
@@ -1825,7 +1830,38 @@ const OptionsPanel = () => {
     const toRemove = closedSymbols.filter(symbol => liveSymbols.has(symbol));
 
     if (toRemove.length > 0) {
-      devLog(`🔄 Removing ${toRemove.length} closed positions that are now live:`, toRemove);
+      devLog(`🔄 Re-entry detected for ${toRemove.length} position(s) — carrying realized PnL forward`);
+
+      // Step 1: Transfer realized PnL from closed record → partialRealizedPnl
+      // This ensures the payoff graph baseline and PnL column both include history.
+      const toTransfer = toRemove.filter(sym => closedPositions[sym]?.realized_pnl);
+      if (toTransfer.length > 0) {
+        setPartialRealizedPnl(prev => {
+          const updated = { ...prev };
+          toTransfer.forEach(symbol => {
+            const closed = closedPositions[symbol];
+            const existing = updated[symbol] || { realized_pnl: 0, history: [] };
+            updated[symbol] = {
+              realized_pnl: (existing.realized_pnl || 0) + closed.realized_pnl,
+              history: [
+                ...(existing.history || []),
+                {
+                  size_reduced: Math.abs(closed.original_size || 0),
+                  pnl: closed.realized_pnl,
+                  exit_price: closed.close_price || 0,
+                  entry_price: closed.entry_price || 0,
+                  timestamp: closed.closed_at || new Date().toISOString(),
+                  event: 're-entry',
+                },
+              ],
+            };
+            devLog(`  → ${symbol}: carried forward $${closed.realized_pnl.toFixed(4)} realized PnL`);
+          });
+          return updated;
+        });
+      }
+
+      // Step 2: Remove from closedPositions now that PnL is safely transferred
       setClosedPositions(prev => {
         const updated = { ...prev };
         toRemove.forEach(symbol => delete updated[symbol]);

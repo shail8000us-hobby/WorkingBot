@@ -76,6 +76,12 @@ class _OptionsWSCache:
         # {product_symbol: position_dict}
         self._positions: Dict[str, Dict] = {}
 
+        # Snapshot of positions from the previous REST refresh.
+        # Used to detect size→0 transitions (algo/manual closes) so they can be
+        # persisted to ClosedPositionStore before being filtered out.
+        # {product_symbol: position_dict}
+        self._prev_positions: Dict[str, Dict] = {}
+
         # Mark prices from l1_orderbook WS messages.
         # {product_symbol: float}
         self._mark_prices: Dict[str, float] = {}
@@ -244,6 +250,34 @@ class _OptionsWSCache:
         """Fetch all options positions via REST and merge with cached mark prices."""
         try:
             all_pos = await self._rest_client.get_positions_margined()
+
+            # Build a quick lookup of what the exchange reports RIGHT NOW (including size=0)
+            exchange_map: Dict[str, float] = {}
+            for p in all_pos:
+                sym = p.get("product_symbol", "")
+                if sym.startswith("C-") or sym.startswith("P-"):
+                    exchange_map[sym] = float(p.get("size", 0) or 0)
+
+            # Detect positions that were open in the previous snapshot but are now gone
+            # (size=0 or absent entirely). Save them to ClosedPositionStore.
+            if self._prev_positions:
+                try:
+                    from .closed_position_store import get_closed_position_store
+                    store = get_closed_position_store()
+                    for sym, prev_pos in self._prev_positions.items():
+                        prev_size = float(prev_pos.get("size", 0) or 0)
+                        curr_size = exchange_map.get(sym, 0)
+                        if prev_size != 0 and curr_size == 0:
+                            # Position fully closed — compute realized PnL from last known mark
+                            mark = float(prev_pos.get("mark_price", 0) or 0)
+                            entry = float(prev_pos.get("entry_price", 0) or 0)
+                            if mark == 0:
+                                mark = entry  # fallback: no gain/loss
+                            realized = (mark - entry) * prev_size
+                            store.record_close(prev_pos, realized)
+                except Exception as exc:
+                    log.debug(f"[OptionsWSCache] ClosedPositionStore update failed: {exc}")
+
             new_positions: Dict[str, Dict] = {}
 
             for p in all_pos:
@@ -260,6 +294,7 @@ class _OptionsWSCache:
                 new_positions[symbol] = p
 
             with self._lock:
+                self._prev_positions = dict(self._positions)  # snapshot before overwrite
                 self._positions = new_positions
                 # Merge any fresher mark prices from WS
                 for sym, mark in self._mark_prices.items():
