@@ -101,8 +101,19 @@ def check_replenish_eligibility(
     # Gate 6  (regime BLOCK_ALL_SELLS): REMOVED — hedge restoration overrides.
     # Gate 7  (max replenish count):    REMOVED — no cap on hedge restores.
     # Gate 8  (cooldown):               REMOVED — unhedged cannot wait for timer.
-    # Gate 9  (near expiry):            REMOVED — staying unhedged near expiry
-    #                                             is always worse.
+
+    # Gate 9b (AUDIT FIX: near-expiry kill switch):
+    # Prevents the replenish ↔ close-at-5 infinite cycle observed in session
+    # mmm26apr26-2 (23 cycles in 30 minutes).  Within the cutoff window,
+    # close-at-5 will drain lots faster than replenish can restore them,
+    # causing machine-gun selling with zero net benefit.  The alternative
+    # (staying unhedged for the last N minutes) is less destructive than
+    # the fee/slippage burn of the infinite loop.
+    replenish_expiry_cutoff_mins = params.get('replenish_expiry_cutoff_mins', 30)
+    minutes_to_expiry = session.get('_minutes_to_expiry')
+    if minutes_to_expiry is not None and minutes_to_expiry < replenish_expiry_cutoff_mins:
+        return False, f'near_expiry_cutoff ({minutes_to_expiry:.0f}min < {replenish_expiry_cutoff_mins}min)'
+
     # Gate 10: open side must have something to hedge.
     # Normal path: check active_lots only (frozen lots mid-close may not persist).
     # OCS emergency: frozen lots are real open positions — if active=0 but
@@ -166,5 +177,46 @@ def determine_replenish_lots(
 
     # Floor at 1
     lots = max(lots, 1)
+
+    return lots
+
+
+# ---------------------------------------------------------------------------
+# §3  AUDIT FIX: Cap-aware lot clamping (Fix 2)
+# ---------------------------------------------------------------------------
+
+def clamp_replenish_to_cap(
+    session: Dict,
+    closed_side: str,
+    lots: int,
+) -> int:
+    """
+    AUDIT FIX (session mmm26apr26-2): Clamp replenish lots against
+    the ACTUAL current total_lots on the closed side.
+
+    Without this, determine_replenish_lots only clamps to max_lots_per_side
+    without checking how many lots are already open on that side. After a
+    watchdog restart + state drift, the in-memory total_lots can read 0
+    while exchange reality is much higher, causing unbounded accumulation.
+
+    This function reads from in-memory state (same source as the engine's
+    HARD CAP GUARD). For full DB-truth reconciliation, see Fix 4
+    (watchdog restart reconciliation) which ensures in-memory state is
+    correct before this function ever runs.
+
+    Returns clamped lot count (may be 0 if at cap).
+    """
+    params = session.get('params', {})
+    max_lots = params.get('max_lots_per_side', 100)
+    current_total = session.get(closed_side, {}).get('total_lots', 0)
+    remaining_capacity = max(max_lots - current_total, 0)
+
+    if lots > remaining_capacity:
+        log.warning(
+            f"Replenish cap clamp: {closed_side.upper()} requested {lots} lots "
+            f"but only {remaining_capacity} capacity remaining "
+            f"(current={current_total}, max={max_lots})"
+        )
+        lots = remaining_capacity
 
     return lots

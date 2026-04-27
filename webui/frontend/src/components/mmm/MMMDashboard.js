@@ -99,6 +99,7 @@ import MMMTradeAuditPanel from './MMMTradeAuditPanel';
 import MMMActivityFeed from './MMMActivityFeed';
 import MMMExecutionLogPanel from './MMMExecutionLogPanel';
 import MMMReverseModePanel from './MMMReverseModePanel';
+import MMMDeltaEnginePanel from './MMMDeltaEnginePanel';
 import MMMSettingsDialog from './MMMSettingsDialog';
 import MMMWhipsawCompareTab from './MMMWhipsawCompareTab';
 import MMMConsolidatedPositions from './MMMConsolidatedPositions';
@@ -3034,7 +3035,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
   const showReverseModeTab = reverseEnabledForSession && reverseSupportedByStrategy;
 
   useEffect(() => {
-    if (!showReverseModeTab && detailTab === 19) {
+    if (!showReverseModeTab && detailTab === 20) {
       setDetailTab(0);
     }
   }, [showReverseModeTab, detailTab]);
@@ -3151,6 +3152,7 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <Tab label="Audit" />
         <Tab label="Exec Log" />
         <Tab label="Whipsaw" />
+        <Tab label="Delta Engine" />
         {showReverseModeTab && <Tab label="Reverse Mode" />}
       </Tabs>
 
@@ -4192,8 +4194,15 @@ const SessionDetail = ({ session, wsData, socket, onBothSidesAction, onPartialEn
         <MMMWhipsawCompareTab session={session} heartbeat={heartbeat} />
       )}
 
-      {/* Tab 19: Reverse Mode — Controlled premium harvesting overlay */}
-      {showReverseModeTab && detailTab === 19 && (
+      {/* Tab 19: Delta Engine — Delta Neutral Engine live status */}
+      {detailTab === 19 && (
+        <Box sx={{ p: 1 }}>
+          <MMMDeltaEnginePanel session={session} deltaEngine={wsData.deltaEngine} />
+        </Box>
+      )}
+
+      {/* Tab 20: Reverse Mode — Controlled premium harvesting overlay */}
+      {showReverseModeTab && detailTab === 20 && (
         <Box>
           <MMMReverseModePanel session={session} heartbeat={heartbeat} />
         </Box>

@@ -2,77 +2,43 @@
 
 ---
 
-## 2026-04-19 (evening) — Fix: max_lots_per_side is now a HARD ceiling on active+frozen
+## 2026-04-27 (rev3) — A11-03: SQLite Concurrency Evaluation + Fix
 
-**Incident:** Live STRADDLE_WITH_ADJUSTMENT session sold far more lots than the configured
-`max_lots_per_side` budget — accumulated real exchange exposure ≈ 2× the cap.
+Evaluated SQLite concurrency at 3–5 session scale. WAL mode + connection-per-call is sound. One gap found and fixed.
 
-**Root cause:** §13.1 position cap at `mmm_engine.py:620` used `active_lots` only. After
-CAP AUTO-SHIFT froze the current side, `active_lots` reset to 0 and the engine allowed
-another full cap's worth at the new strike. Secondary `max_total_exposure` defaulted to
-`max_lots_per_side * 2`, so combined exposure was silently capped at double the budget.
+- **Gap**: `mmm_ledger._connect()` had no `busy_timeout` — concurrent fill recordings from multiple sessions would fail immediately with `OperationalError: database is locked`. `mmm_storage._get_conn()` already had `busy_timeout=5000`.
+- **Fix**: Added `PRAGMA busy_timeout=5000` to `mmm_ledger._connect()`.
+- **Verdict**: SQLite WAL mode fully acceptable for 3–5 concurrent sessions. No architectural changes needed.
+- **Sealed (#84)**: `TestA1103SQLiteConcurrency` — 3 contracts: ledger has busy_timeout, storage has busy_timeout, 10-thread concurrent fill recording produces zero errors.
 
-**User directive:** "in any condition it should not sell more than the desired lots … flash
-capacity full no further adjustment." Real-money hard invariant.
-
-**Fix (`mmm_engine.py`, `mmm_monitor.py`, `mmm_activity.py`):**
-1. §13.1 position cap now uses `total_lots` (active + frozen) — hard ceiling.
-2. CAP AUTO-SHIFT short-circuits when `total_lots >= max_lots_per_side` — emits rate-limited
-   `capacity_full` activity + `emit_safety` alert instead of pointless freeze+shift.
-3. Registered `capacity_full` activity type in `ACTIVITY_TYPES` + `safety` category.
-
-**Consequence:** Once capped, that side stops selling until frozen lots drain (close_at_5 /
-M1 harvest / manual close). If opposite side breaches while capped → unhedged, max-loss is
-the only protection. Operator must raise `max_lots_per_side` or drain frozen lots.
-
-**Files changed:** `mmm_engine.py`, `mmm_monitor.py`, `mmm_activity.py`, `test_sealed_calculate_lots_to_sell.py`
-**Tests:** All MMM sealed — 1456 passed / 0 failed
+**Files:** `mmm_ledger.py`, `test_sealed_audit_fixes.py` | **Tests:** 1684 passed / 0 failed
 
 ---
 
-## 2026-04-19 — Fix: F6 gamma shift widening bypass for STRADDLE_WITH_ADJUSTMENT + starvation guard
+## 2026-04-27 (rev2) — Score Improvement Plan: Remaining Work (Sprints 3–5 + Sealed Tests)
 
-**Incident:** mmm19apr26-1 (live STRADDLE_WITH_ADJUSTMENT). Proactive shift for CE at
-strike=76000 (premium=$59–$68) failed for 10+ beats; strikes 75600 ($186) and 75800
-($109) were ignored. Escalated through L1→L2→L3 shift-starvation alerts.
+Completed all remaining fixes. 1674 sealed tests pass.
 
-**Root cause:** Gamma zone = DANGER → F6 set `_gamma_shift_min_otm = spot × 1.8% ≈ 1359`.
-Passed as `min_otm_distance` to `find_new_strike`, this required new CE strike
-distance from spot ≥ 1359, i.e. new strike > 76861. But old_strike=76000 was only
-498 from spot (already INSIDE the F6 floor), so the only strikes F6 allowed had
-less premium than the already-decayed current strike — no candidate could clear
-`shift_threshold=$70`.
+- **A5-05** (`test_sealed_straddle_roll_pure.py`): Added C-SR-1/2/3 — `execute_pure_straddle_roll()` entry-point contracts: expiry auto-close returns True, min_time suppression returns False, zero-spot returns False.
+- **A11-02** (`mmm_api_budget.py` — new): `APIRateBudget` token-bucket singleton. `consume(priority='critical')` always True; `consume(priority='normal')` False when budget exhausted. 60 calls/min.
+- **Sealed tests** (`test_sealed_audit_fixes.py`): Added `pytestmark = pytest.mark.sealed` + 14 new tests for A3-01, A6-11, A8-02, A7-01 fixes.
 
-**Strategy invariant (user directive):** In STRADDLE_WITH_ADJUSTMENT, ATM gamma
-is structural (both legs at ATM). Gamma must NEVER block adjustment/shift —
-reactive hedge must fire. Same rationale as Fix 8 (2026-04-17) projected-gamma
-cap bypass at `_process_adjustment`.
-
-**Fix (mmm_monitor.py, `_process_strike_shift`, F6 block ~L5402–5462):**
-1. `_is_straddle_adj_shift` short-circuits F6 computation entirely for
-   STRADDLE_WITH_ADJUSTMENT — F6 never applies in this strategy. Rate-limited
-   INFO log via `_should_emit_warning`.
-2. For non-straddle strategies, if `old_strike` is already inside the F6 floor,
-   reset `_gamma_shift_min_otm = 0.0` and log a warning (starvation guard).
-
-**Files changed:** `mmm_monitor.py`
-**Tests:** `test_sealed_mmm_strike_shift.py` — 30 passed / 0 failed
+**Files:** `test_sealed_straddle_roll_pure.py`, `test_sealed_audit_fixes.py`, `mmm_api_budget.py` | **Tests:** 1674 passed / 0 failed
 
 ---
 
-## 2026-04-18 — Fix: Proactive shift enabled for STRADDLE_WITH_ADJUSTMENT after first adjustment
+## 2026-04-27 — Score Improvement Plan: Sprints 1–5 (confidence 69 → 80+)
 
-**Incident:** mmm18apr26-3 (real money, live). CE decayed to $37 vs shift_threshold=$70.
-Proactive shift was disabled for STRADDLE_WITH_ADJUSTMENT → no shift fired. PE trigger
-was also delayed to 80% by theta acceleration (window=288 min), so `_process_adjustment`
-shift check never ran either. By trigger time, no valid OTM CE strike existed.
-shift_fallback sold at old decayed strike; user manually added 100 CE lots at $36.5.
+Implemented all Gate A fixes from `MMM_SCORE_IMPROVEMENT_PLAN.md`. 1657 sealed tests pass.
 
-**Fix (mmm_monitor.py Step 5.6, ~line 3141):**
-Added `_straddle_adj_allow_proactive` guard: proactive shift now fires for
-STRADDLE_WITH_ADJUSTMENT when `adjustment_count > 0` (straddle already asymmetric).
-At `adjustment_count=0` (session just started), proactive shift remains disabled (unchanged).
+- **A3-01** (`mmm_monitor.py`): Track `_prem_fetch_failures`; after 3 consecutive premium fetch failures, zero `unrealized_pnl` and fire `emit_safety('stale_unrealized_zeroed')` — prevents stale max-loss reads.
+- **A5-07** (`mmm_strategy_dispatch.py`, `mmm_monitor.py`): Added `bypass_gamma_guards`, `bypass_itm_guard`, `replenish_at_open_strike` flags to `StrategyHandler`. Replaced 7 inline `== STRADDLE_WITH_ADJUSTMENT_CATEGORY` string checks in monitor with dispatch flag lookups.
+- **A6-11/A11-01** (`mmm_state.py`): Gamma limits and lot_velocity_limit now derived from `initial_lots` at session creation (`soft = lots × 250`, `hard = lots × 500`, `emergency = lots × 1000`). Unchanged at default 10 lots; correct at 100 lots.
+- **A11-06** (`mmm_state.py`): `HOT_RELOAD_PARAMS` now derived from `PARAM_RULES[k]['hot']` at import time; static set is fallback only.
+- **A7-01** (`mmm_ledger.py`, `mmm_watchdog.py`): Added `get_session_open_positions_by_side()` to ledger. Watchdog reconciliation now rebuilds `positions[]` from ledger DB when drift detected, then calls `recompute_side_lots()` — prevents first heartbeat from reverting the correction.
+- **A7-04** (`mmm_watchdog.py`): `_build_failed_list()` wrapped in try/except; EXITING stuck Telegram alert always fires.
+- **A8-01** (`mmm_executor.py`): Added 2-char random hex nonce to `client_order_id` — eliminates duplicate_coid on concurrent same-side orders.
+- **A8-02** (`mmm_fill_sync.py`, `mmm_activity.py`): Guard changed `<= 0` → `< 0` for fill_price. Added `_close_worthless_expiry()` for zero-price settlement fills — books full entry premium as realized P&L and marks position closed.
 
-**Files changed:** `mmm_monitor.py`
-**Tests:** 1456 passed / 0 failed
+**Files:** `mmm_monitor.py`, `mmm_strategy_dispatch.py`, `mmm_state.py`, `mmm_ledger.py`, `mmm_watchdog.py`, `mmm_executor.py`, `mmm_fill_sync.py`, `mmm_activity.py` | **Tests:** 1657 passed / 0 failed
 

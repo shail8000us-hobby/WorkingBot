@@ -356,6 +356,19 @@ PARAM_RULES = {
     'strike_shift_otm_tier1':            {'type': float, 'min': 0.1,  'max': 10.0,  'hot': True},
     'strike_shift_otm_tier2':            {'type': float, 'min': 0.2,  'max': 15.0,  'hot': True},
     'strike_shift_otm_tier3':            {'type': float, 'min': 0.5,  'max': 20.0,  'hot': True},
+    # ── Delta Neutral Engine ──
+    'delta_engine_enabled':                {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'delta_engine_instrument':             {'type': str,   'min': None, 'max': None,  'hot': True},
+    'delta_engine_auto_minutes':           {'type': int,   'min': 0,    'max': 480,   'hot': True},
+    'delta_drift_threshold':               {'type': float, 'min': 0.002,'max': 0.10,  'hot': True},
+    'delta_drift_hard_threshold':          {'type': float, 'min': 0.01, 'max': 0.20,  'hot': True},
+    'delta_engine_aggressiveness':         {'type': float, 'min': 0.3,  'max': 2.0,   'hot': True},
+    'delta_engine_max_lots_per_cycle':     {'type': int,   'min': 1,    'max': 100,   'hot': True},
+    'delta_engine_strike_mode':            {'type': str,   'min': None, 'max': None,  'hot': True},
+    'delta_engine_suppress_premium_trigger': {'type': bool, 'min': None, 'max': None, 'hot': True},
+    'delta_engine_cooldown_sec':           {'type': int,   'min': 5,    'max': 300,   'hot': True},
+    'delta_engine_use_exchange_delta':     {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'delta_engine_rebalance_band':         {'type': float, 'min': 0.001,'max': 0.05,  'hot': True},
 }
 
 
@@ -706,6 +719,29 @@ def _interdependency_checks(validated: Dict[str, Any], errors: list):
             "threshold must exceed band to avoid immediate rebalance on entry"
         )
 
+    # Delta engine: hard threshold must be > soft threshold
+    delta_soft = validated.get('delta_drift_threshold')
+    delta_hard = validated.get('delta_drift_hard_threshold')
+    if delta_soft is not None and delta_hard is not None and delta_hard <= delta_soft:
+        errors.append(
+            f"delta_drift_hard_threshold ({delta_hard}) must be > "
+            f"delta_drift_threshold ({delta_soft})"
+        )
+
+    # Delta engine: instrument must be a known value
+    delta_instrument = validated.get('delta_engine_instrument')
+    if delta_instrument is not None and delta_instrument not in ('options', 'perp'):
+        errors.append(
+            f"delta_engine_instrument must be 'options' or 'perp', got '{delta_instrument}'"
+        )
+
+    # Delta engine: strike_mode must be a known value
+    delta_strike_mode = validated.get('delta_engine_strike_mode')
+    if delta_strike_mode is not None and delta_strike_mode not in ('nearest_atm', 'session_active', 'auto'):
+        errors.append(
+            f"delta_engine_strike_mode must be 'nearest_atm', 'session_active', or 'auto', got '{delta_strike_mode}'"
+        )
+
     # M-6 note: max_loss_amount floor is enforced by PARAM_RULES min=1.
     # No additional check here — $3 is valid for conservative 1-lot presets (e.g. STRADDLE_WITH_ADJUSTMENT).
 
@@ -898,6 +934,19 @@ def get_param_info() -> Dict[str, Dict]:
         'perp_hedge_rebalance_band': 'Minimum |effective delta| (options + perp combined) to trigger a rebalance of an existing perp position. Prevents over-trading on tiny delta drift',
         'perp_hedge_max_lots': 'Maximum perp position size in lots (hard cap on long or short). Prevents runaway hedging in extreme delta scenarios',
         'perp_hedge_cooldown_sec': 'Minimum seconds between consecutive perp hedge executions. Prevents rapid flip-flop trading when delta oscillates near the threshold',
+        # Delta Neutral Engine
+        'delta_engine_enabled': 'Master switch for Delta Neutral Engine — when ON, monitors portfolio delta drift and hedges aggressively using the selected instrument',
+        'delta_engine_instrument': 'Hedging instrument: "options" = sell ATM/near-ATM options (collects premium, adds gamma), "perp" = use BTCUSD perpetual futures (zero gamma, no premium)',
+        'delta_engine_auto_minutes': 'Auto-enable delta engine this many minutes before expiry (0 = manual only). E.g., 60 = auto-activate 1 hour before expiry.',
+        'delta_drift_threshold': 'Minimum |portfolio Δ| in BTC to trigger a delta hedge. E.g., 0.01 = ~$950 exposure at $95k BTC. Below this, delta is too small to justify a hedge.',
+        'delta_drift_hard_threshold': 'Emergency threshold: when |Δ| exceeds this, hedge with 3× aggressiveness. Catches large sudden moves.',
+        'delta_engine_aggressiveness': 'Fraction of delta to neutralize per hedge (1.0 = full, 0.5 = half, 1.5 = overshoot for safety margin)',
+        'delta_engine_max_lots_per_cycle': 'Maximum lots the delta engine can sell in a single heartbeat. Prevents over-hedging.',
+        'delta_engine_strike_mode': 'Strike selection for options mode: "nearest_atm" = closest to spot (max delta efficiency), "session_active" = use current active strike, "auto" = nearest_atm if far from active',
+        'delta_engine_suppress_premium_trigger': 'When delta engine fires a hedge, skip the premium-based trigger this heartbeat to prevent double-hedging',
+        'delta_engine_cooldown_sec': 'Minimum seconds between consecutive delta hedges. Prevents whipsaw trading on oscillating delta.',
+        'delta_engine_use_exchange_delta': 'Use actual exchange-provided greeks for lot sizing. When OFF, uses approximate 0.5 delta for ATM options.',
+        'delta_engine_rebalance_band': 'After a hedge, if |Δ| is within this band of zero, do not re-hedge. Prevents unnecessary churn.',
         # M1: Profit Harvesting
         'harvest_enabled': 'M1: Enable proactive profit harvesting of frozen positions',
         'harvest_profit_pct': 'M1: Minimum profit % (entry vs current) to harvest a frozen position (default 40%)',

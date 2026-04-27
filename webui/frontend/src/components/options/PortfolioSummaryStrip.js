@@ -72,6 +72,35 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
     .filter((p) => isPutSymbol(p.product_symbol))
     .reduce((sum, p) => sum + ((p.size || 0) < 0 ? 1 : -1) * (Number(p.cashflow) || 0), 0);
 
+  // Intrinsic / extrinsic value decomposition per position.
+  // product_symbol format: "C-BTC-78400-270426" → underlying=BTC, strike=78400
+  // cashflow = absSize × entryPrice × contractMultiplier
+  // → absSize × contractMultiplier = cashflow / entryPrice (scale factor, avoids hardcoding multiplier)
+  // mark_price is in the same USD/unit-of-underlying as entryPrice
+  const computePositionIV = (p) => {
+    const absSize = Math.abs(p.size || 0);
+    if (absSize === 0) return { intrinsic: 0, extrinsic: 0 };
+    const sym = p.product_symbol || '';
+    const parts = sym.split('-');
+    const strike = parts.length >= 3 ? Number(parts[2]) : 0;
+    const underlying = parts.length >= 2 ? parts[1] : 'BTC';
+    const spot = underlying === 'ETH' ? (indexPrices?.ETH || 0) : (indexPrices?.BTC || 0);
+    if (strike === 0 || spot === 0) return { intrinsic: 0, extrinsic: 0 };
+    const entryPrice = Number(p.entry_price) || 0;
+    const cf = Number(p.cashflow) || 0;
+    const markPrice = Number(p.mark_price) || ((Number(p.best_bid || 0) + Number(p.best_ask || 0)) / 2);
+    const intrinsicUnit = isCallSymbol(sym) ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+    const extrinsicUnit = Math.max(0, markPrice - intrinsicUnit);
+    const scale = entryPrice > 0 && cf > 0 ? cf / entryPrice : absSize;
+    return { intrinsic: intrinsicUnit * scale, extrinsic: extrinsicUnit * scale };
+  };
+
+  const ceIV = sortedPositions.filter((p) => isCallSymbol(p.product_symbol)).reduce((s, p) => s + computePositionIV(p).intrinsic, 0);
+  const ceEV = sortedPositions.filter((p) => isCallSymbol(p.product_symbol)).reduce((s, p) => s + computePositionIV(p).extrinsic, 0);
+  const peIV = sortedPositions.filter((p) => isPutSymbol(p.product_symbol)).reduce((s, p) => s + computePositionIV(p).intrinsic, 0);
+  const peEV = sortedPositions.filter((p) => isPutSymbol(p.product_symbol)).reduce((s, p) => s + computePositionIV(p).extrinsic, 0);
+  const formatIV = (v) => v < 0.005 ? '$0.00' : `$${v.toFixed(2)}`;
+
   const formatNetCash = (val) => {
     if (val > 0) return `+$${val.toFixed(2)} CR`;
     if (val < 0) return `-$${Math.abs(val).toFixed(2)} DB`;
@@ -213,7 +242,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
 
   const ledgerHeaderSx = {
     display: 'grid',
-    gridTemplateColumns: '44px repeat(3, minmax(0,1fr))',
+    gridTemplateColumns: '44px repeat(5, minmax(0,1fr))',
     gap: 0.5,
     alignItems: 'center',
     px: 0.35,
@@ -223,7 +252,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
 
   const ledgerRowSx = (accent) => ({
     display: 'grid',
-    gridTemplateColumns: '44px repeat(3, minmax(0,1fr))',
+    gridTemplateColumns: '44px repeat(5, minmax(0,1fr))',
     gap: 0.5,
     alignItems: 'center',
     px: 0.35,
@@ -418,11 +447,17 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
             <Typography sx={{ ...metricLabelSx, justifySelf: 'end' }}>Long</Typography>
             <Typography sx={{ ...metricLabelSx, justifySelf: 'end' }}>Short</Typography>
             <Typography sx={{ ...metricLabelSx, justifySelf: 'end' }}>Net Cash</Typography>
+            <Tooltip title="Intrinsic Value — in-the-money component of current open positions (spot vs strike)" arrow>
+              <Typography sx={{ ...metricLabelSx, justifySelf: 'end', color: '#f59e0b', cursor: 'default' }}>Intr.</Typography>
+            </Tooltip>
+            <Tooltip title="Extrinsic Value — time/volatility premium remaining in current open positions" arrow>
+              <Typography sx={{ ...metricLabelSx, justifySelf: 'end', color: ACCENT_CYAN, cursor: 'default' }}>Extr.</Typography>
+            </Tooltip>
           </Box>
 
           {(callCount > 0 || putCount > 0) ? (
             <>
-              <Tooltip title={`Calls — Long: ${ceLongLots} lots, Short: ${ceShortLots} lots, Net cashflow: ${formatNetCash(ceNetCash)}`} arrow>
+              <Tooltip title={`Calls — Long: ${ceLongLots} lots, Short: ${ceShortLots} lots, Net cashflow: ${formatNetCash(ceNetCash)} | Intrinsic: ${formatIV(ceIV)} | Extrinsic: ${formatIV(ceEV)}`} arrow>
                 <Box sx={ledgerRowSx(ACCENT_BLUE)}>
                   <Typography className="ledger-leg">CE</Typography>
                   <Typography className="ledger-cell" sx={{ color: '#4ade80 !important' }}>{ceLongLots}</Typography>
@@ -430,16 +465,28 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
                   <Typography className="ledger-cell" sx={{ color: `${netCashColor(ceNetCash)} !important` }}>
                     {formatNetCash(ceNetCash)}
                   </Typography>
+                  <Typography className="ledger-cell" sx={{ color: `${ceIV > 0.005 ? '#f59e0b' : alpha('#94a3b8', 0.7)} !important` }}>
+                    {formatIV(ceIV)}
+                  </Typography>
+                  <Typography className="ledger-cell" sx={{ color: `${ceEV > 0.005 ? ACCENT_CYAN : alpha('#94a3b8', 0.7)} !important` }}>
+                    {formatIV(ceEV)}
+                  </Typography>
                 </Box>
               </Tooltip>
 
-              <Tooltip title={`Puts — Long: ${peLongLots} lots, Short: ${peShortLots} lots, Net cashflow: ${formatNetCash(peNetCash)}`} arrow>
+              <Tooltip title={`Puts — Long: ${peLongLots} lots, Short: ${peShortLots} lots, Net cashflow: ${formatNetCash(peNetCash)} | Intrinsic: ${formatIV(peIV)} | Extrinsic: ${formatIV(peEV)}`} arrow>
                 <Box sx={{ ...ledgerRowSx(ACCENT_PURPLE), mt: 0.25 }}>
                   <Typography className="ledger-leg">PE</Typography>
                   <Typography className="ledger-cell" sx={{ color: '#4ade80 !important' }}>{peLongLots}</Typography>
                   <Typography className="ledger-cell" sx={{ color: '#f87171 !important' }}>{peShortLots}</Typography>
                   <Typography className="ledger-cell" sx={{ color: `${netCashColor(peNetCash)} !important` }}>
                     {formatNetCash(peNetCash)}
+                  </Typography>
+                  <Typography className="ledger-cell" sx={{ color: `${peIV > 0.005 ? '#f59e0b' : alpha('#94a3b8', 0.7)} !important` }}>
+                    {formatIV(peIV)}
+                  </Typography>
+                  <Typography className="ledger-cell" sx={{ color: `${peEV > 0.005 ? ACCENT_CYAN : alpha('#94a3b8', 0.7)} !important` }}>
+                    {formatIV(peEV)}
                   </Typography>
                 </Box>
               </Tooltip>

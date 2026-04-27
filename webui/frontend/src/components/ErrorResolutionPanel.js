@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Box,
   Paper,
@@ -14,14 +14,10 @@ import {
   CardContent,
   Grid,
   Chip,
-  IconButton,
-  Tooltip,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField,
-  FormControl,
   FormControlLabel,
   Switch,
   Divider,
@@ -30,7 +26,6 @@ import {
   ListItemText,
   ListItemIcon,
   CircularProgress,
-  LinearProgress,
   Accordion,
   AccordionSummary,
   AccordionDetails,
@@ -43,19 +38,16 @@ import {
   Error as ErrorIcon,
   Warning as WarningIcon,
   Info as InfoIcon,
-  PlayArrow as PlayArrowIcon,
   Refresh as RefreshIcon,
   Build as AutoFixIcon,
   Settings as SettingsIcon,
   Security as SecurityIcon,
   Psychology as PsychologyIcon,
   ExpandMore as ExpandMoreIcon,
-  Close as CloseIcon,
   Help as HelpIcon,
   CheckCircleOutline as CheckIcon,
   Cancel as CancelIcon,
   RestartAlt as RestartIcon,
-  Tune as TuneIcon,
   Search as ScanIcon,
 } from '@mui/icons-material';
 import api from '../utils/apiShim';
@@ -66,10 +58,8 @@ import api from '../utils/apiShim';
  */
 const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) => {
   const [activeStep, setActiveStep] = useState(0);
-  const [resolutionProgress, setResolutionProgress] = useState({});
   const [showAutoFixDialog, setShowAutoFixDialog] = useState(false);
   const [selectedErrors, setSelectedErrors] = useState([]);
-  const [autoFixResult, setAutoFixResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
@@ -250,31 +240,26 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
 
   const executeAction = async (action, errorCode) => {
     try {
-      let response;
+      let result;
 
       switch (action.id) {
         case 'check_gatekeeper_status':
-          response = await api.get(action.endpoint);
-          console.log('Gatekeeper Status:', response.data);
+          result = await api.get(action.endpoint);
           break;
 
         case 'check_margin_limits':
-          response = await api.get(action.endpoint);
-          console.log('Margin Limits:', response.data);
+          result = await api.get(action.endpoint);
           break;
 
         case 'verify_config':
-          response = await api.get(action.endpoint);
-          console.log('Config Verification:', response.data);
+          result = await api.get(action.endpoint);
           break;
 
         case 'apply_config_changes':
-          response = await api.post(action.endpoint);
-          console.log('Config Applied:', response.data);
+          result = await api.post(action.endpoint);
           break;
 
-        case 'mark_as_resolved':
-          // Mark all errors of this type as resolved
+        case 'mark_as_resolved': {
           const errorsToResolve = errors.filter((e) => e.code === errorCode);
           for (const error of errorsToResolve) {
             await api.post(action.endpoint, {
@@ -284,12 +269,13 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
             });
           }
           break;
+        }
 
         default:
-          console.log(`Action ${action.id} not implemented yet`);
+          break;
       }
 
-      return response?.data || { success: true };
+      return result?.data || { success: true };
     } catch (error) {
       console.error(`Failed to execute ${action.id}:`, error);
       throw error;
@@ -731,7 +717,7 @@ const AdvancedErrorResolutionPanel = ({ errors, onErrorUpdate, onStatsUpdate }) 
                       startIcon={<SecurityIcon />}
                       onClick={async () => {
                         try {
-                          const response = await api.get('/api/robustness/gatekeeper/status');
+                          await api.get('/api/robustness/gatekeeper/status');
                           showNotification('Safety gatekeeper status checked', 'success');
                         } catch (error) {
                           showNotification(`Safety check failed: ${error.message}`, 'error');

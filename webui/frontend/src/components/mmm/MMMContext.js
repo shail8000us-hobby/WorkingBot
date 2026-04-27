@@ -382,17 +382,18 @@ export function MMMProvider({ children, socket }) {
 
   const handlePnlUpdate = useCallback((data) => {
     if (!data?.session_id) return;
-    dispatch({
-      type: ACTIONS.UPDATE_SESSION,
-      payload: {
-        session_id: data.session_id,
-        total_pnl: data.total_pnl,
-        net_pnl: data.total_pnl,
-        realized_pnl: data.realized,
-        unrealized_pnl: data.unrealized,
-        total_fees: data.fees,
-      },
-    });
+    const payload = {
+      session_id: data.session_id,
+      total_pnl: data.total_pnl,
+      net_pnl: data.total_pnl,
+      realized_pnl: data.realized,
+      unrealized_pnl: data.unrealized,
+      total_fees: data.fees,
+    };
+    if (data.net_premium_collected != null) payload.net_premium_collected = data.net_premium_collected;
+    if (data.ce_net_premium != null) payload.ce_net_premium = data.ce_net_premium;
+    if (data.pe_net_premium != null) payload.pe_net_premium = data.pe_net_premium;
+    dispatch({ type: ACTIONS.UPDATE_SESSION, payload });
   }, []);
 
   // ---------------------------------------------------------------------------

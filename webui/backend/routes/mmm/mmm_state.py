@@ -618,6 +618,20 @@ DEFAULT_PARAMS = {
     'perp_hedge_cooldown_sec': 30,        # minimum seconds between hedge executions
     'perp_hedge_max_flips_per_hour': 6,   # M-8: max direction flips per hour
 
+    # ── Delta Neutral Engine ──
+    'delta_engine_enabled': False,                  # Master switch (OFF by default)
+    'delta_engine_instrument': 'options',           # 'options' | 'perp'
+    'delta_engine_auto_minutes': 0,                 # Auto-enable N min before expiry (0 = manual only)
+    'delta_drift_threshold': 0.01,                  # |Δ| in BTC to trigger hedge (~$950 at $95k BTC)
+    'delta_drift_hard_threshold': 0.03,             # Emergency aggressive hedge (3× aggressiveness)
+    'delta_engine_aggressiveness': 1.0,             # 0.5 = half-hedge, 1.0 = full, 1.5 = overshoot
+    'delta_engine_max_lots_per_cycle': 20,          # Hard cap per heartbeat
+    'delta_engine_strike_mode': 'nearest_atm',      # 'nearest_atm' | 'session_active' | 'auto'
+    'delta_engine_suppress_premium_trigger': True,   # Skip premium trigger when delta engine fires
+    'delta_engine_cooldown_sec': 30,                # Min seconds between delta hedges
+    'delta_engine_use_exchange_delta': True,         # Use actual greeks (False = approx 0.5)
+    'delta_engine_rebalance_band': 0.005,           # |Δ| within this after hedge → don't re-hedge
+
     # FSU: Favorable Scale-Up
     'scale_enabled': False,               # master switch — disabled until user opts in
     'scale_min_decay_pct': 35.0,          # both CE and PE must have decayed this % from trigger snapshot
@@ -848,6 +862,13 @@ HOT_RELOAD_PARAMS = {
     'strike_shift_otm_tier3',
     # IMP-9: Full delta perp on cap
     'perp_full_delta_on_cap', 'perp_full_delta_max_lots',
+    # Delta Neutral Engine
+    'delta_engine_enabled', 'delta_engine_instrument', 'delta_engine_auto_minutes',
+    'delta_drift_threshold', 'delta_drift_hard_threshold',
+    'delta_engine_aggressiveness', 'delta_engine_max_lots_per_cycle',
+    'delta_engine_strike_mode', 'delta_engine_suppress_premium_trigger',
+    'delta_engine_cooldown_sec', 'delta_engine_use_exchange_delta',
+    'delta_engine_rebalance_band',
     # AUDIT FIX BUG3: close_at_use_bid was missing from hot-reload
     'close_at_use_bid',
     # FSU: Favorable Scale-Up
@@ -911,6 +932,22 @@ HOT_RELOAD_PARAMS = {
     'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',
     'god_min_silence_min', 'god_cooldown_min',
 }
+
+# A9-01 fix: derive HOT_RELOAD_PARAMS from PARAM_RULES (single source of truth)
+# so that adding a new hot-reloadable param to PARAM_RULES is sufficient —
+# no manual update to this static set required.
+#
+# The static set above is kept as a bootstrap fallback in case mmm_config is
+# unavailable at import time (e.g. test isolation).  At runtime the derived set
+# always takes precedence via the HOT_RELOAD_PARAMS replacement below.
+try:
+    from .mmm_config import PARAM_RULES as _PARAM_RULES_FOR_HOT
+    _derived_hot = frozenset(k for k, v in _PARAM_RULES_FOR_HOT.items() if v.get('hot'))
+    if _derived_hot:
+        HOT_RELOAD_PARAMS = _derived_hot
+    del _PARAM_RULES_FOR_HOT, _derived_hot
+except Exception:
+    pass  # keep static set on any import failure
 
 
 def create_session(
@@ -1000,6 +1037,28 @@ def create_session(
             merged_params.get('expiry_minute_utc', 0),
         )
         merged_params['total_dte_hours'] = max(0.0, total_dte_hours)
+
+    # A6-11/A11-01 fix: scale gamma limits proportionally with initial_lots so the
+    # bot can still adjust at higher lot counts.  Default fixed-dollar limits
+    # (gamma_hard_limit=5000) fire at ~267 total lots, blocking all sells at 3× capital.
+    # Formula: soft = lots * 250, hard = lots * 500, emergency = lots * 1000.
+    # For initial_lots=10 (default) this gives 2500/5000/10000 — identical to the
+    # prior fixed defaults, so existing single-session behaviour is unchanged.
+    # Only applies when the caller did not explicitly pass these params.
+    #
+    # A11-06 fix: scale lot_velocity_limit so the first adjustment is not immediately
+    # blocked when initial_lots > 30.  Default: max(30, initial_lots * 3).
+    _raw_user_params = params or {}
+    _initial_lots = int(merged_params.get('initial_lots', 10))
+    _GAMMA_LOT_FACTOR = 250  # $250 dollar-gamma allowance per initial lot at soft limit
+    if 'gamma_soft_limit' not in _raw_user_params:
+        merged_params['gamma_soft_limit'] = float(_initial_lots * _GAMMA_LOT_FACTOR)
+    if 'gamma_hard_limit' not in _raw_user_params:
+        merged_params['gamma_hard_limit'] = float(_initial_lots * _GAMMA_LOT_FACTOR * 2)
+    if 'gamma_emergency_limit' not in _raw_user_params:
+        merged_params['gamma_emergency_limit'] = float(_initial_lots * _GAMMA_LOT_FACTOR * 4)
+    if 'lot_velocity_limit' not in _raw_user_params:
+        merged_params['lot_velocity_limit'] = max(30, _initial_lots * 3)
 
     # Canonical immutable strategy identity (source-of-truth across API/storage/UI)
     strategy_type = derive_strategy_type(merged_params)
@@ -1263,6 +1322,22 @@ def create_session(
             'last_delta': 0.0,        # portfolio_delta at last hedge
             # M-8 fix: sliding window of direction flip timestamps for rate limiting
             'flip_timestamps': [],    # ISO timestamps of the last N flips (pruned to 1h)
+        },
+
+        # Delta Neutral Engine state
+        '_delta_engine': {
+            'last_hedge_time': None,
+            'total_hedges': 0,
+            'last_drift': 0.0,
+            'last_action': 'none',
+            'last_instrument': None,
+            'last_hedge_lots': 0,
+            'last_hedge_side': None,
+            'cumulative_lots_hedged': 0,
+            'last_hedge_strike': None,
+            'auto_activated': False,
+            'auto_activated_at': None,
+            '_in_trigger_zone': False,
         },
     }
 

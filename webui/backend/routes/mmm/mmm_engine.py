@@ -970,7 +970,8 @@ class MMMEngine:
 
         # §6.3: Update tracking
         session['last_aggressor'] = aggressor_side.upper()
-        if adj_type != 'straddle_roll':
+        # delta_hedge and straddle_roll are not premium adjustments — don't count them
+        if adj_type not in ('straddle_roll', 'delta_hedge'):
             session['adjustment_count'] = session.get('adjustment_count', 0) + 1
         session['total_premium_collected'] = (
             session.get('total_premium_collected', 0) + premium_collected
@@ -981,7 +982,8 @@ class MMMEngine:
         history = session.setdefault('adjustment_history', [])
         history.append({
             'side': hedge_side.upper(),
-            'aggressor': adj_type.upper() if adj_type == 'straddle_roll' else aggressor_side.upper(),
+            # delta_hedge tagged as 'DELTA_HEDGE' so velocity checks can skip it
+            'aggressor': adj_type.upper() if adj_type in ('straddle_roll', 'delta_hedge') else aggressor_side.upper(),
             'lots_sold': lots,
             'premium': fill_price,
             'strike': strike,

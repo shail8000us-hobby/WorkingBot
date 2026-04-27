@@ -511,7 +511,27 @@ async def close_position(
                             _guardian.record_close(side, lots)
                         except Exception:
                             pass
-                    
+
+                    # Record fill ledger entry so compute_net_premium deducts buyback cost.
+                    if est_close:
+                        try:
+                            from .mmm_pnl_core import record_close as _pnl_record_close
+                            _pnl_record_close(
+                                session=session,
+                                order_id='',
+                                symbol=symbol,
+                                option_side=side,
+                                strike=strike,
+                                lots=lots,
+                                entry_premium=float(entry_prem),
+                                close_premium=float(est_close),
+                                commission=0.0,
+                                source='initial' if pos_type == 'original' else 'adjustment',
+                                position_id=pos_id or '',
+                            )
+                        except Exception as _pnl_err:
+                            log.warning("externally_closed: failed to record fill ledger: %s", _pnl_err)
+
                     return {
                         'success': True,
                         'realized_pnl': est_pnl,
@@ -532,7 +552,23 @@ async def close_position(
         # AUDIT BUG-2 FIX: Use actual filled size, not requested lots.
         actual_lots = result.get('filled_size', lots)
         if actual_lots <= 0:
-            actual_lots = lots
+            # smart_execute returned success=True with filled_size=0 — this is an executor
+            # contract violation. Returning failure here forces the caller to retry rather
+            # than silently marking the position closed with zero lots bought back, which
+            # would orphan the open short on exchange (invisible to hard-stop + P&L).
+            log.error(
+                f"close_position: success=True but filled_size=0 for {side.upper()} "
+                f"{symbol} (order_id={result.get('order_id')}) — treating as failure to prevent orphan."
+            )
+            if pos_id:
+                for _p in side_state.get('positions', []):
+                    if _p.get('id') == pos_id:
+                        _p.pop('_being_closed', None)
+                        _p.pop('_being_closed_at', None)
+                        break
+            elif _content_match_view:
+                _content_match_view.pop('_being_closed', None)
+            return {'success': False, 'error': 'success=True but filled_size=0 (executor contract violation)'}
         if actual_lots < lots:
             log.warning(
                 f"Close-at-5 PARTIAL FILL: requested {lots} {side.upper()} "

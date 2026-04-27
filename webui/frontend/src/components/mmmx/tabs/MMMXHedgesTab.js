@@ -3,14 +3,15 @@ import { Box, Typography, Chip, Table, TableHead, TableBody, TableRow, TableCell
 import { useMMMX } from '../MMMXContext';
 import { HEDGE_COLOR } from '../utils/mmmxConstants';
 import { fmt, pnlColor } from '../utils/mmmxFormatters';
-
 export default function MMMXHedgesTab() {
   const { hedges } = useMMMX();
-  if (!hedges.length)
-    return <Typography color="text.secondary" sx={{ mt: 1 }}>No hedges executed yet.</Typography>;
 
   return (
     <Box sx={{ overflow: 'auto' }}>
+      {!hedges.length && (
+        <Typography color="text.secondary" sx={{ mt: 1 }}>No hedges executed yet.</Typography>
+      )}
+
       <Table size="small">
         <TableHead>
           <TableRow>

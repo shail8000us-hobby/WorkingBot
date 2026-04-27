@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Paper,
   Box,
@@ -183,23 +183,22 @@ const ErrorIntelligenceLive = () => {
    * IDLE-AWARE: Pauses when user is idle to save CPU
    */
   useEffect(() => {
-    if (!isActive) {
-      console.log('⏸️ ErrorIntelligence: Paused (user idle)');
-      return; // Don't poll when idle
-    }
+    if (!isActive) return;
 
     fetchErrors();
 
     let interval;
     if (autoRefresh) {
       interval = setInterval(() => {
-        fetchErrors(true); // Silent refresh
-      }, 30000); // Every 30 seconds (was 5s - causing shaky UI)
+        fetchErrors(true);
+      }, 30000);
     }
 
     return () => {
       if (interval) clearInterval(interval);
     };
+    // fetchErrors is stable within a render cycle; exhaustive-deps would cause infinite loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [severityFilter, autoRefresh, isActive]);
 
   /**

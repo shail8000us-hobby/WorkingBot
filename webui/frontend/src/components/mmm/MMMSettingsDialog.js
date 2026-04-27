@@ -126,6 +126,7 @@ const SECTION_CATEGORY = {
   breakevenEngine:   'core',
   straddleRoll:      'core',   // STRADDLE_ROLL-specific params
   perpHedge:         'execution',
+  deltaEngine:       'execution',
   adaptive:          'execution',
   favorableScaleUp:  'execution',
   autoReplenish:     'execution',
@@ -231,6 +232,33 @@ const PARAM_GROUPS = {
       'perp_hedge_max_lots',
       'perp_hedge_cooldown_sec',
       'perp_hedge_max_flips_per_hour',
+    ],
+  },
+  deltaEngine: {
+    title: '🎯 Delta Neutral Engine',
+    color: '#00e5ff',
+    blurb: 'Intelligent delta hedging engine: monitors portfolio delta drift and neutralizes it using either Near-ATM Options (collecting premium while hedging) or Perpetual Futures (tight linear gamma-less hedges). OFF by default — activate per session. Select your instrument first, then set soft/hard thresholds.',
+    sections: [
+      {
+        header: 'Master Switch',
+        params: ['delta_engine_enabled'],
+      },
+      {
+        header: 'Instrument & Mode',
+        params: ['delta_engine_instrument', 'delta_engine_strike_mode', 'delta_engine_auto_minutes'],
+      },
+      {
+        header: 'Drift Thresholds',
+        params: ['delta_drift_threshold', 'delta_drift_hard_threshold', 'delta_engine_rebalance_band'],
+      },
+      {
+        header: 'Execution Controls',
+        params: ['delta_engine_aggressiveness', 'delta_engine_max_lots_per_cycle', 'delta_engine_cooldown_sec'],
+      },
+      {
+        header: 'Behaviour Flags',
+        params: ['delta_engine_suppress_premium_trigger', 'delta_engine_use_exchange_delta'],
+      },
     ],
   },
   positionLifecycle: {
@@ -671,6 +699,19 @@ const PARAM_TOOLTIPS = {
   perp_hedge_max_lots: 'Maximum perp position size in lots (1 lot = 0.001 BTC). Caps total hedge exposure. E.g., 50 lots = 0.05 BTC max perp position.',
   perp_hedge_cooldown_sec: 'Minimum seconds between consecutive hedge executions. Prevents rapid-fire trading during volatile periods. Default: 30 seconds.',
   perp_hedge_max_flips_per_hour: 'Maximum perp direction flips (long→short or short→long) per hour. Prevents spread drag from rapid flip-flopping in choppy markets. Default: 6.',
+  // Delta Neutral Engine tooltips
+  delta_engine_enabled: 'Master switch for the Delta Neutral Engine. When OFF (default), zero delta hedging activity. When ON, the engine monitors portfolio delta every heartbeat and fires hedges when drift exceeds delta_drift_threshold. Safe to enable/disable mid-session.',
+  delta_engine_instrument: '"options" = hedges by selling Near-ATM options (collects premium while hedging). "perp" = hedges using BTCUSD perpetual futures (tight, linear, no gamma). Options mode participates in the standard adjustment pipeline. Perp mode routes through the perp hedge infrastructure.',
+  delta_engine_auto_minutes: 'Auto-activate the engine N minutes before expiry regardless of manual setting. 0 = manual only. E.g., 60 = automatically arm delta hedging in the final hour of every DTE cycle. Useful for gamma explosion protection near expiry.',
+  delta_drift_threshold: 'Soft trigger: absolute portfolio delta (in BTC) that triggers a hedge at 1× aggressiveness. E.g., 0.01 = hedge when portfolio delta exceeds 0.01 BTC (~$950 at $95k BTC). Set tighter for more frequent hedging.',
+  delta_drift_hard_threshold: 'Emergency trigger: delta beyond this fires an aggressive 3× hedge immediately. Must be > delta_drift_threshold. E.g., 0.03 = triple-size hedge when delta exceeds 0.03 BTC. Acts as the last line of delta defense.',
+  delta_engine_rebalance_band: 'Dead band after a hedge executes. If residual delta is within this band of zero, no follow-up hedge fires. Prevents micro-adjustments. E.g., 0.005 = ignore residual delta under 0.005 BTC.',
+  delta_engine_aggressiveness: 'Lot size scalar at the soft threshold. 1.0 = hedge exactly the computed delta lots. 0.5 = half-hedge (leaves partial delta). 1.5 = overshoot (targets slight opposite delta). Hard threshold always fires at 3× regardless of this setting.',
+  delta_engine_max_lots_per_cycle: 'Hard cap on lots the engine can trade in a single heartbeat. Prevents oversized hedges during data anomalies. E.g., 20 = never trade more than 20 lots (0.02 BTC) per engine fire.',
+  delta_engine_cooldown_sec: 'Minimum seconds between consecutive engine fires. Prevents rapid-fire hedging during volatile prints. E.g., 30 = at most one engine hedge every 30 seconds.',
+  delta_engine_suppress_premium_trigger: 'When ON (default): if the delta engine already fired a hedge this heartbeat, the legacy premium-balancing trigger is skipped. Prevents double-execution in the same cycle. Recommended: keep ON.',
+  delta_engine_use_exchange_delta: 'When ON (default): use actual greeks from exchange (live delta per contract). When OFF: approximate all deltas as 0.5 regardless of moneyness. OFF is faster but less accurate — use only if exchange greeks are unavailable.',
+  delta_engine_strike_mode: '"nearest_atm" = always pick the nearest ATM strike for options hedges. "session_active" = reuse the session\'s current active strike. "auto" = nearest_atm normally, session_active when near expiry. Only relevant in options instrument mode.',
   // M1: Profit Harvesting
   harvest_enabled: 'M1: Enable proactive profit harvesting. Each heartbeat, frozen positions that have decayed by at least harvest_profit_pct are automatically bought back, freeing lot capacity for future adjustments.',
   harvest_profit_pct: 'M1: Minimum profit percentage to harvest a frozen position. E.g., 40 means the option must be worth ≤ 60% of entry price (40%+ profit locked). Higher = more selective, fewer buybacks.',
@@ -1309,6 +1350,15 @@ export default function MMMSettingsDialog({ open, onClose, sessionId, paramsInfo
       perp_hedge_mode: [
         { value: 'full', label: 'Full — hedge every heartbeat' },
         { value: 'atm_only', label: 'ATM Only — hedge when strike near ATM' },
+      ],
+      delta_engine_instrument: [
+        { value: 'options', label: 'Options — sell ATM/near-ATM options (collects premium)' },
+        { value: 'perp',    label: 'Perp — BTCUSD perpetual futures (zero gamma)' },
+      ],
+      delta_engine_strike_mode: [
+        { value: 'nearest_atm',    label: 'Nearest ATM — closest to spot (max delta efficiency)' },
+        { value: 'session_active', label: 'Session Active — reuse current active strike' },
+        { value: 'auto',           label: 'Auto — nearest ATM unless already near active' },
       ],
       replenish_lot_mode: [
         { value: 'match_active', label: 'Match Active — match open side lot count' },

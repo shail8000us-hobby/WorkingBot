@@ -43,6 +43,7 @@ def init_mmm():
     """
     Initialize MMM module on backend startup.
 
+    - Initializes the position sub-ledger (mmm_ledger.py)
     - Restores active sessions from storage
     - Logs session summary
     - Auto-restores heartbeat monitors for RUNNING/PAUSED sessions
@@ -51,6 +52,23 @@ def init_mmm():
     """
     import logging
     log = logging.getLogger('mmm')
+
+    # Initialize the persistent position sub-ledger (creates schema if needed)
+    try:
+        from .mmm_ledger import init_ledger
+        init_ledger()
+    except Exception as _ledger_err:
+        log.error(f"MMM ledger init failed (non-critical): {_ledger_err}")
+
+    # Start authenticated WebSocket executions channel (real-time fill ledger source)
+    try:
+        from .mmm_ws_executions import get_executions_ws
+        get_executions_ws().start()
+        print("[MMM] Executions WS started")
+        log.info("MMM Executions WS started")
+    except Exception as _exec_ws_err:
+        print(f"[MMM] ⚠️ Executions WS failed to start: {_exec_ws_err}")
+        log.warning(f"MMM Executions WS failed to start: {_exec_ws_err}")
 
     try:
         from .mmm_storage import get_storage

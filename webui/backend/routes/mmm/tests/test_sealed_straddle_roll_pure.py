@@ -56,6 +56,11 @@ Contracts:
   PV-1: STRADDLE_ROLL session creation rejects missing initial_lots (HTTP 400)
   PV-2: STRADDLE_ROLL session creation rejects missing straddle_roll_max_per_session (HTTP 400)
   PV-3: STRADDLE_ROLL session creation rejects missing max_loss_amount (HTTP 400)
+
+  [execute_pure_straddle_roll entry-point (A5-05)]
+  C-SR-1: expiry auto-close fires when tte < auto_close_mins — returns True, sets STOPPED
+  C-SR-2: roll suppressed inside min_time window (auto_close_mins <= tte < min_time) — returns False
+  C-SR-3: zero/unavailable spot returns False without raising
 """
 
 import asyncio
@@ -550,3 +555,72 @@ def test_pv_2_rejects_missing_max_rolls():
 def test_pv_3_rejects_missing_max_loss():
     """PV-3: STRADDLE_ROLL session creation returns HTTP 400 when max_loss_amount absent."""
     _run_api_validation_test('max_loss_amount')
+
+
+# =============================================================================
+# C-SR — execute_pure_straddle_roll entry-point contracts (A5-05)
+# =============================================================================
+
+def test_csr_1_expiry_auto_close_returns_true():
+    """C-SR-1: expiry auto-close fires when tte < auto_close_mins; returns True, sets STOPPED."""
+    from webui.backend.routes.mmm.mmm_straddle_roll_pure import execute_pure_straddle_roll
+
+    session = _make_session(max_loss_amount=0.0)  # disable hard stop
+    # auto_close_mins defaults to params.get('auto_close_mins', 10)
+    # Pass tte=5 which is < 10
+    monitor = _make_monitor()
+    monitor._auto_close_all = AsyncMock(return_value=None)
+
+    with patch('webui.backend.routes.mmm.mmm_straddle_roll_pure.log_activity'):
+        result = asyncio.get_event_loop().run_until_complete(
+            execute_pure_straddle_roll(monitor, session, 'test-csr-001', minutes_to_expiry=5.0)
+        )
+
+    assert result is True, "Auto-close at expiry must return True (action taken)"
+    assert session.get('strategy_status') == 'STOPPED', \
+        "strategy_status must be STOPPED after expiry auto-close"
+    monitor._auto_close_all.assert_called_once()
+
+
+def test_csr_2_min_time_window_suppresses_roll():
+    """C-SR-2: roll suppressed inside min_time window (tte between auto_close_mins and min_time)."""
+    from webui.backend.routes.mmm.mmm_straddle_roll_pure import execute_pure_straddle_roll
+
+    # straddle_roll_min_time_to_expiry defaults to 0 in _make_session (no floor)
+    # Override to create the suppression window: tte=50, min_time=90, auto_close=10
+    session = _make_session(max_loss_amount=0.0)
+    session['params']['straddle_roll_min_time_to_expiry'] = 90
+    session['params']['auto_close_mins'] = 10
+
+    monitor = _make_monitor()
+    monitor._auto_close_all = AsyncMock(return_value=None)
+
+    with patch('webui.backend.routes.mmm.mmm_straddle_roll_pure.log_activity'):
+        result = asyncio.get_event_loop().run_until_complete(
+            execute_pure_straddle_roll(monitor, session, 'test-csr-002', minutes_to_expiry=50.0)
+        )
+
+    assert result is False, \
+        "Inside min_time suppression window (50min < 90min) should return False (no action)"
+    assert session.get('strategy_status') != 'STOPPED', \
+        "strategy_status must NOT be STOPPED when roll is merely suppressed"
+
+
+def test_csr_3_zero_spot_returns_false():
+    """C-SR-3: unavailable spot (0) returns False without raising."""
+    from webui.backend.routes.mmm.mmm_straddle_roll_pure import execute_pure_straddle_roll
+
+    session = _make_session(max_loss_amount=0.0)
+    session['params']['straddle_roll_min_time_to_expiry'] = 0  # no floor
+    session['params']['auto_close_mins'] = 10
+
+    monitor = _make_monitor(spot=0.0)
+    monitor._auto_close_all = AsyncMock(return_value=None)
+
+    with patch('webui.backend.routes.mmm.mmm_straddle_roll_pure.log_activity'), \
+         patch('webui.backend.routes.mmm.mmm_straddle_roll_pure._compute_dynamic_trigger'):
+        result = asyncio.get_event_loop().run_until_complete(
+            execute_pure_straddle_roll(monitor, session, 'test-csr-003', minutes_to_expiry=200.0)
+        )
+
+    assert result is False, "Zero spot must return False cleanly (no roll, no exception)"

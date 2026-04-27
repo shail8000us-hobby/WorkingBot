@@ -242,13 +242,25 @@ class MMMExecutor:
                 c for c in (session_id or 'x').replace('mmm', '').replace('-', '')
             )[:8]
             _side_tag = 'b' if side.lower() == 'buy' else 's'
-            _ts_tag = str(int(time.time()))[-8:]
+            _ts_tag = str(int(time.time()))[-6:]  # 6 chars; leaves room for 2-char nonce
             # Include first char of symbol ('c'=CE, 'p'=PE) so concurrent entry
             # orders on the same session get distinct client_order_ids.
             # Without this, asyncio.gather fires CE+PE at the same timestamp →
             # identical IDs → exchange rejects second order with duplicate_client_order_id.
             _opt_tag = (symbol[0].lower() if symbol else 'x')[:1]
-            client_order_id = f"mmm_{_sess_tag}_{_side_tag}{_opt_tag}_{_ts_tag}"[:32]
+            # A8-01 fix: 2-char random nonce prevents duplicate_client_order_id when
+            # two SELL orders for the same option side arrive within the same second.
+            _nonce = os.urandom(1).hex()  # e.g. 'a3'
+            client_order_id = f"mmm_{_sess_tag}_{_side_tag}{_opt_tag}_{_ts_tag}{_nonce}"[:32]
+
+        # Register coid → session mapping in executions WS registry before placing.
+        # This allows real-time fill events from the WS executions channel to be
+        # attributed to this session without parsing the coid format.
+        try:
+            from .mmm_ws_executions import get_executions_ws as _get_exec_ws
+            _get_exec_ws().register_order(client_order_id, session_id, symbol, side, size)
+        except Exception:
+            pass
 
         log.info(f"📊 MMM Smart Execute: {side.upper()} {size} {symbol} coid={client_order_id}")
 

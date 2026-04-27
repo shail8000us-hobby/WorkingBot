@@ -212,7 +212,7 @@ class TestCheckPositionCap:
     @pytest.mark.sealed
     def test_c_pc_2_at_cap_stop_adjustments(self, safety):
         sess = _session()
-        sess['ce']['active_lots'] = 10  # == max_lots_per_side
+        sess['ce']['total_lots'] = 10  # == max_lots_per_side (cap reads total_lots)
         events = safety.check_position_cap(sess)
         assert len(events) == 1
         assert events[0]['type'] == 'position_cap'
@@ -222,7 +222,7 @@ class TestCheckPositionCap:
     @pytest.mark.sealed
     def test_c_pc_3_at_80pct_warning(self, safety):
         sess = _session()
-        sess['ce']['active_lots'] = 8  # 80% of 10
+        sess['ce']['total_lots'] = 8  # 80% of 10 (cap reads total_lots)
         events = safety.check_position_cap(sess)
         assert len(events) == 1
         assert events[0]['action'] == 'continue'
@@ -237,8 +237,8 @@ class TestCheckPositionCap:
     @pytest.mark.sealed
     def test_c_pc_5_both_at_cap_two_events(self, safety):
         sess = _session()
-        sess['ce']['active_lots'] = 10
-        sess['pe']['active_lots'] = 10
+        sess['ce']['total_lots'] = 10
+        sess['pe']['total_lots'] = 10
         events = safety.check_position_cap(sess)
         assert len(events) == 2
         assert all(e['action'] == 'stop_adjustments' for e in events)

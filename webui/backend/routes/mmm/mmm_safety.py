@@ -103,7 +103,7 @@ class MMMSafety:
 
         for side_key in ['ce', 'pe']:
             side_state = session.get(side_key, {})
-            total = side_state.get('active_lots', 0)  # Split Ledger: cap on active lots only
+            total = side_state.get('total_lots', 0)  # AUDIT FIX: frozen lots are real exchange exposure — must count
             ratio = total / max_lots if max_lots > 0 else 0
 
             if total >= max_lots:
@@ -994,8 +994,9 @@ class MMMSafety:
         history = session.get('adjustment_history', [])
         lots_in_window = 0
         for adj in history:
-            # AUDIT FIX: Skip OPERATOR/STRADDLE_ROLL injections — same as whipsaw filter
-            if adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL'):
+            # Skip operator/strategy injections and delta hedges — these are not
+            # premium-adjustment lots and must not exhaust the velocity budget.
+            if adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL', 'DELTA_HEDGE'):
                 continue
             try:
                 ts = datetime.fromisoformat(adj.get('timestamp', ''))

@@ -1056,7 +1056,10 @@ class MMMStorage:
                     json_extract(data_json, '$._data_confidence')                      AS _data_confidence,
                     json_extract(data_json, '$.perp_hedge.realized_pnl')               AS perp_realized_pnl,
                     json_extract(data_json, '$.perp_hedge.unrealized_pnl')             AS perp_unrealized_pnl,
-                    json_extract(data_json, '$._reverse.net_pnl')                      AS reverse_net_pnl
+                    json_extract(data_json, '$._reverse.net_pnl')                      AS reverse_net_pnl,
+                    json_extract(data_json, '$._net_premium_collected')                AS _net_premium_collected,
+                    json_extract(data_json, '$._ce_net_premium')                       AS _ce_net_premium,
+                    json_extract(data_json, '$._pe_net_premium')                       AS _pe_net_premium
                 FROM mmm_sessions
                 {where}
                 ORDER BY created_at DESC
@@ -1099,6 +1102,10 @@ class MMMStorage:
                     'total_premium_collected': r['total_premium_collected'] or 0,
                     'ce_premium_collected': self._get_side_premium(r, 'ce'),
                     'pe_premium_collected': self._get_side_premium(r, 'pe'),
+                    # Cached net premium (gross minus buybacks) — written at each heartbeat save
+                    '_net_premium_collected': r['_net_premium_collected'],
+                    '_ce_net_premium': r['_ce_net_premium'],
+                    '_pe_net_premium': r['_pe_net_premium'],
                     'realized_pnl': realized,
                     'unrealized_pnl': unrealized,
                     'total_fees': fees,

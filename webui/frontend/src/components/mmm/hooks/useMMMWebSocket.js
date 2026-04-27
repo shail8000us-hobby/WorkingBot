@@ -57,6 +57,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
   const [regimeData, setRegimeData] = useState(null);
   const [perpHedgeEvents, setPerpHedgeEvents] = useState([]);
   const [perpHedgeFlip, setPerpHedgeFlip] = useState(null);
+  const [deltaEngine, setDeltaEngine] = useState(null);
 
   // Track the latest premium_map from price ticks (updated every 5s)
   const latestPremiumMap = useRef({});
@@ -88,6 +89,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     setRegimeData(null);
     setPerpHedgeEvents([]);
     setPerpHedgeFlip(null);
+    setDeltaEngine(null);
     latestPremiumMap.current = {};
   }, [sessionId]);
 
@@ -253,6 +255,14 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     };
     addListener('mmm_perp_hedge_flip', onPerpFlip);
 
+    // Delta Neutral Engine state updates
+    const onDeltaEngine = (data) => {
+      if (!sessionId || data.session_id === sessionId) {
+        setDeltaEngine(data);
+      }
+    };
+    addListener('mmm_delta_engine', onDeltaEngine);
+
     // Perp hedge update (periodic state sync)
     const onPerpUpdate = (data) => {
       if (!sessionId || data.session_id === sessionId) {
@@ -353,6 +363,7 @@ export default function useMMMWebSocket(sessionId, sharedSocket) {
     regimeData,
     perpHedgeEvents,
     perpHedgeFlip,
+    deltaEngine,
     livePrices,
   };
 }

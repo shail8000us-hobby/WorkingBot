@@ -1516,6 +1516,24 @@ class MMMMonitor:
                     f"(positions[] recompute fixed stale derived value)"
                 )
 
+            # §self-heal: Sync original position entry_premium to actual fill price.
+            # init-fresh stores the pre-execution bid as entry_premium; execute-entry
+            # updates entry_fill_price but not positions[]. Correct on first beat.
+            _sh_fill = float(_ck_state.get('entry_fill_price') or 0)
+            if _sh_fill > 0:
+                for _sh_pos in _ck_state.get('positions', []):
+                    if (_sh_pos.get('type') == 'original'
+                            and _sh_pos.get('status') == 'active'
+                            and abs(float(_sh_pos.get('entry_premium') or 0) - _sh_fill) > 0.01):
+                        _old_ep = _sh_pos.get('entry_premium')
+                        _sh_pos['entry_premium'] = _sh_fill
+                        _sh_pos['premium'] = _sh_fill
+                        _ck_state['original_premium'] = _sh_fill
+                        log.warning(
+                            f"[{sid}] §self-heal: {_ck_side.upper()} original entry_premium "
+                            f"corrected {_old_ep} → {_sh_fill} (entry_fill_price is authoritative)"
+                        )
+
             # Strategy validator hook (Phase 3): heartbeat-level invariant checks.
             # Violations are warned/emitted but do not abort the heartbeat.
             self._run_strategy_validation(context='heartbeat')
@@ -1684,6 +1702,28 @@ class MMMMonitor:
         self._compute_data_confidence()
 
         _partial_safety_checked = False  # P1-A: dedup flag — prevents double safety run
+
+        # A3-01 fix: stale unrealized cache under premium fetch failure.
+        # After 3 consecutive fetch_ok=False beats, zero unrealized_pnl so the
+        # max-loss check uses 0 (conservative) rather than a stale positive value.
+        # A zero unrealized is safe: it causes max-loss to under-count gains but
+        # never under-count losses — prevents the scenario where actual loss has
+        # crossed the limit but the stale cache says otherwise.
+        if fetch_ok:
+            session['_prem_fetch_failures'] = 0
+        else:
+            _prem_fails = session.get('_prem_fetch_failures', 0) + 1
+            session['_prem_fetch_failures'] = _prem_fails
+            if _prem_fails >= 3:
+                _old_unreal = session.get('unrealized_pnl', 0.0) or 0.0
+                session['unrealized_pnl'] = 0.0
+                log.warning(
+                    f"[{sid}] A3-01: {_prem_fails} consecutive premium fetch failures — "
+                    f"zeroing unrealized_pnl (was {_old_unreal:.2f}) for conservative max-loss check"
+                )
+                emit_safety(sid, 'stale_unrealized_zeroed', 'warning',
+                            f'Stale premium data: {_prem_fails} consecutive fetch failures — '
+                            f'unrealized P&L zeroed for conservative max-loss check')
 
         if not fetch_ok:
             # ----------------------------------------------------------------
@@ -2588,7 +2628,7 @@ class MMMMonitor:
         # BLOCK_ALL_SELLS, and directional BLOCK_CE/PE_SELLS are bypassed for
         # this strategy.  max_loss hard stop and auto-close near expiry are
         # still active regardless.
-        _is_straddle_adj = _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        _is_straddle_adj = get_strategy_handler(_session_strategy_type(session)).bypass_gamma_guards
         if _dangerous_mode:
             # FIX-3.2: Hard interlock — block bypass when EMERGENCY gamma AND cap reached
             # simultaneously. 31 bypasses under these dual conditions in mmm16apr26-2
@@ -3285,8 +3325,14 @@ class MMMMonitor:
                              'band_width_prev_pct': be_result.get('band_width_prev_pct')},
                         )
 
-                    # Log narrow band
-                    if be_result.get('is_narrow_band'):
+                    # Log narrow band — skip for STRADDLE_WITH_ADJUSTMENT: a
+                    # straddle's breakeven band is structurally always narrow
+                    # (the strategy's profit zone IS narrow by design), so this
+                    # warning fires every heartbeat and carries zero signal.
+                    _is_straddle_adj_be = get_strategy_handler(
+                        _session_strategy_type(session)
+                    ).bypass_gamma_guards
+                    if be_result.get('is_narrow_band') and not _is_straddle_adj_be:
                         log_activity(
                             'breakeven_narrow_band',
                             f'Narrow Breakeven Band: {be_result.get("band_width_pct", 0):.1f}% — '
@@ -3390,6 +3436,72 @@ class MMMMonitor:
             except Exception as _god_err:
                 log.warning(f"[{sid}] God layer check failed (non-fatal): {_god_err}")
         # ── End God Layer ───────────────────────────────────────────────────────
+
+        # ────────── Step 5.5: Delta Neutral Engine ──────────
+        # Runs after delta computation (Step 3.5), before trigger evaluation.
+        # When the engine hedges, it can suppress the premium trigger.
+        _delta_engine_fired = False
+        if not _skip_to_pnl:
+            try:
+                from .mmm_delta_engine import (
+                    is_delta_engine_enabled, run_delta_engine,
+                    check_auto_activation, get_delta_engine_status,
+                )
+
+                # Auto-activation: enable N minutes before expiry
+                check_auto_activation(session, minutes_to_expiry)
+
+                if is_delta_engine_enabled(session):
+                    delta_result = await run_delta_engine(
+                        session=session,
+                        portfolio_delta=portfolio_delta,
+                        spot_price=regime_spot_price,
+                        executor=self.executor,
+                        fetch_premium_fn=None,
+                        minutes_to_expiry=minutes_to_expiry,
+                        initializer=self.initializer,
+                        ce_now=ce_now,   # pass heartbeat premiums so trigger snapshots stay valid
+                        pe_now=pe_now,
+                    )
+                    if delta_result.get('action') not in ('none', 'skipped', 'cooldown'):
+                        _delta_engine_fired = True
+                        log_activity(
+                            'delta_engine',
+                            f"Delta hedge: {delta_result.get('action', '?').upper()} "
+                            f"{delta_result.get('lots', 0)} lots "
+                            f"({delta_result.get('instrument', '?')}) — "
+                            f"{delta_result.get('reasoning', '')}",
+                            sid, 'info',
+                            {
+                                'action': delta_result.get('action'),
+                                'instrument': delta_result.get('instrument'),
+                                'lots': delta_result.get('lots', 0),
+                                'hedge_side': delta_result.get('hedge_side'),
+                                'fill_price': delta_result.get('fill_price', 0),
+                            },
+                        )
+                        # Track adjustment info for perp projection (T4-3)
+                        if (delta_result.get('instrument') == 'options'
+                                and delta_result.get('lots', 0) > 0):
+                            self._hb_wt['adjustment'] = {
+                                'lots': delta_result['lots'],
+                                'side': delta_result.get('hedge_side', ''),
+                            }
+
+                    # Emit delta engine status via WebSocket
+                    try:
+                        from .mmm_websocket import emit_to_session
+                        emit_to_session(sid, 'mmm_delta_engine', get_delta_engine_status(session))
+                    except Exception:
+                        pass  # WS emission failure is non-fatal
+
+            except Exception as _de_err:
+                log.error(f"[{sid}] Delta engine error: {_de_err}", exc_info=True)
+
+        # Suppress premium trigger when delta engine just fired
+        if _delta_engine_fired and params.get('delta_engine_suppress_premium_trigger', True):
+            _skip_to_pnl = True
+            log.info(f"[{sid}] Delta engine fired — suppressing premium trigger this beat")
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
@@ -3784,39 +3896,44 @@ class MMMMonitor:
                         )
 
                 if atm_gate_passed:
-                    # T4-3: Pass projected delta from the just-executed adjustment.
-                    # The cached portfolio_delta is from Step 3.5 and doesn't yet
-                    # reflect any adjustment that ran this heartbeat.
-                    # If an adjustment ran, project its delta impact so the hedge
-                    # accounts for combined (current + just-traded) exposure.
-                    _proj_lots = 0
-                    _proj_side = ''
-                    if params.get('perp_hedge_project_adjustment', True):
-                        _adj_info = self._hb_wt.get('adjustment', {})
-                        if _adj_info and _adj_info.get('lots', 0) > 0:
-                            _proj_lots = _adj_info['lots']
-                            _proj_side = _adj_info.get('side', '')  # 'ce' or 'pe'
+                    # Guard: skip standalone perp when delta engine already ran perp this beat
+                    _delta_engine_ran_perp = session.get('_delta_engine', {}).get('last_action') == 'perp_hedge' and _delta_engine_fired
+                    if _delta_engine_ran_perp:
+                        log.debug(f"[{sid}] Standalone perp skip: delta engine already ran perp this beat")
+                    else:
+                        # T4-3: Pass projected delta from the just-executed adjustment.
+                        # The cached portfolio_delta is from Step 3.5 and doesn't yet
+                        # reflect any adjustment that ran this heartbeat.
+                        # If an adjustment ran, project its delta impact so the hedge
+                        # accounts for combined (current + just-traded) exposure.
+                        _proj_lots = 0
+                        _proj_side = ''
+                        if params.get('perp_hedge_project_adjustment', True):
+                            _adj_info = self._hb_wt.get('adjustment', {})
+                            if _adj_info and _adj_info.get('lots', 0) > 0:
+                                _proj_lots = _adj_info['lots']
+                                _proj_side = _adj_info.get('side', '')  # 'ce' or 'pe'
 
-                    perp_result = await run_perp_hedge(
-                        session, self.executor, perp_delta, perp_btc_mark,
-                        projected_lots=_proj_lots,
-                        projected_side=_proj_side,
-                    )
-                    if perp_result.get('action') not in ('none', 'skipped'):
-                        log_activity(
-                            'perp_hedge',
-                            f"Perp hedge: {perp_result.get('action', '?').upper()} "
-                            f"{perp_result.get('lots_traded', 0)} lots @ "
-                            f"{perp_result.get('fill_price', 0):.2f} — "
-                            f"{perp_result.get('reason', '')}",
-                            sid, 'info',
-                            {
-                                'action': perp_result.get('action'),
-                                'lots': perp_result.get('lots_traded', 0),
-                                'fill_price': perp_result.get('fill_price', 0),
-                                'realized_pnl': perp_result.get('realized_pnl', 0),
-                            },
+                        perp_result = await run_perp_hedge(
+                            session, self.executor, perp_delta, perp_btc_mark,
+                            projected_lots=_proj_lots,
+                            projected_side=_proj_side,
                         )
+                        if perp_result.get('action') not in ('none', 'skipped'):
+                            log_activity(
+                                'perp_hedge',
+                                f"Perp hedge: {perp_result.get('action', '?').upper()} "
+                                f"{perp_result.get('lots_traded', 0)} lots @ "
+                                f"{perp_result.get('fill_price', 0):.2f} — "
+                                f"{perp_result.get('reason', '')}",
+                                sid, 'info',
+                                {
+                                    'action': perp_result.get('action'),
+                                    'lots': perp_result.get('lots_traded', 0),
+                                    'fill_price': perp_result.get('fill_price', 0),
+                                    'realized_pnl': perp_result.get('realized_pnl', 0),
+                                },
+                            )
                 else:
                     # Still update mark P&L for display even when ATM gate blocks
                     from .mmm_perp_hedge import update_perp_mark_pnl
@@ -3907,11 +4024,22 @@ class MMMMonitor:
         if len(session['pnl_history']) > 500:
             session['pnl_history'] = session['pnl_history'][-500:]
 
+        # Cache net premium on session so stopped-session summary path reads correct value.
+        _net_prem = pnl.get('net_premium_collected', pnl.get('total_premium_collected', 0))
+        _ce_net   = pnl.get('ce_net_premium', session.get('ce_premium_collected', 0))
+        _pe_net   = pnl.get('pe_net_premium', session.get('pe_premium_collected', 0))
+        session['_net_premium_collected'] = round(_net_prem, 6)
+        session['_ce_net_premium']        = round(_ce_net, 6)
+        session['_pe_net_premium']        = round(_pe_net, 6)
+
         # Emit updates
         self._emit_heartbeat_data(ce_now, pe_now)
         emit_pnl_update(
             sid, pnl['net_pnl'], pnl['realized'],
             pnl['unrealized'], pnl['fees'], pnl['total_premium_collected'],
+            net_premium_collected=_net_prem,
+            ce_net_premium=_ce_net,
+            pe_net_premium=_pe_net,
         )
 
         # Performance Intelligence: track phase transitions (zero I/O)
@@ -4665,7 +4793,7 @@ class MMMMonitor:
         # hedge side is already "heavy" causes compounding loss with no benefit.
         # The asymmetry guard still applies to speculative sells (scale-up, replenish).
         _dangerous_mode_adj = params.get('dangerous_mode', False)
-        _straddle_adj = _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
+        _straddle_adj = get_strategy_handler(_session_strategy_type(session)).bypass_gamma_guards
 
         # §9: Check for reversal
         # FM1 fix: Consecutive reversal-skip circuit breaker.
@@ -4930,7 +5058,7 @@ class MMMMonitor:
         # state is expected and intentional for this strategy — guard must not fire.
         itm_guard_on = (
             session.get('params', {}).get('itm_guard_enabled', True)
-            and _session_strategy_type(session) != STRADDLE_WITH_ADJUSTMENT_CATEGORY
+            and not get_strategy_handler(_session_strategy_type(session)).bypass_itm_guard
         )
         hedge_strike = session.get(hedge, {}).get('active_strike', 0)
         if hedge_strike:
@@ -5514,9 +5642,9 @@ class MMMMonitor:
         # enforce a minimum OTM distance so the new strike is further from spot.
         _gamma_shift_min_otm = 0.0
         _g6_params = session.get('params', {})
-        _is_straddle_adj_shift = (
-            _session_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY
-        )
+        _is_straddle_adj_shift = get_strategy_handler(
+            _session_strategy_type(session)
+        ).bypass_gamma_guards
         if (_g6_params.get('gamma_severity_multiplier_enabled', False) and
                 session.get('_gamma_result', {}).get('gamma_zone') == 'DANGER' and
                 spot_price > 0 and not _is_straddle_adj_shift):
@@ -6416,7 +6544,7 @@ class MMMMonitor:
         # as spot drifts from ATM — blocking the fallback here orphans the hedge entirely.
         itm_guard_on = (
             session.get('params', {}).get('itm_guard_enabled', True)
-            and _session_strategy_type(session) != STRADDLE_WITH_ADJUSTMENT_CATEGORY
+            and not get_strategy_handler(_session_strategy_type(session)).bypass_itm_guard
         )
         if hedge_strike:
             spot_price = await self._fetch_spot_price()
@@ -6963,7 +7091,7 @@ class MMMMonitor:
         sid = self.session_id
         params = session.get('params', {})
 
-        from .mmm_replenish import check_replenish_eligibility, determine_replenish_lots
+        from .mmm_replenish import check_replenish_eligibility, determine_replenish_lots, clamp_replenish_to_cap
 
         # OCS emergency: closed side is completely empty → unhedged position.
         # All rate-limiting gates are bypassed; only margin and open-side-empty
@@ -6999,6 +7127,44 @@ class MMMMonitor:
         # Gate 11 (lot velocity cap) REMOVED: hedging takes priority over
         # velocity limits.  The lot count is determined solely by lot mode
         # (match_active / initial) clamped to max_lots_per_side.
+
+        # AUDIT FIX (Fix 2): Clamp lots against actual current position count.
+        # Without this, a watchdog restart + state drift can cause unbounded
+        # accumulation because determine_replenish_lots clamps to max_lots_per_side
+        # but never checks how many lots are already open on that side.
+        lots = clamp_replenish_to_cap(session, closed_side, lots)
+        if lots <= 0:
+            log.info(f"[{sid}] Replenish blocked: {closed_side.upper()} at position cap")
+            log_activity('replenish_blocked',
+                        f'⛔ Replenish {closed_side.upper()} blocked: position cap reached '
+                        f'(total_lots >= max_lots_per_side)',
+                        sid, 'warning',
+                        {'closed_side': closed_side, 'reason': 'position_cap_clamp'})
+            return False
+
+        # AUDIT FIX (Fix 3): Minimum cooldown between replenish sells.
+        # Prevents the machine-gun effect seen in session mmm26apr26-2
+        # (23 replenishments in 23 minutes, some sub-second bursts).
+        # This preserves the "hedge restoration takes priority" philosophy
+        # but prevents destructive rapid-fire selling.
+        import time as _time
+        replenish_min_cooldown = params.get('replenish_min_cooldown_sec', 60)
+        last_replenish_at = session.get('_last_replenish_at', 0)
+        if last_replenish_at > 0:
+            elapsed = _time.time() - last_replenish_at
+            if elapsed < replenish_min_cooldown:
+                remaining = replenish_min_cooldown - elapsed
+                log.info(
+                    f"[{sid}] Replenish cooldown: {remaining:.0f}s remaining "
+                    f"(min {replenish_min_cooldown}s between replenishes)"
+                )
+                log_activity('replenish_blocked',
+                            f'⏳ Replenish {closed_side.upper()} cooldown: '
+                            f'{remaining:.0f}s remaining',
+                            sid, 'info',
+                            {'closed_side': closed_side, 'reason': 'cooldown',
+                             'remaining_sec': round(remaining)})
+                return False
 
         # Step 2.5: Pending-order guard — check if a prior replenish order is still
         # open on the exchange before placing a new one.  The normal adjustment path
@@ -7070,7 +7236,7 @@ class MMMMonitor:
         # straddle symmetry. Using the current ATM (preview_atm_straddle) would place the
         # replenished leg at a different strike if BTC has moved since entry.
         # Strangle strategies must NOT use this path — their CE/PE are at different strikes.
-        _is_straddle_with_adj = (_session_strategy_type(session) == 'STRADDLE_WITH_ADJUSTMENT')
+        _is_straddle_with_adj = get_strategy_handler(_session_strategy_type(session)).replenish_at_open_strike
         _straddle_anchor_strike = (
             session.get(open_side, {}).get('active_strike', 0)
             if _is_straddle_with_adj else 0

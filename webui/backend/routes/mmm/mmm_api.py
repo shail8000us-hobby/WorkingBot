@@ -120,11 +120,21 @@ def _overlay_live_pnl(sessions_list):
                 s['pe_net_premium'] = round(live.get('pe_net_premium', s.get('pe_premium_collected', 0)), 6)
                 continue
 
-        # Stopped session (or no live data): compute net premium from stored fill ledger
-        net_prem = _compute_net_prem(s)
-        s['net_premium_collected'] = net_prem['total']
-        s['ce_net_premium'] = net_prem['ce']
-        s['pe_net_premium'] = net_prem['pe']
+        # Stopped session (or no live data): use cached net premium written at last heartbeat.
+        # The summary path doesn't include _fill_ledger, so _compute_net_prem(s) would
+        # return gross — use the cached _net_premium_collected instead.
+        _cached_net = s.get('_net_premium_collected')
+        if _cached_net is not None:
+            s['net_premium_collected'] = round(_cached_net, 6)
+            s['ce_net_premium'] = round(s.get('_ce_net_premium') or s.get('ce_premium_collected', 0), 6)
+            s['pe_net_premium'] = round(s.get('_pe_net_premium') or s.get('pe_premium_collected', 0), 6)
+        else:
+            # Fallback for old sessions that predate the cache: compute from fill ledger.
+            # Only correct if _fill_ledger is available on s (full session, not summary).
+            net_prem = _compute_net_prem(s)
+            s['net_premium_collected'] = net_prem['total']
+            s['ce_net_premium'] = net_prem['ce']
+            s['pe_net_premium'] = net_prem['pe']
 
 
 def _invalidate_sessions_cache():
@@ -1049,9 +1059,17 @@ def _execute_entry_background(session_id: str, ce_symbol: str, pe_symbol: str, l
     session['ce']['entry_fill_price'] = ce_fill
     session['ce']['entry_order_id'] = ce_res.get('order_id')
     session['ce']['original_premium'] = ce_fill
+    for _p in session['ce'].get('positions', []):
+        if _p.get('type') == 'original' and _p.get('status') == 'active':
+            _p['entry_premium'] = ce_fill
+            _p['premium'] = ce_fill
     session['pe']['entry_fill_price'] = pe_fill
     session['pe']['entry_order_id'] = pe_res.get('order_id')
     session['pe']['original_premium'] = pe_fill
+    for _p in session['pe'].get('positions', []):
+        if _p.get('type') == 'original' and _p.get('status') == 'active':
+            _p['entry_premium'] = pe_fill
+            _p['premium'] = pe_fill
 
     # Track all order IDs placed by this session (isolation audit trail)
     session.setdefault('mmm_order_ids', [])
@@ -3966,11 +3984,23 @@ def execute_entry(session_id: str):
             pe_res = result.get('pe', {})
 
             if ce_res.get('filled'):
-                session['ce']['entry_fill_price'] = ce_res['fill_price']
+                _ce_fill = ce_res['fill_price']
+                session['ce']['entry_fill_price'] = _ce_fill
                 session['ce']['entry_order_id'] = ce_res.get('order_id')
+                session['ce']['original_premium'] = _ce_fill
+                for _p in session['ce'].get('positions', []):
+                    if _p.get('type') == 'original' and _p.get('status') == 'active':
+                        _p['entry_premium'] = _ce_fill
+                        _p['premium'] = _ce_fill
             if pe_res.get('filled'):
-                session['pe']['entry_fill_price'] = pe_res['fill_price']
+                _pe_fill = pe_res['fill_price']
+                session['pe']['entry_fill_price'] = _pe_fill
                 session['pe']['entry_order_id'] = pe_res.get('order_id')
+                session['pe']['original_premium'] = _pe_fill
+                for _p in session['pe'].get('positions', []):
+                    if _p.get('type') == 'original' and _p.get('status') == 'active':
+                        _p['entry_premium'] = _pe_fill
+                        _p['premium'] = _pe_fill
 
             # Calculate actual total premium
             # H-1 fix: include LOT_SIZE_BTC to match correct calculation at line ~580
@@ -8297,6 +8327,75 @@ def get_pnl_curve(session_id: str):
     except Exception as e:
         log.exception(f"Failed to compute P&L curve for {session_id}")
         return jsonify({'success': False, 'error': str(e)}), 500
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Trade Export  (session_fills — raw exchange fills as CSV download)
+# ─────────────────────────────────────────────────────────────────────────────
+
+@mmm_bp.route('/session/<session_id>/fills/export', methods=['GET'])
+def export_session_fills(session_id: str):
+    """
+    GET /api/mmm/session/<id>/fills/export?format=csv
+
+    Download all exchange fills for a session as a CSV file.
+    Each row is one fill event recorded by FillSync from the exchange.
+
+    Columns: #, Time (UTC), Side, Option Side, Strike, Expiry,
+             Lots, Fill Price (USD), Commission (USD),
+             Fill ID, Order ID, Client Order ID, Symbol
+    """
+    import csv
+    import io
+
+    from .mmm_ledger import get_session_fills_for_export
+
+    fmt = request.args.get('format', 'csv').lower()
+    if fmt != 'csv':
+        return jsonify({'error': 'Only format=csv is supported'}), 400
+
+    fills = get_session_fills_for_export(session_id)
+
+    # Resolve session name/expiry for the filename
+    storage = get_storage()
+    session = storage.get_session(session_id)
+    expiry_tag = ''
+    if session:
+        expiry_tag = '_' + (session.get('params', {}).get('expiry', '') or '').replace('-', '')
+    filename = f"mmm_trades_{session_id[:12]}{expiry_tag}.csv"
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow([
+        '#', 'Time (UTC)', 'Buy/Sell', 'Option Side', 'Strike', 'Expiry',
+        'Lots', 'Fill Price (USD)', 'Commission (USD)',
+        'Fill ID', 'Order ID', 'Client Order ID', 'Symbol',
+    ])
+
+    for i, f in enumerate(fills, 1):
+        writer.writerow([
+            i,
+            f.get('recorded_at', ''),
+            (f.get('side') or '').upper(),
+            f.get('option_side', ''),
+            f.get('strike', ''),
+            f.get('expiry', ''),
+            f.get('qty', ''),
+            f.get('price', ''),
+            f.get('commission', ''),
+            f.get('fill_id', ''),
+            f.get('order_id', ''),
+            f.get('client_order_id', ''),
+            f.get('symbol', ''),
+        ])
+
+    csv_bytes = output.getvalue().encode('utf-8')
+    response = make_response(csv_bytes)
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8'
+    response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+    return response
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Trade Audit API  (position_audit_log + session_event_log)

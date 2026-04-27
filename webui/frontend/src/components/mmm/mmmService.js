@@ -664,6 +664,28 @@ const mmmService = {
     return data;
   },
 
+  /**
+   * Download all exchange fills for a session as a CSV file.
+   * Triggers a browser file download via a temporary <a> element.
+   */
+  async downloadFillsCSV(sessionId) {
+    const response = await api.get(
+      `${BASE_URL}/session/${sessionId}/fills/export?format=csv`,
+      { responseType: 'blob' },
+    );
+    const url = window.URL.createObjectURL(new Blob([response.data], { type: 'text/csv' }));
+    const link = document.createElement('a');
+    link.href = url;
+    // Use filename from Content-Disposition header if available, else build one
+    const cd = response.headers['content-disposition'] || '';
+    const match = cd.match(/filename="?([^";\s]+)"?/);
+    link.download = match ? match[1] : `mmm_trades_${sessionId.slice(0, 12)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+  },
+
   /** Per-strike P&L summary */
   async getAuditStrikeSummary(sessionId) {
     const { data } = await api.get(`${BASE_URL}/session/${sessionId}/audit/strike_summary`);

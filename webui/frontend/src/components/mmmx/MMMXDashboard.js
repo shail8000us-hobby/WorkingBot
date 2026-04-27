@@ -55,7 +55,6 @@ import MMMXSafetyPanel from './panels/MMMXSafetyPanel';
 import MMMXTradeAuditPanel from './panels/MMMXTradeAuditPanel';
 import MMMXFeesCapitalPanel from './panels/MMMXFeesCapitalPanel';
 import MMMXRegimePanel from './panels/MMMXRegimePanel';
-import MMMXDeltaExposurePanel from './panels/MMMXDeltaExposurePanel';
 import MMMXPnLChart from './panels/MMMXPnLChart';
 import MMMXPerformancePanel from './panels/MMMXPerformancePanel';
 import MMMXRiskRail from './panels/MMMXRiskRail';
@@ -65,7 +64,7 @@ import MMMXHealthRadar from './panels/MMMXHealthRadar';
 const TABS = [
   'Status', 'Tranches', 'Trigger Engine', 'Hedges', 'Risk', 'Execution',
   'Adjustments', 'Profit Booking', 'Parameters', 'Reconcile',
-  'Safety', 'Trade Audit', 'Fees', 'Regime', 'Delta', 'P&L Chart', 'Performance', 'Health Radar',
+  'Safety', 'Trade Audit', 'Fees', 'Regime', 'P&L Chart', 'Performance', 'Health Radar',
 ];
 
 function TabPanel({ children, value, index }) {
@@ -565,15 +564,12 @@ export default function MMMXDashboard() {
                     <MMMXErrorBoundary name="RegimePanel"><MMMXRegimePanel /></MMMXErrorBoundary>
                   </TabPanel>
                   <TabPanel value={detailTab} index={14}>
-                    <MMMXErrorBoundary name="DeltaExposurePanel"><MMMXDeltaExposurePanel /></MMMXErrorBoundary>
-                  </TabPanel>
-                  <TabPanel value={detailTab} index={15}>
                     <MMMXErrorBoundary name="PnLChart"><MMMXPnLChart /></MMMXErrorBoundary>
                   </TabPanel>
-                  <TabPanel value={detailTab} index={16}>
+                  <TabPanel value={detailTab} index={15}>
                     <MMMXErrorBoundary name="PerformancePanel"><MMMXPerformancePanel /></MMMXErrorBoundary>
                   </TabPanel>
-                  <TabPanel value={detailTab} index={17}>
+                  <TabPanel value={detailTab} index={16}>
                     <MMMXErrorBoundary name="HealthRadar"><MMMXHealthRadar /></MMMXErrorBoundary>
                   </TabPanel>
                 </Box>

@@ -280,7 +280,7 @@ export const SSRAlgoErrorBoundary = ({ children, componentName }) => {
   return (
     <ErrorBoundary
       title={`Error in ${componentName || 'SSR Algo Component'}`}
-      onError={(error, errorInfo) => {
+      onError={(error, _errorInfo) => {
         console.error(`[SSR Algo] ${componentName} error:`, error);
       }}
     >

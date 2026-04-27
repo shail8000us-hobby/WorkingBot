@@ -268,16 +268,26 @@ def emit_safety(session_id: str, safety_type: str, level: str, message: str,
 
 
 def emit_pnl_update(session_id: str, total_pnl: float, realized: float,
-                    unrealized: float, fees: float, premium_collected: float):
+                    unrealized: float, fees: float, premium_collected: float,
+                    net_premium_collected: float = None,
+                    ce_net_premium: float = None,
+                    pe_net_premium: float = None):
     """Emit P&L update. Every interval."""
-    _emit('mmm_pnl_update', {
+    payload = {
         'session_id': session_id,
         'total_pnl': total_pnl,
         'realized': realized,
         'unrealized': unrealized,
         'fees': fees,
         'premium_collected': premium_collected,
-    })
+    }
+    if net_premium_collected is not None:
+        payload['net_premium_collected'] = round(net_premium_collected, 6)
+    if ce_net_premium is not None:
+        payload['ce_net_premium'] = round(ce_net_premium, 6)
+    if pe_net_premium is not None:
+        payload['pe_net_premium'] = round(pe_net_premium, 6)
+    _emit('mmm_pnl_update', payload)
 
 
 def emit_params_changed(session_id: str, changed_params: Dict):

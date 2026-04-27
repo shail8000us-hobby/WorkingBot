@@ -189,9 +189,18 @@ class MMMWatchdog:
                 )
                 session['_exit_all_partial'] = True
                 if not session.get('_exit_all_failed_positions'):
-                    # Build failed list from local state as best-effort record
-                    from .mmm_exit_all import _build_failed_list
-                    session['_exit_all_failed_positions'] = _build_failed_list(session)
+                    # A7-04 fix: guard _build_failed_list() — if it raises, the alert
+                    # and stop must still fire. A failed position list is advisory;
+                    # blocking the operator alert on its failure is never acceptable.
+                    try:
+                        from .mmm_exit_all import _build_failed_list
+                        session['_exit_all_failed_positions'] = _build_failed_list(session)
+                    except Exception as _bfl_err:
+                        log.error(
+                            f"[{sid}] Watchdog: _build_failed_list failed (non-critical): {_bfl_err} "
+                            f"— operator alert will still fire"
+                        )
+                        session['_exit_all_failed_positions'] = []
                 self._emit_alert(
                     sid,
                     "EXIT STUCK: exit_all timed out. Positions may still be open on exchange. "
@@ -407,13 +416,77 @@ class MMMWatchdog:
             fresh_session['_monitor_generation'] = fresh_session.get('_monitor_generation', 0) + 1
             storage.save_session(fresh_session)
 
+            # AUDIT FIX (Fix 4): Reconcile in-memory total_lots against session_fills DB.
+            # This is the core fix for ghost positions: after a watchdog restart, the
+            # persisted session state may show total_lots=0 for a side that actually
+            # has open exposure on the exchange (fills recorded in the ledger but the
+            # in-memory dict lost them when the thread died).
+            #
+            # A7-01 fix: also rebuild positions[] when drift is detected so that
+            # the first heartbeat's recompute_side_lots() does NOT revert the
+            # scalar correction back to the stale in-memory value.
+            try:
+                from .mmm_ledger import (get_session_lots_by_side,
+                                         get_session_open_positions_by_side)
+                from .mmm_state import recompute_side_lots
+                db_lots = get_session_lots_by_side(sid)
+                _any_drift = False
+                for side_key in ('ce', 'pe'):
+                    mem_total = fresh_session.get(side_key, {}).get('total_lots', 0)
+                    db_total = db_lots.get(side_key, 0)
+                    if mem_total != db_total:
+                        log.critical(
+                            f"[{sid}] Watchdog RECONCILIATION DRIFT: "
+                            f"{side_key.upper()} memory total_lots={mem_total} "
+                            f"but ledger DB={db_total}. Correcting to DB truth."
+                        )
+                        if side_key in fresh_session:
+                            fresh_session[side_key]['total_lots'] = db_total
+                            # Recalculate active_lots = total_lots - frozen_total_lots
+                            frozen = fresh_session[side_key].get('frozen_total_lots', 0)
+                            fresh_session[side_key]['active_lots'] = max(db_total - frozen, 0)
+                        fresh_session.setdefault('_watchdog_reconciliation', []).append({
+                            'timestamp': datetime.now(timezone.utc).isoformat(),
+                            'side': side_key,
+                            'memory_lots': mem_total,
+                            'db_lots': db_total,
+                        })
+                        _any_drift = True
+
+                # A7-01 fix: when any drift was found, rebuild positions[] from ledger
+                # fills so recompute_side_lots() on the first heartbeat derives the same
+                # total as the DB truth (not the stale in-memory value).
+                if _any_drift:
+                    db_positions = get_session_open_positions_by_side(sid)
+                    for side_key in ('ce', 'pe'):
+                        db_pos_list = db_positions.get(side_key, [])
+                        if not db_pos_list:
+                            continue
+                        db_side_total = sum(p['lots'] for p in db_pos_list)
+                        mem_side_total = fresh_session.get(side_key, {}).get('total_lots', 0)
+                        if db_side_total != mem_side_total:
+                            # Full replace: DB is ground truth after drift
+                            log.critical(
+                                f"[{sid}] A7-01: Rebuilding {side_key.upper()} positions[] "
+                                f"from ledger ({db_side_total} lots) — "
+                                f"was {len(fresh_session.get(side_key, {}).get('positions', []))} entries"
+                            )
+                            fresh_session.setdefault(side_key, {})['positions'] = db_pos_list
+                            recompute_side_lots(fresh_session[side_key])
+
+                storage.save_session(fresh_session)
+            except Exception as recon_err:
+                log.error(f"[{sid}] Watchdog reconciliation failed (non-fatal): {recon_err}")
+
             # Remove the dead monitor from the registry (C-1 fix: use lock)
             with _monitors_lock:
                 _monitors.pop(sid, None)
             self.deregister(sid)
 
-            # Start a new monitor
-            new_monitor = start_session_monitor(sid, fresh_session)
+            # Start a new monitor — use 'monitor_restore' context so shape
+            # violations (e.g. strangle after STRADDLE_WITH_ADJUSTMENT shift) warn
+            # but do not hard-block the watchdog restart.
+            new_monitor = start_session_monitor(sid, fresh_session, context='monitor_restore')
             self.register(new_monitor)
             
             # Record restart time for exponential backoff

@@ -46,6 +46,25 @@ class StrategyHandler:
     run_step_5_4: RunStep54Fn
     validate_session: ValidateSessionFn
 
+    # A5-07 fix: strategy-level override flags — replaces 15+ inline
+    # `strategy_type == STRADDLE_WITH_ADJUSTMENT_CATEGORY` string checks.
+    #
+    # bypass_gamma_guards: gamma FORCE_REDUCE / PAUSE / BLOCK_ALL_SELLS / severity-shift
+    #   bypass for this strategy.  For STRADDLE_WITH_ADJUSTMENT the adjustment IS the
+    #   hedge — blocking it when ATM gamma is elevated is worse than continuing.
+    bypass_gamma_guards: bool = False
+    # bypass_itm_guard: ITM guard exemption.  For STRADDLE_WITH_ADJUSTMENT the straddle
+    #   leg naturally goes ITM as spot drifts from entry — blocking here orphans the hedge.
+    bypass_itm_guard: bool = False
+    # replenish_at_open_strike: replenish uses the open leg's active_strike to preserve
+    #   straddle symmetry instead of the current ATM preview.
+    replenish_at_open_strike: bool = False
+    # delta_engine_options_enabled: allow Delta Neutral Engine to use OPTIONS mode for
+    #   this strategy.  Must be False for STRADDLE_ROLL — that strategy disables
+    #   should_run_adjustment, so calling execute_adjustment from the delta engine would
+    #   bypass that invariant.  Perp mode is always available regardless of this flag.
+    delta_engine_options_enabled: bool = True
+
 
 def resolve_strategy_type(session: Dict[str, Any]) -> str:
     """Resolve canonical strategy identity from session state."""
@@ -88,7 +107,9 @@ def _validate_default_strategy_session(_session: Dict[str, Any]) -> List[str]:
 
 
 def _validate_straddle_with_adjustment_session(session: Dict[str, Any]) -> List[str]:
-    errors = _validate_true_straddle_shape(session)
+    # STRADDLE_WITH_ADJUSTMENT intentionally drifts to unequal CE/PE strikes (strangle)
+    # after strike shifts — do NOT call _validate_true_straddle_shape here.
+    errors: List[str] = []
     params = session.get('params', {}) or {}
 
     # total_dte_hours is guaranteed by the preset builder at creation time and is
@@ -230,9 +251,14 @@ STRATEGY_DISPATCH: Dict[str, StrategyHandler] = {
         should_run_atm_shield=False,
         run_step_5_4=_run_step_5_4_straddle_with_adjustment,
         validate_session=_validate_straddle_with_adjustment_session,
+        bypass_gamma_guards=True,
+        bypass_itm_guard=True,
+        replenish_at_open_strike=True,
     ),
     # Pure straddle roll: adjustment engine fully disabled, no wind-down or ATM shield.
     # Risk is managed exclusively via the 4-leg roll in Step 5.4.
+    # delta_engine_options_enabled=False: execute_adjustment is disabled for this
+    # strategy, so delta engine must use perp mode only.
     STRADDLE_ROLL_CATEGORY: StrategyHandler(
         strategy_type=STRADDLE_ROLL_CATEGORY,
         should_run_adjustment=False,
@@ -240,6 +266,7 @@ STRATEGY_DISPATCH: Dict[str, StrategyHandler] = {
         should_run_atm_shield=False,
         run_step_5_4=_run_step_5_4_straddle_roll,
         validate_session=_validate_straddle_roll_session,
+        delta_engine_options_enabled=False,
     ),
 }
 

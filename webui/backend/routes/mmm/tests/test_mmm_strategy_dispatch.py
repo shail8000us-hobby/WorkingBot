@@ -58,6 +58,20 @@ def test_validate_straddle_roll_catches_invariant_violations():
     assert not any("_preset_source" in msg for msg in errors)
 
 
+def test_validate_straddle_with_adjustment_allows_unequal_strikes():
+    # After a strike shift the CE/PE strikes diverge (strangle) — this is the normal
+    # operating state of STRADDLE_WITH_ADJUSTMENT and must never block monitor restart.
+    session = _session(
+        STRADDLE_WITH_ADJUSTMENT_CATEGORY,
+        ce={'active_strike': 77200, 'frozen_total_lots': 0},
+        pe={'active_strike': 77600, 'frozen_total_lots': 0},
+        params={'total_dte_hours': 5.0},
+        entry_time='2026-04-26T10:00:00+00:00',
+    )
+    errors = validate_session_for_strategy(session, STRADDLE_WITH_ADJUSTMENT_CATEGORY)
+    assert not any('equal CE/PE active strikes' in msg for msg in errors)
+
+
 def test_validate_straddle_with_adjustment_requires_positive_dte_hours():
     # Must have entry_time: the check only fires for entered sessions (not at create time).
     session = _session(

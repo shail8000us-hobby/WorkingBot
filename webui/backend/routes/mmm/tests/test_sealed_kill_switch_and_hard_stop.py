@@ -264,7 +264,7 @@ async def test_EX1_kill_switch_mode_uses_market_orders():
                side_effect=_mock_rounds), \
          patch('webui.backend.routes.mmm.mmm_exit_all._cancel_pending_for_kill_switch',
                new_callable=AsyncMock), \
-         patch('webui.backend.routes.mmm.mmm_exit_all._verify_exchange_cleared',
+         patch('webui.backend.routes.mmm.mmm_exit_all._verify_and_alert_remaining',
                new_callable=AsyncMock), \
          patch('webui.backend.routes.mmm.mmm_exit_all._force_clear_being_closed'):
         from webui.backend.routes.mmm.mmm_exit_all import run_exit_all
@@ -289,7 +289,7 @@ async def test_EX2_normal_exit_uses_limit_orders():
                side_effect=_mock_rounds), \
          patch('webui.backend.routes.mmm.mmm_exit_all._cancel_pending_for_kill_switch',
                new_callable=AsyncMock), \
-         patch('webui.backend.routes.mmm.mmm_exit_all._verify_exchange_cleared',
+         patch('webui.backend.routes.mmm.mmm_exit_all._verify_and_alert_remaining',
                new_callable=AsyncMock), \
          patch('webui.backend.routes.mmm.mmm_exit_all._force_clear_being_closed'):
         from webui.backend.routes.mmm.mmm_exit_all import run_exit_all
@@ -316,7 +316,7 @@ async def test_EX3_kill_switch_cancels_pending_before_rounds():
                side_effect=_mock_cancel), \
          patch('webui.backend.routes.mmm.mmm_exit_all._run_exit_rounds',
                side_effect=_mock_rounds), \
-         patch('webui.backend.routes.mmm.mmm_exit_all._verify_exchange_cleared',
+         patch('webui.backend.routes.mmm.mmm_exit_all._verify_and_alert_remaining',
                new_callable=AsyncMock), \
          patch('webui.backend.routes.mmm.mmm_exit_all._force_clear_being_closed'):
         from webui.backend.routes.mmm.mmm_exit_all import run_exit_all

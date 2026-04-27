@@ -31,6 +31,7 @@ from typing import Dict, Optional
 from .mmm_state import recompute_side_lots
 from .mmm_activity import log_activity
 from .mmm_pnl_core import confirm_fill as _pnl_confirm, record_close as _pnl_record
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -186,7 +187,47 @@ class FillSyncer:
                 session['_fill_sync_cursor_us'] = newest_fill_us + 1
             return 0
 
-        # ── Reconcile each fill ──────────────────────────────────────────
+        # ── Record ALL fills to persistent sub-ledger ────────────────────
+        # Both SELL fills (opens) and BUY fills (closes) are written here.
+        # fill_id is UNIQUE in the ledger → idempotent; safe on re-fetch.
+        # This is the virtual-position source of truth recommended by Delta
+        # Exchange India (2026-04-26): track session-owned lots via client_order_id
+        # tagged fills in a local ledger, independent of exchange net positions.
+        try:
+            from .mmm_ledger import record_fill as _ledger_record
+            _sid = session.get('session_id', '')
+            for _fill, _sym, _fill_us in relevant:
+                _fill_side = (_fill.get('side', '') or '').lower()
+                if _fill_side not in ('sell', 'buy'):
+                    continue
+                _f_price = float(_fill.get('price', 0) or 0)
+                _f_size  = abs(float(_fill.get('size', 0) or 0))
+                _f_id    = str(_fill.get('id', ''))
+                _o_id    = str(_fill.get('order_id', ''))
+                _c_oid   = str(_fill.get('client_order_id', '') or '')
+                _f_comm  = float(_fill.get('commission', 0) or 0)
+                if _f_price > 0 and _f_size > 0 and _f_id:
+                    _ledger_record(
+                        session_id=_sid,
+                        symbol=_sym,
+                        side=_fill_side,
+                        qty=int(_f_size),
+                        price=_f_price,
+                        fill_id=_f_id,
+                        order_id=_o_id,
+                        client_order_id=_c_oid,
+                        commission=_f_comm,
+                        expiry=expiry,
+                    )
+        except Exception as _ledger_err:
+            log.warning(
+                f"[{session.get('session_id', '?')}] FillSync: ledger record failed "
+                f"(non-critical): {_ledger_err}"
+            )
+
+        # ── Reconcile BUY fills with session positions (P&L) ─────────────
+        # Existing close-fill logic unchanged: only buy fills update positions[]
+        # and book realized P&L in the ledger.
         updated = 0
         for fill, sym, fill_us in relevant:
             side_raw = (fill.get('side', '') or '').lower()
@@ -201,7 +242,11 @@ class FillSyncer:
             commission = float(fill.get('commission', 0) or 0)
             fill_type = (fill.get('fill_type', '') or '').lower()
 
-            if fill_price <= 0 or fill_size <= 0:
+            # A8-02 fix: allow fill_price == 0 — options expiring worthless send a
+            # settlement fill with price=0.  Skip truly invalid fills (negative price
+            # or zero size) but pass zero-price fills to _process_close_fill so the
+            # worthless-expiry path can close the position and update lot counts.
+            if fill_price < 0 or fill_size <= 0:
                 continue
 
             n = self._process_close_fill(
@@ -286,6 +331,15 @@ class FillSyncer:
                 break
 
         if not matched_pos:
+            # A8-02 fix: worthless-expiry path — exchange sends a settlement fill
+            # with price=0 when the option expires with no value.  There is no
+            # close_order_id match (we never placed a close order), so try to
+            # close by symbol+strike instead.
+            if fill_price == 0 and fill_size > 0:
+                return self._close_worthless_expiry(
+                    session=session, symbol=symbol,
+                    fill_size=fill_size, fill_id=fill_id, fill_type=fill_type,
+                )
             # No position owns this order — could be external close, expiry,
             # or manual buyback. Log at debug level (not warning — this is
             # expected for fills outside our close paths).
@@ -427,6 +481,104 @@ class FillSyncer:
                 }
             )
         return 1
+
+    @sealed
+    def _close_worthless_expiry(
+        self,
+        session: Dict,
+        symbol: str,
+        fill_size: float,
+        fill_id: str,
+        fill_type: str,
+    ) -> int:
+        """
+        A8-02 fix: Close session positions for an option that expired worthless.
+
+        Delta Exchange sends a BUY settlement fill with price=0 when a short option
+        expires with zero value.  We never placed a close order, so there is no
+        close_order_id to match — instead we match by symbol → strike + option_side.
+
+        When closed, the full entry premium is kept as realized P&L (we shorted the
+        option and it expired worthless — the entire credit is ours).
+
+        Symbol format: 'C-BTC-STRIKE-DDMMYY'  (CE) or 'P-BTC-STRIKE-DDMMYY' (PE)
+        """
+        sid = session.get('session_id', '?')
+
+        # Parse symbol to get option_side and strike
+        parts = symbol.split('-')
+        if len(parts) < 3:
+            log.debug(f"[{sid}] FillSync worthless: cannot parse symbol '{symbol}'")
+            return 0
+
+        opt_prefix = parts[0].upper()
+        if opt_prefix == 'C':
+            option_side = 'ce'
+        elif opt_prefix == 'P':
+            option_side = 'pe'
+        else:
+            log.debug(f"[{sid}] FillSync worthless: unknown prefix '{opt_prefix}' in '{symbol}'")
+            return 0
+
+        try:
+            strike = float(parts[2])
+        except (ValueError, IndexError):
+            log.debug(f"[{sid}] FillSync worthless: cannot parse strike from '{symbol}'")
+            return 0
+
+        side_state = session.get(option_side, {})
+        now_iso = datetime.now(timezone.utc).isoformat()
+        count = 0
+
+        for pos in side_state.get('positions', []):
+            if pos.get('status') != 'active' or pos.get('_fill_confirmed'):
+                continue
+            pos_strike = float(pos.get('strike', 0) or 0)
+            if abs(pos_strike - strike) >= 1:
+                continue
+
+            entry = float(pos.get('entry_premium', 0) or 0)
+            pos_lots = int(pos.get('lots', 0) or 0)
+            if pos_lots <= 0:
+                continue
+
+            lots_closed = min(fill_size, float(pos_lots))
+            realized_pnl = entry * lots_closed * LOT_SIZE_BTC
+
+            pos['status'] = 'closed'
+            pos['closed_at'] = now_iso
+            pos['close_fill_price'] = 0.0
+            pos['close_fill_id'] = fill_id
+            pos['_fill_confirmed'] = True
+            pos['_actual_pnl_booked'] = round(realized_pnl, 8)
+            pos['close_reason'] = f'worthless_expiry:{fill_type or "settlement"}'
+
+            session['realized_pnl'] = (
+                float(session.get('realized_pnl', 0) or 0) + realized_pnl
+            )
+
+            log.info(
+                f"[{sid}] FillSync worthless expiry: {option_side.upper()} @ "
+                f"{pos_strike:.0f} — {pos_lots} lots closed, "
+                f"realized={realized_pnl:.4f} USD (entry={entry:.4f})"
+            )
+            log_activity(
+                'worthless_expiry_closed',
+                f'Option expired worthless: {option_side.upper()} @ {int(pos_strike)} — '
+                f'{pos_lots} lots closed, {realized_pnl:.4f} USD retained',
+                sid, 'info',
+                {'side': option_side, 'strike': pos_strike, 'lots': pos_lots,
+                 'realized_pnl': round(realized_pnl, 4), 'fill_id': fill_id},
+            )
+            count += 1
+            fill_size -= lots_closed
+            if fill_size <= 0:
+                break
+
+        if count:
+            recompute_side_lots(side_state)
+
+        return count
 
     # ------------------------------------------------------------------
     # Helpers

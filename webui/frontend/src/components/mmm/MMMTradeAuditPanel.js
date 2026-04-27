@@ -15,6 +15,8 @@ import {
   Divider, Grid,
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import DownloadIcon from '@mui/icons-material/Download';
+import PictureAsPdfIcon from '@mui/icons-material/PictureAsPdf';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
@@ -62,10 +64,86 @@ const HeaderCell = ({ children }) => (
 // Sub-panel: Trade Log
 // =============================================================================
 
+// ─── PDF generation helper ────────────────────────────────────────────────────
+const generatePDF = (trades, sessionId) => {
+  const fmtFull = (ts) => {
+    if (!ts) return '—';
+    try { return new Date(ts).toISOString().replace('T', ' ').slice(0, 19) + ' UTC'; }
+    catch (_) { return ts; }
+  };
+
+  const rows = trades.map((t, i) => `
+    <tr class="${i % 2 === 0 ? 'even' : 'odd'}">
+      <td>${i + 1}</td>
+      <td>${fmtFull(t.created_at)}</td>
+      <td class="action ${(t.action || '').toLowerCase()}">${t.action || '—'}</td>
+      <td class="side ${(t.option_type || '').toLowerCase()}">${t.option_type || '—'}</td>
+      <td>${t.strike || '—'}</td>
+      <td>${t.quantity_filled ?? t.quantity_requested ?? '—'}</td>
+      <td>$${(t.premium || 0).toFixed(4)}</td>
+      <td>${t.event_type || '—'}</td>
+      <td class="${(t.realized_pnl_usd || 0) >= 0 ? 'pnl-pos' : 'pnl-neg'}">
+        ${t.realized_pnl_usd != null ? '$' + t.realized_pnl_usd.toFixed(4) : '—'}
+      </td>
+      <td class="remark">${t.remark || '—'}</td>
+    </tr>`).join('');
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>MMM Trades — ${sessionId}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Courier New', monospace; font-size: 9pt; color: #111; background: #fff; }
+    h2 { font-size: 13pt; margin-bottom: 2px; }
+    .meta { font-size: 8pt; color: #555; margin-bottom: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 8pt; }
+    th { background: #1a1a2e; color: #fff; padding: 5px 4px; text-align: left; font-size: 7.5pt; }
+    td { padding: 3px 4px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+    tr.even td { background: #f9f9f9; }
+    .action.sell { color: #c0392b; font-weight: bold; }
+    .action.buy  { color: #27ae60; font-weight: bold; }
+    .side.ce { color: #2980b9; }
+    .side.pe { color: #8e44ad; }
+    .pnl-pos { color: #27ae60; }
+    .pnl-neg { color: #c0392b; }
+    .remark  { color: #555; max-width: 180px; word-break: break-word; }
+    @page { size: A4 landscape; margin: 12mm; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  </style>
+</head>
+<body>
+  <h2>MMM Algo — Trade Report</h2>
+  <div class="meta">Session: ${sessionId} &nbsp;|&nbsp; Generated: ${new Date().toISOString().replace('T', ' ').slice(0, 19)} UTC &nbsp;|&nbsp; ${trades.length} fills</div>
+  <table>
+    <thead>
+      <tr>
+        <th>#</th><th>Time (UTC)</th><th>Buy/Sell</th><th>Side</th>
+        <th>Strike</th><th>Lots</th><th>Premium</th>
+        <th>Event</th><th>Realized P&amp;L</th><th>Remark</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+</body>
+</html>`;
+
+  const win = window.open('', '_blank', 'width=1100,height=750');
+  if (!win) return;
+  win.document.write(html);
+  win.document.close();
+  win.focus();
+  // Small delay lets the browser render before print dialog opens
+  setTimeout(() => { win.print(); }, 400);
+};
+
+
 const TradeLog = ({ sessionId }) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [csvLoading, setCsvLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -84,15 +162,65 @@ const TradeLog = ({ sessionId }) => {
 
   const trades = data?.rows || data?.trades || [];
 
+  const handleDownloadCSV = async () => {
+    setCsvLoading(true);
+    try {
+      await mmmService.downloadFillsCSV(sessionId);
+    } catch (e) {
+      alert('CSV download failed: ' + (e.message || 'unknown error'));
+    } finally {
+      setCsvLoading(false);
+    }
+  };
+
+  const handleDownloadPDF = () => {
+    if (!trades.length) { alert('No trades to export.'); return; }
+    generatePDF(trades, sessionId);
+  };
+
   return (
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
         <Typography variant="caption" color="text.secondary">
           {trades.length} fill{trades.length !== 1 ? 's' : ''} recorded
         </Typography>
-        <IconButton size="small" onClick={load} disabled={loading}>
-          <RefreshIcon fontSize="small" />
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Tooltip title="Download CSV (all exchange fills)" arrow>
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={csvLoading ? <CircularProgress size={12} /> : <DownloadIcon fontSize="small" />}
+                onClick={handleDownloadCSV}
+                disabled={csvLoading}
+                sx={{ fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 0, textTransform: 'none',
+                      borderColor: 'rgba(255,255,255,0.2)', color: 'text.secondary',
+                      '&:hover': { borderColor: '#42a5f5', color: '#42a5f5' } }}
+              >
+                CSV
+              </Button>
+            </span>
+          </Tooltip>
+          <Tooltip title="Download PDF (trade report)" arrow>
+            <span>
+              <Button
+                size="small"
+                variant="outlined"
+                startIcon={<PictureAsPdfIcon fontSize="small" />}
+                onClick={handleDownloadPDF}
+                disabled={!trades.length}
+                sx={{ fontSize: '0.7rem', py: 0.3, px: 1, minWidth: 0, textTransform: 'none',
+                      borderColor: 'rgba(255,255,255,0.2)', color: 'text.secondary',
+                      '&:hover': { borderColor: '#ef9a9a', color: '#ef9a9a' } }}
+              >
+                PDF
+              </Button>
+            </span>
+          </Tooltip>
+          <IconButton size="small" onClick={load} disabled={loading}>
+            <RefreshIcon fontSize="small" />
+          </IconButton>
+        </Box>
       </Box>
 
       {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}

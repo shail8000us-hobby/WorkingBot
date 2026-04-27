@@ -101,6 +101,21 @@ async def run_exit_all(monitor) -> None:
     # would block every round otherwise (3 rounds × 2s = 6s << 180s TTL).
     _force_clear_being_closed(session, sid)
 
+    # ── Pre-flight Layer 1: Order-ID verification ────────────────────────
+    # Query each 'closed' position's close_order_id directly on Delta Exchange.
+    # GET /v2/orders/{id} gives deterministic filled_size for that specific order.
+    # Positions not fully confirmed are reopened for exit rounds to re-close.
+    # 100% session-internal — only queries THIS session's own order IDs.
+    await _reopen_unverified_closed_positions(monitor, session, sid)
+
+    # ── Pre-flight Layer 2: Sub-ledger net-lots verification ─────────────
+    # The position sub-ledger (mmm_ledger.py) tracks every fill persisted via
+    # fill_sync. Query: net_lots = sell_fills - buy_fills per symbol.
+    # If ledger shows open lots at a symbol but positions[] says closed, reopen.
+    # This catches cases where fill_sync confirmed a close fill that was wrong
+    # (the authoritative ledger will show more sell than buy fills).
+    _reopen_from_ledger(session, sid)
+
     # ── Kill Switch mode: cancel pending adjustment orders + use market orders ──
     kill_switch_mode = bool(session.get('_kill_switch_triggered'))
     if kill_switch_mode:
@@ -155,12 +170,13 @@ async def run_exit_all(monitor) -> None:
         log.warning(f"[{sid}] EXIT ALL COMPLETE: all positions closed")
         _emit_exit_completed(sid, completed_at, initiated_at)
 
-    # --- Exchange-side verification ---
-    # Local session state (positions[], total_lots) can be stale or inconsistent.
-    # Before stopping the monitor, query the exchange directly to confirm that
-    # no options positions remain at the strikes this session was managing.
-    # If positions are still live on the exchange, mark as partial — never silently stop.
-    await _verify_exchange_cleared(monitor, session, sid)
+    # --- Exchange-side alert-only verification ---
+    # Query the exchange to detect any remaining positions at managed strikes.
+    # This is ALERT-ONLY — no orders are placed here. Multiple algos can share
+    # the same strike, so we cannot safely close exchange positions without
+    # knowing which session owns them. Session-internal safety re-close (for
+    # unconfirmed-closed positions) is handled earlier via _collect_side_positions.
+    await _verify_and_alert_remaining(monitor, session, sid)
 
     # Zero unrealized_pnl in-memory so stop()'s full save writes 0.0.
     # Without this the last heartbeat's mark-to-market stays in DB and the
@@ -368,57 +384,81 @@ async def _run_exit_rounds(monitor, use_market_orders: bool = False) -> None:
 # Helpers
 # =============================================================================
 
-async def _verify_exchange_cleared(monitor, session: Dict, sid: str) -> None:
+async def _verify_and_alert_remaining(monitor, session: Dict, sid: str) -> None:
     """
-    Query the exchange for any remaining options positions at the strikes this
-    session was managing. If any are found, mark _exit_all_partial=True and
-    populate _exit_all_failed_positions so the user knows exactly what is still open.
+    Alert-only verification: query the exchange for open options positions at
+    ALL strikes this session ever managed.
 
-    This is the final guard against local session state lying about "all closed".
-    Called after all close rounds complete, before monitor.stop().
+    IMPORTANT: This function NEVER places orders. Multiple algos may share the
+    same strike; we cannot safely close exchange positions without knowing which
+    session owns them. Session-internal safety re-close for unconfirmed-closed
+    positions is done earlier via _collect_side_positions including those entries.
+
+    On exchange API failure: always mark _exit_all_unverified + Telegram alert.
+    Old behaviour (silent pass when rounds > 0) is the bug that caused mmm25apr26-1.
     """
     try:
-        client = monitor.executor.client
-        all_positions = await client.get_positions_for_underlying('BTC')
+        # Use _create_rest_client() → AsyncDeltaClient which has get_positions_margined.
+        # Do NOT use monitor.executor.client (UnifiedAPIClient) — it lacks this method.
+        rest = monitor.executor._create_rest_client()
+        resp = await rest._request_with_retry(method="GET", path="/v2/positions/margined")
+        all_positions = resp.get('result', []) if isinstance(resp, dict) else []
     except Exception as e:
-        log.error(f"[{sid}] EXIT ALL: Exchange verification query failed: {e} — cannot confirm positions cleared")
-        # Can't verify — don't falsely claim success if we had 0 rounds attempted
-        if session.get('_exit_all_rounds_attempted', 0) == 0:
-            session['_exit_all_partial'] = True
-            session['_exit_all_failed_positions'] = _build_failed_list(session)
-            log.warning(f"[{sid}] EXIT ALL: 0 rounds attempted and exchange unverifiable — marking partial")
+        log.error(
+            f"[{sid}] EXIT ALL verify: exchange query failed: {e} — "
+            f"CANNOT confirm positions cleared"
+        )
+        # Always flag unverified regardless of rounds_attempted.
+        # Previously only marked partial when rounds==0; that silent pass caused
+        # the mmm25apr26-1 incident where 72 lots remained open undetected.
+        session['_exit_all_unverified'] = True
+        session['_exit_all_partial'] = True
+        session['_exit_all_failed_positions'] = _build_failed_list(session)
+        try:
+            from .mmm_telegram import send_telegram_message
+            send_telegram_message(
+                f"⚠️ [{sid}] EXIT ALL: exchange verification FAILED ({e}). "
+                f"Positions may still be open — check exchange manually."
+            )
+        except Exception:
+            pass
         return
 
-    # Build set of ALL managed strikes this session ever held lots for.
-    # Intentionally includes positions our ledger marks as 'closed' — if the
-    # ledger closed them prematurely, the exchange may still have the position
-    # and we need to catch that here.  Only positions with lots > 0 are included
-    # (positions that never had lots, or that are 0-lot placeholders, are excluded).
-    tracked_strikes = set()
+    # Build managed_strikes from EVERY strike this session ever touched.
+    # Intentionally includes positions with status='closed' — if the exchange
+    # still has a position at a closed strike, the operator must know about it.
+    managed_strikes: set = set()
     for sk in ('ce', 'pe'):
         side_state = session.get(sk, {})
         if not isinstance(side_state, dict):
             continue
+        active_strike = side_state.get('active_strike', 0)
+        if active_strike:
+            managed_strikes.add(int(active_strike))
         for pos in side_state.get('positions', []):
-            if pos.get('lots', 0) > 0:
-                tracked_strikes.add(int(pos.get('strike', 0)))
+            strike = pos.get('strike', 0)
+            if strike:
+                managed_strikes.add(int(strike))
+        for fp in side_state.get('frozen_positions', []):
+            strike = fp.get('strike', 0)
+            if strike:
+                managed_strikes.add(int(strike))
 
-    # Find any options positions on the exchange matching our tracked strikes
-    # Option symbols: C-BTC-71000-210326 / P-BTC-71000-210326
+    # Collect any option positions on the exchange at managed strikes.
+    # /v2/positions/margined returns items with symbol in product.symbol or product_symbol.
     live_on_exchange = []
     for ep in all_positions:
-        sym = ep.get('product_symbol', '')
+        sym = (ep.get('product', {}) or {}).get('symbol', '') or ep.get('product_symbol', '') or ep.get('symbol', '')
         size = ep.get('size', 0)
         if not size or size == 0:
             continue
-        # Only check option symbols (contain '-BTC-')
         if '-BTC-' not in sym:
             continue
         parts = sym.split('-')
         if len(parts) >= 3:
             try:
                 strike = int(parts[2])
-                if strike in tracked_strikes:
+                if strike in managed_strikes:
                     live_on_exchange.append({
                         'symbol': sym,
                         'size': size,
@@ -427,15 +467,30 @@ async def _verify_exchange_cleared(monitor, session: Dict, sid: str) -> None:
             except (ValueError, IndexError):
                 pass
 
-    if live_on_exchange:
-        session['_exit_all_partial'] = True
-        session['_exit_all_failed_positions'] = live_on_exchange
-        log.error(
-            f"[{sid}] EXIT ALL: Exchange verification found {len(live_on_exchange)} "
-            f"option position(s) still open: {live_on_exchange}"
+    if not live_on_exchange:
+        log.info(f"[{sid}] EXIT ALL verify: exchange confirmed — no positions at managed strikes")
+        return
+
+    # Positions found — mark unverified and alert. Do NOT place any orders here.
+    # The operator must manually determine whether these belong to this session
+    # or to another concurrently-running algo at the same strike.
+    session['_exit_all_unverified'] = True
+    session['_exit_all_partial'] = True
+    session['_exit_all_failed_positions'] = live_on_exchange
+    log.error(
+        f"[{sid}] EXIT ALL verify: {len(live_on_exchange)} position(s) still on exchange "
+        f"at managed strikes: {live_on_exchange}. "
+        f"Could belong to another session — manual verification required."
+    )
+    try:
+        from .mmm_telegram import send_telegram_message
+        send_telegram_message(
+            f"⚠️ [{sid}] EXIT ALL: {len(live_on_exchange)} position(s) still open at managed "
+            f"strike(s): {[p['symbol'] for p in live_on_exchange]}. "
+            f"May belong to another algo — check exchange manually."
         )
-    else:
-        log.info(f"[{sid}] EXIT ALL: Exchange verification confirmed — no tracked options positions remain")
+    except Exception:
+        pass
 
 
 def _collect_side_positions(session: Dict, side_key: str, spot_price: float) -> List[Dict]:
@@ -462,7 +517,16 @@ def _collect_side_positions(session: Dict, side_key: str, spot_price: float) -> 
     results = []
     for pos in side_state.get('positions', []):
         if pos.get('status') == 'closed':
-            continue
+            # Only skip a 'closed' position if the fill was explicitly confirmed by
+            # fill_sync (_fill_confirmed=True).  Positions marked 'closed' WITHOUT
+            # fill confirmation were written prematurely (e.g. close_at_5 marks status
+            # before the fill arrives).  Include them so exit_all re-attempts the close
+            # using reduce_only=True — if the position is truly gone on exchange the
+            # order fails gracefully with no_position_for_reduce_only (treated as success).
+            # This is the fix for the mmm25apr26-1 incident (79000 lots missed).
+            if pos.get('_fill_confirmed'):
+                continue
+            # Unconfirmed-closed: fall through and include below
         if pos.get('lots', 0) <= 0:
             continue
         # Skip genuinely in-flight positions (fresh _being_closed flags).
@@ -548,6 +612,216 @@ def _build_failed_list(session: Dict) -> List[Dict]:
                     'type': pos.get('type', 'unknown'),
                 })
     return failed
+
+
+async def _reopen_unverified_closed_positions(monitor, session: Dict, sid: str) -> None:
+    """
+    Order-ID-based pre-flight before exit rounds.
+
+    For every position marked status='closed', query its close_order_id directly
+    via GET /v2/orders/{id} and check that filled_size covers all lots.  Positions
+    that are NOT fully confirmed are reset to status='active' so the normal exit
+    rounds re-close them.
+
+    Why this is the right fix (not fill_sync or position sweeps):
+      - close_order_id is THIS session's own order — no ambiguity with other algos
+      - GET /v2/orders/{id} is deterministic — no time-cursor, no fill matching
+      - reduce_only on re-close is safe: if truly closed, exchange rejects gracefully
+      - Does not query or touch any position not owned by this session
+
+    Sets _fill_confirmed=True on verified-closed positions so _collect_side_positions
+    does not redundantly re-include them.
+    """
+    executor = monitor.executor
+    reopened = 0
+
+    for sk in ('ce', 'pe'):
+        side_state = session.get(sk, {})
+        if not isinstance(side_state, dict):
+            continue
+        for pos in side_state.get('positions', []):
+            if pos.get('status') != 'closed':
+                continue
+            lots = int(pos.get('lots', 0) or 0)
+            if lots <= 0:
+                continue
+
+            close_oid = str(pos.get('close_order_id', '') or '').strip()
+
+            # Case 1: marked 'closed' but no close_order_id recorded.
+            # close_at_5 / wind_down always sets close_order_id before marking
+            # closed.  If it is missing, the status was written prematurely.
+            if not close_oid:
+                pos['status'] = 'active'
+                pos['_fill_confirmed'] = False
+                reopened += 1
+                log.warning(
+                    f"[{sid}] EXIT pre-flight: reopening {sk.upper()} "
+                    f"pos {pos.get('id')} @ {pos.get('strike')} — "
+                    f"status='closed' but no close_order_id recorded"
+                )
+                continue
+
+            # Case 2: has close_order_id — query exchange directly
+            try:
+                order_data = await executor._get_order_status(close_oid)
+            except Exception as qe:
+                order_data = None
+                log.warning(
+                    f"[{sid}] EXIT pre-flight: order query failed for "
+                    f"{close_oid} ({qe}) — reopening conservatively"
+                )
+
+            if order_data is None:
+                # Could not reach exchange or order expired from API.
+                # Conservatively reopen so exit rounds retry.
+                pos['status'] = 'active'
+                pos['_fill_confirmed'] = False
+                reopened += 1
+                log.warning(
+                    f"[{sid}] EXIT pre-flight: reopening {sk.upper()} "
+                    f"pos {pos.get('id')} @ {pos.get('strike')} — "
+                    f"close_order {close_oid} not found on exchange"
+                )
+                continue
+
+            # Compute filled lots from exchange order data.
+            # Delta returns: size (original), unfilled_size (remaining).
+            order_size = int(order_data.get('size', 0) or 0)
+            unfilled = int(order_data.get('unfilled_size', 0) or 0)
+            filled_size = order_size - unfilled if order_size > 0 else 0
+            # Fallback: some responses carry filled_size directly
+            if filled_size <= 0:
+                filled_size = int(order_data.get('filled_size', 0) or 0)
+
+            state = (
+                order_data.get('state', '') or order_data.get('status', '')
+            ).lower()
+
+            fully_confirmed = (filled_size >= lots) or (state in {'filled', 'closed', 'completed'} and filled_size > 0)
+
+            if fully_confirmed:
+                # Genuine close confirmed by exchange order record.
+                # Stamp _fill_confirmed so _collect_side_positions skips it.
+                pos['_fill_confirmed'] = True
+                log.debug(
+                    f"[{sid}] EXIT pre-flight: {sk.upper()} pos {pos.get('id')} "
+                    f"@ {pos.get('strike')} confirmed closed "
+                    f"(order {close_oid} state={state}, filled={filled_size}/{lots})"
+                )
+            else:
+                # Close not fully confirmed — reopen for re-close attempt
+                pos['status'] = 'active'
+                pos['_fill_confirmed'] = False
+                reopened += 1
+                log.warning(
+                    f"[{sid}] EXIT pre-flight: reopening {sk.upper()} "
+                    f"pos {pos.get('id')} @ {pos.get('strike')} — "
+                    f"close_order {close_oid} state={state}, "
+                    f"filled={filled_size}/{lots} lots (not fully confirmed)"
+                )
+
+    if reopened:
+        log.warning(
+            f"[{sid}] EXIT pre-flight: {reopened} position(s) reopened "
+            f"after order-ID verification — exit rounds will re-close them"
+        )
+        _enqueue_exit_event(sid, 'PREFLIGHT_REOPEN', {
+            'reopened_count': reopened,
+            'reason': 'close_order not fully confirmed on exchange',
+        })
+        try:
+            from .mmm_telegram import send_telegram_message
+            send_telegram_message(
+                f"⚠️ [{sid}] EXIT ALL pre-flight: {reopened} position(s) were marked "
+                f"'closed' in session but close order not confirmed on exchange — "
+                f"re-closing now."
+            )
+        except Exception:
+            pass
+
+
+def _reopen_from_ledger(session: Dict, sid: str) -> None:
+    """
+    Sub-ledger net-lots check: reopen any position that the ledger shows
+    as still having open short lots, even if positions[] says closed.
+
+    The ledger (mmm_ledger.py) records every fill (sell + buy) tagged by
+    session_id. If sell_fills > buy_fills for a symbol, the session still
+    has open short exposure — regardless of what _fill_confirmed says.
+
+    Positions are matched to ledger by building the same symbol the position
+    would have (option_type + underlying + strike + expiry). If the ledger
+    shows net_lots > 0 for a symbol that positions[] marks closed, the
+    position is reopened for exit rounds to re-close (reduce_only=True).
+
+    Fail-safe: all ledger errors are caught; session close proceeds even
+    if ledger is unavailable (belt-and-suspenders, not a hard dependency).
+    """
+    try:
+        from .mmm_ledger import get_session_open_symbols
+    except Exception as _le:
+        log.warning(f"[{sid}] EXIT pre-flight ledger: import failed ({_le}) — skipping")
+        return
+
+    try:
+        open_symbols = get_session_open_symbols(sid)
+    except Exception as _qe:
+        log.warning(f"[{sid}] EXIT pre-flight ledger: query failed ({_qe}) — skipping")
+        return
+
+    if not open_symbols:
+        log.debug(f"[{sid}] EXIT pre-flight ledger: no open symbols found")
+        return
+
+    # Build a map of symbol → net_lots from ledger
+    ledger_open = {entry['symbol']: entry['net_lots'] for entry in open_symbols}
+
+    reopened = 0
+    for sk in ('ce', 'pe'):
+        side_state = session.get(sk, {})
+        if not isinstance(side_state, dict):
+            continue
+        for pos in side_state.get('positions', []):
+            if pos.get('status') != 'closed':
+                continue
+            pos_symbol = pos.get('symbol', '')
+            if not pos_symbol:
+                continue
+            ledger_lots = ledger_open.get(pos_symbol, 0)
+            if ledger_lots <= 0:
+                continue
+            # Ledger shows open lots; positions[] says closed — discrepancy
+            pos['status'] = 'active'
+            pos['_fill_confirmed'] = False
+            # Adjust lots to match what ledger says is still open (may differ
+            # from original lots if partially closed)
+            if ledger_lots < pos.get('lots', 0):
+                pos['lots'] = ledger_lots
+            reopened += 1
+            log.warning(
+                f"[{sid}] EXIT pre-flight ledger: reopening {sk.upper()} "
+                f"pos {pos.get('id')} @ {pos.get('strike')} — "
+                f"ledger shows {ledger_lots} lots still open at {pos_symbol}"
+            )
+
+    if reopened:
+        log.warning(
+            f"[{sid}] EXIT pre-flight ledger: {reopened} position(s) reopened "
+            f"from sub-ledger mismatch — exit rounds will re-close them"
+        )
+        _enqueue_exit_event(sid, 'LEDGER_PREFLIGHT_REOPEN', {
+            'reopened_count': reopened,
+            'open_symbols': [s['symbol'] for s in open_symbols],
+        })
+        try:
+            from .mmm_telegram import send_telegram_message
+            send_telegram_message(
+                f"⚠️ [{sid}] EXIT ALL ledger pre-flight: {reopened} position(s) marked "
+                f"'closed' in session but sub-ledger shows open lots — re-closing."
+            )
+        except Exception:
+            pass
 
 
 async def _cancel_pending_for_kill_switch(monitor, sid: str) -> None:

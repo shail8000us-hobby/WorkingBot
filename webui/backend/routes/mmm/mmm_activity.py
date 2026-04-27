@@ -188,6 +188,9 @@ ACTIVITY_TYPES = {
     # Perp Hedge
     'perp_hedge': 'Perp Hedge',
 
+    # Delta Neutral Engine
+    'delta_engine': 'Delta Hedge',
+
     # Emergency
     'emergency': 'Emergency',
     'emergency_order': 'Emergency Order',
@@ -216,6 +219,7 @@ ACTIVITY_TYPES = {
     # Fill sync
     'fill_sync_confirmed': 'Fill Confirmed',
     'fill_sync_partial': 'Partial Sub-Fill',
+    'worthless_expiry_closed': 'Worthless Expiry Closed',
 
     # Ghost-close recovery
     'ghost_close_recovered': 'Ghost Close Recovered',
@@ -326,7 +330,8 @@ ACTIVITY_CATEGORIES = {
                     'manual_adjust_lots', 'manual_close_strike', 'manual_inject',
                     'manual_reduce', 'set_active_strike', 'pin_trigger', 'unpin_trigger',
                     'auto_atm_promote',
-                    'fill_sync_confirmed', 'fill_sync_partial'},
+                    'fill_sync_confirmed', 'fill_sync_partial',
+                    'worthless_expiry_closed'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                 'capacity_full',
                 'safety', 'guardian_violation', 'guardian_auto_heal', 'god_correction',
