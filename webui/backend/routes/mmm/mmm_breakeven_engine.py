@@ -560,10 +560,43 @@ class BreakevenEngine:
             if prev_band_width_pct > 0 and band_width_pct < prev_band_width_pct * 0.70:
                 band_contracting = True
 
-        # Narrow band warning
+        # Narrow band warning — DTE-aware + position-size-aware threshold.
+        # Far from expiry a narrow band is a genuine warning; near expiry the
+        # band contracts structurally as gamma rises on existing positions.
+        # Threshold scales down with DTE so the warning only fires when it carries signal.
         narrow_threshold = params.get('breakeven_narrow_band_threshold', 5.0)
+        _dte_mins = session.get('_minutes_to_expiry')
+        if _dte_mins is not None:
+            if _dte_mins < 120:       # < 2h: purely structural, disable warning
+                narrow_threshold = 0.0
+            elif _dte_mins < 240:     # 2h–4h
+                narrow_threshold = min(narrow_threshold, 1.0)
+            elif _dte_mins < 600:     # 4h–10h
+                narrow_threshold = min(narrow_threshold, 2.0)
+            elif _dte_mins < 1440:    # 10h–24h
+                narrow_threshold = min(narrow_threshold, 3.0)
+            elif _dte_mins < 4320:    # 24h–3d
+                narrow_threshold = min(narrow_threshold, 4.0)
+            # >= 3 days: full threshold unchanged
+
+        # Position-size awareness: when active lots have grown well beyond initial_lots
+        # (harvester expanding the book), the band naturally contracts from collected
+        # premium — relax threshold to avoid false narrow-band spam.
+        if narrow_threshold > 0:
+            _init_lots = max(int(params.get('initial_lots', 10)), 1)
+            _cur_lots = max(
+                session.get('ce', {}).get('active_lots', 0),
+                session.get('pe', {}).get('active_lots', 0),
+            )
+            if _cur_lots >= _init_lots * 3:
+                narrow_threshold *= 0.60   # 40% relaxation at 3× initial lots
+            elif _cur_lots >= _init_lots * 2:
+                narrow_threshold *= 0.75   # 25% relaxation at 2× initial lots
+
         is_narrow_band = (
-            band_width_pct is not None and band_width_pct < narrow_threshold
+            narrow_threshold > 0
+            and band_width_pct is not None
+            and band_width_pct < narrow_threshold
         )
 
         # Perp included?
@@ -590,6 +623,7 @@ class BreakevenEngine:
             'band_width_prev_pct': round(prev_band_width_pct, 4) if prev_band_width_pct is not None else None,
             'band_contracting': band_contracting,
             'is_narrow_band': is_narrow_band,
+            'effective_narrow_threshold': round(narrow_threshold, 4),
             'computed_at': datetime.now(timezone.utc).isoformat(),
             'positions_included': positions_included,
             'perp_included': perp_included,

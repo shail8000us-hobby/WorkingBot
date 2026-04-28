@@ -262,9 +262,24 @@ class TestComputeRegimeAction:
         assert _compute_regime_action(sess) == ACTION_FORCE_REDUCE
 
     @pytest.mark.sealed
-    def test_c_cra_3_vol_high_with_trend(self):
-        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+    def test_c_cra_3_vol_high_trend_up_blocks_ce_only(self):
+        """VOL_HIGH + TREND_UP: CE is aggressor (calls go ITM); PE safe + high premium → allow PE sells."""
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_CE_SELLS
         sess = self._sess_with_regimes(vol='HIGH', trend='TREND_UP')
+        assert _compute_regime_action(sess) == ACTION_BLOCK_CE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_3b_vol_high_trend_down_blocks_pe_only(self):
+        """VOL_HIGH + TREND_DOWN: PE is aggressor (puts go ITM); CE safe + high premium → allow CE sells."""
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_PE_SELLS
+        sess = self._sess_with_regimes(vol='HIGH', trend='TREND_DOWN')
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_3c_vol_high_trend_normal_blocks_all(self):
+        """VOL_HIGH + TREND_NORMAL: no directional signal → conservative BLOCK_ALL_SELLS."""
+        from webui.backend.routes.mmm.mmm_regime import _compute_regime_action, ACTION_BLOCK_ALL_SELLS
+        sess = self._sess_with_regimes(vol='HIGH', trend='NORMAL')
         assert _compute_regime_action(sess) == ACTION_BLOCK_ALL_SELLS
 
     @pytest.mark.sealed
@@ -444,6 +459,26 @@ class TestComputeRegimeAction:
         assert ce_dg > pe_dg * 3, (
             f"CE ($Γ={ce_dg}) should far exceed PE ($Γ={pe_dg}) given dominant CE positions"
         )
+
+    @pytest.mark.sealed
+    def test_c_cra_7b_trend_up_vol_elevated_blocks_ce_only(self):
+        """TREND_UP + VOL_ELEVATED: CE is the aggressor (calls go ITM); PE sells must remain free."""
+        from webui.backend.routes.mmm.mmm_regime import (
+            _compute_regime_action, ACTION_BLOCK_CE_SELLS, TREND_TIER_GUARD
+        )
+        sess = self._sess_with_regimes(vol='ELEVATED', trend='TREND_UP', tier=TREND_TIER_GUARD)
+        sess['_trend_direction'] = 'up'
+        assert _compute_regime_action(sess) == ACTION_BLOCK_CE_SELLS
+
+    @pytest.mark.sealed
+    def test_c_cra_8b_trend_down_vol_elevated_blocks_pe_only(self):
+        """TREND_DOWN + VOL_ELEVATED: PE is the aggressor (puts go ITM); CE sells must remain free."""
+        from webui.backend.routes.mmm.mmm_regime import (
+            _compute_regime_action, ACTION_BLOCK_PE_SELLS, TREND_TIER_GUARD
+        )
+        sess = self._sess_with_regimes(vol='ELEVATED', trend='TREND_DOWN', tier=TREND_TIER_GUARD)
+        sess['_trend_direction'] = 'down'
+        assert _compute_regime_action(sess) == ACTION_BLOCK_PE_SELLS
 
     @pytest.mark.sealed
     def test_c_cra_7_trend_up_tier2_block_ce(self):

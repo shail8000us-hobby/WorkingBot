@@ -135,6 +135,7 @@ const SECTION_CATEGORY = {
   gammaDetector:     'advanced',
   reverseMode:       'advanced',
   godLayer:          'advanced',
+  arbiter:           'advanced',
 };
 
 const CATEGORY_ORDER = ['critical', 'core', 'execution', 'advanced'];
@@ -477,6 +478,21 @@ const PARAM_GROUPS = {
       },
     ],
   },
+  arbiter: {
+    title: '⚖️ Coordination Arbiter (Phase 3 — Live)',
+    color: '#00897b',
+    blurb: 'Sealed-hierarchy coordinator. At extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED) the arbiter bypasses operational gates (whipsaw, regime BLOCK_ALL, asymmetry, cooldown) and executes defensive premium-aware shift / close / margin-recovery actions per the 7-rule hierarchy. Disabled in last 30 min before expiry (Rule 5 cool-down). Stale signals escalate one tier (Rule 6). Hard stop and ATM shield (Tier 0) are never overridden. ON by default.',
+    sections: [
+      {
+        header: 'Master Switch',
+        params: ['arbiter_enabled'],
+      },
+      {
+        header: 'Gamma DTE Relax Ladder',
+        params: ['gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult'],
+      },
+    ],
+  },
   reverseMode: {
     title: '🔄 Controlled Reverse Mode',
     color: '#e91e63',
@@ -815,6 +831,10 @@ const PARAM_TOOLTIPS = {
   god_pnl_threshold: 'Minimum $ PNL drop over the check window needed for God to consider acting. If PNL dropped less than this, God takes a fresh snapshot and goes back to sleep. Set conservatively high (e.g. $40–$80) when first enabling — lower only after observing real god_correction events. Default $40.',
   god_min_silence_min: 'Minimum minutes since the last executed adjustment before God considers acting. If the algo adjusted recently, God assumes it is working and does nothing. Both this AND god_pnl_threshold must be exceeded. Default 20 minutes.',
   god_cooldown_min: 'Minutes God stays silent after firing a correction. Prevents God from firing repeatedly on the same move. After the cooldown, God takes a fresh snapshot and begins a new detection window. Default 45 minutes.',
+  // Phase 3 Coordination Arbiter
+  arbiter_enabled: 'Master switch for the Coordination Arbiter. ON by default. When ON, the arbiter activates only at extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED): it bypasses operational gates (whipsaw, regime BLOCK_ALL, asymmetry, cooldown) and routes defensive premium-aware shift / close / margin-recovery actions per the sealed hierarchy. Disabled in last 30 min before expiry per Rule 5. Stale signals escalate one tier per Rule 6. Hard stop, ATM shield, and time stop (Tier 0) are NEVER overridden. Turn OFF only to fall back to the legacy un-coordinated module behaviour (gamma EMERGENCY pauses session, etc.).',
+  gamma_dte_ladder_far_mult: 'Gamma limits multiplier for sessions > 5 days to expiry. γ_per_contract is structurally low at far DTE so engine relaxes thresholds. Default 1.5×. Range 1.0–3.0. Increase if your far-DTE sessions are firing gamma EMERGENCY when they shouldn\'t.',
+  gamma_dte_ladder_multi_mult: 'Gamma limits multiplier for sessions 1–5 days to expiry. Light relaxation between far-DTE and baseline. Default 1.25×. Range 1.0–3.0.',
 };
 
 // =============================================================================

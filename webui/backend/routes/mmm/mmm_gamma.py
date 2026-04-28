@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple, TypedDict
 
 from .mmm_constants import LOT_SIZE_BTC
+from .mmm_state import record_signal_update
 
 log = logging.getLogger('mmm_gamma')
 
@@ -240,12 +241,56 @@ def _update_gamma_cap(
     gamma_history.append((now, dollar_gamma))
     session['_gamma_history'] = list(gamma_history)  # Back to list for JSON safety
 
-    # ── Get limits with near-expiry multiplier (Section B.3) ──
-    # Defaults scaled for BTC ($67K spot produces ~$1000+ dollar gamma with 100 lots)
+    # ── Get limits — position-size-aware + DTE-aware (Section B.3) ──
+    # A6-11 derived these from initial_lots at session creation.  Here we re-scale
+    # dynamically if active_lots grew beyond initial_lots via harvester/adjustments.
     soft_limit = params.get('gamma_soft_limit', 2500.0)
     hard_limit = params.get('gamma_hard_limit', 5000.0)
     emergency_limit = params.get('gamma_emergency_limit', 10000.0)
 
+    # Dynamic lot scaling: use max(ce, pe) active lots — the larger live side drives
+    # real gamma exposure.  Only scales UP; never tightens when lots temporarily dip.
+    _initial_lots = max(int(params.get('initial_lots', 10)), 1)
+    _ce_lots = session.get('ce', {}).get('active_lots', 0)
+    _pe_lots = session.get('pe', {}).get('active_lots', 0)
+    _effective_lots = max(_initial_lots, _ce_lots, _pe_lots)
+    if _effective_lots > _initial_lots:
+        _lot_scale = _effective_lots / _initial_lots
+        soft_limit *= _lot_scale
+        hard_limit *= _lot_scale
+        emergency_limit *= _lot_scale
+    session['_gamma_effective_lots'] = _effective_lots
+
+    # ── DTE Relax Ladder (Phase 3 fix, 2026-04-28) ──────────────────────────
+    # Phase 1 audit (audit/mmm/coordination/04_gamma_engine_audit.md) confirmed
+    # user complaint: engine treated 5-DTE same as 1-DTE, despite γ_per_contract
+    # being structurally lower at 5-DTE. Engine had only 2 DTE bands (≤30 min
+    # tighten + ≤2 hr hedge-relax). Far-from-expiry sessions had no relaxation.
+    #
+    # New graduated ladder (TUNABLE — defaults are starting points):
+    #   > 5 days     → 1.5×   (γ structurally low; relax)
+    #   1–5 days     → 1.25×  (light relax)
+    #   2 hr – 1 day → 1.0×   (baseline)
+    #   30 min – 2 hr → 1.0×  (Tier C hedge-relax handles reactive hedges)
+    #   ≤ 30 min     → 0.5×   (existing tighten — keep per Rule 5 cool-down doctrine)
+    #
+    # Multipliers compose: ladder factor first, then near-expiry override.
+    # Ladder values are params so operators can tune without code changes.
+    if minutes_to_expiry is not None:
+        if minutes_to_expiry > 5 * 24 * 60:
+            ladder_mult = params.get('gamma_dte_ladder_far_mult', 1.5)
+        elif minutes_to_expiry > 24 * 60:
+            ladder_mult = params.get('gamma_dte_ladder_multi_mult', 1.25)
+        else:
+            ladder_mult = 1.0
+        if ladder_mult != 1.0:
+            soft_limit *= ladder_mult
+            hard_limit *= ladder_mult
+            emergency_limit *= ladder_mult
+
+    # Near-expiry ×0.5 tightening: applied AFTER lot scaling so the regime label
+    # correctly reflects danger level, but the hedge limit (Tier C below) then
+    # re-relaxes via dte_hedge_mult so reactive hedges are not blocked.
     if minutes_to_expiry is not None and minutes_to_expiry <= 30:
         multiplier = params.get('gamma_near_expiry_multiplier', 0.5)
         soft_limit *= multiplier
@@ -294,6 +339,8 @@ def _update_gamma_cap(
     session['_gamma_hard_limit_effective'] = round(hard_limit, 2)
     session['_gamma_emergency_limit_effective'] = round(emergency_limit, 2)
 
+    # Phase 3 Rule 6: timestamp gamma_regime for arbiter stale-detection
+    record_signal_update(session, 'gamma_regime')
     return new_regime
 
 

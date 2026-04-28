@@ -54,6 +54,8 @@
 	- `webui/backend/routes/mmm/mmm_executor.py` (chunk 5: lines 1801–EOF; file complete)
 	- `webui/backend/routes/mmm/mmm_initializer.py` (chunk 1: lines 1–450)
 	- `webui/backend/routes/mmm/mmm_initializer.py` (chunk 2: lines 451–EOF; file complete)
+	- `webui/backend/routes/mmm/mmm_trigger.py` (phase 03, chunk 1: lines 1–487)
+	- `webui/backend/routes/mmm/mmm_trigger.py` (phase 03, chunk 2: lines 488–EOF; file complete)
 
 ## What was audited
 
@@ -403,6 +405,8 @@
 	- `F03-P3-067`: no direct sealed helper contracts for `_cancel_order` cancel-400 reconciliation, `_wait_for_fill` dead/timeout transitions, or `get_executor` singleton semantics
 	- `F03-P3-069`: initializer core parsing/selection/manual-validation branches lack direct sealed contracts; current coverage is mostly consumer-level and mocked
 	- `F03-P3-071`: chunk-02 initializer helper surfaces (`build_symbol`, `_extract_ticker_data`, `check_liquidity`, premium helpers) lack direct sealed contracts
+	- `F03-P3-074`: `check_frozen_pnl_trigger` enabled-path return always sets `frozen_triggered=True` even when `outcome='none'` (semantic drift for downstream telemetry/contracts)
+	- `F03-P3-075`: no direct sealed coverage for trigger pin auto-expiry (`_MAX_PIN_ADJ`) and stale `trigger_snapshot` pruning branches in `update_trigger_snapshots`
 
 ## Artifacts created/updated
 
@@ -462,6 +466,8 @@
 	- `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_01_audit.md`
 	- `audit/mmm/file_reports/backend/phase_03_mmm_initializer_chunk_02_audit.md`
 	- `audit/mmm/file_reports/backend/phase_03_mmm_pending_orders_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_trigger_chunk_01_audit.md`
+	- `audit/mmm/file_reports/backend/phase_03_mmm_trigger_chunk_02_audit.md`
 - Updated:
 	- `audit/mmm/phases/phase_00_setup.md`
 	- `audit/mmm/00_MASTER_INDEX.md`
@@ -476,4 +482,4 @@
 
 ## Exact next step
 
-- Continue Phase 03 execution-primitives audit with `webui/backend/routes/mmm/mmm_trigger.py` chunk 01.
+- Continue Phase 03 execution-primitives audit with `webui/backend/routes/mmm/mmm_fill_sync.py` chunk 01.

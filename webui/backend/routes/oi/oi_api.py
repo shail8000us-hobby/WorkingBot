@@ -24,6 +24,8 @@ from datetime import datetime, timezone
 
 from flask import Blueprint, jsonify, request
 
+from .gamma_engine import compute_gamma_state
+
 # Dedicated logger — never pollutes MMM or root logs
 log = logging.getLogger('oi_aggregator')
 
@@ -150,8 +152,16 @@ def _run_single_cycle():
         try:
             metadata = _store.get_metadata_for_emit(underlying='BTC')
             _socketio.emit('oi_update', metadata, namespace='/oi')
+            
+            # Compute and emit Gamma State
+            agg_rows = _store.get_aggregated(expiries=['ALL'], underlying='BTC')
+            spot = _store.get_underlying_price('BTC')
+            gamma_state = compute_gamma_state(agg_rows, spot)
+            if gamma_state:
+                _socketio.emit('gamma_update', gamma_state, namespace='/oi')
+
         except Exception as e:
-            log.warning('[OI] Failed to emit oi_update: %s', e)
+            log.warning('[OI] Failed to emit updates: %s', e)
 
         # Emit spikes
         for spike in all_spikes:
@@ -268,6 +278,25 @@ def oi_snapshot():
         'ts': datetime.now(timezone.utc).isoformat(),
     })
 
+
+@oi_bp.route('/gamma_state', methods=['GET'])
+def oi_gamma_state():
+    """Current Gamma Profile state for Dashboards."""
+    _ensure_initialized()
+    underlying = request.args.get('underlying', 'BTC').upper()
+    if not _store:
+        return jsonify({'message': 'Store not initialized'}), 503
+        
+    agg_rows = _store.get_aggregated(expiries=['ALL'], underlying=underlying)
+    spot = _store.get_underlying_price(underlying)
+    gamma_state = compute_gamma_state(agg_rows, spot)
+    
+    return jsonify({
+        'underlying': underlying,
+        'underlying_price': spot,
+        'gamma_state': gamma_state,
+        'ts': datetime.now(timezone.utc).isoformat(),
+    })
 
 def _parse_expiry_param(underlying: str) -> list:
     """
@@ -437,5 +466,12 @@ def init_oi_websocket(socketio):
         underlying = (data or {}).get('underlying', 'BTC')
         metadata = _store.get_metadata_for_emit(underlying=underlying)
         socketio.emit('oi_update', metadata, namespace='/oi')
+        
+        # Also emit gamma state immediately
+        agg_rows = _store.get_aggregated(expiries=['ALL'], underlying=underlying)
+        spot = _store.get_underlying_price(underlying)
+        gamma_state = compute_gamma_state(agg_rows, spot)
+        if gamma_state:
+            socketio.emit('gamma_update', gamma_state, namespace='/oi')
 
     log.info('[OI] SocketIO namespace /oi registered')

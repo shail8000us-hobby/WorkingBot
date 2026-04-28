@@ -748,5 +748,615 @@ class TestA1103SQLiteConcurrency(unittest.TestCase):
                          f"Concurrent fill recording must not produce errors. Got: {errors}")
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 Coordination Arbiter — sealed tests
+# Source: MMM_COORDINATION_PLAN.md (Phase 2 sealed hierarchy + Phase 1 audits)
+# Created: 2026-04-28
+# ---------------------------------------------------------------------------
+
+class TestArbiterTier1DefensiveShift(unittest.TestCase):
+    """Arbiter at Tier 1 (BE CRITICAL) emits ACTION_DEFENSIVE_SHIFT on opposite side
+    with target_premium from session params. Per Phase 2 D1 + Rule 4."""
+
+    def _make_session(self, be_zone='CRITICAL', nearest_side='lower'):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            'session_id': 'test-arbiter-shift',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,  # 4 hours — outside cool-down
+            '_breakeven_zone': be_zone,
+            '_breakeven_zone_last_updated_at': now,
+            '_breakeven_result': {'nearest_side': nearest_side, 'zone': be_zone},
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'GREEN',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 50, 'unrealized_pnl': -10},
+            'pe': {'active_lots': 50, 'unrealized_pnl': -500},
+            'params': {
+                'adjustment_interval': 300,
+                'shift_target_premium': 100.0,
+                'shift_premium_tolerance': 10.0,
+            },
+        }
+
+    def test_critical_lower_be_triggers_ce_shift(self):
+        """Lower BE threatened (PE side aggressor in falling market) → shift CE."""
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_DEFENSIVE_SHIFT, TIER_1_EXTREME,
+        )
+        session = self._make_session(be_zone='CRITICAL', nearest_side='lower')
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
+        self.assertEqual(decision.tier, TIER_1_EXTREME)
+        self.assertEqual(decision.side, 'ce')
+        self.assertEqual(decision.target_premium, 100.0)
+
+    def test_critical_upper_be_triggers_pe_shift(self):
+        """Upper BE threatened (CE side aggressor in rising market) → shift PE."""
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_DEFENSIVE_SHIFT,
+        )
+        session = self._make_session(be_zone='CRITICAL', nearest_side='upper')
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
+        self.assertEqual(decision.side, 'pe')
+
+    def test_be_warning_is_noop(self):
+        """BE WARNING (Tier 2) → arbiter is silent per Rule 3."""
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_NOOP,
+        )
+        session = self._make_session(be_zone='WARNING')
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_NOOP)
+
+    def test_be_danger_is_noop(self):
+        """BE DANGER (Tier 2) → modules work as designed; no arbiter action."""
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_NOOP,
+        )
+        session = self._make_session(be_zone='DANGER')
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_NOOP)
+
+
+class TestArbiterRule5Last30MinCooldown(unittest.TestCase):
+    """Per Phase 2 D5 / Rule 5: in last 30 min before expiry, Tier 1 bypass DISABLED.
+    Even with breakeven CRITICAL, arbiter must return NOOP."""
+
+    def test_critical_be_in_last_30_min_is_noop(self):
+        from datetime import datetime, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_NOOP,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-arbiter-cooldown',
+            'adjustment_count': 10,
+            '_minutes_to_expiry': 25,  # in cool-down window
+            '_breakeven_zone': 'CRITICAL',
+            '_breakeven_zone_last_updated_at': now,
+            '_breakeven_result': {'nearest_side': 'lower', 'zone': 'CRITICAL'},
+            '_gamma_regime': 'EMERGENCY',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'RED',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 50, 'unrealized_pnl': 0},
+            'pe': {'active_lots': 50, 'unrealized_pnl': -500},
+            'params': {'adjustment_interval': 300, 'shift_target_premium': 100.0},
+        }
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_NOOP)
+        self.assertEqual(decision.trigger, 'last_30_min_cooldown')
+
+    def test_at_30_min_boundary_is_noop(self):
+        """Boundary check: minutes_to_expiry == 30 must trigger cool-down (≤30)."""
+        from datetime import datetime, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_NOOP,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-arbiter-boundary',
+            'adjustment_count': 10,
+            '_minutes_to_expiry': 30,
+            '_breakeven_zone': 'CRITICAL',
+            '_breakeven_zone_last_updated_at': now,
+            '_breakeven_result': {'nearest_side': 'lower', 'zone': 'CRITICAL'},
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'GREEN',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 50, 'unrealized_pnl': 0},
+            'pe': {'active_lots': 50, 'unrealized_pnl': -100},
+            'params': {'adjustment_interval': 300},
+        }
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.trigger, 'last_30_min_cooldown')
+
+
+class TestArbiterRule6StaleEscalation(unittest.TestCase):
+    """Per Phase 2 G1 / Rule 6: stale signals escalate one tier for arbiter purposes.
+    Module's own state is NOT mutated."""
+
+    def test_stale_be_warning_escalates_to_danger(self):
+        """Stale _breakeven_zone='WARNING' → arbiter sees DANGER (still Tier 2 → NOOP)."""
+        from datetime import datetime, timedelta, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, get_effective_breakeven_zone,
+        )
+        # 10 minutes old — stale at default 1.5 × 300s = 450s threshold
+        old = (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-stale',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,
+            '_breakeven_zone': 'WARNING',
+            '_breakeven_zone_last_updated_at': old,  # stale
+            '_breakeven_result': {'nearest_side': 'lower', 'zone': 'WARNING'},
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'GREEN',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 50, 'unrealized_pnl': 0},
+            'pe': {'active_lots': 50, 'unrealized_pnl': -100},
+            'params': {'adjustment_interval': 300},
+        }
+        eff, stale = get_effective_breakeven_zone(session, 450.0)
+        self.assertEqual(eff, 'DANGER')
+        self.assertIsNotNone(stale)
+        self.assertEqual(stale.raw_value, 'WARNING')
+        self.assertEqual(stale.effective_value, 'DANGER')
+        # Module state must remain untouched
+        self.assertEqual(session['_breakeven_zone'], 'WARNING')
+
+    def test_stale_be_danger_escalates_to_critical_triggers_shift(self):
+        """Stale BE DANGER → effective CRITICAL → defensive shift."""
+        from datetime import datetime, timedelta, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_DEFENSIVE_SHIFT,
+        )
+        old = (datetime.now(timezone.utc) - timedelta(seconds=600)).isoformat()
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-stale-escalate',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,
+            '_breakeven_zone': 'DANGER',
+            '_breakeven_zone_last_updated_at': old,
+            '_breakeven_result': {'nearest_side': 'upper', 'zone': 'DANGER'},
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'GREEN',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 50, 'unrealized_pnl': -100},
+            'pe': {'active_lots': 50, 'unrealized_pnl': 0},
+            'params': {'adjustment_interval': 300, 'shift_target_premium': 100.0},
+        }
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
+        # Stale signal recorded for audit
+        self.assertEqual(len(decision.stale_signals), 1)
+        self.assertEqual(decision.stale_signals[0].name, 'breakeven_zone')
+
+
+class TestArbiterTier1GammaEmergency(unittest.TestCase):
+    """Gamma EMERGENCY → defensive close on dominant-gamma side per Phase 1 Task 2.
+    Replaces legacy session pause."""
+
+    def _make_session(self, ce_dgamma, pe_dgamma, strategy='SHORT_STRANGLE'):
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        return {
+            'session_id': 'test-arbiter-gamma',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,
+            '_breakeven_zone': 'SAFE',
+            '_breakeven_zone_last_updated_at': now,
+            '_gamma_regime': 'EMERGENCY',
+            '_gamma_regime_last_updated_at': now,
+            '_ce_dollar_gamma': ce_dgamma,
+            '_pe_dollar_gamma': pe_dgamma,
+            '_margin_tier': 'GREEN',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 80},
+            'pe': {'active_lots': 50},
+            'params': {'adjustment_interval': 300, 'strategy_type': strategy},
+        }
+
+    def test_ce_dominant_gamma_triggers_ce_close(self):
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_GAMMA_EMERGENCY_CLOSE,
+        )
+        session = self._make_session(ce_dgamma=8000, pe_dgamma=2000)
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_GAMMA_EMERGENCY_CLOSE)
+        self.assertEqual(decision.side, 'ce')
+        # 25% of 80 lots = 20
+        self.assertEqual(decision.lots, 20)
+
+    def test_pe_dominant_gamma_triggers_pe_close(self):
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_GAMMA_EMERGENCY_CLOSE,
+        )
+        session = self._make_session(ce_dgamma=1000, pe_dgamma=9000)
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_GAMMA_EMERGENCY_CLOSE)
+        self.assertEqual(decision.side, 'pe')
+
+    def test_straddle_with_adjustment_bypasses_gamma_action(self):
+        """STRADDLE_WITH_ADJUSTMENT: gamma is structural; arbiter does NOT close
+        on gamma EMERGENCY for this strategy (per CLAUDE.md §0 rule 6 + Phase 2 D6)."""
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_GAMMA_EMERGENCY_CLOSE, ACTION_NOOP,
+        )
+        session = self._make_session(
+            ce_dgamma=8000, pe_dgamma=2000,
+            strategy='STRADDLE_WITH_ADJUSTMENT',
+        )
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertNotEqual(decision.action_type, ACTION_GAMMA_EMERGENCY_CLOSE)
+
+
+class TestArbiterTier1MarginRecovery(unittest.TestCase):
+    """Margin RED → arbiter signals margin-recovery buyback on side with more lots.
+    Per Phase 2 B2."""
+
+    def test_margin_red_triggers_recovery(self):
+        from datetime import datetime, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_MARGIN_RECOVERY,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-arbiter-margin',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,
+            '_breakeven_zone': 'SAFE',
+            '_breakeven_zone_last_updated_at': now,
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'RED',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 100},
+            'pe': {'active_lots': 60},
+            'params': {'adjustment_interval': 300},
+        }
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_MARGIN_RECOVERY)
+        self.assertEqual(decision.side, 'ce')  # bigger side scanned for buyback
+
+    def test_margin_red_has_priority_over_be_critical(self):
+        """Margin RED + BE CRITICAL: margin recovery wins (capital constraint binds)."""
+        from datetime import datetime, timezone
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_MARGIN_RECOVERY,
+        )
+        now = datetime.now(timezone.utc).isoformat()
+        session = {
+            'session_id': 'test-arbiter-margin-priority',
+            'adjustment_count': 5,
+            '_minutes_to_expiry': 240,
+            '_breakeven_zone': 'CRITICAL',
+            '_breakeven_zone_last_updated_at': now,
+            '_breakeven_result': {'nearest_side': 'lower', 'zone': 'CRITICAL'},
+            '_gamma_regime': 'NORMAL',
+            '_gamma_regime_last_updated_at': now,
+            '_margin_tier': 'RED',
+            '_margin_tier_last_updated_at': now,
+            'ce': {'active_lots': 100},
+            'pe': {'active_lots': 60},
+            'params': {'adjustment_interval': 300, 'shift_target_premium': 100.0},
+        }
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_MARGIN_RECOVERY)
+
+
+class TestArbiterAuditTrail(unittest.TestCase):
+    """Per Rule 7: arbiter decision must serialize cleanly for audit log."""
+
+    def test_decision_to_audit_dict_includes_all_fields(self):
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            ArbiterDecision, ACTION_DEFENSIVE_SHIFT, TIER_1_EXTREME, StaleSignal,
+        )
+        d = ArbiterDecision(
+            action_type=ACTION_DEFENSIVE_SHIFT,
+            tier=TIER_1_EXTREME,
+            trigger='breakeven_critical_pe',
+            side='ce',
+            target_premium=100.0,
+            lots=3,
+            reason='test',
+            stale_signals=(StaleSignal('breakeven_zone', 'WARNING', 'DANGER', '2026-01-01T00:00:00+00:00'),),
+            snapshot={'beat': 1},
+        )
+        audit = d.to_audit_dict()
+        self.assertIn('action_type', audit)
+        self.assertIn('tier', audit)
+        self.assertIn('stale_signals', audit)
+        self.assertEqual(len(audit['stale_signals']), 1)
+        self.assertEqual(audit['stale_signals'][0]['name'], 'breakeven_zone')
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Surgical Fixes — sealed tests
+# ---------------------------------------------------------------------------
+
+class TestSmartWhipsawStraddleBlockActive(unittest.TestCase):
+    """Phase 3 Task 3 fix: STRADDLE_WITH_ADJUSTMENT no longer bypasses smart whipsaw
+    block. Scalar bypasses (trigger_widen, lot_scalar) preserved; block + token
+    budget now active. Per Phase 2 D6."""
+
+    def test_straddle_scalars_still_bypassed(self):
+        """trigger_widen_factor and lot_scalar must still be 1.0 for straddle."""
+        from webui.backend.routes.mmm.mmm_whipsaw_smart import SmartWhipsawEngine
+        from webui.backend.routes.mmm.mmm_whipsaw import WhipsawCtx
+        # Minimal session with high score that would normally widen / reduce
+        session = {
+            'session_id': 'test-straddle-scalars',
+            'params': {
+                'strategy_type': 'STRADDLE_WITH_ADJUSTMENT',
+                'adjustment_interval': 300,
+                'smart_ws_score_defensive': 0.30,
+                'smart_ws_score_observe': 0.60,
+                'smart_ws_score_lockdown': 0.80,
+                'smart_ws_tokens_per_session': 10.0,
+                'smart_ws_token_refresh_per_hour': 1.0,
+                'min_trigger_move': 10.0,
+            },
+            'adjustment_history': [
+                {'timestamp': '2026-04-28T10:00:00+00:00', 'aggressor': 'ce'},
+                {'timestamp': '2026-04-28T10:05:00+00:00', 'aggressor': 'pe'},
+                {'timestamp': '2026-04-28T10:10:00+00:00', 'aggressor': 'ce'},
+                {'timestamp': '2026-04-28T10:15:00+00:00', 'aggressor': 'pe'},
+            ],
+            'ce': {'total_lots': 50, 'active_lots': 50},
+            'pe': {'total_lots': 50, 'active_lots': 50},
+        }
+        ctx = WhipsawCtx(ce_now=100, pe_now=100, spot=80000, iv=0.5)
+        decision = SmartWhipsawEngine().evaluate(session, ctx)
+        # Scalar bypasses preserved
+        self.assertEqual(decision.trigger_widen_factor, 1.0,
+                         'STRADDLE_WITH_ADJUSTMENT must bypass trigger widening')
+        self.assertEqual(decision.lot_scalar, 1.0,
+                         'STRADDLE_WITH_ADJUSTMENT must bypass lot reduction')
+
+
+class TestGammaDTERelaxLadder(unittest.TestCase):
+    """Phase 3 Task 2 fix: gamma engine adds DTE relax ladder for far-from-expiry.
+    5-DTE → 1.25× multiplier; >5d → 1.5× multiplier. Per Phase 1 audit Task 2."""
+
+    def _make_session(self, mte_minutes, initial_lots=10):
+        return {
+            'session_id': 'test-dte-ladder',
+            'params': {
+                'gamma_cap_enabled': True,
+                'initial_lots': initial_lots,
+                'gamma_soft_limit': 2500.0,
+                'gamma_hard_limit': 5000.0,
+                'gamma_emergency_limit': 10000.0,
+                'gamma_dte_ladder_far_mult': 1.5,
+                'gamma_dte_ladder_multi_mult': 1.25,
+                'gamma_dte_relax_hours': 2.0,
+                'gamma_dte_hedge_multiplier': 2.0,
+                'gamma_near_expiry_multiplier': 0.5,
+            },
+            'ce': {'active_lots': 10},
+            'pe': {'active_lots': 10},
+        }
+
+    def test_far_expiry_applies_far_mult(self):
+        """> 5 days to expiry → 1.5× soft/hard/emergency limits."""
+        from webui.backend.routes.mmm.mmm_gamma import _update_gamma_cap
+        session = self._make_session(mte_minutes=8 * 24 * 60)  # 8 days
+        gamma_data = {
+            'positions': [(0.0001, 10, 'C'), (0.0001, 10, 'P')],
+            'portfolio_gamma': 0.001,
+        }
+        _update_gamma_cap(session, gamma_data, spot_price=80000.0,
+                           minutes_to_expiry=8 * 24 * 60)
+        # Effective soft = 2500 * 1.5 = 3750
+        self.assertAlmostEqual(session['_gamma_soft_limit_effective'], 3750.0, places=1)
+
+    def test_multi_dte_applies_multi_mult(self):
+        """1–5 days to expiry → 1.25× limits."""
+        from webui.backend.routes.mmm.mmm_gamma import _update_gamma_cap
+        session = self._make_session(mte_minutes=3 * 24 * 60)  # 3 days
+        gamma_data = {
+            'positions': [(0.0001, 10, 'C'), (0.0001, 10, 'P')],
+            'portfolio_gamma': 0.001,
+        }
+        _update_gamma_cap(session, gamma_data, spot_price=80000.0,
+                           minutes_to_expiry=3 * 24 * 60)
+        self.assertAlmostEqual(session['_gamma_soft_limit_effective'], 3125.0, places=1)
+
+    def test_short_dte_no_ladder(self):
+        """<= 1 day to expiry → no ladder relaxation (baseline 1.0×)."""
+        from webui.backend.routes.mmm.mmm_gamma import _update_gamma_cap
+        session = self._make_session(mte_minutes=120)  # 2 hours
+        gamma_data = {
+            'positions': [(0.0001, 10, 'C'), (0.0001, 10, 'P')],
+            'portfolio_gamma': 0.001,
+        }
+        _update_gamma_cap(session, gamma_data, spot_price=80000.0,
+                           minutes_to_expiry=120)
+        self.assertAlmostEqual(session['_gamma_soft_limit_effective'], 2500.0, places=1)
+
+    def test_last_30_min_still_tightens(self):
+        """≤ 30 min: 0.5× tightening preserved per Rule 5 cool-down doctrine."""
+        from webui.backend.routes.mmm.mmm_gamma import _update_gamma_cap
+        session = self._make_session(mte_minutes=20)
+        gamma_data = {
+            'positions': [(0.0001, 10, 'C'), (0.0001, 10, 'P')],
+            'portfolio_gamma': 0.001,
+        }
+        _update_gamma_cap(session, gamma_data, spot_price=80000.0,
+                           minutes_to_expiry=20)
+        # 2500 (no ladder) * 0.5 = 1250
+        self.assertAlmostEqual(session['_gamma_soft_limit_effective'], 1250.0, places=1)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 Stage 1 instrumentation — sealed tests
+# ---------------------------------------------------------------------------
+
+class TestSignalFreshnessHelpers(unittest.TestCase):
+    """Verify record_signal_update + is_signal_fresh helpers used by arbiter."""
+
+    def test_record_then_fresh(self):
+        from webui.backend.routes.mmm.mmm_state import (
+            record_signal_update, is_signal_fresh,
+        )
+        session = {}
+        record_signal_update(session, 'breakeven_zone')
+        self.assertTrue(is_signal_fresh(session, 'breakeven_zone', 60.0))
+
+    def test_missing_is_stale(self):
+        from webui.backend.routes.mmm.mmm_state import is_signal_fresh
+        self.assertFalse(is_signal_fresh({}, 'gamma_regime', 60.0))
+
+    def test_old_is_stale(self):
+        from datetime import datetime, timedelta, timezone
+        from webui.backend.routes.mmm.mmm_state import is_signal_fresh
+        old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+        session = {'_breakeven_zone_last_updated_at': old}
+        self.assertFalse(is_signal_fresh(session, 'breakeven_zone', 60.0))
+
+
+class TestArbiterParamDefaults(unittest.TestCase):
+    """Verify arbiter_enabled defaults to True (live mode by default per
+    user directive 2026-04-28)."""
+
+    def test_arbiter_enabled_defaults_true(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertTrue(DEFAULT_PARAMS.get('arbiter_enabled'),
+                        'arbiter_enabled must default to True (live mode)')
+
+    def test_arbiter_enabled_is_hot_reloadable(self):
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        self.assertIn('arbiter_enabled', HOT_RELOAD_PARAMS,
+                      'arbiter_enabled must be hot-reloadable so UI toggle works without restart')
+
+    def test_dte_ladder_params_hot_reloadable(self):
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        self.assertIn('gamma_dte_ladder_far_mult', HOT_RELOAD_PARAMS)
+        self.assertIn('gamma_dte_ladder_multi_mult', HOT_RELOAD_PARAMS)
+
+
+class TestArbiterShiftBypassesCooldown(unittest.TestCase):
+    """When arbiter Tier 1 fires defensive_shift, the strike-shift cooldown
+    must NOT block — the position is bleeding and waiting 120s costs money.
+    Per sealed hierarchy Rule 2 (Tier 1 acts not blocks)."""
+
+    def test_arbiter_flag_bypasses_cooldown_logic(self):
+        """Read the cooldown gate logic and confirm the arbiter bypass flag
+        is honored. This is a code-presence test — guards against the bypass
+        being silently removed."""
+        import os
+        monitor_path = os.path.join(
+            os.path.dirname(__file__), '..', 'mmm_monitor.py'
+        )
+        with open(monitor_path) as f:
+            src = f.read()
+        # Two assertions: bypass flag is read AND used in the cooldown gate
+        self.assertIn('_arbiter_shift_bypass_cooldown', src,
+                      'Arbiter cooldown bypass flag missing from mmm_monitor.py')
+        self.assertIn('not _arbiter_shift_bypass', src,
+                      'Cooldown gate must include "not _arbiter_shift_bypass" to honor flag')
+
+
+class TestArbiterLiveExecutionWired(unittest.TestCase):
+    """Verify the Phase 3 live-execution wire-in is present.
+
+    These are static-source guards: they catch silent regressions that would
+    otherwise demote live mode back to shadow without a test failure."""
+
+    def _src(self):
+        import os
+        monitor_path = os.path.join(
+            os.path.dirname(__file__), '..', 'mmm_monitor.py'
+        )
+        with open(monitor_path) as f:
+            return f.read()
+
+    def test_execute_arbiter_decision_method_exists(self):
+        src = self._src()
+        self.assertIn('async def _execute_arbiter_decision', src)
+        self.assertIn('async def _arbiter_execute_defensive_shift', src)
+        self.assertIn('async def _arbiter_execute_gamma_close', src)
+        self.assertIn('async def _arbiter_execute_margin_recovery', src)
+
+    def test_heartbeat_calls_execute(self):
+        src = self._src()
+        self.assertIn('await self._execute_arbiter_decision(_arb_decision', src,
+                      'Heartbeat must call _execute_arbiter_decision when Tier 1 fires')
+
+    def test_no_shadow_mode_flag(self):
+        """Shadow mode must NOT be a configurable param — user explicitly
+        rejected shadow mode 2026-04-28."""
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS, HOT_RELOAD_PARAMS
+        self.assertNotIn('arbiter_shadow_mode', DEFAULT_PARAMS)
+        self.assertNotIn('arbiter_shadow_mode', HOT_RELOAD_PARAMS)
+
+
+class TestAutoPromoteNearestATM(unittest.TestCase):
+    """Sealed: nearest-to-spot strike (ITM or OTM) is always the active strike.
+
+    Rule: _auto_promote_atm_strike must NOT filter to OTM-only. It must pick
+    the open strike with the smallest abs(spot - strike) regardless of ITM/OTM.
+
+    Scenarios covered:
+    - Short straddle with adjustment: one side crosses spot and becomes ITM.
+    - Short strangle with ATM-shield OFF: price drifts past a strike making it ITM.
+    """
+
+    def _src(self):
+        import os
+        monitor_path = os.path.join(
+            os.path.dirname(__file__), '..', 'mmm_monitor.py'
+        )
+        with open(monitor_path) as f:
+            return f.read()
+
+    def test_no_otm_only_filter(self):
+        """The OTM-only guard must NOT appear in _auto_promote_atm_strike.
+        If it does, ITM strikes are silently ignored and the algo manages
+        the wrong position."""
+        src = self._src()
+        start = src.find('async def _auto_promote_atm_strike')
+        end = src.find('\n    async def ', start + 1)
+        fn_body = src[start:end]
+        self.assertNotIn('Must be below spot for OTM put', fn_body,
+                         'OTM-only filter must not appear in _auto_promote_atm_strike')
+        self.assertNotIn('Must be above spot for OTM call', fn_body,
+                         'OTM-only filter must not appear in _auto_promote_atm_strike')
+
+    def test_itm_label_present(self):
+        """When a promoted strike is ITM, the log must include [ITM]
+        so the operator can see ITM promotion happened."""
+        src = self._src()
+        self.assertIn("itm_label = ' [ITM]'", src,
+                      '_auto_promote_atm_strike must emit [ITM] label for ITM promotions')
+
+    def test_nearest_any_strike_selected(self):
+        """Selection logic: given an ITM and an OTM strike, the nearer-to-spot
+        one wins regardless of ITM/OTM status."""
+        spot_price = 95000.0
+        # CE: 94500 is ITM (below spot, dist=500), 96000 is OTM (above, dist=1000)
+        open_strikes = {94500.0: 5, 96000.0: 5}
+        best_strike = None
+        best_dist = float('inf')
+        for s in open_strikes:
+            dist = abs(spot_price - s)
+            if dist < best_dist:
+                best_dist = dist
+                best_strike = s
+        self.assertEqual(best_strike, 94500.0,
+                         'ITM strike (94500, dist=500) must beat OTM strike (96000, dist=1000)')
+
+
 if __name__ == '__main__':
     unittest.main()

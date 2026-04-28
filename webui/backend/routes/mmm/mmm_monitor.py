@@ -27,7 +27,7 @@ from webui.backend.sealed import sealed  # Hard stop guard is sealed — do not 
 
 import random
 
-from .mmm_state import recompute_side_lots, get_session_summary
+from .mmm_state import recompute_side_lots, get_session_summary, record_signal_update
 from .mmm_trigger import (
     evaluate_triggers, update_trigger_snapshots, check_frozen_pnl_trigger,
     apply_theta_acceleration, compute_adaptive_interval,
@@ -1686,6 +1686,12 @@ class MMMMonitor:
                 # GREEN: clear any stale flags
                 session.pop('_margin_wind_down', None)
                 session.pop('_margin_block_sells', None)
+            # Phase 3 fix (latent bug): _margin_tier was read in 8+ places but never
+            # written to session. Default 'GREEN' / '' always won. Write it now so
+            # arbiter and other downstream consumers see real margin state.
+            session['_margin_tier'] = margin_result['tier']
+            # Phase 3 Rule 6: timestamp margin_tier for arbiter stale-detection
+            record_signal_update(session, 'margin_tier')
 
         # Step 0.75: Auto-promote the open strike closest to ATM as the active strike.
         # Runs before premium fetch so _fetch_premiums uses the correct new active strike.
@@ -2556,6 +2562,8 @@ class MMMMonitor:
         _beat_mins = max(float(session.get('params', {}).get('adjustment_interval', 300)) / 60.0, 1.0)
         session['_smart_ws_loss_velocity'] = max(0.0, (_pnl_prev - _pnl_now) / _beat_mins)
         session['_smart_ws_pnl_prev'] = _pnl_now
+        # Phase 3 Rule 6: timestamp loss_velocity for arbiter stale-detection
+        record_signal_update(session, 'loss_velocity')
 
         # Phase 6: Evaluate Smart whipsaw BEFORE safety checks so its block_adjustment
         # can gate adjustments alongside legacy safety events. Result cached on
@@ -2926,19 +2934,45 @@ class MMMMonitor:
                                         {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0),
                                          'straddle_adj_bypass': _is_straddle_adj})
                     else:
-                        log_activity('regime_emergency',
-                                    f'GAMMA EMERGENCY: $Gamma={session.get("_portfolio_dollar_gamma", 0):.2f} '
-                                    f'exceeds emergency limit. Session PAUSED for manual review.',
-                                    sid, 'error',
-                                    {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)})
-                        emit_safety(
-                            sid, 'regime', 'critical',
-                            f'⚠️ GAMMA EMERGENCY: $Γ={session.get("_portfolio_dollar_gamma", 0):.2f} — session paused. '
-                            f'Review positions and manually wind down if needed.',
-                            {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
+                        # Phase 3 (2026-04-28): when arbiter is enabled and not in
+                        # last-30-min cool-down, the arbiter will handle gamma
+                        # EMERGENCY via defensive close (no pause). Per Phase 1
+                        # audit Task 2 + Phase 2 / D5 (Rule 5), pausing in the
+                        # cool-down window or when arbiter is disabled remains
+                        # the safe legacy fallback.
+                        _arbiter_will_handle_gamma = (
+                            params.get('arbiter_enabled', True)
+                            and minutes_to_expiry is not None
+                            and minutes_to_expiry > 30
                         )
-                        self.pause('Gamma emergency — manual review required')
-                        _skip_to_pnl = True
+                        if _arbiter_will_handle_gamma:
+                            log_activity('regime_emergency_arbiter',
+                                        f'GAMMA EMERGENCY: $Gamma={session.get("_portfolio_dollar_gamma", 0):.2f} '
+                                        f'— arbiter Tier 1 will handle defensive close (no pause).',
+                                        sid, 'warning',
+                                        {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)})
+                            emit_safety(
+                                sid, 'regime', 'warning',
+                                f'GAMMA EMERGENCY: $Γ={session.get("_portfolio_dollar_gamma", 0):.2f} — arbiter handling.',
+                                {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
+                            )
+                            # Do NOT pause; do NOT set _skip_to_pnl. Arbiter (next
+                            # block in heartbeat) will see gamma EMERGENCY and emit
+                            # ACTION_GAMMA_EMERGENCY_CLOSE.
+                        else:
+                            log_activity('regime_emergency',
+                                        f'GAMMA EMERGENCY: $Gamma={session.get("_portfolio_dollar_gamma", 0):.2f} '
+                                        f'exceeds emergency limit. Session PAUSED for manual review.',
+                                        sid, 'error',
+                                        {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)})
+                            emit_safety(
+                                sid, 'regime', 'critical',
+                                f'⚠️ GAMMA EMERGENCY: $Γ={session.get("_portfolio_dollar_gamma", 0):.2f} — session paused. '
+                                f'Review positions and manually wind down if needed.',
+                                {'dollar_gamma': session.get('_portfolio_dollar_gamma', 0)},
+                            )
+                            self.pause('Gamma emergency — manual review required')
+                            _skip_to_pnl = True
 
                 # Handle ACTION_PAUSE — vol_regime_action='pause' or
                 # trend_action='pause' requested explicit session pause.
@@ -3015,6 +3049,11 @@ class MMMMonitor:
                 log.warning(f"[{sid}] Regime check failed (non-fatal): {e}")
                 # Regime failure is non-fatal — continue with normal heartbeat
                 session['_regime_action'] = ACTION_NORMAL
+        # Phase 3 Rule 6: timestamp regime_action for arbiter stale-detection.
+        # Written unconditionally — covers all paths above (regime disabled,
+        # regime success, regime exception). If regime is skipped this beat,
+        # the lack of update IS the stale signal.
+        record_signal_update(session, 'regime_action')
         # ────────────────── END Regime Controls ──────────────────
 
         # Auto-resume if session was paused by regime/gamma and regime has now normalized.
@@ -3296,6 +3335,8 @@ class MMMMonitor:
                     session['_breakeven_result'] = be_result
                     session['_breakeven_multiplier'] = be_engine.get_aggression_multiplier(be_result)
                     session['_breakeven_zone'] = be_result.get('zone', 'SAFE')
+                    # Phase 3 Rule 6: timestamp breakeven_zone for arbiter stale-detection
+                    record_signal_update(session, 'breakeven_zone')
 
                     # Log zone transitions
                     prev_zone = session.get('_breakeven_zone_prev', 'SAFE')
@@ -3332,21 +3373,28 @@ class MMMMonitor:
                     _is_straddle_adj_be = get_strategy_handler(
                         _session_strategy_type(session)
                     ).bypass_gamma_guards
-                    if be_result.get('is_narrow_band') and not _is_straddle_adj_be:
+                    if (be_result.get('is_narrow_band') and not _is_straddle_adj_be
+                            and self._should_emit_warning('breakeven_narrow_band')):
                         log_activity(
                             'breakeven_narrow_band',
                             f'Narrow Breakeven Band: {be_result.get("band_width_pct", 0):.1f}% — '
                             f'Consider reducing exposure',
                             sid, 'warning',
                             {'band_width_pct': be_result.get('band_width_pct'),
-                             'threshold': params.get('breakeven_narrow_band_threshold', 5.0)},
+                             'threshold': be_result.get('effective_narrow_threshold',
+                                                        params.get('breakeven_narrow_band_threshold', 5.0))},
                         )
             except Exception as _be_err:
                 log.error(f"[{sid}] Breakeven engine error: {_be_err}", exc_info=True)
 
         # Step 5.8: Gamma Detector — portfolio curvature scanning
         # Runs regardless of _skip_to_pnl so UI data stays fresh.
-        # Observation-only: stored in session, does NOT influence lot sizing (Phases 1-8).
+        # Result feeds: (a) UI display, (b) gamma severity multiplier in
+        # calculate_lots_to_sell when `gamma_severity_multiplier_enabled=True`,
+        # and (c) arbiter Tier 1 escalation per Phase 3 hierarchy Rule 2.
+        # NOTE (Phase 3 audit fix): comment previously said "observation-only"
+        # — that was outdated. The gamma severity multiplier (mmm_engine.py:475)
+        # consumes _gamma_result.gamma_zone when its enable flag is set.
         if params.get('gamma_detector_enabled', False):
             try:
                 gd = get_gamma_detector()
@@ -3386,6 +3434,75 @@ class MMMMonitor:
                     session['_gamma_zone_prev'] = new_gamma_zone
             except Exception as _gd_err:
                 log.warning(f'[{sid}] Gamma detector error (non-fatal): {_gd_err}')
+
+        # ── Phase 3 Coordination Arbiter ──────────────────────────────────────
+        # Sealed hierarchy enforcement (MMM_COORDINATION_PLAN.md). Activates ONLY
+        # at Tier 0 / Tier 1; no-op at Tier 2/3 (modules work as designed).
+        # Runs AFTER all signals are computed (breakeven, gamma, margin, regime)
+        # so it sees freshest state. Default mode: SHADOW — evaluates, logs,
+        # sets coordination flags, but does NOT place orders directly.
+        # `arbiter_live_execution=True` enables direct order placement (Phase 4+).
+        session['_arbiter_decision_active'] = False
+        if params.get('arbiter_enabled', True):
+            try:
+                from .mmm_arbiter import get_arbiter, ACTION_NOOP
+                _arb_decision = get_arbiter().evaluate(session)
+                # Always cache for UI / downstream observers (audit trail)
+                session['_arbiter_last_decision'] = _arb_decision.to_audit_dict()
+                if _arb_decision.action_type != ACTION_NOOP:
+                    # Tier 1 fired — log + raise coordination flag for downstream gates
+                    session['_arbiter_decision_active'] = True
+                    session['_arbiter_active_action'] = _arb_decision.action_type
+                    session['_arbiter_active_side'] = _arb_decision.side or ''
+                    # Activity log: concise summary per Rule 7
+                    log_activity(
+                        'arbiter_tier1',
+                        f'[ARBITER] Tier {_arb_decision.tier} ({_arb_decision.trigger}): {_arb_decision.action_type}',
+                        sid, 'warning',
+                        _arb_decision.to_audit_dict(),
+                    )
+                    # Stale-signal escalation logging per Rule 6
+                    if _arb_decision.stale_signals:
+                        for _ss in _arb_decision.stale_signals:
+                            log_activity(
+                                'arbiter_stale_signal',
+                                f'[ARBITER] Stale signal {_ss.name}: '
+                                f'{_ss.raw_value} → effective {_ss.effective_value}',
+                                sid, 'warning',
+                                {'signal': _ss.name, 'raw': _ss.raw_value,
+                                 'effective': _ss.effective_value,
+                                 'last_updated_at': _ss.last_updated_at},
+                            )
+                    emit_safety(
+                        sid, 'arbiter_tier1', 'warning',
+                        f'Coordination arbiter: {_arb_decision.trigger} → {_arb_decision.action_type}',
+                        _arb_decision.snapshot,
+                    )
+                    # Rule 2: at Tier 1 the arbiter overrides upstream block decisions.
+                    # Clear _skip_to_pnl if any upstream block (whipsaw/safety/regime)
+                    # set it — the operational pipeline must run so the existing
+                    # adjustment engine can act on the relaxed gates.
+                    if _skip_to_pnl:
+                        log.info(
+                            f'[{sid}] Arbiter Tier 1 override: clearing _skip_to_pnl '
+                            f'(originally set by upstream block) per Rule 2'
+                        )
+                        _skip_to_pnl = False
+                    # ── LIVE EXECUTION (2026-04-28) ───────────────────────────
+                    # Per user directive (no shadow mode), execute the Tier 1
+                    # action immediately. Failures inside _execute_arbiter_decision
+                    # are caught there and emit safety events; this try/except
+                    # is a final safety net so heartbeat continuity is preserved.
+                    try:
+                        await self._execute_arbiter_decision(_arb_decision, ce_now, pe_now)
+                    except Exception as _exec_err:
+                        log.error(
+                            f'[{sid}] Arbiter execute (outer) failed: {_exec_err}',
+                            exc_info=True,
+                        )
+            except Exception as _arb_err:
+                log.warning(f'[{sid}] Arbiter evaluation failed (non-fatal): {_arb_err}', exc_info=True)
+        # ── End Coordination Arbiter ──────────────────────────────────────────
 
         # ── God Layer: strategic drift correction ─────────────────────────────
         # Runs on its own 25-min clock regardless of _skip_to_pnl.  God bypasses
@@ -4717,6 +4834,266 @@ class MMMMonitor:
         self._save_my_session(session)
 
     # =========================================================================
+    # Phase 3 Coordination Arbiter — Live execution
+    # See MMM_COORDINATION_PLAN.md and audit/mmm/coordination/
+    # Created: 2026-04-28 (live mode — no shadow)
+    # =========================================================================
+
+    async def _execute_arbiter_decision(self, decision, ce_now: float, pe_now: float):
+        """Execute a Tier 1 ArbiterDecision returned by the Coordination Arbiter.
+
+        Called from `_heartbeat_inner` immediately after the arbiter evaluates.
+        Each action type routes to existing tested infrastructure:
+
+          defensive_shift          → self._process_strike_shift(opposite_side, loss, ...)
+          gamma_emergency_close    → close N lots from dominant-gamma side via close_position
+          margin_recovery_buyback  → close cheapest OTM on bigger-lots side via close_position
+
+        All actions respect Tier 0 boundaries (hard stop, ATM shield, time stop)
+        because those gates run upstream of this method. Tier 3 gates (whipsaw,
+        regime, cooldown) are bypassed via `_arbiter_decision_active=True`
+        already set by the arbiter wire-in. Real money — failures are caught and
+        logged but never raise (heartbeat continuity is sacred).
+        """
+        from .mmm_arbiter import (
+            ACTION_DEFENSIVE_SHIFT, ACTION_GAMMA_EMERGENCY_CLOSE,
+            ACTION_MARGIN_RECOVERY,
+        )
+        session = self.session
+        sid = self.session_id
+        action = decision.action_type
+
+        try:
+            if action == ACTION_DEFENSIVE_SHIFT:
+                await self._arbiter_execute_defensive_shift(decision, ce_now, pe_now)
+            elif action == ACTION_GAMMA_EMERGENCY_CLOSE:
+                await self._arbiter_execute_gamma_close(decision)
+            elif action == ACTION_MARGIN_RECOVERY:
+                await self._arbiter_execute_margin_recovery(decision)
+            else:
+                log.warning(f'[{sid}] Arbiter unknown action_type: {action}')
+        except Exception as _exec_err:
+            log.error(
+                f'[{sid}] Arbiter action {action} execution failed: {_exec_err}',
+                exc_info=True,
+            )
+            # Real-money rule: never raise out of heartbeat. Operator alerted via
+            # safety event; heartbeat continues so close-at-5 + ATM shield etc. run.
+            try:
+                emit_safety(
+                    sid, 'arbiter_exec_error', 'critical',
+                    f'Arbiter action {action} execution failed: {_exec_err}',
+                    {'action': action, 'trigger': decision.trigger},
+                )
+            except Exception:
+                pass
+
+    async def _arbiter_execute_defensive_shift(self, decision, ce_now: float, pe_now: float):
+        """Tier 1 defensive_shift: shift the opposite-of-threatened side to a
+        strike where premium ≈ shift_target_premium. Reuses the existing
+        tested `_process_strike_shift()` pipeline (find_new_strike +
+        freeze_current_positions + activate_new_strike + smart_execute).
+        """
+        session = self.session
+        sid = self.session_id
+        opposite_side = decision.side  # arbiter decided side to shift to (safer side)
+        if opposite_side not in ('ce', 'pe'):
+            log.warning(f'[{sid}] Arbiter defensive_shift: invalid side {opposite_side}')
+            return
+
+        # Compute hedge loss to pass through. The arbiter's threatened side
+        # is the OTHER side from `opposite_side`.
+        threatened = 'pe' if opposite_side == 'ce' else 'ce'
+        threatened_pnl = float(session.get(threatened, {}).get('unrealized_pnl', 0) or 0)
+        loss = abs(threatened_pnl) if threatened_pnl < 0 else 0.0
+
+        log_activity(
+            'arbiter_defensive_shift_exec',
+            f'[ARBITER LIVE] Defensive shift on {opposite_side.upper()} '
+            f'— target premium ${decision.target_premium:.0f}, loss=${loss:.2f} ({decision.trigger})',
+            sid, 'warning',
+            {
+                'action': decision.action_type,
+                'side': opposite_side,
+                'threatened': threatened,
+                'loss_to_cover': loss,
+                'target_premium': decision.target_premium,
+                'trigger': decision.trigger,
+            },
+        )
+
+        # Set bypass flags read by _process_strike_shift for cooldown skip.
+        # `dangerous_mode` bypass already exists in the function — reuse the
+        # same "this beat only" pattern. We use a dedicated flag to avoid
+        # cross-contaminating the explicit dangerous_mode setting.
+        session['_arbiter_shift_bypass_cooldown'] = True
+        try:
+            await self._process_strike_shift(opposite_side, loss, ce_now, pe_now)
+        finally:
+            session.pop('_arbiter_shift_bypass_cooldown', None)
+
+    async def _arbiter_execute_gamma_close(self, decision):
+        """Tier 1 gamma_emergency_close: close N lots from the dominant-gamma side
+        to reduce curvature. Replaces the legacy session pause behaviour.
+        Uses the existing `close_position()` pipeline (smart_execute + ledger).
+        """
+        from .mmm_close_at_5 import scan_closeable_positions, close_position
+        session = self.session
+        sid = self.session_id
+        side = decision.side
+        target_lots = int(decision.lots or 0)
+        if side not in ('ce', 'pe') or target_lots <= 0:
+            log.warning(
+                f'[{sid}] Arbiter gamma_close: invalid side={side} lots={target_lots}'
+            )
+            return
+
+        log_activity(
+            'arbiter_gamma_close_exec',
+            f'[ARBITER LIVE] Gamma EMERGENCY close on {side.upper()} '
+            f'— target {target_lots} lots ({decision.trigger})',
+            sid, 'warning',
+            {
+                'action': decision.action_type,
+                'side': side,
+                'target_lots': target_lots,
+                'trigger': decision.trigger,
+            },
+        )
+
+        # Choose positions to close. We want the side's positions sorted by
+        # premium descending (close highest-premium first → biggest gamma per
+        # contract). Build candidates from session positions[].
+        positions = session.get(side, {}).get('positions', []) or []
+        # Filter to active positions with lots > 0 and not currently being closed
+        candidates = [
+            dict(p, side=side) for p in positions
+            if p.get('status') == 'active' and int(p.get('lots', 0) or 0) > 0
+            and not p.get('_being_closed')
+        ]
+        if not candidates:
+            log.info(f'[{sid}] Arbiter gamma_close: no active positions on {side.upper()}')
+            return
+
+        # Use existing scan to enrich with premium data (same path close_at_5 uses)
+        fetch_fn = self._make_fetch_fn()
+        try:
+            scan = scan_closeable_positions(session, fetch_fn, threshold_override=1e9)
+            # threshold_override=1e9 means "include all positions regardless of premium"
+        except Exception as _scan_err:
+            log.warning(f'[{sid}] Arbiter gamma_close: scan failed: {_scan_err}')
+            scan = []
+        side_scan = [p for p in scan if p.get('side') == side and not p.get('_being_closed')]
+        # Sort by premium descending (highest gamma per contract first)
+        side_scan.sort(key=lambda p: float(p.get('current_premium', 0) or 0), reverse=True)
+
+        closed_lots = 0
+        for pos in side_scan:
+            if closed_lots >= target_lots:
+                break
+            pos_lots = int(pos.get('lots', 0) or 0)
+            if pos_lots <= 0:
+                continue
+            # If closing this whole position would exceed target, skip it (we
+            # currently only support full-position closes; arbiter will revisit
+            # on the next beat if more reduction is needed). Phase 4 may add
+            # partial-close support.
+            if closed_lots + pos_lots > target_lots * 2:
+                continue
+            try:
+                result = await close_position(
+                    self._executor, self._initializer, session, pos,
+                    mechanism='emergency', side=side,
+                )
+                if result and result.get('success'):
+                    closed_lots += int(result.get('lots_closed', pos_lots) or pos_lots)
+                else:
+                    log.warning(
+                        f'[{sid}] Arbiter gamma_close: close_position failed for '
+                        f'{side.upper()} @ {pos.get("strike")}: {result}'
+                    )
+            except Exception as _close_err:
+                log.error(
+                    f'[{sid}] Arbiter gamma_close: exception closing {side.upper()} '
+                    f'@ {pos.get("strike")}: {_close_err}',
+                    exc_info=True,
+                )
+                # Continue trying other positions
+
+        log.info(
+            f'[{sid}] Arbiter gamma_close complete: {closed_lots}/{target_lots} '
+            f'lots closed on {side.upper()}'
+        )
+
+    async def _arbiter_execute_margin_recovery(self, decision):
+        """Tier 1 margin_recovery: buyback cheap OTM positions on the side with
+        more lots to free margin. Margin RED already triggers emergency close
+        in the margin guardian (line ~1665) — this is a complementary
+        soft-recovery action that targets the cheapest contracts first
+        (consistent with close-at-5 philosophy).
+        """
+        from .mmm_close_at_5 import scan_closeable_positions, close_position
+        session = self.session
+        sid = self.session_id
+        side = decision.side
+        if side not in ('ce', 'pe'):
+            return
+
+        log_activity(
+            'arbiter_margin_recovery_exec',
+            f'[ARBITER LIVE] Margin recovery: buyback cheap OTM on {side.upper()} '
+            f'({decision.trigger})',
+            sid, 'warning',
+            {
+                'action': decision.action_type,
+                'side': side,
+                'trigger': decision.trigger,
+            },
+        )
+
+        # Use a generous threshold — anything under shift_target_premium is
+        # eligible for margin recovery (these are the "cheap policies" the
+        # insurance-company doctrine wants closed anyway, per Phase 2 / Rule 4).
+        params = session.get('params', {})
+        recovery_threshold = float(params.get('shift_target_premium', 100.0))
+        fetch_fn = self._make_fetch_fn()
+        try:
+            scan = scan_closeable_positions(
+                session, fetch_fn, threshold_override=recovery_threshold,
+            )
+        except Exception as _scan_err:
+            log.warning(f'[{sid}] Arbiter margin_recovery scan failed: {_scan_err}')
+            return
+
+        side_candidates = [p for p in scan if p.get('side') == side
+                          and not p.get('_being_closed')]
+        # Sort by premium ASC — close cheapest first (closest to zero value)
+        side_candidates.sort(key=lambda p: float(p.get('current_premium', 0) or 0))
+
+        # Cap at 3 closes per beat to mirror close_at_5's caution
+        max_closes = int(params.get('close_at_max_per_beat', 3))
+        closed = 0
+        for pos in side_candidates[:max_closes]:
+            try:
+                result = await close_position(
+                    self._executor, self._initializer, session, pos,
+                    mechanism='emergency', side=side,
+                )
+                if result and result.get('success'):
+                    closed += 1
+            except Exception as _close_err:
+                log.error(
+                    f'[{sid}] Arbiter margin_recovery: close exception on '
+                    f'{side.upper()} @ {pos.get("strike")}: {_close_err}',
+                    exc_info=True,
+                )
+
+        log.info(
+            f'[{sid}] Arbiter margin_recovery complete: {closed} positions '
+            f'bought back on {side.upper()}'
+        )
+
+    # =========================================================================
     # §5: Process Adjustment (Standard / Reversal)
     # =========================================================================
 
@@ -5607,10 +5984,15 @@ class MMMMonitor:
         # when premium bounces around shift_threshold. Default 120s cooldown.
         # Dangerous mode: bypass shift cooldown — near expiry, premium collapses
         # faster than 120s allows; operator needs immediate shift capability.
+        # Phase 3 (2026-04-28): arbiter Tier 1 also bypasses cooldown — when
+        # breakeven CRITICAL fires, the existing cooldown delay leaves the
+        # position bleeding while we wait. Per sealed hierarchy Rule 2.
         _dm_shift = session.get('params', {}).get('dangerous_mode', False)
+        _arbiter_shift_bypass = session.get('_arbiter_shift_bypass_cooldown', False)
         shift_cooldown = session.get('params', {}).get('shift_cooldown_sec', 120)
         last_shift_time = session.get('_last_shift_time', 0)
-        if not _dm_shift and shift_cooldown > 0 and last_shift_time:
+        if (not _dm_shift and not _arbiter_shift_bypass
+                and shift_cooldown > 0 and last_shift_time):
             elapsed = time.time() - last_shift_time
             if elapsed < shift_cooldown:
                 log.debug(
@@ -10980,12 +11362,13 @@ class MMMMonitor:
 
     async def _auto_promote_atm_strike(self) -> None:
         """
-        Step 0.75: Auto-promote the open strike closest to ATM as the active strike.
+        Step 0.75: Auto-promote the open strike nearest to spot as the active strike.
 
-        For PE (puts): the highest OTM strike (closest to spot from below) carries the
-        most gamma risk and should be actively monitored.
-        For CE (calls): the lowest OTM strike (closest to spot from above) carries the
-        most gamma risk and should be actively monitored.
+        The nearest-to-spot strike (ITM or OTM) carries the most gamma risk and
+        should be actively monitored. ITM strikes are included because:
+        - Short straddle with adjustment: after shifts, the struck side may cross spot.
+        - Short strangle with ATM-shield OFF: no repositioning fires, price can drift
+          past an existing strike, making it ITM — that ITM strike remains the active.
 
         Skipped when:
         - Session is not RUNNING or PAUSED
@@ -11083,21 +11466,26 @@ class MMMMonitor:
             if len(open_strikes) <= 1:
                 continue  # Only one open strike, nothing to promote
 
-            # Find the OTM strike closest to ATM
+            # Find the strike nearest to ATM — ITM or OTM.
+            # Rule: the nearest-to-spot open strike is always the active strike.
+            # This covers (a) straddle-with-adjustment where price crosses a strike
+            # making it ITM, and (b) strangle with ATM-shield OFF where no
+            # repositioning fires and price drifts past an existing strike.
             best_strike = None
             best_dist = float('inf')
             for s in open_strikes:
-                if side == 'pe' and s >= spot_price:
-                    continue  # Must be below spot for OTM put
-                if side == 'ce' and s <= spot_price:
-                    continue  # Must be above spot for OTM call
                 dist = abs(spot_price - s)
                 if dist < best_dist:
                     best_dist = dist
                     best_strike = s
 
             if best_strike is None or abs(best_strike - current_active) < 1:
-                continue  # Already monitoring the closest-to-ATM strike
+                continue  # Already monitoring the nearest-to-ATM strike
+
+            itm_label = ''
+            if (side == 'pe' and best_strike > spot_price) or \
+               (side == 'ce' and best_strike < spot_price):
+                itm_label = ' [ITM]'
 
             # Promote best_strike: un-shift its positions, set as active, recompute
             for pos in positions:
@@ -11112,17 +11500,18 @@ class MMMMonitor:
 
             log.info(
                 f"[{sid}] AUTO-ATM: {side.upper()} active strike "
-                f"{int(current_active)} → {int(best_strike)} "
+                f"{int(current_active)} → {int(best_strike)}{itm_label} "
                 f"(spot=${spot_price:.0f}, dist=${best_dist:.0f})"
             )
             log_activity(
                 'auto_atm_promote',
                 f'📌 Auto-ATM: {side.upper()} active strike '
-                f'{int(current_active)} → {int(best_strike)} '
-                f'(spot ${spot_price:.0f}, OTM dist ${best_dist:.0f})',
+                f'{int(current_active)} → {int(best_strike)}{itm_label} '
+                f'(spot ${spot_price:.0f}, dist ${best_dist:.0f})',
                 sid, 'info',
                 {'side': side.upper(), 'old_strike': current_active,
-                 'new_strike': best_strike, 'spot': spot_price},
+                 'new_strike': best_strike, 'spot': spot_price,
+                 'itm': bool(itm_label)},
             )
             try:
                 from .mmm_websocket import emit_to_session

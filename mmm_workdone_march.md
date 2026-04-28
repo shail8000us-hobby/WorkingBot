@@ -6049,3 +6049,197 @@ All 1562 tests passed.
   - `audit/mmm/HANDOFF_LAST.md`
 - No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
 
+## 2026-04-27 — Phase 03 audit: `mmm_trigger.py` chunk 01 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_trigger.py` chunk 01 (`lines 1–487`) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_trigger_chunk_01_audit.md`.
+- Audited trigger-core functions in this chunk:
+  - `evaluate_triggers`
+  - `check_frozen_pnl_trigger`
+  - `update_trigger_snapshots`
+- Ran targeted trigger validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_mmm_trigger.py webui/backend/routes/mmm/tests/test_sealed_mmm_trigger.py -q` → `95 passed, 5 warnings`.
+- Recorded findings:
+  - `F03-P3-074`: `check_frozen_pnl_trigger` enabled-path return sets `frozen_triggered=True` even when `outcome='none'` (semantic drift).
+  - `F03-P3-075`: no direct sealed coverage for trigger pin auto-expiry (`_MAX_PIN_ADJ`) and stale `trigger_snapshot` pruning branches in `update_trigger_snapshots`.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+## 2026-04-27 — Phase 03 audit: `mmm_trigger.py` chunk 02 (audit-only)
+
+- Completed execution-primitives audit for `webui/backend/routes/mmm/mmm_trigger.py` chunk 02 (`lines 488–EOF`; file complete) and created report artifact `audit/mmm/file_reports/backend/phase_03_mmm_trigger_chunk_02_audit.md`.
+- Audited timing/interval functions in this chunk:
+  - `apply_theta_acceleration`
+  - `compute_adaptive_interval`
+  - `compute_adaptive_interval_v2`
+  - `apply_theta_acceleration_v2`
+- Ran targeted validation:
+  - `python3 -m pytest webui/backend/routes/mmm/tests/test_sealed_compute_adaptive_interval.py webui/backend/routes/mmm/tests/test_mmm_trigger.py webui/backend/routes/mmm/tests/test_sealed_mmm_trigger.py -q` → `121 passed, 5 warnings`.
+- Findings:
+  - No new chunk-02 findings.
+  - Carry-forward open findings from chunk 01 remain: `F03-P3-074`, `F03-P3-075`.
+- Updated continuity docs:
+  - `audit/mmm/00_MASTER_INDEX.md`
+  - `audit/mmm/HANDOFF_LAST.md`
+- No MMM runtime trading logic was modified in this session; this work was audit/reporting only.
+
+
+---
+
+## 2026-04-27 — Gamma Cap + Breakeven: DTE-aware and position-size-aware
+
+Fixed three false-positive warning/block systems that were calibrated for a static 10-lot session and did not adapt to DTE or accumulated position size.
+
+- **`mmm_gamma.py` — `_update_gamma_cap`**: After reading param-based limits (set at session creation by A6-11), now re-scales dynamically using `max(ce.active_lots, pe.active_lots)`. If current lots > initial_lots (harvester/adjustments grew the book), scales soft/hard/emergency limits proportionally. Only scales UP — never tightens when lots temporarily dip. Writes `_gamma_effective_lots` to session for debugging.
+- **`mmm_regime.py` — `check_projected_gamma`**: Pre-trade execution check now reads `_gamma_hard_limit_hedge_effective` (Tier C DTE-relaxed limit, already 2× in the relax window) instead of `_gamma_hard_limit_effective` (which was tightened ×0.5 near expiry). The near-expiry tightening correctly governs the regime LABEL but was incorrectly also blocking reactive hedges.
+- **`mmm_breakeven_engine.py` — `compute_breakeven`**: `narrow_threshold` is now DTE-aware: 3d+=5%, 24h-3d=4%, 10h-24h=3%, 4h-10h=2%, 2h-4h=1%, <2h=disabled. Also lot-size aware: ≥3× initial_lots → ×0.60 relaxation, ≥2× → ×0.75. `effective_narrow_threshold` added to return dict.
+- **`mmm_monitor.py` — narrow band log**: Added `_should_emit_warning('breakeven_narrow_band')` rate-limiter — was firing on every heartbeat (~every 3.5s) with no cooldown.
+- **`mmm_activity.py`**: Proactive fix — `'delta_engine'` activity type was in `ACTIVITY_TYPE_MAP` but missing from `ACTIVITY_CATEGORIES` (caused test_activity_registry_covers_literal_log_types to fail). Added to `adjustments` category.
+
+**Tests**: 1684 passed / 0 failed (same baseline as last session).
+
+## 2026-04-27 — Fix inverted regime block: TREND+VOL_ELEVATED now directional
+
+**Bug**: `TREND_DOWN + VOL_ELEVATED` returned `ACTION_BLOCK_ALL_SELLS` — blocking CE sells even though calls go further OTM in a falling market and are the *safe* side. TREND_UP same inversion blocked PE (safe side). Live symptom: activity log showed "Regime blocked CE sell: Vol regime ELEVATED + Trend TREND_DOWN" on every CE adjustment attempt during a down-trending, mildly elevated-vol session.
+
+**Root cause**: Lines 773–776 in `_compute_regime_action()` short-circuited to `BLOCK_ALL_SELLS` for both TREND+VOL_ELEVATED cases, firing *before* the tier-based directional logic at lines 810–830 which correctly used `BLOCK_PE_SELLS`/`BLOCK_CE_SELLS`.
+
+- **`mmm_regime.py` — `_compute_regime_action` lines 773–776**: Changed both compound checks to directional blocks:
+  - `TREND_UP + VOL_ELEVATED` → `ACTION_BLOCK_CE_SELLS` (CE is aggressor; PE sells safe)
+  - `TREND_DOWN + VOL_ELEVATED` → `ACTION_BLOCK_PE_SELLS` (PE is aggressor; CE sells safe)
+- Unchanged: `vol=ELEVATED` alone (line 778–779) → still `BLOCK_ALL_SELLS` (no directional signal). `gamma=HARD + vol=ELEVATED` (line 722–723) → still `BLOCK_ALL_SELLS` (compound risk, different concern).
+- **`test_sealed_mmm_regime.py`**: Sealed `test_c_cra_7b` and `test_c_cra_8b` to lock in the correct directional behavior.
+
+**Tests**: 1686 passed / 0 failed.
+
+## 2026-04-27 — Fix VOL_HIGH+TREND: directional block only, safe side open
+
+**Rationale**: Short-premium strategy. High vol = elevated premium on safe (OTM) side. Blocking it wastes the best collection opportunity. Hard stops, ATM guard, max_loss, and per-heartbeat regime detection handle reversals — no need to pre-emptively block the safe side.
+
+- **`mmm_regime.py` — `_compute_regime_action` Priority 3**: Replaced `VOL_HIGH + trend != NORMAL → BLOCK_ALL_SELLS` with two directional returns:
+  - `VOL_HIGH + TREND_UP` → `ACTION_BLOCK_CE_SELLS` (CE aggressor; PE safe + high premium)
+  - `VOL_HIGH + TREND_DOWN` → `ACTION_BLOCK_PE_SELLS` (PE aggressor; CE safe + high premium)
+  - `VOL_HIGH + TREND_NORMAL` → falls through to Priority 3b → `BLOCK_ALL_SELLS` (no directional signal)
+- **`test_sealed_mmm_regime.py`**: Replaced `test_c_cra_3` (wrong: BLOCK_ALL_SELLS for VOL_HIGH+TREND_UP) with three correct tests: `test_c_cra_3`, `test_c_cra_3b`, `test_c_cra_3c`.
+
+**Tests**: 1688 passed / 0 failed.
+
+
+## 2026-04-28 — Phase 3 Coordination Arbiter (sealed hierarchy)
+
+**Why**: User had been in a "fix one bug → create another" loop on the MMM algo. Diagnosis (conversation 2026-04-27): 50+ independent expert modules with no coordination — winner of any conflict determined by execution order in heartbeat, not by considered judgment. 4-phase plan in `MMM_COORDINATION_PLAN.md`. Phase 1 audits in `audit/mmm/coordination/`.
+
+**Phase 2 (sealed 2026-04-27)**: 7 hierarchy rules + strategy-specific overrides. Core principle: Tier 0 absolute (hard stop, ATM shield, time stop), Tier 1 acts not blocks (extreme conditions trigger defensive premium-aware action), Tier 2 silent (modules work as designed in elevated/normal markets), Rule 5 last-30-min cool-down disables Tier 1, Rule 6 stale=danger escalates one tier, Rule 7 audit everything.
+
+**Phase 3 implementation (this session)**:
+
+1. **Stage 1 — Instrumentation (`mmm_state.py`, `mmm_monitor.py`, `mmm_gamma.py`, `mmm_regime.py`)**:
+   - Added `record_signal_update()` + `is_signal_fresh()` helpers in `mmm_state.py`.
+   - 7 timestamp insertions: breakeven_zone, gamma_regime, vol_regime, trend_regime, regime_action, margin_tier, loss_velocity.
+   - **Latent bug fix**: `_margin_tier` was read in 8+ places but never written to session. Default `GREEN`/`` always won. Now written from margin guardian.
+   - Fixed outdated "observation-only" comment on Step 5.8 gamma detector — gamma severity multiplier IS active.
+
+2. **Stage 2 — Surgical fixes**:
+   - `mmm_whipsaw_smart.py:697-711`: STRADDLE_WITH_ADJUSTMENT bypass narrowed. Keeps `trigger_widen_factor=1.0` and `lot_scalar=1.0` (under-adjusting/under-hedging hurts straddle per `mmm_monitor.py:3550-3552, 5129-5131`) but REMOVES `block=False` and token-budget skip — those protect against runaway over-adjustment which user wants ACTIVE for straddle (Phase 2 / D6). Audit: `01_straddle_whipsaw_bypass.md`.
+   - `mmm_gamma.py:_update_gamma_cap`: added DTE relax ladder. >5d → 1.5× limits, 1-5d → 1.25× limits. 5-DTE no longer treated identically to 1-DTE. Last-30-min 0.5× tightening preserved per Rule 5. Audit: `04_gamma_engine_audit.md`.
+
+3. **Stage 3 — Arbiter module + wiring**:
+   - **NEW**: `mmm_arbiter.py` (~280 lines). `CoordinationArbiter.evaluate()` returns `ArbiterDecision` with action types `defensive_shift` / `gamma_emergency_close` / `margin_recovery_buyback` / `noop`. Stale-detection accessors escalate one tier per Rule 6.
+   - Wired into `_heartbeat_inner` after Step 5.8 (gamma detector), before skip-to-PNL gate. When Tier 1 fires, arbiter clears `_skip_to_pnl` (Rule 2 override of upstream blocks) and sets `_arbiter_decision_active` flag.
+   - Gamma EMERGENCY pause site (`mmm_monitor.py` Step 3.5): conditionally skips `self.pause()` when arbiter is enabled and not in last-30-min cool-down — defensive close handles it instead. Per Phase 1 audit Task 2 + Phase 2 / D5.
+   - Default mode is **observation/shadow** — arbiter logs decisions and clears skip-to-pnl but does NOT place orders directly. `arbiter_live_execution` flag (default off) gates future Phase 4 promotion.
+   - Audit trail per Rule 7: `_arbiter_last_decision` cached every beat with full snapshot + stale signals; activity log line per Tier 1 firing; `emit_safety` for operator visibility.
+
+4. **Stage 4 — Sealed tests** (22 new in `test_sealed_audit_fixes.py`):
+   - `TestArbiterTier1DefensiveShift` (4): lower-BE→CE shift, upper-BE→PE shift, WARNING noop, DANGER noop.
+   - `TestArbiterRule5Last30MinCooldown` (2): even with BE=CRITICAL+gamma=EMERGENCY+margin=RED, last-30-min returns NOOP.
+   - `TestArbiterRule6StaleEscalation` (2): stale BE=WARNING escalates to DANGER for arbiter; stale BE=DANGER escalates to CRITICAL → triggers defensive_shift.
+   - `TestArbiterTier1GammaEmergency` (3): CE-dominant→CE close, PE-dominant→PE close, STRADDLE_WITH_ADJUSTMENT bypasses gamma close.
+   - `TestArbiterTier1MarginRecovery` (2): RED triggers recovery on bigger side; margin RED has priority over BE CRITICAL.
+   - `TestArbiterAuditTrail` (1): decision serializes including stale signals.
+   - `TestSmartWhipsawStraddleBlockActive` (1): scalar bypasses preserved post-fix.
+   - `TestGammaDTERelaxLadder` (4): >5d=1.5×, 1-5d=1.25×, baseline=1.0×, last-30-min=0.5×.
+   - `TestSignalFreshnessHelpers` (3): record→fresh, missing=stale, old=stale.
+
+**Files:** `mmm_arbiter.py` (NEW), `mmm_state.py`, `mmm_monitor.py`, `mmm_gamma.py`, `mmm_regime.py`, `mmm_whipsaw_smart.py`, `tests/test_sealed_audit_fixes.py`, `mmm_whipsaw_implementation.md`, `MMM_COORDINATION_PLAN.md`, `MMM_LAST_3_SESSIONS.md`, `feedback_straddle_gamma_bypass.md` (memory)
+
+**Tests**: 1166 MMM-area sealed passing (1144 baseline + 22 new) / 0 failed.
+
+**Open Phase 4 items**: God Layer disposition (subsume into arbiter or coordinate explicitly); arbiter live execution promotion; replay harness for parameter tuning against historical sessions.
+
+
+## 2026-04-28 (rev2) — Phase 3 Coordination Arbiter LIVE (no shadow per user directive)
+
+Per user directive 2026-04-28 ("I dont believe on shadow mode, make it live"), promoted the Phase 3 Coordination Arbiter to live execution and added a WebUI toggle (default ON).
+
+**Live execution dispatcher (`mmm_monitor.py`)**:
+- New section: "Phase 3 Coordination Arbiter — Live execution"
+- `async def _execute_arbiter_decision(decision, ce_now, pe_now)`: routes ArbiterDecision to one of three handlers based on `action_type`. Outer try/except so heartbeat continues even on exec failure (operator alerted via `emit_safety`).
+- `async def _arbiter_execute_defensive_shift(decision, ce_now, pe_now)`: calls `self._process_strike_shift(opposite_side, loss, ce_now, pe_now)`. Sets `_arbiter_shift_bypass_cooldown=True` for the duration so the 120s shift cooldown does not block the bleeding-position defense (Rule 2 — Tier 1 acts not blocks).
+- `async def _arbiter_execute_gamma_close(decision)`: scans dominant-gamma side positions via `scan_closeable_positions(threshold_override=1e9)` (include all), sorts by premium DESC (highest gamma per contract first), closes top positions via `close_position(mechanism="emergency")` until target lots reached. Replaces legacy `self.pause("Gamma emergency")` behaviour.
+- `async def _arbiter_execute_margin_recovery(decision)`: scans cheap OTM positions on bigger-lots side using `scan_closeable_positions(threshold_override=shift_target_premium)`, sorts by premium ASC (cheapest first — highest black-swan risk per insurance-company doctrine), closes up to `close_at_max_per_beat` positions.
+
+**Heartbeat wiring (`mmm_monitor.py`)**:
+- After arbiter `evaluate()`, when Tier 1 fires: clear `_skip_to_pnl` if set, then `await self._execute_arbiter_decision(decision, ce_now, pe_now)`.
+- Outer try/except matches the existing convention for non-fatal heartbeat operations.
+
+**Strike-shift cooldown bypass (`mmm_monitor.py:_process_strike_shift`)**:
+- BEFORE: `if not _dm_shift and shift_cooldown > 0 and last_shift_time:`
+- AFTER: `if (not _dm_shift and not _arbiter_shift_bypass and shift_cooldown > 0 and last_shift_time):`
+- The `_arbiter_shift_bypass_cooldown` flag is set/unset per-call inside `_arbiter_execute_defensive_shift` via try/finally so it cannot leak across heartbeats.
+
+**Params (`mmm_state.py` + `mmm_config.py`)**:
+- `arbiter_enabled: True` (master switch, hot-reloadable, validated as bool)
+- `gamma_dte_ladder_far_mult: 1.5` (range 1.0–3.0, hot-reloadable)
+- `gamma_dte_ladder_multi_mult: 1.25` (range 1.0–3.0, hot-reloadable)
+- All three added to `HOT_RELOAD_PARAMS` so the WebUI toggle takes effect without backend restart.
+
+**WebUI toggle (`MMMSettingsDialog.js`)**:
+- New PARAM_GROUP: `arbiter` ("⚖️ Coordination Arbiter (Phase 3 — Live)") under "advanced" category.
+- Master Switch section: `arbiter_enabled`.
+- Gamma DTE Relax Ladder section: the two multipliers.
+- Param descriptions explain that Tier 0 invariants (hard stop, ATM shield, time stop) are NEVER overridden, and that operational gates are only bypassed at extreme conditions per the sealed hierarchy.
+- NOT added to `STRADDLE_LOCKED_GROUPS` — arbiter is compatible with straddle (gamma EMERGENCY action explicitly bypassed for STRADDLE_WITH_ADJUSTMENT in `mmm_arbiter._gamma_emergency`).
+
+**Sealed tests added (7 new in `test_sealed_audit_fixes.py`)**:
+- `TestArbiterParamDefaults::test_arbiter_enabled_defaults_true`
+- `TestArbiterParamDefaults::test_arbiter_enabled_is_hot_reloadable`
+- `TestArbiterParamDefaults::test_dte_ladder_params_hot_reloadable`
+- `TestArbiterShiftBypassesCooldown::test_arbiter_flag_bypasses_cooldown_logic` (source-presence guard)
+- `TestArbiterLiveExecutionWired::test_execute_arbiter_decision_method_exists`
+- `TestArbiterLiveExecutionWired::test_heartbeat_calls_execute`
+- `TestArbiterLiveExecutionWired::test_no_shadow_mode_flag` (regression guard against silent shadow-mode reintroduction)
+
+**Files**: `mmm_arbiter.py` (docstring update), `mmm_monitor.py` (4 new methods + cooldown gate update + heartbeat exec call), `mmm_state.py` (3 new defaults + 3 HOT_RELOAD), `mmm_config.py` (3 validators + 3 descriptions), `MMMSettingsDialog.js` (PARAM_GROUP + CATEGORY + descriptions), `tests/test_sealed_audit_fixes.py` (7 new tests).
+
+**Tests**: 1173 MMM-area sealed passing (baseline 1144 + 29 new across rev1+rev2) / 0 failed.
+
+**Live behaviour summary**: When `arbiter_enabled=True` (default), at extreme conditions the arbiter takes precedence over operational modules and executes one of three defensive actions per beat. The user can flip the toggle off in the WebUI to instantly fall back to legacy un-coordinated behaviour (no backend restart). When ON in the last 30 minutes before expiry, the arbiter is automatically a no-op per Rule 5 — operational modules and Tier 0 safeguards do their job uninterrupted.
+
+---
+
+## 2026-04-28 (rev3) — Nearest-to-ATM active strike rule (ITM/OTM both included)
+
+**Bug**: `_auto_promote_atm_strike()` in `mmm_monitor.py` used an OTM-only filter:
+- PE: only considered strikes strictly below spot
+- CE: only considered strikes strictly above spot
+
+This caused ITM strikes to be silently skipped during auto-promotion. Affected:
+1. **Short straddle with adjustment**: after price moves, a shifted strike may be crossed by spot (becomes ITM). The nearest-to-ATM strike was not promoted — algo continued managing the OTM strike instead of the more dangerous ITM one.
+2. **Short strangle with ATM shield OFF**: when the operator disables ATM shield, no repositioning fires. If price drifts past an existing strike (making it ITM), that ITM strike was never auto-promoted as active.
+
+**Fix** (`mmm_monitor.py`, `_auto_promote_atm_strike()`):
+- Removed the OTM-only guard (`if side == 'pe' and s >= spot_price: continue` / `if side == 'ce' and s <= spot_price: continue`)
+- Selection now evaluates ALL open strikes (active + shifted) by `abs(spot_price - s)` — nearest wins regardless of ITM/OTM
+- Added `itm_label = ' [ITM]'` marker in log/activity when the promoted strike is ITM, so operator can see it happened
+- Added `itm: bool` field to activity metadata for filtering
+
+**Sealed tests added (3 new in `test_sealed_audit_fixes.py`, class `TestAutoPromoteNearestATM`)**:
+- `test_no_otm_only_filter`: source-presence guard — confirms the old OTM-only guard comments are gone
+- `test_itm_label_present`: confirms `itm_label = ' [ITM]'` string exists for observability
+- `test_nearest_any_strike_selected`: unit test — ITM strike at dist=500 beats OTM at dist=1000
+
+**Files**: `mmm_monitor.py` (docstring + selection loop), `tests/test_sealed_audit_fixes.py` (3 new tests)
+
+**Tests**: 1176 MMM-area sealed passing / 0 failed

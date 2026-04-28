@@ -210,6 +210,8 @@ class DeribitOIFetcher(BaseOIFetcher):
                 continue  # Skip zero-OI strikes to save memory
 
             underlying_price = float(item.get('underlying_price', 0) or 0)
+            mark_iv = float(item.get('mark_iv', 0) or 0) / 100.0 if item.get('mark_iv') else 0.0
+            
             strike = float(m.group('strike'))
             opt_type = 'call' if m.group('type') == 'C' else 'put'
 
@@ -222,11 +224,13 @@ class DeribitOIFetcher(BaseOIFetcher):
             rows.append({
                 'exchange': 'deribit',
                 'underlying': underlying.upper(),
+                'underlying_price': underlying_price,
                 'expiry': expiry,
                 'strike': strike,
                 'type': opt_type,
                 'oi': oi,
                 'oi_usd': oi * underlying_price,
+                'mark_iv': mark_iv,
                 'timestamp': now_ts,
             })
 
@@ -333,6 +337,7 @@ class BinanceOIFetcher(BaseOIFetcher):
                 'type': opt_type,
                 'oi': oi,
                 'oi_usd': oi_usd,
+                'mark_iv': 0.0,
                 'timestamp': now_ts,
             })
 
@@ -429,6 +434,7 @@ class DeltaGlobalOIFetcher(BaseOIFetcher):
                 'type': opt_type,
                 'oi': oi,
                 'oi_usd': oi_usd,
+                'mark_iv': 0.0,
                 'timestamp': now_ts,
             })
 
@@ -560,6 +566,7 @@ class OKXOIFetcher(BaseOIFetcher):
                 'type': opt_type,
                 'oi': oi_ccy,        # BTC units (consistent with Deribit)
                 'oi_usd': oi_usd_raw,
+                'mark_iv': float(item.get('markVol', 0) or 0),
                 'timestamp': ts_str,
             })
 
@@ -623,6 +630,7 @@ class BybitOIFetcher(BaseOIFetcher):
 
             underlying_price = float(item.get('underlyingPrice', 0) or 0)
             oi_usd = oi * underlying_price if underlying_price > 0 else 0.0
+            mark_iv = float(item.get('markIv', 0) or 0)
 
             strike = float(m.group('strike'))
             opt_type = 'call' if m.group('type') == 'C' else 'put'
@@ -636,11 +644,13 @@ class BybitOIFetcher(BaseOIFetcher):
             rows.append({
                 'exchange': 'bybit',
                 'underlying': underlying.upper(),
+                'underlying_price': underlying_price,
                 'expiry': expiry,
                 'strike': strike,
                 'type': opt_type,
                 'oi': oi,
                 'oi_usd': oi_usd,
+                'mark_iv': mark_iv,
                 'timestamp': now_ts,
             })
 

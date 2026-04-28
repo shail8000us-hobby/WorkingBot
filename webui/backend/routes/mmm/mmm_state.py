@@ -23,6 +23,61 @@ log = logging.getLogger('mmm_state')
 
 
 # =============================================================================
+# Signal Freshness Helpers (Phase 3 Coordination Arbiter — Rule 6 stale = danger)
+# =============================================================================
+#
+# The Coordination Arbiter (mmm_arbiter.py) consumes signals like _breakeven_zone,
+# _gamma_regime, _margin_tier produced by independent engines. Per the sealed
+# hierarchy Rule 6, signals not refreshed within current/prior beat must be
+# treated as escalated one tier (e.g., stale WARNING → DANGER for arbiter
+# decision purposes only).
+#
+# Pattern: each engine that produces a signal calls record_signal_update() at
+# the END of its compute, even if the value didn't change. The arbiter calls
+# is_signal_fresh() before acting on the signal.
+#
+# This file centralizes the helpers; signal timestamps live in session under
+# `_<signal>_last_updated_at`. See `audit/mmm/coordination/05_stale_detection_feasibility.md`.
+
+
+def record_signal_update(session: Dict, signal_name: str) -> None:
+    """Mark a signal as freshly computed this beat.
+
+    Writes `_<signal>_last_updated_at` to session with current UTC ISO timestamp.
+    Called at the end of every engine compute, regardless of whether the value
+    changed. The arbiter's stale detection (Rule 6) reads this timestamp.
+
+    Phase 3 — never raise from here; signal-update bookkeeping must not crash a
+    heartbeat. Caller is trusted to pass a valid session dict.
+    """
+    session[f'_{signal_name}_last_updated_at'] = datetime.now(timezone.utc).isoformat()
+
+
+def is_signal_fresh(
+    session: Dict,
+    signal_name: str,
+    max_age_seconds: float,
+) -> bool:
+    """Return True if the signal was updated within max_age_seconds.
+
+    Reads `_<signal>_last_updated_at`. Returns False if missing (treat as stale)
+    or unparseable. The arbiter typically calls this with `1.5 * adjustment_interval`
+    to allow one beat of grace.
+    """
+    ts_str = session.get(f'_{signal_name}_last_updated_at')
+    if not ts_str:
+        return False
+    try:
+        ts = datetime.fromisoformat(ts_str)
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        age_sec = (datetime.now(timezone.utc) - ts).total_seconds()
+        return age_sec <= max_age_seconds
+    except (ValueError, TypeError):
+        return False
+
+
+# =============================================================================
 # Section 2: Per-Side State
 # =============================================================================
 
@@ -772,6 +827,11 @@ DEFAULT_PARAMS = {
     'god_pnl_threshold': 40.0,      # $ PNL drop needed to trigger (set conservatively)
     'god_min_silence_min': 20,      # Minutes without any adjustment needed to trigger
     'god_cooldown_min': 45,         # Minutes God stays silent after firing
+    # Phase 3 Coordination Arbiter (live mode by default — see MMM_COORDINATION_PLAN.md)
+    'arbiter_enabled': True,        # Master switch for the Coordination Arbiter (live execution)
+    # Gamma engine DTE relax ladder — see audit/mmm/coordination/04_gamma_engine_audit.md
+    'gamma_dte_ladder_far_mult': 1.5,    # > 5 days to expiry: limits × this
+    'gamma_dte_ladder_multi_mult': 1.25, # 1–5 days to expiry: limits × this
 }
 
 # Which parameters can be changed while algo is running
@@ -931,6 +991,8 @@ HOT_RELOAD_PARAMS = {
     # God Layer (strategic integrity monitor)
     'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',
     'god_min_silence_min', 'god_cooldown_min',
+    # Phase 3 Coordination Arbiter (live)
+    'arbiter_enabled', 'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
 }
 
 # A9-01 fix: derive HOT_RELOAD_PARAMS from PARAM_RULES (single source of truth)

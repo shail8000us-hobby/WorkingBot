@@ -13,6 +13,7 @@ npm run build 2>&1 | grep -E "^Compiled|^Failed to|✅|❌" || true
 
 echo "🔄 Restarting backend..."
 launchctl stop com.gridbot.production.webui
+sleep 2  # Give the app time to clean up sockets and exit
 launchctl start com.gridbot.production.webui
 
 echo "⏳ Waiting for backend..."

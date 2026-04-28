@@ -256,6 +256,8 @@ class OIStore:
         if expiries is None or expiries == '' or expiries == []:
             all_exp = self.get_expiries(underlying)
             expiry_set = {all_exp[0]} if all_exp else set()
+        elif expiries == ['ALL']:
+            expiry_set = set(self.get_expiries(underlying))
         elif isinstance(expiries, str):
             expiry_set = {expiries}
         else:
@@ -290,6 +292,7 @@ class OIStore:
                         'oi': 0.0,
                         'oi_usd': 0.0,
                         'oi_change': 0.0,
+                        'mark_iv': 0.0,
                         'exchanges': {},
                     }
 
@@ -300,6 +303,9 @@ class OIStore:
                     'oi': latest.get('oi', 0),
                     'oi_usd': latest.get('oi_usd', 0),
                 }
+                iv = latest.get('mark_iv', 0.0)
+                if iv > 0 and iv > row['mark_iv']:
+                    row['mark_iv'] = float(iv)
 
                 # Time-windowed OI change: compare latest vs deque entry
                 # closest to (now - window_minutes). Falls back to oldest entry.

@@ -1,7 +1,7 @@
 # MMM Audit Master Index
 
 **Primary plan:** `MMM_FULLSTACK_PHASEWISE_AUDIT_PLAN.md`  
-**Last updated:** 2026-04-23
+**Last updated:** 2026-04-27
 
 ## Coverage counters
 
@@ -108,7 +108,9 @@
 | F03-P3-071 | P3 | Initializer chunk-02 helper contract coverage gap | `build_symbol` / `_extract_ticker_data` / `check_liquidity` / premium helper methods | Open | No direct sealed contracts found for chunk-02 helper surfaces; regressions can hide behind mocked consumer tests |
 | F03-P2-072 | P2 | Pending-order partial-fill recovery gap | `mmm_pending_orders.check_and_resolve_pending` | Open | Partially filled orders that later cancel/expire are cleared without recording executed lots because the guard only handles all-or-nothing filled/dead states and never inspects `filled_size` / `unfilled_size` |
 | F03-P3-073 | P3 | Pending-order partial-recovery coverage gap | `test_sealed_mmm_pending_orders.py` | Open | No sealed contract exercises partial-fill terminal states or callback-failure idempotence in the pending-order recovery path; the suite only covers full fill/open/dead/error cases |
+| F03-P3-074 | P3 | Frozen-trigger flag semantic drift | `mmm_trigger.check_frozen_pnl_trigger` | Open | Enabled-path return sets `frozen_triggered=True` even when `outcome='none'`, which is misleading for downstream telemetry/contracts |
+| F03-P3-075 | P3 | Trigger pin/prune branch coverage gap | `test_mmm_trigger.py` + `test_sealed_mmm_trigger.py` | Open | No direct tests for `_trigger_pinned` auto-expiry (`_MAX_PIN_ADJ`) or stale `trigger_snapshot` pruning paths in `update_trigger_snapshots` |
 
 ## Next action
 
-Continue Phase 03 execution-primitives audit with `webui/backend/routes/mmm/mmm_trigger.py` chunk 01.
+Continue Phase 03 execution-primitives audit with `webui/backend/routes/mmm/mmm_fill_sync.py` chunk 01.

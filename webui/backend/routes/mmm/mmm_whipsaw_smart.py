@@ -694,22 +694,35 @@ class SmartWhipsawEngine:
                     'source': 'SMART',
                 })
 
-        # STRADDLE_WITH_ADJUSTMENT bypass (§0 rule 6) — overrides all smart limits
+        # STRADDLE_WITH_ADJUSTMENT — SURGICAL bypass (Phase 3 refinement, 2026-04-28).
+        #
+        # Original §0 rule 6 (mmm_whipsaw_implementation.md, commit 57868541af) inherited
+        # legacy whipsaw's bypass mechanically, applying it to four behaviours:
+        #   - trigger_widen_factor = 1.0  ← keep; under-adjusting compounds straddle loss
+        #                                   (mmm_monitor.py:3550-3552 documents rationale)
+        #   - lot_scalar = 1.0            ← keep; under-hedging leaves both legs exposed
+        #                                   (mmm_monitor.py:5129-5131 documents rationale)
+        #   - block = False               ← REMOVED; user intent (Phase 2 / D6, 2026-04-27):
+        #                                   "smart whipsaw protects us from unnecessary
+        #                                   increase in position on both sides — hard stop +
+        #                                   smart whipsaw is the good combo for straddle"
+        #   - token budget skipped        ← REMOVED; same reason: token budget IS the
+        #                                   over-adjustment cap user wants active.
+        #
+        # Audit: audit/mmm/coordination/01_straddle_whipsaw_bypass.md
         if is_straddle_adj:
             trigger_widen_factor = 1.0
             lot_scalar = 1.0
-            block = False
+            # block intentionally NOT forced False — let LOCKDOWN/OBSERVE block protect
+            # against runaway over-adjustment on both straddle legs.
 
         # ── Step 5: token budget ────────────────────────────────────────────
+        # Token budget enforced for ALL strategies including STRADDLE — caps per-session
+        # adjustment count and prevents runaway over-adjustment in choppy markets.
         budget = _load_budget(session, tokens_init, refresh_per_hour=refresh_rate, interval_mins=interval_mins)
         recent_is_flip = flip_sc > 0.05
         token_cost = budget.cost_for_mode(mode, is_flip=recent_is_flip)
-        if is_straddle_adj:
-            # STRADDLE bypass also skips token spend — token budget must not
-            # override the §0 rule 6 invariant that gamma never blocks adjustment.
-            # No spend, no credit — _load_budget already applied the beat drip.
-            pass
-        elif not block and not budget.spend(token_cost):
+        if not block and not budget.spend(token_cost):
             block = True
             events.append({
                 'type': 'smart_whipsaw',

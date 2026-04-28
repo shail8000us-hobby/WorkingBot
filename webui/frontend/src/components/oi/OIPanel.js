@@ -32,6 +32,7 @@ import OIBarChart from './OIBarChart';
 import OIChangeChart from './OIChangeChart';
 import OITable from './OITable';
 import OISpikeLog from './OISpikeLog';
+import GammaDashboard from './GammaDashboard';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555';
 
@@ -46,6 +47,7 @@ const TABS = [
   { id: 'absolute', label: '📊 Open Interest' },
   { id: 'table', label: '📋 Table' },
   { id: 'spikes', label: '🔔 Spike Log' },
+  { id: 'gamma', label: '🧠 Gamma Flip' },
 ];
 
 const STALE_THRESHOLD_MS = 120_000; // 2 minutes
@@ -87,6 +89,7 @@ export default function OIPanel() {
   const [spikes, setSpikes] = useState([]);
   const [health, setHealth] = useState({});
   const [activeTab, setActiveTab] = useState('change');
+  const [gammaState, setGammaState] = useState(null);
 
   // Spike toast
   const [toastOpen, setToastOpen] = useState(false);
@@ -276,6 +279,10 @@ export default function OIPanel() {
           setToastOpen(true);
         });
 
+        socket.on('gamma_update', (gamma) => {
+          setGammaState(gamma);
+        });
+
         setConnectionStatus('connecting');
         socketRef.current = socket;
       } catch (err) {
@@ -406,12 +413,12 @@ export default function OIPanel() {
           mb: 2,
         }}>
           {[
-            { label: 'Call OI',    value: formatUSD(summary.total_call_oi_usd),                         color: '#f44336' },
-            { label: 'Put OI',     value: formatUSD(summary.total_put_oi_usd),                          color: '#4caf50' },
-            { label: 'PCR',        value: Number(summary.pcr || 0).toFixed(4),                         color: (summary.pcr || 0) > 1 ? '#4caf50' : '#f44336' },
-            { label: 'ATM Strike', value: atmStrike ? atmStrike.toLocaleString() : '—',                color: '#fbbf24' },
-            { label: 'BTC Spot',   value: underlyingPrice ? `$${Math.round(underlyingPrice).toLocaleString()}` : '—', color: '#94a3b8' },
-            { label: 'Strikes',    value: strikeCount.toString(),                                      color: '#64748b' },
+            { label: 'Call OI', value: formatUSD(summary.total_call_oi_usd), color: '#f44336' },
+            { label: 'Put OI', value: formatUSD(summary.total_put_oi_usd), color: '#4caf50' },
+            { label: 'PCR', value: Number(summary.pcr || 0).toFixed(4), color: (summary.pcr || 0) > 1 ? '#4caf50' : '#f44336' },
+            { label: 'ATM Strike', value: atmStrike ? atmStrike.toLocaleString() : '—', color: '#fbbf24' },
+            { label: 'BTC Spot', value: underlyingPrice ? `$${Math.round(underlyingPrice).toLocaleString()}` : '—', color: '#94a3b8' },
+            { label: 'Strikes', value: strikeCount.toString(), color: '#64748b' },
           ].map(item => (
             <Paper key={item.label} sx={{
               p: '12px 14px',
@@ -496,6 +503,9 @@ export default function OIPanel() {
             )}
             {activeTab === 'spikes' && (
               <OISpikeLog spikes={spikes} />
+            )}
+            {activeTab === 'gamma' && (
+              <GammaDashboard gammaState={gammaState} underlyingPrice={underlyingPrice} />
             )}
           </div>
         )}

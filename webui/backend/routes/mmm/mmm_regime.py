@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Tuple
 
 from .mmm_constants import LOT_SIZE_BTC
+from .mmm_state import record_signal_update
 
 log = logging.getLogger('mmm_regime')
 
@@ -236,6 +237,8 @@ def _update_vol_regime(session: Dict, iv_data: Dict, spot_price: float) -> str:
         session['_vol_wind_down_triggered'] = False
         log.info("Vol regime reset to NORMAL — clearing _vol_wind_down_triggered")
 
+    # Phase 3 Rule 6: timestamp vol_regime for arbiter stale-detection
+    record_signal_update(session, 'vol_regime')
     return new_regime
 
 # =============================================================================
@@ -628,6 +631,8 @@ def _update_trend_guard(session: Dict, spot_price: float) -> str:
         session['_trend_wind_down_triggered'] = False
         log.info("Trend reset to NORMAL — clearing _trend_wind_down_triggered")
 
+    # Phase 3 Rule 6: timestamp trend_regime for arbiter stale-detection
+    record_signal_update(session, 'trend_regime')
     return new_regime
 
 
@@ -642,7 +647,8 @@ def _compute_regime_action(session: Dict) -> str:
     Priority (Section D.2):
       1. Safety hard stops (handled before this — max_loss, margin_critical)
       2. Gamma emergency → FORCE_REDUCE
-      3. Vol HIGH + Trend → BLOCK_ALL_SELLS
+      3. Vol HIGH + Trend → directional block (BLOCK_CE_SELLS or BLOCK_PE_SELLS per direction)
+         Vol HIGH alone → BLOCK_ALL_SELLS (no directional signal)
       4. Gamma hard (vol=NORMAL) → directional block via per-side gamma (Tier B)
          or DTE relax tiebreaker (Tier C); fallback BLOCK_ALL_SELLS.
          Vol ELEVATED + Gamma HARD → BLOCK_ALL_SELLS (compound risk, no exemption).
@@ -667,9 +673,15 @@ def _compute_regime_action(session: Dict) -> str:
     if gamma_regime == GAMMA_EMERGENCY:
         return ACTION_FORCE_REDUCE
 
-    # Priority 3: Vol HIGH + any Trend → block all
-    if vol_regime == VOL_HIGH and trend_regime != TREND_NORMAL:
-        return ACTION_BLOCK_ALL_SELLS
+    # Priority 3: Vol HIGH + Trend — directional block only.
+    # High vol amplifies premium on the safe (OTM) side — the ideal time to sell it.
+    # Hard stops, ATM guard, max_loss, and heartbeat-cycle regime updates handle reversals.
+    # Only the aggressor (ITM-bound) side is blocked; safe side is deliberately left open.
+    # VOL_HIGH + TREND_NORMAL falls through to Priority 3b (BLOCK_ALL_SELLS, no directional signal).
+    if vol_regime == VOL_HIGH and trend_regime == TREND_UP:
+        return ACTION_BLOCK_CE_SELLS   # CE going ITM; PE safe + high premium → sell
+    if vol_regime == VOL_HIGH and trend_regime == TREND_DOWN:
+        return ACTION_BLOCK_PE_SELLS   # PE going ITM; CE safe + high premium → sell
 
     # Priority 3b: Vol HIGH alone
     if vol_regime == VOL_HIGH:
@@ -767,13 +779,16 @@ def _compute_regime_action(session: Dict) -> str:
         return ACTION_BLOCK_ALL_SELLS
 
     # Priority 5: Trend detection — tiered response (IMP-2)
-    # + Vol ELEVATED compounds with trend
+    # + Vol ELEVATED compounds with trend but does NOT widen the block to both sides.
+    # CE is the aggressor in TREND_UP (calls go ITM) → block CE only; PE sells are safe.
+    # PE is the aggressor in TREND_DOWN (puts go ITM) → block PE only; CE sells are safe.
+    # TREND_NORMAL + ELEVATED is handled by the vol-alone check below (BLOCK_ALL_SELLS).
     trend_tier = session.get('_trend_tier', TREND_TIER_NONE)
 
     if trend_regime == TREND_UP and vol_regime == VOL_ELEVATED:
-        return ACTION_BLOCK_ALL_SELLS
+        return ACTION_BLOCK_CE_SELLS   # Rising market → CE is aggressor; PE sells safe
     if trend_regime == TREND_DOWN and vol_regime == VOL_ELEVATED:
-        return ACTION_BLOCK_ALL_SELLS
+        return ACTION_BLOCK_PE_SELLS   # Falling market → PE is aggressor; CE sells safe
 
     if vol_regime == VOL_ELEVATED:
         return ACTION_BLOCK_ALL_SELLS
@@ -1016,8 +1031,13 @@ class MMMRegimeEngine:
         projected = compute_projected_gamma(
             session, new_strike_gamma, new_lots, spot_price,
         )
-        hard_limit = session.get('_gamma_hard_limit_effective',
-                                  params.get('gamma_hard_limit', 5000.0))
+        # Use the DTE-relaxed hedge limit for execution checks: _gamma_hard_limit_hedge_effective
+        # is 2× in the relax window (Tier C in _update_gamma_cap), which undoes the near-expiry
+        # ×0.5 tightening for reactive hedges.  Falls back to the standard effective limit when
+        # outside the relax window (same behaviour as before for mid-session adjustments).
+        hard_limit = session.get('_gamma_hard_limit_hedge_effective',
+                                  session.get('_gamma_hard_limit_effective',
+                                              params.get('gamma_hard_limit', 5000.0)))
 
         if projected <= hard_limit:
             return False, projected
