@@ -267,7 +267,7 @@ All beats showed `margin_tier` stale (raw=GREEN, escalated to YELLOW). Root caus
 
 ---
 
-## 12. How to Resume Work in a New Session
+## 14. How to Resume Work in a New Session
 
 1. Read `MMM_LAST_3_SESSIONS.md` (required by CLAUDE.md before any MMM work).
 2. Read this file.
@@ -275,3 +275,104 @@ All beats showed `margin_tier` stale (raw=GREEN, escalated to YELLOW). Root caus
 4. Run sealed tests: `python3 -m pytest webui/backend/routes/mmm/tests/ -m sealed -q` from repo root — must be 1191 passing.
 5. For Phase 4 God Layer link: add `if session.get('_arbiter_decision_active'): return` at the top of the God Layer block in `_heartbeat_inner`.
 6. For Phase 4 replay: extend `mmm_whipsaw_replay.py` to load `data/arbiter_audit_<sid>.jsonl`.
+
+---
+
+## 15. Phase 4 — AI Model Prompt (Live Validation)
+
+> **Use this section when starting any Phase 4 session.** Copy the prompt block below and prepend it to your task description.
+
+### Why Phase 4 Exists (Read This First)
+
+Phase 3 shipped the arbiter in LIVE mode. But as of 2026-04-28, the arbiter has only ever returned NOOP in real trading (session mmm28apr26-1, Tier 2 maximum — BE zone never reached CRITICAL). This means:
+
+- **The three Tier 1 execution paths have never fired a real order.** `defensive_shift`, `gamma_emergency_close`, and `margin_recovery_buyback` are proven only in unit tests, not in live trading.
+- **The God Layer coordination gate is missing.** When both `god_enabled=True` and `arbiter_enabled=True` simultaneously, there is no gate. Both can act on the same beat. This is a live production risk.
+- **Gamma close lot-sizing is untuned.** `close_lots = max(1, int(dominant_lots * 0.25))` is a safe starting value chosen before any real data existed. Phase 4 replay will produce data to tune this fraction.
+
+Phase 4 live check = first real-world validation that when Tier 1 *does* trigger, the execution paths work correctly without creating double-orders, wrong-side shifts, or orphaned positions.
+
+---
+
+### AI Model Prompt — Phase 4 Live Check Session
+
+```
+PHASE 4 LIVE CHECK — MMM Coordination Arbiter
+
+Context documents to read before starting:
+1. MMM_LAST_3_SESSIONS.md (mandatory per CLAUDE.md)
+2. AI_Arbiter_context.md (this file — sections 1–13 minimum)
+3. MMM_COORDINATION_PLAN.md → Status table + Phase 4 section
+
+Baseline verification (run first, do not proceed if this fails):
+  python3 -m pytest webui/backend/routes/mmm/tests/ -m sealed -q --tb=short
+  Expected: 1191 passed, 0 failed.
+
+Phase 4 tasks (in priority order):
+
+TASK P4-1 — God Layer Coordination Gate [BLOCKING — live risk]
+  File: webui/backend/routes/mmm/mmm_monitor.py
+  Location: God Layer block inside _heartbeat_inner()
+  Action: Add at the TOP of the God Layer block (before any God Layer logic):
+    if session.get('_arbiter_decision_active'):
+        pass  # arbiter acted this beat — skip God Layer to avoid double-action
+  Reference: audit/mmm/coordination/06_god_layer_disposition.md
+  Sealed test required: add test confirming God Layer is skipped when
+    _arbiter_decision_active=True. Merge into test_sealed_audit_fixes.py.
+  Do NOT proceed to P4-2 or P4-3 without this gate in place and sealed.
+
+TASK P4-2 — Live Execution Path Audit (read-only)
+  After at least ONE session where Tier 1 fired:
+  1. Read webui/backend/data/mmm_activity_log.json — grep for 'arbiter'
+  2. Read data/arbiter_audit_<session_id>.jsonl if it exists
+  3. Confirm the activity log shows: action_type != 'noop', tier == 1,
+     and the correct execution method was called (defensive_shift /
+     gamma_emergency_close / margin_recovery_buyback)
+  4. Verify no reconciliation mismatch appeared in the same session window
+     (grep logs for 'RECONCILIATION' and 'MISMATCH')
+  5. Report: which Tier 1 action fired, what the trigger was, did orders
+     execute, did the session remain stable afterwards?
+
+TASK P4-3 — Gamma Close Lot-Sizing Review (data-driven)
+  Only after P4-2 has produced at least 2 gamma_emergency_close events:
+  Current formula: close_lots = max(1, int(dominant_lots * 0.25))
+  Review: was 25% too aggressive (session destabilized) or too conservative
+    (gamma risk persisted for 3+ beats after close)?
+  Sealed rules to preserve:
+    - Insurance doctrine (Rule 4): never close more than needed
+    - Tier 1 acts (Rule 2): close must be decisive enough to actually reduce
+      curvature exposure, not cosmetic
+  If adjustment needed: change only the fraction constant, add sealed test
+  verifying the new lot-sizing formula, update this document.
+
+TASK P4-4 — Replay Harness (deferred, no live-session dependency)
+  File: mmm_whipsaw_replay.py
+  Action: extend to load data/arbiter_audit_<sid>.jsonl alongside existing
+    whipsaw replay data. Goal: replay historical sessions and diff outcomes
+    under different arbiter parameters (e.g. CRITICAL threshold, close_lots fraction).
+  This is a tooling task — do NOT touch live heartbeat code for this.
+
+Sealed invariants you must not break:
+  - 7 sealed hierarchy rules (Section 3 of this document)
+  - No shadow mode reintroduction (test_no_shadow_mode_flag will fail)
+  - Ratchet skips when _arbiter_decision_active (test_ratchet_skipped_when_arbiter_active)
+  - Tier 0 absolute — God Layer gate must never block Tier 0 logic, only Tier 1
+
+When Phase 4 is complete:
+  - All 4 tasks done (or explicitly deferred with rationale)
+  - Sealed test count confirmed (run --collect-only to verify)
+  - Update MMM_COORDINATION_PLAN.md → Status table: Phase 4 → COMPLETE
+  - Update Section 10 of this document to reflect resolved open items
+  - Add entry to mmm_workdone_march.md (mandatory per CLAUDE.md)
+```
+
+---
+
+### What "Live Check" Means Concretely
+
+| Check | Pass condition | Fail condition |
+|---|---|---|
+| God Layer gate | `_arbiter_decision_active` check in God Layer block, sealed test passing | God Layer runs on same beat as Tier 1 arbiter action |
+| Tier 1 execution | Activity log shows `action_type != noop` + no reconciliation mismatch in same session | Mismatch after Tier 1 fire → order double-counted or missed |
+| Gamma lot-sizing | Position count visibly reduced on dominant side after `gamma_emergency_close` | Dominant lots unchanged in next beat → close silently failed |
+| Ratchet isolation | No ratchet log entry on same beat as arbiter Tier 1 | Ratchet fires same beat → fill anchor overwritten |
