@@ -133,6 +133,15 @@ class ClosedPositionStore:
             f"realized=${realized_pnl:+.4f}, cumulative=${new_cumulative:+.4f}"
         )
 
+    def dismiss(self, symbol: str) -> bool:
+        """Remove a symbol from the store (user dismissed the phantom row)."""
+        with self._lock:
+            if symbol in self._data:
+                del self._data[symbol]
+                self._save_unlocked()
+                return True
+        return False
+
     def cleanup_expired(self) -> None:
         """Public method to trigger expired-entry purge."""
         with self._lock:

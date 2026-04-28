@@ -268,12 +268,19 @@ class _OptionsWSCache:
                         prev_size = float(prev_pos.get("size", 0) or 0)
                         curr_size = exchange_map.get(sym, 0)
                         if prev_size != 0 and curr_size == 0:
-                            # Position fully closed — compute realized PnL from last known mark
-                            mark = float(prev_pos.get("mark_price", 0) or 0)
-                            entry = float(prev_pos.get("entry_price", 0) or 0)
-                            if mark == 0:
-                                mark = entry  # fallback: no gain/loss
-                            realized = (mark - entry) * prev_size
+                            # Position fully closed — use API-provided unrealized_pnl as realized.
+                            # Prices are USD/BTC, size is in lots (1 lot = 0.001 BTC), so
+                            # the manual formula needs * 0.001.  The REST unrealized_pnl field
+                            # is already in USD and is more accurate (it uses the exchange's own
+                            # mark model), so prefer it.
+                            realized = float(prev_pos.get("unrealized_pnl", 0) or 0)
+                            if realized == 0:
+                                # Fallback if unrealized_pnl wasn't populated yet
+                                mark = float(prev_pos.get("mark_price", 0) or 0)
+                                entry = float(prev_pos.get("entry_price", 0) or 0)
+                                if mark == 0:
+                                    mark = entry
+                                realized = (mark - entry) * prev_size * 0.001
                             store.record_close(prev_pos, realized)
                 except Exception as exc:
                     log.debug(f"[OptionsWSCache] ClosedPositionStore update failed: {exc}")

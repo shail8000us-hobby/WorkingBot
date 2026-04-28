@@ -4534,12 +4534,22 @@ const OptionsPanel = () => {
                                   onRoll={(p) => { setRollPosition(p); setRollModalOpen(true); }}
                                   onDisableSkipConfirm={disableSkipConfirm}
                                   onRemoveClosedPosition={(symbol) => {
+                                    // 1. Remove from frontend localStorage
                                     setClosedPositions(prev => {
                                       const updated = { ...prev };
                                       delete updated[symbol];
                                       return updated;
                                     });
-                                    devLog(`🗑️ Removed closed position: ${symbol}`);
+                                    setPartialRealizedPnl(prev => {
+                                      const updated = { ...prev };
+                                      delete updated[symbol];
+                                      return updated;
+                                    });
+                                    // 2. Remove from backend store so it doesn't reappear on next poll
+                                    api.delete(`/api/options/closed-positions/${encodeURIComponent(symbol)}`).catch(err => {
+                                      devLog(`⚠️ Backend dismiss failed for ${symbol}:`, err);
+                                    });
+                                    devLog(`🗑️ Dismissed closed position: ${symbol}`);
                                   }}
                                   status={status}
                                   closedPositionData={closedPositions[pos.product_symbol]}

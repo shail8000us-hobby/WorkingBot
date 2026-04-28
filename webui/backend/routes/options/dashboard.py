@@ -271,3 +271,19 @@ def _fetch_dashboard_fresh(is_background=False):
             'error': str(e),
             'response_time_ms': (time.time() - start_time) * 1000
         }), 500
+
+
+@dashboard_bp.route('/closed-positions/<path:symbol>', methods=['DELETE'])
+def dismiss_closed_position(symbol):
+    """Remove a phantom closed-position from the server-side store."""
+    try:
+        from .closed_position_store import get_closed_position_store
+        store = get_closed_position_store()
+        removed = store.dismiss(symbol)
+        # Bust the dashboard cache so next GET picks up the change
+        with _dashboard_lock:
+            _dashboard_cache['time'] = 0
+        return jsonify({'success': True, 'removed': removed}), 200
+    except Exception as e:
+        log.error(f"dismiss_closed_position error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
