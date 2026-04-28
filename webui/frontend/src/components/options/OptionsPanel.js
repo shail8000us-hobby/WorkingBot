@@ -450,6 +450,12 @@ const OptionsPanel = () => {
   // Format: { symbol: { product_symbol, realized_pnl, closed_at, entry_price, close_price, original_size } }
   const [closedPositions, setClosedPositions] = usePersistedState('options_closed_positions', {});
 
+  // Positions the user explicitly dismissed via the X button.
+  // Non-persisted: resets on page reload (positions are gone from API by then anyway).
+  // Also checked in disappearance-detection to prevent re-adding dismissed symbols.
+  const dismissedRef = useRef(new Set());
+  const [dismissedSymbols, setDismissedSymbols] = useState(() => new Set());
+
   // Partial exit realized PnL tracking - accumulates PnL from partial position reductions
   // Format: { symbol: { realized_pnl: number, history: [{ size_reduced, pnl, price, timestamp }] } }
   // When you reduce a position (e.g., from -300 to -150), the PnL from the closed portion is locked in here.
@@ -1288,9 +1294,10 @@ const OptionsPanel = () => {
     const liveSymbols = new Set(positions.map(p => p.product_symbol));
 
     // Remove closed positions that now exist as live positions again (user added back)
-    // This is done in a separate effect, but we filter here too for immediacy
+    // This is done in a separate effect, but we filter here too for immediacy.
+    // Also exclude any symbols the user explicitly dismissed (immediate visual feedback).
     const closedToShow = Object.values(closedPositions).filter(
-      cp => !liveSymbols.has(cp.product_symbol)
+      cp => !liveSymbols.has(cp.product_symbol) && !dismissedSymbols.has(cp.product_symbol)
     );
 
     // Convert closed positions to position-like objects with size=0
@@ -1317,11 +1324,14 @@ const OptionsPanel = () => {
     // Inject partial_realized_pnl into live positions so PnL column and payoff graph include it.
     // Skip backend-provided closed phantoms (is_closed=true) — they already carry the correct
     // cumulative realized_pnl and overriding would cause a double-count with unrealized_pnl.
-    const enrichedPositions = positions.map(p => {
-      if (p.is_closed) return p;
-      const partialPnl = partialRealizedPnl[p.product_symbol]?.realized_pnl || 0;
-      return partialPnl !== 0 ? { ...p, partial_realized_pnl: partialPnl } : p;
-    });
+    // Also exclude user-dismissed symbols immediately (before the next API poll confirms they're gone).
+    const enrichedPositions = positions
+      .filter(p => !dismissedSymbols.has(p.product_symbol))
+      .map(p => {
+        if (p.is_closed) return p;
+        const partialPnl = partialRealizedPnl[p.product_symbol]?.realized_pnl || 0;
+        return partialPnl !== 0 ? { ...p, partial_realized_pnl: partialPnl } : p;
+      });
 
     // Merge live positions with closed positions
     const allPositions = [...enrichedPositions, ...closedAsPositions];
@@ -1402,7 +1412,7 @@ const OptionsPanel = () => {
     return sorted;
     // BUG-15 FIX: removed selectedPositionsForPayoff — it is never read inside this memo,
     // so including it caused unnecessary recomputes on every payoff checkbox change
-  }, [positions, closedPositions, partialRealizedPnl, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort]);
+  }, [positions, closedPositions, partialRealizedPnl, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort, dismissedSymbols]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -1945,7 +1955,9 @@ const OptionsPanel = () => {
     }
 
     const disappeared = previousSymbols.filter(
-      prevPos => !currentSymbols.has(prevPos.product_symbol) && !closedPositionsRef.current[prevPos.product_symbol]
+      prevPos => !currentSymbols.has(prevPos.product_symbol) &&
+                 !closedPositionsRef.current[prevPos.product_symbol] &&
+                 !dismissedRef.current.has(prevPos.product_symbol)
     );
 
     if (disappeared.length > 0) {
@@ -4534,7 +4546,12 @@ const OptionsPanel = () => {
                                   onRoll={(p) => { setRollPosition(p); setRollModalOpen(true); }}
                                   onDisableSkipConfirm={disableSkipConfirm}
                                   onRemoveClosedPosition={(symbol) => {
-                                    // 1. Remove from frontend localStorage
+                                    // 1. Immediately hide the row (works for both localStorage and
+                                    //    backend-API phantom rows — instant visual feedback before
+                                    //    the next poll confirms the server no longer returns it).
+                                    dismissedRef.current = new Set([...dismissedRef.current, symbol]);
+                                    setDismissedSymbols(new Set(dismissedRef.current));
+                                    // 2. Remove from frontend localStorage
                                     setClosedPositions(prev => {
                                       const updated = { ...prev };
                                       delete updated[symbol];
@@ -4545,7 +4562,7 @@ const OptionsPanel = () => {
                                       delete updated[symbol];
                                       return updated;
                                     });
-                                    // 2. Remove from backend store so it doesn't reappear on next poll
+                                    // 3. Remove from backend store so it doesn't reappear on next poll
                                     api.delete(`/api/options/closed-positions/${encodeURIComponent(symbol)}`).catch(err => {
                                       devLog(`⚠️ Backend dismiss failed for ${symbol}:`, err);
                                     });

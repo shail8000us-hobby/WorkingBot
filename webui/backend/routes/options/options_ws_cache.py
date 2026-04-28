@@ -209,12 +209,13 @@ class _OptionsWSCache:
                 self._mark_prices[symbol] = mark
                 if symbol in self._positions:
                     self._positions[symbol]["mark_price"] = mark
-                    # Recalculate unrealized PnL with fresh mark
+                    # Recalculate unrealized PnL with fresh mark.
+                    # Prices are USD/BTC; 1 lot = 0.001 BTC — must apply LOT_MULT.
                     pos = self._positions[symbol]
                     size = pos.get("size", 0)
                     entry = pos.get("entry_price", 0)
                     if size and entry:
-                        pos["unrealized_pnl"] = (mark - entry) * size
+                        pos["unrealized_pnl"] = (mark - entry) * size * 0.001
         except Exception as exc:
             log.debug(f"[OptionsWSCache] l1_orderbook handler error: {exc}")
 
@@ -311,7 +312,7 @@ class _OptionsWSCache:
                         size = pos.get("size", 0)
                         entry = pos.get("entry_price", 0)
                         if size and entry:
-                            pos["unrealized_pnl"] = (mark - entry) * size
+                            pos["unrealized_pnl"] = (mark - entry) * size * 0.001
                 self._last_position_refresh = time.time()
 
             count = len(new_positions)
