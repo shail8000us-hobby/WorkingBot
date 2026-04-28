@@ -198,7 +198,66 @@ Key test classes:
 
 ---
 
-## 11. Critical User Doctrines (Non-Negotiable)
+## 11. Peer Module: Profit Ratchet
+
+**Context file**: `AI_profit_ratchet_context.md`
+
+### What it does
+At each cumulative P&L milestone (every `profit_ratchet_step_usd` dollars, default $10), re-anchors CE and PE trigger snapshots to current premium levels so the algo stays responsive to reversals as profit grows. Off by default, hot-reloadable.
+
+### Execution order relative to arbiter
+```
+Arbiter evaluates + executes Tier 1 action   ← sets _arbiter_decision_active=True
+God Layer
+Delta engine
+if not _skip_to_pnl:
+    Profit Ratchet   ← runs AFTER arbiter
+    evaluate_triggers()
+```
+
+### Arbiter gate in ratchet (2026-04-28)
+When arbiter fires Tier 1, `_arbiter_decision_active=True` is set. The ratchet block checks this flag and **skips** re-anchoring that beat.
+
+**Why**: The arbiter's `defensive_shift` action calls `_process_strike_shift`, which internally calls `update_trigger_snapshots(fill_price)` after the order fills. If the ratchet also ran, it would overwrite the fill-based anchor with the pre-fill market price — discarding the more accurate fill anchor.
+
+**Sealed guard**: `TestProfitRatchetSourcePresence::test_ratchet_skipped_when_arbiter_active` — fails if the `_arbiter_decision_active` check is removed from the ratchet block.
+
+### No other conflicts
+- Arbiter reads `_breakeven_zone`, `_gamma_regime`, `_margin_tier` — never trigger snapshots. Ratchet state (`_profit_ratchet_hwm`, `_profit_ratchet_count`) is irrelevant to arbiter decisions.
+- HWM guard naturally prevents ratchet from firing during emergencies (P&L is typically declining at Tier 1).
+- Ratchet is disabled in `_skip_to_pnl=True` beats (trailing stop etc.) — same gate as arbiter Tier 2/3 path.
+
+---
+
+## 12. Arbiter Behavior — Session mmm28apr26-1 Analysis (2026-04-28)
+
+**Strategy**: Short Strangle 0DTE | **Duration**: ~20 hours | **Result**: +$16.14 (R: $35.95, U: -$17.26, F: -$2.54)
+
+### What the arbiter did: correctly nothing (Tier 2 max)
+
+| Beat | Tier | Trigger | be_zone | gamma | margin | Action |
+|---|---|---|---|---|---|---|
+| 4 (last) | 2 | no_tier1_condition | WARNING | NORMAL | YELLOW (stale) | NOOP |
+
+The arbiter was a no-op throughout. The session never reached Tier 1:
+- Nearest BE distance minimum was ~0.63% (WARNING threshold = 1.0%, CRITICAL = 0.2%)
+- Gamma stayed NORMAL/SOFT, never EMERGENCY
+- Margin never reached RED
+
+### What actually ran the session (Tier 3 operational modules)
+- **13 close_at events**: cleaned cheap-premium CE positions at $13-19 after they decayed (e.g., 100 lots at $44.5 bought back at $18-19)
+- **3 strike shifts**: CE followed BTC downward (79400→78800→78000→77200→77000)
+- **4 adjustments**: operator-driven sells at good premiums ($74–$125 range)
+
+### One insurance doctrine observation
+At 16:07, 100 CE lots were sold at $44.5 on strike 78800. This is the cheap-premium anti-pattern (Rule 4). The positions were later cleaned by close_at. **Had Tier 1 fired at that moment**, the arbiter would instead have done a premium-aware defensive shift at `shift_target_premium=$100` — selling fewer lots at better premium.
+
+### Margin tier stale note
+All beats showed `margin_tier` stale (raw=GREEN, escalated to YELLOW). Root cause: session started before the `_margin_tier` write bug fix was deployed. The fix writes `_margin_tier` fresh every beat going forward; new sessions will not show this stale.
+
+---
+
+## 13. Critical User Doctrines (Non-Negotiable)
 
 1. **Survival > earning**: hard stop and ATM shield are absolute and take precedence over any Tier 1 defensive action.
 2. **Insurance company doctrine**: sell fewer high-premium policies, not many cheap ones. Contract count is what kills you in a black swan event, not premium value.
@@ -213,6 +272,6 @@ Key test classes:
 1. Read `MMM_LAST_3_SESSIONS.md` (required by CLAUDE.md before any MMM work).
 2. Read this file.
 3. Check `MMM_COORDINATION_PLAN.md` → **Status** table for current phase.
-4. Run sealed tests: `cd webui/backend && python -m pytest routes/mmm/tests/ -m sealed -q` — must be 1173 passing.
+4. Run sealed tests: `python3 -m pytest webui/backend/routes/mmm/tests/ -m sealed -q` from repo root — must be 1191 passing.
 5. For Phase 4 God Layer link: add `if session.get('_arbiter_decision_active'): return` at the top of the God Layer block in `_heartbeat_inner`.
 6. For Phase 4 replay: extend `mmm_whipsaw_replay.py` to load `data/arbiter_audit_<sid>.jsonl`.

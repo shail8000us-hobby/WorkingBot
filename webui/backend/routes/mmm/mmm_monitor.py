@@ -3677,8 +3677,12 @@ class MMMMonitor:
             # after profit accumulates (prevents stale high-entry anchors). High-water
             # mark guard: only fires on new profit highs, never during a drawdown.
             # Between milestones: zero change to trigger behavior.
+            # Arbiter gate: skip when arbiter executed a Tier 1 action this beat.
+            # The arbiter's shift/close already calls update_trigger_snapshots() with
+            # the fill price — overwriting the ratchet's anchor would discard that.
             _pr_step = params.get('profit_ratchet_step_usd', 0.0)
-            if params.get('profit_ratchet_enabled', False) and _pr_step > 0:
+            if (params.get('profit_ratchet_enabled', False) and _pr_step > 0
+                    and not session.get('_arbiter_decision_active', False)):
                 _pr_pnl = _pnl_total(session)
                 _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
                 if _pr_pnl >= _pr_hwm + _pr_step:

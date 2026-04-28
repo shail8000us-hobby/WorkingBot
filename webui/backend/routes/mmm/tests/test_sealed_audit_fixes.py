@@ -1554,6 +1554,17 @@ class TestProfitRatchetSourcePresence(unittest.TestCase):
         self.assertIn('profit_ratchet', ACTIVITY_TYPES,
                       'profit_ratchet must be a registered activity type')
 
+    def test_ratchet_skipped_when_arbiter_active(self):
+        """Ratchet must not re-anchor when arbiter executed a Tier 1 action this beat.
+        The arbiter's shift/close already calls update_trigger_snapshots() with the
+        fill price; overwriting with ratchet would discard that fill-based anchor."""
+        src = self._src()
+        # The arbiter gate must appear inside the profit_ratchet_enabled block
+        ratchet_start = src.find('profit_ratchet_enabled')
+        ratchet_block = src[ratchet_start:ratchet_start + 400]
+        self.assertIn('_arbiter_decision_active', ratchet_block,
+                      'Ratchet block must check _arbiter_decision_active before firing')
+
 
 if __name__ == '__main__':
     unittest.main()

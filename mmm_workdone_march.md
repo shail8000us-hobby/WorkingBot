@@ -6259,3 +6259,10 @@ This caused ITM strikes to be silently skipped during auto-promotion. Affected:
 **Files**: `mmm_state.py`, `mmm_config.py`, `mmm_activity.py`, `mmm_monitor.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py`
 
 **Tests**: 1190 MMM-area sealed passing / 0 failed (baseline 1176 + 14 new)
+
+## 2026-04-28 (fix) — Fix activity registry: arbiter + profit_ratchet types missing from ACTIVITY_CATEGORIES
+
+- **Bug**: `test_activity_registry_covers_literal_log_types` was failing because 6 arbiter activity types (`arbiter_tier1`, `arbiter_stale_signal`, `arbiter_defensive_shift_exec`, `arbiter_gamma_close_exec`, `arbiter_margin_recovery_exec`, `regime_emergency_arbiter`) and `profit_ratchet` were used in `mmm_monitor.py` but never registered in `ACTIVITY_CATEGORIES` in `mmm_activity.py`.
+- **Fix** (`mmm_activity.py`): Added all 6 arbiter types to `ACTIVITY_TYPES` dict (under Coordination Arbiter section) and to `ACTIVITY_CATEGORIES['safety']`. Added `profit_ratchet` to `ACTIVITY_CATEGORIES['adjustments']`.
+
+**Files**: `mmm_activity.py` | **Tests**: 1734 passed / 0 failed

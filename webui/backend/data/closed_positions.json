@@ -24,5 +24,31 @@
     "greeks": {},
     "is_closed": true,
     "status": "closed"
+  },
+  "C-BTC-76800-280426": {
+    "symbol": "C-BTC-76800-280426",
+    "expiry_ts": 1777377600.0,
+    "cumulative_realized_pnl": 1.7429999999999999,
+    "last_realized_pnl": 0.84,
+    "last_closed_at": "2026-04-28T11:12:50.641605",
+    "last_entry_price": 43.714285714285715,
+    "last_mark_price": 3.46133793,
+    "last_size": -210.0,
+    "greeks": {},
+    "is_closed": true,
+    "status": "closed"
+  },
+  "C-BTC-76600-280426": {
+    "symbol": "C-BTC-76600-280426",
+    "expiry_ts": 1777377600.0,
+    "cumulative_realized_pnl": 2.7,
+    "last_realized_pnl": 1.2,
+    "last_closed_at": "2026-04-28T11:29:19.214923",
+    "last_entry_price": 24.07590534979424,
+    "last_mark_price": 2.05688445,
+    "last_size": -300.0,
+    "greeks": {},
+    "is_closed": true,
+    "status": "closed"
   }
 }

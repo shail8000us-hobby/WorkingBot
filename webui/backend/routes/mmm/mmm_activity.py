@@ -233,6 +233,14 @@ ACTIVITY_TYPES = {
     'gamma_zone_change': 'Gamma Zone Change',
     'gamma_danger_detected': 'Gamma Danger Detected',
 
+    # Coordination Arbiter
+    'arbiter_tier1':                  'Arbiter Tier 1 Action',
+    'arbiter_stale_signal':           'Arbiter Stale Signal',
+    'arbiter_defensive_shift_exec':   'Arbiter Defensive Shift',
+    'arbiter_gamma_close_exec':       'Arbiter Gamma Close',
+    'arbiter_margin_recovery_exec':   'Arbiter Margin Recovery',
+    'regime_emergency_arbiter':       'Regime Emergency (Arbiter)',
+
     # Profit Ratchet
     'profit_ratchet': 'Profit Ratchet',
 
@@ -335,7 +343,8 @@ ACTIVITY_CATEGORIES = {
                     'auto_atm_promote',
                     'fill_sync_confirmed', 'fill_sync_partial',
                     'worthless_expiry_closed',
-                    'delta_engine'},
+                    'delta_engine',
+                    'profit_ratchet'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                 'capacity_full',
                 'safety', 'guardian_violation', 'guardian_auto_heal', 'god_correction',
@@ -353,7 +362,10 @@ ACTIVITY_CATEGORIES = {
                 'whipsaw_guard', 'whipsaw_smart_block', 'atm_shield', 'ghost_close_recovered',
                'breakeven_zone_change', 'breakeven_band_contracting', 'breakeven_narrow_band',
                'gamma_zone_change', 'gamma_danger_detected',
-               'reverse_disabled'},
+               'reverse_disabled',
+               'arbiter_tier1', 'arbiter_stale_signal', 'arbiter_defensive_shift_exec',
+               'arbiter_gamma_close_exec', 'arbiter_margin_recovery_exec',
+               'regime_emergency_arbiter'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                 'session_adopted', 'session_paused', 'session_resumed', 'session_stopped',
                 'hot_reload', 'watchdog', 'force_heartbeat', 'emergency',
