@@ -6243,3 +6243,19 @@ This caused ITM strikes to be silently skipped during auto-promotion. Affected:
 **Files**: `mmm_monitor.py` (docstring + selection loop), `tests/test_sealed_audit_fixes.py` (3 new tests)
 
 **Tests**: 1176 MMM-area sealed passing / 0 failed
+
+## 2026-04-28 — Profit Ratchet: trigger snapshot re-anchor at profit milestones
+
+- **New feature**: `profit_ratchet_enabled` / `profit_ratchet_step_usd` — when enabled, each time cumulative P&L crosses a new multiple of `step` ($5→$10→$15...) the trigger snapshots re-anchor to current premium levels via `update_trigger_snapshots()`. Prevents the common issue where profitable sessions become slow to react because triggers are still anchored at entry-level premiums.
+- **HWM guard**: ratchet only fires on new profit highs, never during a drawdown (`_profit_ratchet_hwm` tracks the highest milestone crossed).
+- **Multi-step jump**: `int(pnl / step) * step` advances HWM to highest milestone even if P&L jumps multiple steps at once.
+- **No time-based cooldown**: the dollar step is the natural cooldown — earning the next milestone takes real market time; ratchet cannot fire during a volatility spike (spikes reduce P&L).
+- **Insertion point**: heartbeat `_heartbeat()` in `mmm_monitor.py`, immediately before `evaluate_triggers()` — fresh snapshot used by trigger evaluation on the same beat.
+- **All safety invariants untouched**: max_loss, trailing_stop, peak_pnl, stale-monitor guards, whipsaw guard, reverse mode — unchanged.
+- **Activity log**: `profit_ratchet` category registered in `ACTIVITY_TYPES`.
+- **UI**: new "📈 Profit Ratchet" section in MMMSettingsDialog.js (after Coordination Arbiter, before Reverse Mode). Hot-reloadable master switch + step size.
+- **14 new sealed tests** across 5 classes: defaults, milestone firing, HWM guard, multi-step jump, negative PnL, source-presence.
+
+**Files**: `mmm_state.py`, `mmm_config.py`, `mmm_activity.py`, `mmm_monitor.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py`
+
+**Tests**: 1190 MMM-area sealed passing / 0 failed (baseline 1176 + 14 new)

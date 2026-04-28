@@ -2,6 +2,14 @@
 
 ---
 
+## 2026-04-28 (rev3) — Profit Ratchet: trigger snapshot re-anchor at profit milestones
+
+New feature (`profit_ratchet_enabled` / `profit_ratchet_step_usd`): at each cumulative-P&L milestone ($5→$10→$15...) the heartbeat calls `update_trigger_snapshots()` to re-anchor trigger snapshots to current premium levels. Prevents the common case where a profitable session's triggers stay anchored at entry-level premiums — making the algo progressively unresponsive as profit accumulates. With the ratchet, only a fresh move of `min_trigger_move`% above CURRENT premiums (not entry premiums) is needed to fire an adjustment. High-water mark guard (`_profit_ratchet_hwm`) prevents re-anchoring during a drawdown. Dollar step is the natural cooldown — earning the next milestone takes real market time. Feature is OFF by default; hot-reloadable toggle on WebUI under "📈 Profit Ratchet". 14 new sealed tests, 0 regression. All stale-monitor guards, safety invariants, and financial accounting untouched.
+
+**Files**: `mmm_state.py`, `mmm_config.py`, `mmm_activity.py`, `mmm_monitor.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py` | **Tests**: 1190 MMM-area sealed passing (baseline 1176 + 14 new)
+
+---
+
 ## 2026-04-28 (rev2) — Phase 3 Coordination Arbiter LIVE (user directive: no shadow)
 
 Per user directive 2026-04-28: "I dont believe on shadow mode, make it live." Promoted the arbiter directly to live execution. All three Tier 1 actions now execute via existing tested order-placement infrastructure.

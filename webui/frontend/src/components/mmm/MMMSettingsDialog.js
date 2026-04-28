@@ -493,6 +493,21 @@ const PARAM_GROUPS = {
       },
     ],
   },
+  profitRatchet: {
+    title: '📈 Profit Ratchet',
+    color: '#2e7d32',
+    blurb: 'At every profit_ratchet_step_usd milestone ($5→$10→$15...) the algo re-anchors trigger snapshots to current premium levels. Without this, triggers stay anchored to entry-level premiums — so after a profitable period where premiums have decayed, a reversal must travel all the way back to the original entry level before firing an adjustment. With the ratchet, the trigger baseline moves up with your profit: only a fresh move above current market premiums is needed. High-water mark guard ensures ratchets only fire on new profit highs, never during a drawdown. OFF by default — enable per session and start with a step of $5–$10.',
+    sections: [
+      {
+        header: 'Master Switch',
+        params: ['profit_ratchet_enabled'],
+      },
+      {
+        header: 'Step Size',
+        params: ['profit_ratchet_step_usd'],
+      },
+    ],
+  },
   reverseMode: {
     title: '🔄 Controlled Reverse Mode',
     color: '#e91e63',

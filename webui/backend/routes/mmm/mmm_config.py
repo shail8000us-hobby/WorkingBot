@@ -329,6 +329,9 @@ PARAM_RULES = {
     'arbiter_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
     'gamma_dte_ladder_far_mult':         {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
     'gamma_dte_ladder_multi_mult':       {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
+    # ── Profit Ratchet ──
+    'profit_ratchet_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'profit_ratchet_step_usd':           {'type': float, 'min': 1.0,  'max': 1000.0, 'hot': True},
     # ── F01-P1-009 fix: keys present in HOT_RELOAD_PARAMS but missing from PARAM_RULES ──
     # Strike-shift cooldown
     'shift_cooldown_sec':                {'type': int,   'min': 0,    'max': 3600,  'hot': True},
@@ -1075,6 +1078,9 @@ def get_param_info() -> Dict[str, Dict]:
         'arbiter_enabled': 'Enable the Coordination Arbiter (live mode). When ON, at extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED) the arbiter bypasses operational gates (whipsaw, regime, cooldown) and executes defensive premium-aware shift / close / margin-recovery actions. Disabled in last 30 min before expiry per Rule 5. Default ON.',
         'gamma_dte_ladder_far_mult': 'Gamma limits multiplier for sessions > 5 days to expiry (γ structurally low at far DTE). Default 1.5×.',
         'gamma_dte_ladder_multi_mult': 'Gamma limits multiplier for sessions 1–5 days to expiry. Default 1.25×.',
+        # Profit Ratchet
+        'profit_ratchet_enabled': 'Enable the Profit Ratchet. When ON, each time cumulative P&L crosses a new milestone ($5→$10→$15...) trigger snapshots re-anchor to current premium levels. Keeps the algo maximally responsive to reversals as profit accumulates — prevents the common case where a profitable session becomes slow to react because triggers are still anchored at entry-level premiums. High-water mark guard: ratchet only fires on new profit highs, never during a drawdown. OFF by default — enable per session.',
+        'profit_ratchet_step_usd': 'Re-anchor trigger snapshots every time P&L reaches a new multiple of this amount (e.g. $5 → milestones at $5, $10, $15...). Between milestones behavior is identical to normal operation. No time-based cooldown needed — earning the next step takes real market time.',
     }
 
     info = {}

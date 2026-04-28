@@ -3671,6 +3671,39 @@ class MMMMonitor:
                 session['_effective_min_trigger_move'] = max(_ws_widened, _theta_widened)
                 session['_whipsaw_trigger_widened'] = True
 
+            # ── Profit Ratchet: re-anchor trigger snapshots at profit milestones ──
+            # When P&L crosses a new multiple of profit_ratchet_step_usd ($5→$10→$15...),
+            # call update_trigger_snapshots() so triggers stay sensitive to reversals
+            # after profit accumulates (prevents stale high-entry anchors). High-water
+            # mark guard: only fires on new profit highs, never during a drawdown.
+            # Between milestones: zero change to trigger behavior.
+            _pr_step = params.get('profit_ratchet_step_usd', 0.0)
+            if params.get('profit_ratchet_enabled', False) and _pr_step > 0:
+                _pr_pnl = _pnl_total(session)
+                _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+                if _pr_pnl >= _pr_hwm + _pr_step:
+                    _pr_new_hwm = int(_pr_pnl / _pr_step) * _pr_step
+                    _pr_ce_snap = (session.get('ce', {}).get('trigger_snapshot', {})
+                                   .get(_strike_key(session.get('ce', {}).get('active_strike', 0)), 0.0))
+                    _pr_pe_snap = (session.get('pe', {}).get('trigger_snapshot', {})
+                                   .get(_strike_key(session.get('pe', {}).get('active_strike', 0)), 0.0))
+                    update_trigger_snapshots(session, ce_now, pe_now)
+                    session['_profit_ratchet_hwm'] = _pr_new_hwm
+                    session['_profit_ratchet_count'] = session.get('_profit_ratchet_count', 0) + 1
+                    session['_profit_ratchet_last_pnl'] = round(_pr_pnl, 2)
+                    log_activity(
+                        'profit_ratchet',
+                        (f'📈 PROFIT RATCHET #{session["_profit_ratchet_count"]}: '
+                         f'milestone ${_pr_new_hwm:.0f} (P&L ${_pr_pnl:.2f}) — '
+                         f'CE {_pr_ce_snap:.2f}→{ce_now:.2f}, '
+                         f'PE {_pr_pe_snap:.2f}→{pe_now:.2f}'),
+                        sid, 'info',
+                        {'milestone': _pr_new_hwm, 'pnl': round(_pr_pnl, 2),
+                         'ratchet_count': session['_profit_ratchet_count'],
+                         'ce_before': round(_pr_ce_snap, 2), 'ce_after': round(ce_now, 2),
+                         'pe_before': round(_pr_pe_snap, 2), 'pe_after': round(pe_now, 2)},
+                    )
+
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
             outcome = trigger_result['outcome']
 

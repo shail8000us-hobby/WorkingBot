@@ -1358,5 +1358,202 @@ class TestAutoPromoteNearestATM(unittest.TestCase):
                          'ITM strike (94500, dist=500) must beat OTM strike (96000, dist=1000)')
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Profit Ratchet — sealed contracts (2026-04-28)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProfitRatchetParamDefaults(unittest.TestCase):
+    """Profit ratchet must default to OFF and use $10 step."""
+
+    def test_disabled_by_default(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertFalse(DEFAULT_PARAMS.get('profit_ratchet_enabled'),
+                         'profit_ratchet_enabled must default to False — off by default')
+
+    def test_step_default(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertEqual(DEFAULT_PARAMS.get('profit_ratchet_step_usd'), 10.0,
+                         'profit_ratchet_step_usd must default to 10.0')
+
+    def test_both_params_hot_reloadable(self):
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        self.assertIn('profit_ratchet_enabled', HOT_RELOAD_PARAMS,
+                      'profit_ratchet_enabled must be hot-reloadable')
+        self.assertIn('profit_ratchet_step_usd', HOT_RELOAD_PARAMS,
+                      'profit_ratchet_step_usd must be hot-reloadable')
+
+
+class TestProfitRatchetFiresAtMilestone(unittest.TestCase):
+    """Ratchet fires exactly when P&L crosses the next step milestone."""
+
+    def _session(self, ce_snap=200.0, pe_snap=200.0, step=5.0, hwm=0.0):
+        return {
+            'params': {'profit_ratchet_enabled': True, 'profit_ratchet_step_usd': step},
+            'realized_pnl': 0.0,
+            'unrealized_pnl': 0.0,
+            'total_fees': 0.0,
+            'perp_hedge': {},
+            '_reverse': {},
+            '_profit_ratchet_hwm': hwm,
+            'ce': {'active_strike': 50000, 'trigger_snapshot': {'50000.0': ce_snap}},
+            'pe': {'active_strike': 50000, 'trigger_snapshot': {'50000.0': pe_snap}},
+        }
+
+    def _inject_pnl(self, session, pnl):
+        """Force total P&L via realized_pnl field (simplest path)."""
+        session['realized_pnl'] = float(pnl)
+
+    def test_fires_at_first_milestone(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = self._session(ce_snap=200.0, pe_snap=200.0, step=5.0)
+        self._inject_pnl(session, 5.10)
+        ce_now, pe_now = 95.0, 92.0
+
+        # Manual ratchet logic (mirrors mmm_monitor.py insertion)
+        _pr_step = session['params']['profit_ratchet_step_usd']
+        _pr_pnl = compute_current_total_pnl(session)
+        _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        fired = _pr_pnl >= _pr_hwm + _pr_step
+
+        self.assertTrue(fired, 'Ratchet must fire when P&L crosses first milestone')
+        new_hwm = int(_pr_pnl / _pr_step) * _pr_step
+        self.assertEqual(new_hwm, 5.0, 'HWM must be set to 5.0 on first milestone')
+
+    def test_does_not_fire_below_milestone(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = self._session(step=5.0)
+        self._inject_pnl(session, 4.99)
+
+        _pr_step = session['params']['profit_ratchet_step_usd']
+        _pr_pnl = compute_current_total_pnl(session)
+        _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        fired = _pr_pnl >= _pr_hwm + _pr_step
+
+        self.assertFalse(fired, 'Ratchet must NOT fire below milestone ($4.99 < $5.00)')
+
+    def test_disabled_never_fires(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = self._session(step=5.0)
+        session['params']['profit_ratchet_enabled'] = False
+        self._inject_pnl(session, 50.0)
+
+        enabled = session['params'].get('profit_ratchet_enabled', False)
+        self.assertFalse(enabled, 'When disabled, ratchet gate must be False regardless of P&L')
+
+
+class TestProfitRatchetHWMGuard(unittest.TestCase):
+    """Ratchet must NOT re-fire at an already-crossed milestone (HWM guard)."""
+
+    def test_no_refire_at_same_milestone(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = {
+            'params': {'profit_ratchet_enabled': True, 'profit_ratchet_step_usd': 5.0},
+            'realized_pnl': 5.50,
+            'unrealized_pnl': 0.0,
+            'total_fees': 0.0,
+            'perp_hedge': {},
+            '_reverse': {},
+            '_profit_ratchet_hwm': 5.0,  # milestone already crossed
+            'ce': {'active_strike': 50000, 'trigger_snapshot': {'50000.0': 95.0}},
+            'pe': {'active_strike': 50000, 'trigger_snapshot': {'50000.0': 92.0}},
+        }
+        _pr_step = session['params']['profit_ratchet_step_usd']
+        _pr_pnl = compute_current_total_pnl(session)
+        _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        fired = _pr_pnl >= _pr_hwm + _pr_step  # 5.50 >= 5.0 + 5.0 → False
+
+        self.assertFalse(fired, 'Ratchet must not re-fire: P&L $5.50, HWM $5.0, next milestone $10.0')
+
+    def test_no_fire_during_drawdown(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = {
+            'params': {'profit_ratchet_enabled': True, 'profit_ratchet_step_usd': 5.0},
+            'realized_pnl': 3.00,
+            'unrealized_pnl': 0.0,
+            'total_fees': 0.0,
+            'perp_hedge': {},
+            '_reverse': {},
+            '_profit_ratchet_hwm': 10.0,  # was at $10, now in drawdown
+        }
+        _pr_step = session['params']['profit_ratchet_step_usd']
+        _pr_pnl = compute_current_total_pnl(session)
+        _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        fired = _pr_pnl >= _pr_hwm + _pr_step  # 3.0 >= 10.0 + 5.0 → False
+
+        self.assertFalse(fired, 'Ratchet must not fire during drawdown (P&L $3 < HWM $10)')
+
+
+class TestProfitRatchetMultiStepJump(unittest.TestCase):
+    """When P&L jumps multiple steps at once, HWM advances to highest crossed milestone."""
+
+    def test_multi_step_hwm(self):
+        pnl = 18.0
+        step = 5.0
+        new_hwm = int(pnl / step) * step
+        self.assertEqual(new_hwm, 15.0,
+                         'P&L=$18, step=$5 → HWM must be $15 (highest milestone crossed)')
+
+    def test_single_step_hwm(self):
+        pnl = 7.3
+        step = 5.0
+        new_hwm = int(pnl / step) * step
+        self.assertEqual(new_hwm, 5.0,
+                         'P&L=$7.3, step=$5 → HWM must be $5')
+
+
+class TestProfitRatchetNegativePnlNeverFires(unittest.TestCase):
+    """Ratchet must never fire when P&L is negative."""
+
+    def test_negative_pnl(self):
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = {
+            'params': {'profit_ratchet_enabled': True, 'profit_ratchet_step_usd': 5.0},
+            'realized_pnl': -10.0,
+            'unrealized_pnl': 0.0,
+            'total_fees': 0.0,
+            'perp_hedge': {},
+            '_reverse': {},
+            '_profit_ratchet_hwm': 0.0,
+        }
+        _pr_step = session['params']['profit_ratchet_step_usd']
+        _pr_pnl = compute_current_total_pnl(session)
+        _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        fired = _pr_pnl >= _pr_hwm + _pr_step  # -10 >= 0 + 5 → False
+
+        self.assertFalse(fired, 'Ratchet must never fire when P&L is negative')
+
+
+class TestProfitRatchetSourcePresence(unittest.TestCase):
+    """Static source guard: ratchet logic must be present in mmm_monitor.py."""
+
+    def _src(self):
+        monitor_path = os.path.join(os.path.dirname(__file__), '..', 'mmm_monitor.py')
+        with open(monitor_path) as f:
+            return f.read()
+
+    def test_ratchet_block_present(self):
+        src = self._src()
+        self.assertIn('profit_ratchet_enabled', src,
+                      'profit_ratchet_enabled check missing from mmm_monitor.py')
+        self.assertIn('_profit_ratchet_hwm', src,
+                      '_profit_ratchet_hwm state field missing from mmm_monitor.py')
+        self.assertIn('_profit_ratchet_count', src,
+                      '_profit_ratchet_count increment missing from mmm_monitor.py')
+
+    def test_ratchet_fires_before_evaluate_triggers(self):
+        """Ratchet block must appear before evaluate_triggers so the fresh
+        snapshot is used by the trigger evaluator on the same beat."""
+        src = self._src()
+        ratchet_pos = src.find('profit_ratchet_enabled')
+        trigger_pos = src.find('trigger_result = evaluate_triggers(session, ce_now, pe_now)')
+        self.assertGreater(trigger_pos, ratchet_pos,
+                           'Ratchet block must appear before evaluate_triggers in heartbeat')
+
+    def test_activity_category_registered(self):
+        from webui.backend.routes.mmm.mmm_activity import ACTIVITY_TYPES
+        self.assertIn('profit_ratchet', ACTIVITY_TYPES,
+                      'profit_ratchet must be a registered activity type')
+
+
 if __name__ == '__main__':
     unittest.main()

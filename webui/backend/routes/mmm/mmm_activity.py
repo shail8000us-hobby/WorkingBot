@@ -233,6 +233,9 @@ ACTIVITY_TYPES = {
     'gamma_zone_change': 'Gamma Zone Change',
     'gamma_danger_detected': 'Gamma Danger Detected',
 
+    # Profit Ratchet
+    'profit_ratchet': 'Profit Ratchet',
+
     # FSU: Favorable Scale-Up
     'scale_up_triggered': 'Scale-Up Triggered',
     'scale_up_complete': 'Scale-Up Complete',

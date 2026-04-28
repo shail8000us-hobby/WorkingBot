@@ -832,6 +832,9 @@ DEFAULT_PARAMS = {
     # Gamma engine DTE relax ladder — see audit/mmm/coordination/04_gamma_engine_audit.md
     'gamma_dte_ladder_far_mult': 1.5,    # > 5 days to expiry: limits × this
     'gamma_dte_ladder_multi_mult': 1.25, # 1–5 days to expiry: limits × this
+    # Profit Ratchet — re-anchors trigger snapshots at profit milestones
+    'profit_ratchet_enabled': False,     # Off by default; operator enables per-session
+    'profit_ratchet_step_usd': 10.0,     # Re-anchor every $X of new cumulative profit
 }
 
 # Which parameters can be changed while algo is running
@@ -993,6 +996,8 @@ HOT_RELOAD_PARAMS = {
     'god_min_silence_min', 'god_cooldown_min',
     # Phase 3 Coordination Arbiter (live)
     'arbiter_enabled', 'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
+    # Profit Ratchet
+    'profit_ratchet_enabled', 'profit_ratchet_step_usd',
 }
 
 # A9-01 fix: derive HOT_RELOAD_PARAMS from PARAM_RULES (single source of truth)
