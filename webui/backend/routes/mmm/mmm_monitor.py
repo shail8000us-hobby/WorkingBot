@@ -1703,6 +1703,9 @@ class MMMMonitor:
 
         # Step 1: Fetch current premiums — with circuit breaker + fallback
         ce_now, pe_now, fetch_ok = await self._fetch_premiums_with_fallback()
+        # Expose live prices in session so the arbiter's hedge-decay check can read them
+        session['_ce_now'] = ce_now
+        session['_pe_now'] = pe_now
 
         # Feature 9: Compute data confidence after fetch (stale flags are now set on session)
         self._compute_data_confidence()
@@ -3495,6 +3498,9 @@ class MMMMonitor:
                     # is a final safety net so heartbeat continuity is preserved.
                     try:
                         await self._execute_arbiter_decision(_arb_decision, ce_now, pe_now)
+                        # Record execution time so evaluate() can enforce beat cooldown
+                        from datetime import datetime as _dt, timezone as _tz
+                        session['_arbiter_last_action_at'] = _dt.now(_tz.utc).isoformat()
                     except Exception as _exec_err:
                         log.error(
                             f'[{sid}] Arbiter execute (outer) failed: {_exec_err}',

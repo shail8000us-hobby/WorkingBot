@@ -1207,6 +1207,7 @@ def create_session(
         'last_aggressor': 'NONE',
         'adjustment_count': 0,
         'adjustment_history': [],   # [{side, lots_sold, premium, strike, timestamp, type}]
+        '_arbiter_last_action_at': None,   # ISO UTC: when arbiter last executed a Tier 1 action
         'realized_pnl': 0.0,
         'total_premium_collected': 0.0,
         'ce_premium_collected': 0.0,
