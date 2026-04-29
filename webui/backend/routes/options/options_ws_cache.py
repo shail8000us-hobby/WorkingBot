@@ -281,14 +281,16 @@ class _OptionsWSCache:
                         prev_size = float(prev_pos.get("size", 0) or 0)
                         curr_size = exchange_map.get(sym, 0)
                         if prev_size != 0 and curr_size == 0:
-                            # Position fully closed — use API-provided unrealized_pnl as realized.
-                            # Prices are USD/BTC, size is in lots (1 lot = 0.001 BTC), so
-                            # the manual formula needs * 0.001.  The REST unrealized_pnl field
-                            # is already in USD and is more accurate (it uses the exchange's own
-                            # mark model), so prefer it.
-                            realized = float(prev_pos.get("unrealized_pnl", 0) or 0)
+                            # Total realized PnL at close =
+                            #   realized_pnl  (exchange cumulative from all partial exits)
+                            # + unrealized_pnl (PnL on the final lot being closed now)
+                            # Both fields come from the last REST snapshot of this position,
+                            # so they are in USD and already include the lot multiplier.
+                            ex_realized = float(prev_pos.get("realized_pnl", 0) or 0)
+                            ex_unrealized = float(prev_pos.get("unrealized_pnl", 0) or 0)
+                            realized = ex_realized + ex_unrealized
                             if realized == 0:
-                                # Fallback if unrealized_pnl wasn't populated yet
+                                # Fallback: manual calculation from mark/entry prices
                                 mark = float(prev_pos.get("mark_price", 0) or 0)
                                 entry = float(prev_pos.get("entry_price", 0) or 0)
                                 if mark == 0:
@@ -311,10 +313,17 @@ class _OptionsWSCache:
                 p["entry_price"] = float(p.get("entry_price", 0) or 0)
                 p["mark_price"] = float(p.get("mark_price", 0) or 0)
                 p["unrealized_pnl"] = float(p.get("unrealized_pnl", 0) or 0)
+                # Exchange's own cumulative realized PnL for this position (includes
+                # all partial exits since the position was first opened).
+                p["realized_pnl"] = float(p.get("realized_pnl", 0) or 0)
                 new_positions[symbol] = p
 
             with self._lock:
-                self._prev_positions = dict(self._positions)  # snapshot before overwrite
+                # Invariant: _prev_positions = new_positions from THIS refresh.
+                # Close detection on the NEXT refresh compares these against the
+                # next exchange_map, so it always sees fresh size data — not data
+                # from two cycles ago (the old bug: dict(self._positions) was stale).
+                self._prev_positions = dict(new_positions)
                 self._positions = new_positions
                 # Merge any fresher mark prices from WS
                 for sym, mark in self._mark_prices.items():

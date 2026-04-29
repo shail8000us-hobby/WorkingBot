@@ -101,7 +101,15 @@ class ClosedPositionStore:
             if _SEEN_PATH.exists():
                 with open(_SEEN_PATH, 'r') as f:
                     self._seen = json.load(f)
-                log.info(f"[ClosedPositionStore] Loaded {len(self._seen)} seen entries from {_SEEN_PATH}")
+            # Purge seen entries whose post-expiry retain window has passed
+            # (same logic as _purge_expired_unlocked for closed entries).
+            cutoff = time.time() - _POST_EXPIRY_RETAIN_SECS
+            expired = [sym for sym, e in self._seen.items() if e.get('expiry_ts', 0) < cutoff]
+            for sym in expired:
+                del self._seen[sym]
+            if expired:
+                log.info(f"[ClosedPositionStore] Purged {len(expired)} expired seen entries")
+            log.info(f"[ClosedPositionStore] Loaded {len(self._seen)} seen entries from {_SEEN_PATH}")
         except Exception as exc:
             log.warning(f"[ClosedPositionStore] Seen load failed ({exc}) — starting empty")
             self._seen = {}
@@ -184,10 +192,12 @@ class ClosedPositionStore:
                     continue  # Already closed — don't overwrite
                 self._seen[sym] = {
                     'product_symbol': sym,
+                    'expiry_ts': _parse_expiry_ts(sym),
                     'entry_price': float(pos.get('entry_price') or 0),
                     'mark_price': float(pos.get('mark_price') or 0),
                     'size': float(pos.get('size') or 0),
                     'unrealized_pnl': float(pos.get('unrealized_pnl') or 0),
+                    'realized_pnl': float(pos.get('realized_pnl') or 0),
                     'greeks': pos.get('greeks', {}),
                 }
             self._seen_dirty = True
