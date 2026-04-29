@@ -667,15 +667,26 @@ function PositionRow({
                 <TableCell align="right" sx={cellSx}>
                     {(() => {
                         const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
-                        const partialPnl = Number(pos.partial_realized_pnl) || 0;
-                        const totalPnl = unrealizedPnl + partialPnl;
+                        const realizedPnl = Number(pos.realized_pnl) || 0;
+                        // Closed rows: unrealized=0, realized=cumulative from store. Live rows: both from exchange.
+                        const totalPnl = isClosed ? realizedPnl : unrealizedPnl + realizedPnl;
                         const totalPnlColor = getPnlColor(totalPnl);
                         const rawPct = pos.pnl_percentage || 0;
                         const cashflowVal = Number(pos.cashflow) || 0;
 
+                        // P3-B: % return for closed rows
+                        const entryPrice = Number(pos.entry_price) || 0;
+                        const origSize   = Math.abs(Number(pos.original_size) || 0);
+                        const cost       = entryPrice * origSize * 0.001;
+                        const returnPct  = cost > 0 ? (realizedPnl / cost) * 100 : null;
+
                         const tooltipText = (() => {
-                            if (partialPnl !== 0) {
-                                return `Unrealized: ${formatPnl(unrealizedPnl)} + Partial Realized: ${formatPnl(partialPnl)} = Total: ${formatPnl(totalPnl)}`;
+                            if (isClosed) {
+                                const pctStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)` : '';
+                                return `Realized PnL: ${formatPnl(realizedPnl)}${pctStr}`;
+                            }
+                            if (realizedPnl !== 0) {
+                                return `Unrealized: ${formatPnl(unrealizedPnl)} + Realized: ${formatPnl(realizedPnl)} = Total: ${formatPnl(totalPnl)}`;
                             }
                             if (Math.abs(rawPct) > 200 && cashflowVal !== 0) {
                                 return `Raw PnL %: ${rawPct.toFixed(1)}% (vs cashflow $${Math.abs(cashflowVal).toFixed(2)}). Large % due to small premium denominator.`;
@@ -690,12 +701,14 @@ function PositionRow({
                                         {formatPnl(totalPnl)}
                                     </Typography>
                                     {isClosed ? (
-                                        <Typography variant="caption" sx={{ color: '#888', fontStyle: 'italic' }}>
-                                            Realized
+                                        <Typography variant="caption" sx={{ color: getPnlColor(realizedPnl), fontStyle: 'italic' }}>
+                                            {returnPct != null
+                                                ? `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}% realized`
+                                                : 'Realized'}
                                         </Typography>
-                                    ) : partialPnl !== 0 ? (
-                                        <Typography variant="caption" sx={{ color: getPnlColor(partialPnl), fontStyle: 'italic' }}>
-                                            incl. {formatPnl(partialPnl)} realized
+                                    ) : realizedPnl !== 0 ? (
+                                        <Typography variant="caption" sx={{ color: getPnlColor(realizedPnl), fontStyle: 'italic' }}>
+                                            incl. {formatPnl(realizedPnl)} realized
                                         </Typography>
                                     ) : (
                                         <Typography variant="caption" sx={{ color: totalPnlColor }}>

@@ -425,3 +425,54 @@ def test_atm_shield_infra_exhaustion_blocks_refire():
     monitor = _make_monitor(session=session, spot=85000.0)
     result = asyncio.run(execute_atm_shield(monitor, 100.0, 100.0))
     assert result is False
+
+
+# ── Cap source invariant — execute_atm_shield uses total_lots not active_lots ─
+
+import inspect as _inspect
+from webui.backend.routes.mmm.mmm_atm_shield import execute_atm_shield as _execute_atm_shield
+
+_SHIELD_SRC = _inspect.getsource(_execute_atm_shield)
+
+
+@pytest.mark.sealed
+def test_atm_shield_cap_endangered_uses_total_lots():
+    """Endangered-side re-sell cap must read total_lots (active + frozen), not active_lots.
+    Invariant: after a strike-shift freezes lots, active_lots=0 but total_lots=N.
+    If cap used active_lots, the shield would re-sell above max_lots_per_side.
+    """
+    assert "session.get(endangered_side, {}).get('total_lots'" in _SHIELD_SRC, (
+        "execute_atm_shield cap for endangered side must use total_lots, not active_lots"
+    )
+
+
+@pytest.mark.sealed
+def test_atm_shield_cap_endangered_not_active_lots():
+    """The endangered-side cap assignment line must NOT use active_lots as its source."""
+    cap_block_start = _SHIELD_SRC.find('Apply position cap')
+    cap_block_end = _SHIELD_SRC.find('cap_remaining = max(max_lots - current_lots', cap_block_start)
+    cap_block = _SHIELD_SRC[cap_block_start:cap_block_end + 60]
+    assert "current_lots = session.get(endangered_side, {}).get('active_lots'" not in cap_block, (
+        "execute_atm_shield endangered cap must not use active_lots"
+    )
+
+
+@pytest.mark.sealed
+def test_atm_shield_cap_safe_side_uses_total_lots():
+    """Safe-side re-sell cap must read total_lots, not active_lots.
+    Same frozen-lots hazard applies to the safe side.
+    """
+    assert "session.get(safe_side, {}).get('total_lots'" in _SHIELD_SRC, (
+        "execute_atm_shield cap for safe side must use total_lots, not active_lots"
+    )
+
+
+@pytest.mark.sealed
+def test_atm_shield_cap_formula_subtracts_from_max_lots():
+    """Both cap computations must follow: cap = max(max_lots - current_lots, 0)."""
+    assert _SHIELD_SRC.count('cap_remaining = max(max_lots - current_lots, 0)') >= 1, (
+        "Endangered-side cap formula missing"
+    )
+    assert '_cap_safe = max(_max_lots_safe - _current_safe, 0)' in _SHIELD_SRC, (
+        "Safe-side cap formula missing"
+    )

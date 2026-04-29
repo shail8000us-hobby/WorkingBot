@@ -45,7 +45,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
 
   if (!sortedPositions || sortedPositions.length === 0) return null;
 
-  const livePnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0), 0);
+  const livePnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0), 0);
   const totalPnl = livePnl + manualPnL;
   const callCount = sortedPositions.filter((p) => isCallSymbol(p.product_symbol)).length;
   const putCount = sortedPositions.filter((p) => isPutSymbol(p.product_symbol)).length;

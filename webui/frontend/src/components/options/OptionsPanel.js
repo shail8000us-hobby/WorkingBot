@@ -446,9 +446,8 @@ const OptionsPanel = () => {
   // Selected positions for payoff diagram (whitelist approach - default: none selected)
   const [selectedPositionsForPayoff, setSelectedPositionsForPayoff] = usePersistedState('options_selected_positions_payoff', []);
 
-  // Closed positions storage - keeps squared off positions visible with size=0 and their final PnL
-  // Format: { symbol: { product_symbol, realized_pnl, closed_at, entry_price, close_price, original_size } }
-  const [closedPositions, setClosedPositions] = usePersistedState('options_closed_positions', {});
+  // Closed positions are now tracked server-side (closed_position_store.py).
+  // Backend merges phantom rows (is_closed=true) into the /api/options/dashboard positions list.
 
   // Positions the user explicitly dismissed via the X button.
   // Non-persisted: resets on page reload (positions are gone from API by then anyway).
@@ -458,9 +457,7 @@ const OptionsPanel = () => {
 
   // Partial exit realized PnL tracking - accumulates PnL from partial position reductions
   // Format: { symbol: { realized_pnl: number, history: [{ size_reduced, pnl, price, timestamp }] } }
-  // When you reduce a position (e.g., from -300 to -150), the PnL from the closed portion is locked in here.
-  // This ensures partial exits don't "disappear" from PnL and payoff graph.
-  const [partialRealizedPnl, setPartialRealizedPnl] = usePersistedState('options_partial_realized_pnl', {});
+  // Partial exit PnL is provided by the exchange directly via realized_pnl on live positions.
 
   // Manual PnL offset — display-only realized PnL from squared-off positions (persisted via localStorage)
   const [manualPnL, setManualPnL] = useState(() =>
@@ -1290,51 +1287,9 @@ const OptionsPanel = () => {
 
   // Sort positions by custom order or default (days to expiration)
   const sortedPositions = useMemo(() => {
-    // Get symbols that exist in live positions
-    const liveSymbols = new Set(positions.map(p => p.product_symbol));
-
-    // Remove closed positions that now exist as live positions again (user added back)
-    // This is done in a separate effect, but we filter here too for immediacy.
-    // Also exclude any symbols the user explicitly dismissed (immediate visual feedback).
-    const closedToShow = Object.values(closedPositions).filter(
-      cp => !liveSymbols.has(cp.product_symbol) && !dismissedSymbols.has(cp.product_symbol)
-    );
-
-    // Convert closed positions to position-like objects with size=0
-    const closedAsPositions = closedToShow.map(cp => ({
-      product_symbol: cp.product_symbol,
-      size: 0,
-      entry_price: cp.entry_price,
-      unrealized_pnl: cp.realized_pnl, // Show realized PnL in the PnL column
-      realized_pnl: cp.realized_pnl,
-      // BUG-16 FIX: cp.realized_pnl already includes partial PnL at close time (see confirmClose).
-      // Setting partial_realized_pnl to 0 here prevents double-count during the React batch race
-      // where partialRealizedPnl hasn't been cleared yet after confirmClose.
-      partial_realized_pnl: 0,
-      close_price: cp.close_price,
-      closed_at: cp.closed_at,
-      original_size: cp.original_size,
-      is_closed: true, // Flag to identify closed positions in UI
-      greeks: cp.greeks || {},
-      // Parse symbol for display
-      best_bid: cp.last_bid || 0,
-      best_ask: cp.last_ask || 0,
-    }));
-
-    // Inject partial_realized_pnl into live positions so PnL column and payoff graph include it.
-    // Skip backend-provided closed phantoms (is_closed=true) — they already carry the correct
-    // cumulative realized_pnl and overriding would cause a double-count with unrealized_pnl.
-    // Also exclude user-dismissed symbols immediately (before the next API poll confirms they're gone).
-    const enrichedPositions = positions
-      .filter(p => !dismissedSymbols.has(p.product_symbol))
-      .map(p => {
-        if (p.is_closed) return p;
-        const partialPnl = partialRealizedPnl[p.product_symbol]?.realized_pnl || 0;
-        return partialPnl !== 0 ? { ...p, partial_realized_pnl: partialPnl } : p;
-      });
-
-    // Merge live positions with closed positions
-    const allPositions = [...enrichedPositions, ...closedAsPositions];
+    // Backend already includes phantom rows (is_closed=true) in the positions list.
+    // Just exclude user-dismissed symbols for immediate visual feedback before the next API poll.
+    const allPositions = positions.filter(p => !dismissedSymbols.has(p.product_symbol));
 
     // First filter out hidden positions
     let filtered = allPositions.filter((p) => !hiddenPositions.includes(p.product_symbol));
@@ -1412,7 +1367,7 @@ const OptionsPanel = () => {
     return sorted;
     // BUG-15 FIX: removed selectedPositionsForPayoff — it is never read inside this memo,
     // so including it caused unnecessary recomputes on every payoff checkbox change
-  }, [positions, closedPositions, partialRealizedPnl, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort, dismissedSymbols]);
+  }, [positions, hiddenPositions, customOrder, selectedExpiries, symbolSort, strikeSort, sizeSort, dismissedSymbols]);
 
   // Live index prices state (fetched from WebSocket, not from positions)
   const { btcPrice, ethPrice } = useMarketPrices();
@@ -1826,257 +1781,13 @@ const OptionsPanel = () => {
     return recs;
   }, [sortedPositions, calculateSmartScaling]);
 
-  // Clean up closed positions when they reappear as live positions (re-entry detected).
-  // CRITICAL: Before deleting the closed record, carry its realized_pnl forward into
-  // partialRealizedPnl so the re-entered position's PnL continues from where it left off
-  // rather than restarting from zero. Without this, every re-entry looks like a fresh position.
-  useEffect(() => {
-    if (positions.length === 0) return;
+  // Re-entry detection and partial-ticker polling removed: backend handles close tracking
+  // and merges phantom rows (is_closed=true) with cumulative realized_pnl into the positions list.
 
-    const liveSymbols = new Set(positions.map(p => p.product_symbol));
-    const closedSymbols = Object.keys(closedPositions);
-
-    // Find closed positions that now exist as live positions
-    const toRemove = closedSymbols.filter(symbol => liveSymbols.has(symbol));
-
-    if (toRemove.length > 0) {
-      devLog(`🔄 Re-entry detected for ${toRemove.length} position(s) — carrying realized PnL forward`);
-
-      // Step 1: Transfer realized PnL from closed record → partialRealizedPnl
-      // This ensures the payoff graph baseline and PnL column both include history.
-      const toTransfer = toRemove.filter(sym => closedPositions[sym]?.realized_pnl);
-      if (toTransfer.length > 0) {
-        setPartialRealizedPnl(prev => {
-          const updated = { ...prev };
-          toTransfer.forEach(symbol => {
-            const closed = closedPositions[symbol];
-            const existing = updated[symbol] || { realized_pnl: 0, history: [] };
-            updated[symbol] = {
-              realized_pnl: (existing.realized_pnl || 0) + closed.realized_pnl,
-              history: [
-                ...(existing.history || []),
-                {
-                  size_reduced: Math.abs(closed.original_size || 0),
-                  pnl: closed.realized_pnl,
-                  exit_price: closed.close_price || 0,
-                  entry_price: closed.entry_price || 0,
-                  timestamp: closed.closed_at || new Date().toISOString(),
-                  event: 're-entry',
-                },
-              ],
-            };
-            devLog(`  → ${symbol}: carried forward $${closed.realized_pnl.toFixed(4)} realized PnL`);
-          });
-          return updated;
-        });
-      }
-
-      // Step 2: Remove from closedPositions now that PnL is safely transferred
-      setClosedPositions(prev => {
-        const updated = { ...prev };
-        toRemove.forEach(symbol => delete updated[symbol]);
-        return updated;
-      });
-    }
-  }, [positions, closedPositions]);
-
-  // Fetch live bid/ask for closed positions so they display real-time market data
-  // MISSING-7 FIX: route through backend proxy (/api/ticker/<symbol>) instead of calling
-  // Delta Exchange public API directly from the frontend (avoids CORS issues in production)
-  const closedSymbolsKey = Object.keys(closedPositions).join(',');
-  const hasClosedSymbols = closedSymbolsKey.length > 0;
-
-  const fetchClosedTickers = useCallback(async () => {
-    const closedSymbols = Object.keys(closedPositions).filter(
-      symbol => !positions.some(p => p.product_symbol === symbol)
-    );
-    if (closedSymbols.length === 0) return;
-
-    const updates = {};
-    await Promise.all(
-      closedSymbols.map(async (symbol) => {
-        try {
-          const { data } = await api.get(`/api/options/ticker/${encodeURIComponent(symbol)}`, { skipCircuit: true });
-          if (data?.success && data?.ticker?.quotes) {
-            updates[symbol] = {
-              last_bid: parseFloat(data.ticker.quotes.best_bid) || 0,
-              last_ask: parseFloat(data.ticker.quotes.best_ask) || 0,
-            };
-          }
-        } catch {
-          // Silently fail - closed position ticker fetch is best-effort
-        }
-      })
-    );
-
-    if (Object.keys(updates).length > 0) {
-      setClosedPositions(prev => {
-        const updated = { ...prev };
-        for (const [symbol, tickerData] of Object.entries(updates)) {
-          if (updated[symbol]) {
-            updated[symbol] = { ...updated[symbol], ...tickerData };
-          }
-        }
-        return updated;
-      });
-    }
-  }, [closedSymbolsKey, positions.length]);
-
-  // Poll closed tickers — pauses when tab is hidden
-  useVisibilityAwarePolling(fetchClosedTickers, pollInterval * 2, 60000, hasClosedSymbols);
-
-  // **CRITICAL: Detect positions that disappear from API (expired, auto-closed, etc.)**
-  // Save them to closedPositions before they vanish from the UI
-  const prevPositionsRef = useRef([]);
-  const closedPositionsRef = useRef(closedPositions);
-
-  // Keep closedPositionsRef in sync
-  useEffect(() => {
-    closedPositionsRef.current = closedPositions;
-  }, [closedPositions]);
-  useEffect(() => {
-    // Skip on first render or if no positions
-    if (prevPositionsRef.current.length === 0 && positions.length > 0) {
-      prevPositionsRef.current = positions;
-      return;
-    }
-
-    // Skip if positions haven't actually changed (same array reference)
-    if (prevPositionsRef.current === positions) {
-      return;
-    }
-
-    // Find positions that existed before but are now gone
-    const currentSymbols = new Set(positions.map(p => p.product_symbol));
-    const previousSymbols = prevPositionsRef.current;
-
-    if (process.env.NODE_ENV === 'development') {
-      devLog(`🔍 Position change check: prev=${previousSymbols.length}, current=${positions.length}`);
-    }
-
-    const disappeared = previousSymbols.filter(
-      prevPos => !currentSymbols.has(prevPos.product_symbol) &&
-                 !closedPositionsRef.current[prevPos.product_symbol] &&
-                 !dismissedRef.current.has(prevPos.product_symbol)
-    );
-
-    if (disappeared.length > 0) {
-      devLog(`📦 Detected ${disappeared.length} positions that disappeared (likely expired or auto-closed)`);
-
-      const newClosedPositions = {};
-      disappeared.forEach(pos => {
-        // Include accumulated partial realized PnL in the final realized PnL
-        const accumulatedPartialPnl = partialRealizedPnl[pos.product_symbol]?.realized_pnl || 0;
-        newClosedPositions[pos.product_symbol] = {
-          product_symbol: pos.product_symbol,
-          realized_pnl: (pos.unrealized_pnl || 0) + accumulatedPartialPnl, // Last known PnL + accumulated partial exits
-          closed_at: new Date().toISOString(),
-          entry_price: pos.entry_price || 0,
-          close_price: pos.best_bid || pos.best_ask || 0,
-          original_size: pos.size || 0,
-          greeks: pos.greeks || {},
-          // Save last known bid/ask so closed positions still display them
-          last_bid: pos.best_bid || 0,
-          last_ask: pos.best_ask || 0,
-          underlying: pos.product_symbol.split('-')[1] || 'BTC',
-          strike: parseInt(pos.product_symbol.split('-')[2]) || 0,
-          expiry_code: pos.product_symbol.split('-')[3] || '',
-          option_type: pos.product_symbol.startsWith('C-') ? 'Call' : 'Put',
-        };
-        devLog(`  → ${pos.product_symbol}: PnL $${(pos.unrealized_pnl || 0).toFixed(4)} + partial $${accumulatedPartialPnl.toFixed(4)}`);
-      });
-
-      setClosedPositions(prev => ({ ...prev, ...newClosedPositions }));
-
-      // Clear partial realized PnL for disappeared positions (now included in closed position's realized_pnl)
-      const partialToClean = disappeared.filter(pos => partialRealizedPnl[pos.product_symbol]);
-      if (partialToClean.length > 0) {
-        setPartialRealizedPnl(prev => {
-          const updated = { ...prev };
-          partialToClean.forEach(pos => delete updated[pos.product_symbol]);
-          return updated;
-        });
-      }
-    }
-
-    // ========================================================================
-    // PARTIAL EXIT PNL TRACKING
-    // When a position's absolute size decreases (partial close), calculate the
-    // realized PnL for the closed portion and accumulate it.
-    // Formula: For the reduced contracts, PnL = (exit_price - entry_price) * reduced_size * 0.001
-    // Exit price = mid of current bid/ask. Entry = entry_price at time of reduction.
-    // ========================================================================
-    const currentPositionMap = {};
-    positions.forEach(p => { currentPositionMap[p.product_symbol] = p; });
-
-    previousSymbols.forEach(prevPos => {
-      const currPos = currentPositionMap[prevPos.product_symbol];
-      if (!currPos) return; // Position disappeared entirely - handled above
-
-      const prevSize = Math.abs(parseFloat(prevPos.size) || 0);
-      const currSize = Math.abs(parseFloat(currPos.size) || 0);
-
-      // Detect size reduction (partial exit)
-      if (currSize < prevSize && currSize > 0) {
-        const reducedContracts = prevSize - currSize; // Always positive
-        const prevEntryPrice = parseFloat(prevPos.entry_price) || 0;
-        // MISSING-8 FIX: use PREVIOUS position's bid/ask as the exit price approximation.
-        // prevPos.best_bid/ask reflects the market AT THE TIME OF detection (before size changed),
-        // which is closer to the actual fill than currPos prices (which are POST-fill market).
-        // True exit price would come from order fill data, but we don't have it here.
-        const prevBid = parseFloat(prevPos.best_bid) || 0;
-        const prevAsk = parseFloat(prevPos.best_ask) || 0;
-        // Fall back to currPos if prevPos had no quotes
-        const fallbackBid = parseFloat(currPos.best_bid) || 0;
-        const fallbackAsk = parseFloat(currPos.best_ask) || 0;
-        const exitBid = prevBid || fallbackBid;
-        const exitAsk = prevAsk || fallbackAsk;
-        const exitPrice = (exitBid > 0 && exitAsk > 0)
-          ? (exitBid + exitAsk) / 2
-          : exitBid || exitAsk || prevEntryPrice;
-
-        // Calculate realized PnL for the reduced portion
-        // For SHORT (size < 0): profit = (entry - exit) * contracts * multiplier
-        // For LONG (size > 0): profit = (exit - entry) * contracts * multiplier
-        const isShort = parseFloat(prevPos.size) < 0;
-        // BUG-3 FIX: use symbol-aware multiplier (getContractMultiplier imported at top)
-        const contractMultiplier = getContractMultiplier(prevPos.product_symbol);
-        const partialPnl = isShort
-          ? (prevEntryPrice - exitPrice) * reducedContracts * contractMultiplier
-          : (exitPrice - prevEntryPrice) * reducedContracts * contractMultiplier;
-
-        devLog(`📊 Partial exit detected: ${prevPos.product_symbol}`);
-        devLog(`   Size: ${prevPos.size} → ${currPos.size} (reduced ${reducedContracts} contracts)`);
-        devLog(`   Entry: $${prevEntryPrice}, Exit mid: $${exitPrice.toFixed(2)}`);
-        devLog(`   Partial realized PnL: $${partialPnl.toFixed(4)}`);
-
-        setPartialRealizedPnl(prev => {
-          const existing = prev[prevPos.product_symbol] || { realized_pnl: 0, history: [] };
-          return {
-            ...prev,
-            [prevPos.product_symbol]: {
-              realized_pnl: existing.realized_pnl + partialPnl,
-              history: [
-                ...existing.history,
-                {
-                  size_reduced: reducedContracts,
-                  pnl: partialPnl,
-                  exit_price: exitPrice,
-                  entry_price: prevEntryPrice,
-                  timestamp: new Date().toISOString(),
-                  prev_size: prevPos.size,
-                  new_size: currPos.size,
-                },
-              ],
-            },
-          };
-        });
-      }
-    });
-
-    // Update the ref for next comparison
-    prevPositionsRef.current = positions;
-  }, [positions]); // Only depend on positions, not closedPositions!
+  // Client-side close detection and partial-exit PnL tracking removed.
+  // Backend (options_ws_cache.py) detects closes, stores them in closed_position_store.py,
+  // and merges phantom rows with cumulative realized_pnl into the dashboard positions list.
+  // Exchange provides realized_pnl on live positions for partial exits.
 
   // Store latest data in refs to avoid useEffect dependency issues
   const sortedPositionsRef = React.useRef(sortedPositions);
@@ -2424,41 +2135,9 @@ const OptionsPanel = () => {
       });
 
       if (data?.success) {
-        // Save the closed position to closedPositions for continued visibility
-        // This keeps the position visible with size=0 and its realized PnL
-        // Include any accumulated partial realized PnL from prior partial exits
-        const accumulatedPartialPnl = partialRealizedPnl[position.product_symbol]?.realized_pnl || 0;
-        const closedPosData = {
-          product_symbol: position.product_symbol,
-          realized_pnl: (position.unrealized_pnl || 0) + accumulatedPartialPnl, // Unrealized + accumulated partial = total realized
-          closed_at: new Date().toISOString(),
-          entry_price: position.entry_price || 0,
-          close_price: data.fill_price || position.best_bid || position.best_ask || 0,
-          original_size: position.size || 0,
-          greeks: position.greeks || {},
-          // Save last known bid/ask so closed positions still display them
-          last_bid: position.best_bid || 0,
-          last_ask: position.best_ask || 0,
-          // Keep original position data for reference
-          underlying: position.product_symbol.split('-')[1] || 'BTC',
-          strike: parseInt(position.product_symbol.split('-')[2]) || 0,
-          expiry_code: position.product_symbol.split('-')[3] || '',
-          option_type: position.product_symbol.startsWith('C-') ? 'Call' : 'Put',
-        };
-
-        setClosedPositions(prev => ({
-          ...prev,
-          [position.product_symbol]: closedPosData
-        }));
-
-        // Clear partial realized PnL for this symbol since it's now fully closed and included in realized_pnl
-        setPartialRealizedPnl(prev => {
-          const updated = { ...prev };
-          delete updated[position.product_symbol];
-          return updated;
-        });
-
-        devLog(`📦 Saved closed position: ${position.product_symbol} with realized PnL: $${closedPosData.realized_pnl.toFixed(4)} (includes $${accumulatedPartialPnl.toFixed(4)} partial)`);
+        // Backend (options_ws_cache.py) detects the close on the next refresh and writes
+        // the cumulative realized_pnl to closed_position_store.py. The phantom row will
+        // appear in the dashboard positions list automatically on the next poll.
 
         // Check if order was actually filled (not just placed)
         // BUG-4 FIX: do not default to 'market' — that would trigger false fill sounds for pending limits
@@ -3385,7 +3064,6 @@ const OptionsPanel = () => {
       if (monthA !== monthB) return monthA - monthB;
       return dayA - dayB;
     });
-    // BUG-28 FIX: sortedPositions depends on closedPositions and hiddenPositions too;
     // use sortedPositions directly so the memo stays in sync with what is actually visible
   }, [selectedStrikes, sortedPositions]);
 
@@ -4427,11 +4105,9 @@ const OptionsPanel = () => {
                           const isLong = pos.size > 0;
                           const daysToExp = getDaysToExpiry(pos.product_symbol);
                           const isQuickMode = skipConfirmStrikes[pos.product_symbol]?.enabled;
-                          const isClosed = pos.is_closed === true || (pos.size === 0 && closedPositions[pos.product_symbol]);
+                          const isClosed = pos.is_closed === true;
                           const cashflow = pos.cashflow || 0;
-                          const effectiveSize = isClosed
-                            ? (closedPositions[pos.product_symbol]?.original_size || pos.original_size || 0)
-                            : pos.size;
+                          const effectiveSize = isClosed ? (pos.original_size || 0) : pos.size;
                           const isCall = optionInfo.type === 'Call';
                           const isPut = optionInfo.type === 'Put';
                           const rowBgColor = groupColor
@@ -4546,30 +4222,18 @@ const OptionsPanel = () => {
                                   onRoll={(p) => { setRollPosition(p); setRollModalOpen(true); }}
                                   onDisableSkipConfirm={disableSkipConfirm}
                                   onRemoveClosedPosition={(symbol) => {
-                                    // 1. Immediately hide the row (works for both localStorage and
-                                    //    backend-API phantom rows — instant visual feedback before
-                                    //    the next poll confirms the server no longer returns it).
+                                    // 1. Immediately hide the row (instant visual feedback before
+                                    //    the next poll confirms the backend no longer returns it).
                                     dismissedRef.current = new Set([...dismissedRef.current, symbol]);
                                     setDismissedSymbols(new Set(dismissedRef.current));
-                                    // 2. Remove from frontend localStorage
-                                    setClosedPositions(prev => {
-                                      const updated = { ...prev };
-                                      delete updated[symbol];
-                                      return updated;
-                                    });
-                                    setPartialRealizedPnl(prev => {
-                                      const updated = { ...prev };
-                                      delete updated[symbol];
-                                      return updated;
-                                    });
-                                    // 3. Remove from backend store so it doesn't reappear on next poll
+                                    // 2. Remove from backend store so it doesn't reappear on next poll
                                     api.delete(`/api/options/closed-positions/${encodeURIComponent(symbol)}`).catch(err => {
                                       devLog(`⚠️ Backend dismiss failed for ${symbol}:`, err);
                                     });
                                     devLog(`🗑️ Dismissed closed position: ${symbol}`);
                                   }}
                                   status={status}
-                                  closedPositionData={closedPositions[pos.product_symbol]}
+                                  closedPositionData={pos.is_closed ? pos : undefined}
                                   DEFAULT_SIZE={DEFAULT_SIZE}
                                   attributes={attributes}
                                   listeners={listeners}
@@ -4606,7 +4270,7 @@ const OptionsPanel = () => {
                           const isCollapsed = collapsedGroups[gid];
                           // Net PnL for the group
                           const groupNetPnl = groupPositions.reduce((sum, p) => {
-                            return sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
+                            return sum + (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0);
                           }, 0);
 
                           // Group header row — SortableGroupHeader makes it draggable.

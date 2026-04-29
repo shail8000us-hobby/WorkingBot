@@ -247,6 +247,38 @@ class TestJestSealedWsBidAskUpdater:
         )
 
 
+class TestJestSealedProfitRatchetKPI:
+    """
+    @sealed — StrategyKPIBar Profit Ratchet KPI (entry #85)
+    Runs: webui/frontend/src/components/mmm/__tests__/test_sealed_profit_ratchet_kpi.test.js
+
+    Contracts PR1–PR13:
+      PR1–PR4: KPI card present for 0DTE, 5DTE, STRADDLE_WITH_ADJUSTMENT, SHORT_WINDOW
+      PR5–PR9: display value (OFF / Next $N / #N · Next $M / step default)
+      PR10–PR12: color (#757575 disabled, #ffa726 armed, #66bb6a fired)
+      PR13: null guard — no crash when session=null
+    """
+
+    def test_all_profit_ratchet_kpi_contracts_pass(self):
+        """
+        CONTRACT: StrategyKPIBar must render Profit Ratchet KPI for all strategies
+        with correct value and color logic. 13 contracts.
+        FAILURE = Profit Ratchet visibility regression. Do NOT ignore.
+        """
+        result = _run_jest("test_sealed_profit_ratchet_kpi")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed Profit Ratchet KPI tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_profit_ratchet_kpi"
+        )
+
+
 class TestJestSealedKillSwitchAndHardStop:
     """
     @sealed — Kill Switch + Hard Stop UI contracts (entry #77)

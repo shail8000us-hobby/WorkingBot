@@ -63,6 +63,11 @@ _STALE_THRESHOLD = 120.0  # 2 minutes
 # Fallback REST poll interval when WS is healthy (seconds).
 _REST_POLL_INTERVAL = 60.0
 
+# Seconds after a fill before running close detection. The exchange REST API
+# may transiently return size=0 for a position that is just being adjusted, which
+# would produce a false phantom row. Waiting gives the exchange time to settle.
+_FILL_CLOSE_DETECT_DELAY = 8.0
+
 
 class _OptionsWSCache:
     """
@@ -182,11 +187,17 @@ class _OptionsWSCache:
         except Exception as exc:
             log.error(f"[OptionsWSCache] WS connect failed: {exc} — will retry on reconnect")
 
-        # Fallback REST poll loop
+        # Fallback REST poll loop — P4-E: each refresh is time-bounded so a hung
+        # exchange API call never stalls the loop permanently.
         while self._running:
             await asyncio.sleep(_REST_POLL_INTERVAL)
             try:
-                await self._refresh_positions(reason="fallback-60s")
+                await asyncio.wait_for(
+                    self._refresh_positions(reason="fallback-60s"),
+                    timeout=30.0,
+                )
+            except asyncio.TimeoutError:
+                log.warning("[OptionsWSCache] Fallback REST refresh timed out (30 s) — will retry next cycle")
             except Exception as exc:
                 log.warning(f"[OptionsWSCache] Fallback REST refresh failed: {exc}")
 
@@ -238,11 +249,107 @@ class _OptionsWSCache:
             return  # Too soon — a refresh is already in flight or just completed
 
         self._last_fill_refresh = now
-        log.debug("[OptionsWSCache] Fill event received — refreshing positions")
+        log.debug("[OptionsWSCache] Fill event received — refreshing positions (no close detection)")
         try:
+            # Skip close detection on the immediate fill refresh — the exchange REST
+            # may transiently return size=0 for positions being adjusted, causing false phantoms.
+            # A delayed follow-up runs after _FILL_CLOSE_DETECT_DELAY seconds with detection enabled.
             await self._refresh_positions(reason="fill-event")
+            asyncio.ensure_future(self._delayed_close_detect_refresh())
         except Exception as exc:
             log.warning(f"[OptionsWSCache] Fill-triggered refresh failed: {exc}")
+
+    async def _delayed_close_detect_refresh(self) -> None:
+        """Runs _FILL_CLOSE_DETECT_DELAY seconds after a fill to perform close detection once settled."""
+        await asyncio.sleep(_FILL_CLOSE_DETECT_DELAY)
+        try:
+            await self._refresh_positions(reason="fill-followup")
+        except Exception as exc:
+            log.debug(f"[OptionsWSCache] Delayed close-detect refresh failed: {exc}")
+
+    async def _reconcile_close_pnl(
+        self,
+        symbol: str,
+        entry_price: float,
+        prev_size: float,
+        ex_realized: float,
+        prev_cumulative: float,
+        close_ts: float,
+    ) -> None:
+        """
+        P4-B: 5 s after a close is detected, fetch actual fill prices from the
+        exchange and replace the mark-price estimate with the exact fill-based PnL.
+
+        Algorithm:
+          - Fetch fills in a ±30 s window around close_ts.
+          - Filter to closing-direction fills for this symbol (BUY for short, SELL for long).
+          - Compute weighted-average close price from those fills.
+          - Replace the stored cumulative_realized_pnl if the corrected value differs
+            from what was recorded by more than $0.01.
+        """
+        await asyncio.sleep(5.0)
+        try:
+            start_us = int((close_ts - 30) * 1_000_000)
+            end_us = int((close_ts + 30) * 1_000_000)
+
+            resp = await self._rest_client._request_with_retry(
+                method="GET",
+                path="/v2/fills",
+                params={"start_time": start_us, "end_time": end_us, "page_size": 100},
+            )
+            fills = resp.get("result", [])
+            if not isinstance(fills, list) or not fills:
+                return
+
+            is_short = prev_size < 0
+            closing_side = "buy" if is_short else "sell"
+
+            sym_fills = [
+                f for f in fills
+                if (
+                    f.get("product", {}).get("symbol", "") == symbol
+                    or f.get("product_symbol", "") == symbol
+                ) and f.get("side", "").lower() == closing_side
+            ]
+
+            if not sym_fills:
+                log.debug(f"[OptionsWSCache] Reconciliation: no {closing_side} fills for {symbol}")
+                return
+
+            total_size = sum(abs(float(f.get("size", 0) or 0)) for f in sym_fills)
+            if total_size == 0:
+                return
+            total_value = sum(
+                abs(float(f.get("size", 0) or 0)) *
+                float(f.get("price", 0) or f.get("fill_price", 0) or 0)
+                for f in sym_fills
+            )
+            avg_close_price = total_value / total_size
+            if avg_close_price == 0:
+                return
+
+            abs_size = abs(prev_size)
+            if is_short:
+                final_pnl = (entry_price - avg_close_price) * abs_size * 0.001
+            else:
+                final_pnl = (avg_close_price - entry_price) * abs_size * 0.001
+
+            reconciled = prev_cumulative + ex_realized + final_pnl
+
+            from .closed_position_store import get_closed_position_store
+            store = get_closed_position_store()
+            current = store.get_cumulative_pnl(symbol)
+            if abs(reconciled - current) > 0.01:
+                log.info(
+                    f"[OptionsWSCache] Fills-reconciled {symbol}: "
+                    f"${current:+.4f} → ${reconciled:+.4f} "
+                    f"(avg_fill=${avg_close_price:.4f} entry=${entry_price:.4f})"
+                )
+                store.update_reconciled_pnl(symbol, reconciled)
+            else:
+                log.debug(f"[OptionsWSCache] Reconciliation {symbol}: mark-price estimate already accurate (Δ<$0.01)")
+        except Exception as exc:
+            log.debug(f"[OptionsWSCache] Fills reconciliation for {symbol} failed: {exc}")
 
     async def _on_reconnect(self) -> None:
         """Called by AsyncWebSocketManager after successful reconnection."""
@@ -273,10 +380,17 @@ class _OptionsWSCache:
 
             # Detect positions that were open in the previous snapshot but are now gone
             # (size=0 or absent entirely). Save them to ClosedPositionStore.
-            if self._prev_positions:
+            # Skipped on "fill-event" refreshes: exchange may transiently show size=0 for
+            # positions being adjusted. The "fill-followup" refresh (8s later) runs detection
+            # once the exchange state has settled.
+            if self._prev_positions and reason != "fill-event":
                 try:
                     from .closed_position_store import get_closed_position_store
                     store = get_closed_position_store()
+                    # P4-A: one refresh_id per detection pass — prevents fill-followup
+                    # and periodic refresh from double-accumulating the same close.
+                    refresh_id = str(round(time.time(), 1))
+                    close_ts = time.time()
                     for sym, prev_pos in self._prev_positions.items():
                         prev_size = float(prev_pos.get("size", 0) or 0)
                         curr_size = exchange_map.get(sym, 0)
@@ -296,7 +410,18 @@ class _OptionsWSCache:
                                 if mark == 0:
                                     mark = entry
                                 realized = (mark - entry) * prev_size * 0.001
-                            store.record_close(prev_pos, realized)
+                            store.record_close(prev_pos, realized, refresh_id=refresh_id)
+                            # P4-B: schedule fills reconciliation 5 s later to replace the
+                            # mark-price estimate with the actual exchange fill price.
+                            prev_cumulative = store.get_cumulative_pnl(sym) - realized
+                            asyncio.ensure_future(self._reconcile_close_pnl(
+                                symbol=sym,
+                                entry_price=float(prev_pos.get("entry_price", 0) or 0),
+                                prev_size=prev_size,
+                                ex_realized=ex_realized,
+                                prev_cumulative=prev_cumulative,
+                                close_ts=close_ts,
+                            ))
                 except Exception as exc:
                     log.debug(f"[OptionsWSCache] ClosedPositionStore update failed: {exc}")
 

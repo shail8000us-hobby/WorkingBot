@@ -157,6 +157,7 @@ def _check_shield_gates(
 # Main entry point — called from mmm_monitor heartbeat at Step 5.5
 # ---------------------------------------------------------------------------
 
+@sealed
 async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
     """
     ATM Shield core logic.  Returns True if the shield fired this beat.
@@ -422,9 +423,10 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
 
         total_lots_agr = base_lots + recovery_lots
 
-        # Apply position cap
+        # Apply position cap — use total_lots (active + frozen) so a strike-shift
+        # that froze lots doesn't allow the shield to re-sell above max_lots_per_side.
         max_lots = params.get('max_lots_per_side', 100)
-        current_lots = session.get(endangered_side, {}).get('active_lots', 0)
+        current_lots = session.get(endangered_side, {}).get('total_lots', 0)
         cap_remaining = max(max_lots - current_lots, 0)
         total_lots_agr = min(total_lots_agr, cap_remaining)
 
@@ -520,7 +522,7 @@ async def execute_atm_shield(monitor, ce_now: float, pe_now: float) -> bool:
                 # made the 70% recovery target impossible to achieve.
                 # Use the same position-cap pattern as the endangered-side re-sell.
                 _max_lots_safe = params.get('max_lots_per_side', 100)
-                _current_safe = session.get(safe_side, {}).get('active_lots', 0)
+                _current_safe = session.get(safe_side, {}).get('total_lots', 0)
                 _cap_safe = max(_max_lots_safe - _current_safe, 0)
                 lots_safe = min(lots_safe, _cap_safe)
                 if lots_safe > 0:

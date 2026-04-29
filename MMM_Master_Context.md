@@ -402,7 +402,8 @@ Beat timeout OR thread dead detected
 
 | Command | What it runs |
 |---|---|
-| `pytest webui/backend/routes/mmm/tests/ -m sealed` | All sealed tests (~1640 as of last run) |
+| `python3 -m pytest webui/ bot/ -m sealed -q` | **ALL sealed tests** (full suite — canonical command from AI_SEAL.md) |
+| `python3 -m pytest webui/backend/routes/mmm/tests/ -m sealed -q` | MMM-area sealed tests only (~1191) — fast iteration check |
 | `pytest webui/backend/routes/mmm/tests/ -x` | All tests, stop on first fail |
 | `pytest webui/backend/routes/mmm/tests/test_sealed_mmm_safety.py` | Safety/kill switch sealed tests |
 | `pytest webui/backend/routes/mmm/tests/test_sealed_kill_switch_and_hard_stop.py` | Kill switch tests |

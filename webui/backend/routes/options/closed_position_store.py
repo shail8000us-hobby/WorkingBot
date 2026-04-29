@@ -138,16 +138,25 @@ class ClosedPositionStore:
     # Write API
     # ------------------------------------------------------------------
 
-    def record_close(self, position: dict, realized_pnl: float) -> None:
+    def record_close(self, position: dict, realized_pnl: float, refresh_id: str = None) -> None:
         """
         Record that position went to size=0.
         Accumulates cumulative_realized_pnl if the symbol was previously tracked.
+
+        refresh_id: opaque token (e.g. str(round(time.time(), 1))) passed by the
+        caller.  If the same refresh_id was already recorded for this symbol we
+        skip the accumulation — prevents double-counting when fill-followup and
+        the periodic 60 s refresh both detect the same close.
         """
         symbol = position.get('product_symbol', '')
         if not symbol:
             return
         with self._lock:
             existing = self._data.get(symbol, {})
+            # P4-A idempotence: same refresh cycle already recorded this close
+            if refresh_id and existing.get('last_detect_refresh_id') == refresh_id:
+                log.debug(f"[ClosedPositionStore] Skipping duplicate close for {symbol} (refresh_id={refresh_id})")
+                return
             prev_cumulative = existing.get('cumulative_realized_pnl', 0.0)
             new_cumulative = prev_cumulative + realized_pnl
             self._data[symbol] = {
@@ -162,6 +171,8 @@ class ClosedPositionStore:
                 'greeks': position.get('greeks', {}),
                 'is_closed': True,
                 'status': 'closed',
+                'last_detect_refresh_id': refresh_id,
+                'fills_reconciled': False,
             }
             self._save_unlocked()
         log.info(
@@ -169,12 +180,36 @@ class ClosedPositionStore:
             f"realized=${realized_pnl:+.4f}, cumulative=${new_cumulative:+.4f}"
         )
 
+    def update_reconciled_pnl(self, symbol: str, reconciled_pnl: float) -> None:
+        """
+        Replace cumulative_realized_pnl with a fills-reconciled value.
+        Called by options_ws_cache after fetching actual fill prices from the exchange.
+        Only updates if the symbol is still in the store (not yet dismissed/expired).
+        """
+        with self._lock:
+            if symbol not in self._data:
+                return
+            old = self._data[symbol].get('cumulative_realized_pnl', 0.0)
+            self._data[symbol]['cumulative_realized_pnl'] = reconciled_pnl
+            self._data[symbol]['fills_reconciled'] = True
+            self._save_unlocked()
+        log.info(f"[ClosedPositionStore] Fills-reconciled {symbol}: ${old:+.4f} → ${reconciled_pnl:+.4f}")
+
     def dismiss(self, symbol: str) -> bool:
-        """Remove a symbol from the store (user dismissed the phantom row)."""
+        """
+        Remove a symbol from the store (user dismissed the phantom row).
+        Also removes from _seen so a backend restart cannot re-detect the same
+        close and resurrect the dismissed row (P4-C fix).
+        """
         with self._lock:
             if symbol in self._data:
                 del self._data[symbol]
                 self._save_unlocked()
+                # Remove from _seen so startup close-detection doesn't re-add it
+                if symbol in self._seen:
+                    del self._seen[symbol]
+                    self._seen_dirty = True
+                    self._save_seen_unlocked()
                 return True
         return False
 
@@ -212,9 +247,13 @@ class ClosedPositionStore:
         Return last-known live positions (keyed by product_symbol).
         Used by OptionsWSCache to pre-populate _prev_positions on restart so close
         detection works even when the backend was stopped between fills.
+
+        Symbols already tracked in _data (is_closed=True) are excluded — they have
+        already been through record_close(). Including them would cause the startup
+        refresh to detect them as closed again and double-accumulate cumulative PnL.
         """
         with self._lock:
-            return dict(self._seen)
+            return {sym: data for sym, data in self._seen.items() if sym not in self._data}
 
     def cleanup_expired(self) -> None:
         """Public method to trigger expired-entry purge."""
@@ -262,11 +301,10 @@ class ClosedPositionStore:
                     'original_size': entry.get('last_size', 0),
                     'entry_price': entry.get('last_entry_price', 0),
                     'mark_price': entry.get('last_mark_price', 0),
-                    # unrealized_pnl carries the total realized PnL so the PnL column shows
-                    # the right value.  partial_realized_pnl is kept at 0 to avoid double-
-                    # counting in PortfolioSummaryStrip (livePnl = unrealized + partial).
-                    # The payoff graph uses realized_pnl for is_closed rows (correct).
-                    'unrealized_pnl': cumulative,
+                    # Phase 2: all PnL sums use unrealized + realized.
+                    # For closed rows: unrealized = 0, realized = full cumulative.
+                    # Setting both to cumulative would double-count in every total.
+                    'unrealized_pnl': 0,
                     'realized_pnl': cumulative,
                     'partial_realized_pnl': 0,
                     'greeks': entry.get('greeks', {}),

@@ -135,6 +135,7 @@ Tier 2 (pending) → live trading verified → fill Section A in AI_SEAL.md → 
 | 82 | `APIRateBudget.consume` | `webui/backend/routes/mmm/mmm_api_budget.py` | v1.0.0 | Apr 27, 2026 | `webui/backend/routes/mmm/tests/test_sealed_audit_fixes.py` | **SEALED** | A11-02 fix: Token-bucket rate limiter shared across all MMM sessions. consume(priority='critical') always returns True (order placement never blocked). consume(priority='normal') returns False when token budget exhausted. Refills linearly at calls_per_minute/60 per second. Thread-safe (Lock). reset() restores full capacity. stats() returns remaining/capacity/utilization_pct/total_consumed/total_blocked. 7 contracts covering normal/critical/exhausted/reset/stats/thread-safety. |
 | 83 | `execute_pure_straddle_roll` (entry-point contracts) | `webui/backend/routes/mmm/mmm_straddle_roll_pure.py` | v1.1.0 | Apr 27, 2026 | `webui/backend/routes/mmm/tests/test_sealed_straddle_roll_pure.py` | **SEALED** | A5-05 fix: Added C-SR-1/2/3 entry-point contracts to existing sealed test file. C-SR-1: tte < auto_close_mins → returns True, strategy_status='STOPPED', _auto_close_all called. C-SR-2: auto_close_mins ≤ tte < min_time suppression window → returns False, no status change. C-SR-3: spot=0/unavailable → returns False without raising. @sealed decorator was already present (v1.0 via PHS-1/2 tests). This entry formalises full entry-point coverage. |
 | 84 | `mmm_ledger._connect` (busy_timeout invariant) | `webui/backend/routes/mmm/mmm_ledger.py` | v1.0.0 | Apr 27, 2026 | `webui/backend/routes/mmm/tests/test_sealed_audit_fixes.py` | **SEALED** | A11-03 evaluation + fix: SQLite WAL mode is acceptable for 3–5 concurrent sessions. One gap found: ledger _connect() had no busy_timeout, causing immediate OperationalError under write contention (unlike mmm_storage which had busy_timeout=5000). Fix: added PRAGMA busy_timeout=5000 to _connect(). 3 contracts: ledger has busy_timeout, storage has busy_timeout, 10 concurrent fill recordings produce no errors. |
+| 85 | `StrategyKPIBar` (Profit Ratchet KPI) | `webui/frontend/src/components/mmm/MMMDashboard.js` | v1.0.0 | Apr 29, 2026 | `webui/frontend/src/components/mmm/__tests__/test_sealed_profit_ratchet_kpi.test.js` | **SEALED** | 13 contracts (PR1–PR13). PR1–PR4: Profit Ratchet KPI card rendered for ALL strategies (0DTE, 5DTE, STRADDLE_WITH_ADJUSTMENT, SHORT_WINDOW) — never strategy-gated. PR5: disabled → "OFF". PR6: enabled never fired, step=10 → "Next $10". PR7: fired 3×, hwm=30, step=10 → "#3 · Next $40". PR8: fired 1×, hwm=5, step=5 → "#1 · Next $10". PR9: step missing → defaults to 10. PR10: disabled → color #757575. PR11: armed → color #ffa726. PR12: fired → color #66bb6a. PR13: session=null → no crash. **Jest test** — bridge in test_sealed_jest_bridge.py (TestJestSealedProfitRatchetKPI). |
 
 ---
 
@@ -150,9 +151,9 @@ Tier 2 (pending) → live trading verified → fill Section A in AI_SEAL.md → 
 
 ## QUICK STATS
 
-- Total Sealed : 84
+- Total Sealed : 85
 - Total Unsealed (ever modified) : 1
-- Last Activity : Apr 27, 2026 — A11-03 (#84) sealed: mmm_ledger._connect busy_timeout invariant + concurrency stress test. All score improvement plan fixes complete.
+- Last Activity : Apr 29, 2026 — (#85) sealed: StrategyKPIBar Profit Ratchet KPI — 13 Jest contracts, visible for all strategies.
 
 > ⚠️ Entry #44 uses **Jest** (not pytest). Run its test separately:
 > `cd webui/frontend && npm test -- --watchAll=false --testPathPattern=test_sealed_getOpenPositions`

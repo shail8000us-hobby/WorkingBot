@@ -11,6 +11,8 @@
     "lot_velocity_limit",
     "shift_recycle_enabled",
     "atm_shield_enabled",
-    "replenish_enabled"
+    "replenish_enabled",
+    "profit_ratchet_enabled",
+    "profit_ratchet_step_usd"
   ]
 }

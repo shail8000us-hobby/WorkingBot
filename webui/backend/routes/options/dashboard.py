@@ -42,6 +42,7 @@ dashboard_bp = Blueprint('options_dashboard', __name__, url_prefix='/api/options
 _dashboard_cache = {'data': None, 'time': 0}
 _dashboard_lock = threading.Lock()
 _refresh_in_progress = False
+_refresh_started_at: float = 0.0   # P4-E: track when background refresh started
 DASHBOARD_FRESH_SECONDS = 4.0   # Serve instantly from cache
 DASHBOARD_STALE_SECONDS = 30.0  # Serve stale + trigger background refresh
 
@@ -147,8 +148,13 @@ def get_dashboard():
     
     # 2) STALE cache — return stale + trigger background refresh
     if cached is not None and age < DASHBOARD_STALE_SECONDS:
+        # P4-E: auto-reset a background refresh that has been stuck > 30 s
+        if _refresh_in_progress and (now - _refresh_started_at) > 30.0:
+            log.warning("[Dashboard] Background refresh stuck > 30 s — resetting flag")
+            _refresh_in_progress = False
         if not _refresh_in_progress:
             _refresh_in_progress = True
+            _refresh_started_at = now
             from flask import current_app
             app = current_app._get_current_object()
             t = threading.Thread(target=_refresh_dashboard_cache, args=(app,), daemon=True)
@@ -161,7 +167,7 @@ def get_dashboard():
 
 def _refresh_dashboard_cache(app=None):
     """Background thread: refresh the dashboard cache."""
-    global _refresh_in_progress
+    global _refresh_in_progress, _refresh_started_at
     try:
         if app is not None:
             # Use test_request_context to provide both app AND request context
@@ -219,8 +225,10 @@ def _fetch_dashboard_fresh(is_background=False):
 
         # Phase 5 Optimization: Use content-based last_modified
         # Include is_closed flag so fingerprint changes when a position closes/reopens
+        # P4-F: include realized_pnl so fills-reconciliation updates (which change
+        # realized_pnl on phantom rows) trigger a fresh fetch in useOptionsPositions.js.
         pos_fingerprint = '|'.join(
-            f"{p.get('product_symbol','')},{p.get('size',0)},{p.get('best_bid',0)},{p.get('best_ask',0)},{p.get('unrealized_pnl',0)},{p.get('is_closed',False)}"
+            f"{p.get('product_symbol','')},{p.get('size',0)},{p.get('best_bid',0)},{p.get('best_ask',0)},{p.get('unrealized_pnl',0)},{round(float(p.get('realized_pnl',0) or 0),4)},{p.get('is_closed',False)}"
             for p in positions
         )
         pending_orders_list = pending_data.get('orders', []) if isinstance(pending_data, dict) else []

@@ -83,9 +83,8 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
       const size = parseFloat(pos.size || 0);
       const entryPrice = parseFloat(pos.entry_price || 0);
       const isClosed = pos.is_closed === true || size === 0;
+      // realized_pnl: cumulative for closed rows (from ClosedPositionStore), partial-exit total for live rows (from exchange)
       const realizedPnl = parseFloat(pos.realized_pnl || 0);
-      // Partial realized PnL from partial exits (accumulated in OptionsPanel)
-      const partialRealizedPnl = parseFloat(pos.partial_realized_pnl || 0);
 
       const bestBid = parseFloat(pos.best_bid || 0);
       const bestAsk = parseFloat(pos.best_ask || 0);
@@ -101,7 +100,7 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
         if (calculatedIV > 0.05 && calculatedIV < 4.0) iv = calculatedIV;
       }
 
-      return { symbol: pos.product_symbol, type: optionType, strike, expiryDate, daysToExpiry, yearsToExpiry, size, entryPrice, markPrice, iv, isClosed, realizedPnl, partialRealizedPnl };
+      return { symbol: pos.product_symbol, type: optionType, strike, expiryDate, daysToExpiry, yearsToExpiry, size, entryPrice, markPrice, iv, isClosed, realizedPnl };
     });
 
     const nonClosedPositions = parsed.filter(p => !p.isClosed);
@@ -174,9 +173,9 @@ export const useChartData = (parsedPositions, opts) => {
     const calcProjectedPayoff = (price, daysFromNow) => {
       let payoff = 0;
       parsedPos.forEach((pos) => {
-        // Always include partial realized PnL from partial exits
-        payoff += pos.partialRealizedPnl || 0;
-        if (pos.isClosed) { payoff += pos.realizedPnl || 0; return; }
+        // Always include realized PnL: cumulative for closed rows, partial-exit total for live rows
+        payoff += pos.realizedPnl || 0;
+        if (pos.isClosed) { return; }
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;
         const multiplier = getContractMultiplier(pos.symbol);
@@ -277,9 +276,9 @@ export const useChartData = (parsedPositions, opts) => {
 
       let expiryPayoff = 0;
       parsedPos.forEach((pos) => {
-        // Always include partial realized PnL from partial exits
-        expiryPayoff += pos.partialRealizedPnl || 0;
-        if (pos.isClosed) { expiryPayoff += pos.realizedPnl || 0; return; }
+        // Always include realized PnL: cumulative for closed rows, partial-exit total for live rows
+        expiryPayoff += pos.realizedPnl || 0;
+        if (pos.isClosed) { return; }
         const intrinsic = pos.type === 'call' ? Math.max(0, price - pos.strike) : Math.max(0, pos.strike - price);
         const absSize = Math.abs(pos.size);
         const isShort = pos.size < 0;

@@ -2683,7 +2683,7 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   );
 };
 
-const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
+export const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
   if (!session) return null;
 
   const resolvedStrategy = normalizeStrategyType(strategyType);
@@ -2702,6 +2702,12 @@ const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
 
   const initialCredit = session?._straddle_initial_credit ?? session?.initial_total_premium ?? null;
 
+  const ratchetEnabled = session?.params?.profit_ratchet_enabled === true;
+  const ratchetStep = Number(session?.params?.profit_ratchet_step_usd ?? 10);
+  const ratchetCount = session?._profit_ratchet_count ?? 0;
+  const ratchetHwm = session?._profit_ratchet_hwm ?? 0;
+  const ratchetNextMilestone = ratchetHwm + ratchetStep;
+
   const rollCount = session?._straddle_roll_count ?? 0;
   const rollMax = session?.params?.straddle_roll_max_per_session;
   const rollPct = (Number.isFinite(Number(rollMax)) && Number(rollMax) > 0)
@@ -2713,12 +2719,18 @@ const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
     ? Math.max(0, maxLossAmount - Math.max(0, -netPnl))
     : null;
 
+  const ratchetValue = ratchetEnabled
+    ? (ratchetCount > 0 ? `#${ratchetCount} · Next $${ratchetNextMilestone.toFixed(0)}` : `Next $${ratchetNextMilestone.toFixed(0)}`)
+    : 'OFF';
+  const ratchetColor = !ratchetEnabled ? '#757575' : ratchetCount > 0 ? '#66bb6a' : '#ffa726';
+
   let metrics = [
     { key: 'ceLots', label: 'CE Lots', value: ceLots, color: '#4caf50' },
     { key: 'peLots', label: 'PE Lots', value: peLots, color: '#f44336' },
     { key: 'netPnl', label: 'Net P&L', value: `$${netPnl.toFixed(2)}`, color: netPnl >= 0 ? '#4caf50' : '#f44336' },
     { key: 'adjCount', label: 'Adj Count', value: adjustmentCount, color: '#ab47bc' },
     { key: 'beBand', label: 'BE Band', value: beDistance != null ? `${beDistance.toFixed(2)}% (${beZone})` : '—', color: beDistance != null && beDistance <= 1.5 ? '#f44336' : '#90caf9' },
+    { key: 'profitRatchet', label: 'Profit Ratchet', value: ratchetValue, color: ratchetColor },
   ];
 
   if (resolvedStrategy === 'STRADDLE_WITH_ADJUSTMENT') {

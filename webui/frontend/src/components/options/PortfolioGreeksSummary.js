@@ -37,7 +37,7 @@ const getPnlColor = (pnl) => {
 
 function PortfolioGreeksSummary({ sortedPositions, aggregatedGreeks, ivStats, onHedgeClick }) {
     const totalPnl = sortedPositions.reduce(
-        (sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0),
+        (sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0),
         0
     );
 
