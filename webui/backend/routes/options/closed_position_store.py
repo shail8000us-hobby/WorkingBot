@@ -34,6 +34,7 @@ except Exception:
 log = logging.getLogger(__name__)
 
 _STORE_PATH = Path(__file__).parent.parent.parent / 'data' / 'closed_positions.json'
+_SEEN_PATH = Path(__file__).parent.parent.parent / 'data' / 'seen_positions.json'
 
 # Keep phantom entries for 6 hours after expiry
 _POST_EXPIRY_RETAIN_SECS = 6 * 3600
@@ -64,7 +65,13 @@ class ClosedPositionStore:
     def __init__(self) -> None:
         self._lock = _RealLock()
         self._data: Dict[str, dict] = {}
+        # Last-known live state for each position — persisted across restarts so
+        # _prev_positions in the WS cache can be pre-populated and close detection
+        # works correctly even after a backend restart.
+        self._seen: Dict[str, dict] = {}
+        self._seen_dirty: bool = False
         self._load()
+        self._load_seen()
 
     # ------------------------------------------------------------------
     # Persistence
@@ -88,6 +95,27 @@ class ClosedPositionStore:
                 json.dump(self._data, f, indent=2, default=str)
         except Exception as exc:
             log.error(f"[ClosedPositionStore] Save failed: {exc}")
+
+    def _load_seen(self) -> None:
+        try:
+            if _SEEN_PATH.exists():
+                with open(_SEEN_PATH, 'r') as f:
+                    self._seen = json.load(f)
+                log.info(f"[ClosedPositionStore] Loaded {len(self._seen)} seen entries from {_SEEN_PATH}")
+        except Exception as exc:
+            log.warning(f"[ClosedPositionStore] Seen load failed ({exc}) — starting empty")
+            self._seen = {}
+
+    def _save_seen_unlocked(self) -> None:
+        if not self._seen_dirty:
+            return
+        try:
+            _SEEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(_SEEN_PATH, 'w') as f:
+                json.dump(self._seen, f, indent=2, default=str)
+            self._seen_dirty = False
+        except Exception as exc:
+            log.error(f"[ClosedPositionStore] Seen save failed: {exc}")
 
     def _purge_expired_unlocked(self) -> None:
         """Remove entries whose post-expiry retain window has passed."""
@@ -141,6 +169,42 @@ class ClosedPositionStore:
                 self._save_unlocked()
                 return True
         return False
+
+    def record_seen_batch(self, positions: List[dict]) -> None:
+        """
+        Update last-known live state for each position after a REST refresh.
+        Skips symbols already tracked as 'closed' so we never overwrite realized PnL.
+        """
+        with self._lock:
+            for pos in positions:
+                sym = pos.get('product_symbol', '')
+                if not sym:
+                    continue
+                if self._data.get(sym, {}).get('status') == 'closed':
+                    continue  # Already closed — don't overwrite
+                self._seen[sym] = {
+                    'product_symbol': sym,
+                    'entry_price': float(pos.get('entry_price') or 0),
+                    'mark_price': float(pos.get('mark_price') or 0),
+                    'size': float(pos.get('size') or 0),
+                    'unrealized_pnl': float(pos.get('unrealized_pnl') or 0),
+                    'greeks': pos.get('greeks', {}),
+                }
+            self._seen_dirty = True
+
+    def flush_seen(self) -> None:
+        """Persist seen state to disk. Call once after record_seen_batch, not per-position."""
+        with self._lock:
+            self._save_seen_unlocked()
+
+    def get_last_seen(self) -> Dict[str, dict]:
+        """
+        Return last-known live positions (keyed by product_symbol).
+        Used by OptionsWSCache to pre-populate _prev_positions on restart so close
+        detection works even when the backend was stopped between fills.
+        """
+        with self._lock:
+            return dict(self._seen)
 
     def cleanup_expired(self) -> None:
         """Public method to trigger expired-entry purge."""

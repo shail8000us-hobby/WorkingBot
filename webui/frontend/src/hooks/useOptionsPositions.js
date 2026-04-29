@@ -491,9 +491,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       socketRef.current.on('options_ticker_update', (data) => {
         const { symbol } = data;
         setPositions((prevPositions) =>
-          prevPositions.map((pos) =>
-            pos.product_symbol === symbol ? applyTickerUpdate(pos, data) : pos,
-          ),
+          prevPositions.map((pos) => {
+            if (pos.product_symbol !== symbol) return pos;
+            if (pos.is_closed || !pos.size) return pos; // Preserve realized PnL for closed phantoms
+            return applyTickerUpdate(pos, data);
+          }),
         );
       });
 

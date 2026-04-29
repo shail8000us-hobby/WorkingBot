@@ -154,6 +154,18 @@ class _OptionsWSCache:
         # auto-restore list) and refresh positions.
         self._ws_manager.register_reconnect_callback(self._on_reconnect)
 
+        # Pre-populate _prev_positions from the persisted last-seen state so close
+        # detection works on the very first refresh even after a backend restart.
+        try:
+            from .closed_position_store import get_closed_position_store
+            seen = get_closed_position_store().get_last_seen()
+            if seen:
+                with self._lock:
+                    self._prev_positions = seen
+                log.info(f"[OptionsWSCache] Loaded {len(seen)} seen positions for close detection")
+        except Exception as exc:
+            log.debug(f"[OptionsWSCache] Seen pre-load failed: {exc}")
+
         # Initial position fetch (REST) before WS connects so monitors have
         # data immediately even if WS auth takes a few seconds.
         await self._refresh_positions(reason="startup")
@@ -317,6 +329,16 @@ class _OptionsWSCache:
 
             count = len(new_positions)
             log.info(f"[OptionsWSCache] Positions refreshed ({reason}): {count} options")
+
+            # Persist last-known live state so close detection survives backend restarts.
+            try:
+                from .closed_position_store import get_closed_position_store
+                store2 = get_closed_position_store()
+                store2.record_seen_batch(list(new_positions.values()))
+                store2.flush_seen()
+            except Exception as exc2:
+                log.debug(f"[OptionsWSCache] Seen-state persist failed: {exc2}")
+
         except Exception as exc:
             log.error(f"[OptionsWSCache] _refresh_positions({reason}) failed: {exc}")
             raise
