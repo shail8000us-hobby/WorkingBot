@@ -79,6 +79,31 @@ const enrichPositionsWithIV = async (positionsList) => {
   }
 };
 
+// Re-apply the most-recent WS tick for each position onto a freshly-fetched list.
+//
+// Why: REST fetches set unrealized_pnl from the exchange's mark price. WS ticks
+// then update it from (bid+ask)/2. Without this, the two sources alternate every
+// 5 seconds, causing P&L to visibly oscillate. By re-stamping the latest tick
+// immediately after each REST update, the WS value always wins.
+//
+// For closed phantom rows: bid/ask/mid_price only — realized_pnl is never touched.
+// For live rows: full applyTickerUpdate so the WS price takes precedence.
+const applyLatestTicks = (positionsList, ticks) => {
+  if (!ticks || Object.keys(ticks).length === 0) return positionsList;
+  return positionsList.map((pos) => {
+    const tick = ticks[pos.product_symbol];
+    if (!tick) return pos;
+    if (pos.is_closed) {
+      const bid = tick.best_bid != null ? tick.best_bid : pos.best_bid;
+      const ask = tick.best_ask != null ? tick.best_ask : pos.best_ask;
+      const mid = (bid > 0 && ask > 0) ? (bid + ask) / 2 : (tick.mark_price || pos.mid_price);
+      return { ...pos, best_bid: bid, best_ask: ask, mid_price: mid };
+    }
+    if (!pos.size) return pos;
+    return applyTickerUpdate(pos, tick);
+  });
+};
+
 /**
  * Custom hook for options position data fetching, polling, and WebSocket subscriptions.
  *
@@ -112,6 +137,10 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
   const pendingOrdersInFlightRef = useRef(false);
   const pendingOrdersPendingRef = useRef(false);
   const feesInFlightRef = useRef(false);
+  // Latest WS tick per symbol — keyed by product_symbol.
+  // Used by applyLatestTicks() to re-stamp live prices after every REST update
+  // so the WS value always wins over the exchange mark price in REST responses.
+  const latestTicksRef = useRef({});
 
   // ---- Fetch functions ----
   const fetchDashboard = useCallback(async () => {
@@ -142,8 +171,10 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
         const dashPendingOrders = data.pending_orders || [];
         const dashFuturesPositions = data.futures_positions || [];
 
-        // Show positions immediately WITHOUT waiting for IV enrichment
-        setPositions(dashPositions);
+        // Show positions immediately WITHOUT waiting for IV enrichment.
+        // Re-apply latest WS ticks so the WS mid price wins over the exchange
+        // mark price that comes back in the REST response (prevents oscillation).
+        setPositions(applyLatestTicks(dashPositions, latestTicksRef.current));
         setStatus(dashStatus);
         setPendingOrders(dashPendingOrders);
         setFuturesPositions(dashFuturesPositions);
@@ -156,9 +187,11 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
           setMarginData(data.margin);
         }
 
-        // Enrich IV in background (non-blocking)
+        // Enrich IV in background (non-blocking).
+        // Re-apply ticks again here — IV enrichment is async so a WS tick may
+        // have arrived between the setPositions above and this callback.
         enrichPositionsWithIV(dashPositions).then((enriched) => {
-          setPositions(enriched);
+          setPositions(applyLatestTicks(enriched, latestTicksRef.current));
         }).catch(() => { /* IV enrichment is best-effort */ });
 
         return true;
@@ -437,7 +470,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
 
         enrichPositionsWithIV(warmPositions)
           .then((enriched) => {
-            setPositions(enriched);
+            setPositions(applyLatestTicks(enriched, latestTicksRef.current));
           })
           .catch(() => {
             // warm IV enrichment is best-effort
@@ -490,10 +523,21 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
 
       socketRef.current.on('options_ticker_update', (data) => {
         const { symbol } = data;
+        // Always store the latest tick so applyLatestTicks() can re-apply it
+        // after REST refreshes (prevents REST from overwriting WS mid price).
+        latestTicksRef.current[symbol] = data;
         setPositions((prevPositions) =>
           prevPositions.map((pos) => {
             if (pos.product_symbol !== symbol) return pos;
-            if (pos.is_closed || !pos.size) return pos; // Preserve realized PnL for closed phantoms
+            if (pos.is_closed) {
+              // Closed phantom rows: update bid/ask/mid so the row shows live
+              // market prices. Do NOT touch realized_pnl or unrealized_pnl.
+              const bid = data.best_bid != null ? data.best_bid : pos.best_bid;
+              const ask = data.best_ask != null ? data.best_ask : pos.best_ask;
+              const mid = (bid > 0 && ask > 0) ? (bid + ask) / 2 : (data.mark_price || pos.mid_price);
+              return { ...pos, best_bid: bid, best_ask: ask, mid_price: mid };
+            }
+            if (!pos.size) return pos;
             return applyTickerUpdate(pos, data);
           }),
         );
