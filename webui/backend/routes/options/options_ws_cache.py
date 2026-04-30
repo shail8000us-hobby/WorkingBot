@@ -289,8 +289,11 @@ class _OptionsWSCache:
         """
         await asyncio.sleep(5.0)
         try:
-            start_us = int((close_ts - 30) * 1_000_000)
-            end_us = int((close_ts + 30) * 1_000_000)
+            # Use a ±60 s window to account for exchange API latency and delayed
+            # close detection. The 5 s sleep before this call means fills up to
+            # ~65 s before close_ts are included, which covers even slow fills.
+            start_us = int((close_ts - 60) * 1_000_000)
+            end_us = int((close_ts + 60) * 1_000_000)
 
             resp = await self._rest_client._request_with_retry(
                 method="GET",

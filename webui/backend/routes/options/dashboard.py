@@ -281,6 +281,23 @@ def _fetch_dashboard_fresh(is_background=False):
         }), 500
 
 
+@dashboard_bp.route('/dismissed-symbols', methods=['GET'])
+def get_dismissed_symbols():
+    """
+    Return the list of dismissed symbols (persisted across restarts).
+    Used by the frontend to pre-seed its dismissedSymbols set on load,
+    preventing dismissed phantom rows from reappearing after a backend restart.
+    """
+    try:
+        from .closed_position_store import get_closed_position_store
+        store = get_closed_position_store()
+        symbols = store.get_dismissed_symbols()
+        return jsonify({'success': True, 'symbols': symbols}), 200
+    except Exception as e:
+        log.error(f"get_dismissed_symbols error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @dashboard_bp.route('/closed-positions/<path:symbol>', methods=['DELETE'])
 def dismiss_closed_position(symbol):
     """Remove a phantom closed-position from the server-side store."""

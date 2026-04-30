@@ -450,10 +450,27 @@ const OptionsPanel = () => {
   // Backend merges phantom rows (is_closed=true) into the /api/options/dashboard positions list.
 
   // Positions the user explicitly dismissed via the X button.
-  // Non-persisted: resets on page reload (positions are gone from API by then anyway).
-  // Also checked in disappearance-detection to prevent re-adding dismissed symbols.
+  // Pre-seeded from backend on mount (P4-C) — persists across backend restarts.
   const dismissedRef = useRef(new Set());
   const [dismissedSymbols, setDismissedSymbols] = useState(() => new Set());
+
+  // P4-C: Pre-seed dismissedSymbols from backend on mount so dismissed phantom rows
+  // never reappear after a backend restart (the dismissed set is persisted on disk).
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/api/options/dismissed-symbols').then(({ data }) => {
+      if (cancelled || !data?.success) return;
+      const symbols = data.symbols || [];
+      if (symbols.length > 0) {
+        dismissedRef.current = new Set(symbols);
+        setDismissedSymbols(new Set(symbols));
+        devLog(`🗑️ Pre-seeded ${symbols.length} dismissed symbols from backend`);
+      }
+    }).catch(err => {
+      devLog('⚠️ Failed to fetch dismissed symbols:', err);
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   // Partial exit realized PnL tracking - accumulates PnL from partial position reductions
   // Format: { symbol: { realized_pnl: number, history: [{ size_reduced, pnl, price, timestamp }] } }

@@ -13,7 +13,8 @@ const DB_NAME = 'OptionsTraderDB';
 const DB_VERSION = 1;
 
 const STORES = {
-  CLOSED_POSITIONS: 'closedPositions',
+  // CLOSED_POSITIONS removed — Phase 2: closed positions are now purely server-side
+  // (closed_position_store.py). The backend merges phantom rows into the dashboard response.
   SLTP_SETTINGS: 'sltpSettings',
   MAX_LOSS_SETTINGS: 'maxLossSettings',
   TAKE_PROFIT_SETTINGS: 'takeProfitSettings',
@@ -50,10 +51,8 @@ class OptionsDB {
         const db = event.target.result;
 
         // Create object stores
-        if (!db.objectStoreNames.contains(STORES.CLOSED_POSITIONS)) {
-          const store = db.createObjectStore(STORES.CLOSED_POSITIONS, { keyPath: 'symbol' });
-          store.createIndex('timestamp', 'timestamp', { unique: false });
-        }
+        // Note: CLOSED_POSITIONS store was removed — closed positions are now
+        // purely server-side (closed_position_store.py). See Phase 2 cleanup.
 
         if (!db.objectStoreNames.contains(STORES.SLTP_SETTINGS)) {
           db.createObjectStore(STORES.SLTP_SETTINGS, { keyPath: 'symbol' });
@@ -160,65 +159,6 @@ class OptionsDB {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => reject(request.error);
     });
-  }
-
-  /**
-   * Migrate data from localStorage to IndexedDB
-   */
-  async migrateFromLocalStorage() {
-    try {
-      // Migrate closed positions
-      const closedPositions = localStorage.getItem('options_closed_positions');
-      if (closedPositions) {
-        const data = JSON.parse(closedPositions);
-        for (const [symbol, value] of Object.entries(data)) {
-          await this.put(STORES.CLOSED_POSITIONS, { 
-            symbol, 
-            ...value,
-            timestamp: Date.now()
-          });
-        }
-        console.log('✅ Migrated closed positions to IndexedDB');
-      }
-
-      // Migrate skip confirm strikes
-      const skipConfirm = localStorage.getItem('options_skip_confirm_strikes');
-      if (skipConfirm) {
-        const data = JSON.parse(skipConfirm);
-        for (const [symbol, value] of Object.entries(data)) {
-          await this.put(STORES.SKIP_CONFIRM_STRIKES, { symbol, ...value });
-        }
-        console.log('✅ Migrated skip confirm strikes to IndexedDB');
-      }
-
-      // Migrate custom order
-      const customOrder = localStorage.getItem('options_custom_order');
-      if (customOrder) {
-        await this.put(STORES.CUSTOM_ORDER, { 
-          id: 'default', 
-          order: JSON.parse(customOrder) 
-        });
-        console.log('✅ Migrated custom order to IndexedDB');
-      }
-
-      return true;
-    } catch (err) {
-      console.error('Migration error:', err);
-      return false;
-    }
-  }
-
-  /**
-   * Get all closed positions as object (backward compatible with localStorage format)
-   */
-  async getClosedPositionsObject() {
-    const all = await this.getAll(STORES.CLOSED_POSITIONS);
-    const obj = {};
-    all.forEach(item => {
-      const { symbol, ...rest } = item;
-      obj[symbol] = rest;
-    });
-    return obj;
   }
 
   /**

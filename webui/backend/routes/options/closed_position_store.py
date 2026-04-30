@@ -35,6 +35,7 @@ log = logging.getLogger(__name__)
 
 _STORE_PATH = Path(__file__).parent.parent.parent / 'data' / 'closed_positions.json'
 _SEEN_PATH = Path(__file__).parent.parent.parent / 'data' / 'seen_positions.json'
+_DISMISSED_PATH = Path(__file__).parent.parent.parent / 'data' / 'dismissed_symbols.json'
 
 # Keep phantom entries for 6 hours after expiry
 _POST_EXPIRY_RETAIN_SECS = 6 * 3600
@@ -70,8 +71,12 @@ class ClosedPositionStore:
         # works correctly even after a backend restart.
         self._seen: Dict[str, dict] = {}
         self._seen_dirty: bool = False
+        # Persisted set of dismissed symbols — survives backend restarts so
+        # dismissed phantom rows never reappear (P4-C full fix).
+        self._dismissed: Set[str] = set()
         self._load()
         self._load_seen()
+        self._load_dismissed()
 
     # ------------------------------------------------------------------
     # Persistence
@@ -124,6 +129,34 @@ class ClosedPositionStore:
             self._seen_dirty = False
         except Exception as exc:
             log.error(f"[ClosedPositionStore] Seen save failed: {exc}")
+
+    def _load_dismissed(self) -> None:
+        """Load persisted dismissed symbols set from disk."""
+        try:
+            if _DISMISSED_PATH.exists():
+                with open(_DISMISSED_PATH, 'r') as f:
+                    raw = json.load(f)
+                    self._dismissed = set(raw) if isinstance(raw, list) else set()
+            # Purge dismissed entries whose post-expiry retain window has passed
+            cutoff = time.time() - _POST_EXPIRY_RETAIN_SECS
+            stale = {s for s in self._dismissed if _parse_expiry_ts(s) < cutoff}
+            if stale:
+                self._dismissed -= stale
+                self._save_dismissed_unlocked()
+                log.info(f"[ClosedPositionStore] Purged {len(stale)} expired dismissed symbols")
+            log.info(f"[ClosedPositionStore] Loaded {len(self._dismissed)} dismissed symbols from {_DISMISSED_PATH}")
+        except Exception as exc:
+            log.warning(f"[ClosedPositionStore] Dismissed load failed ({exc}) — starting empty")
+            self._dismissed = set()
+
+    def _save_dismissed_unlocked(self) -> None:
+        """Persist dismissed symbols set to disk."""
+        try:
+            _DISMISSED_PATH.parent.mkdir(parents=True, exist_ok=True)
+            with open(_DISMISSED_PATH, 'w') as f:
+                json.dump(sorted(self._dismissed), f, indent=2)
+        except Exception as exc:
+            log.error(f"[ClosedPositionStore] Dismissed save failed: {exc}")
 
     def _purge_expired_unlocked(self) -> None:
         """Remove entries whose post-expiry retain window has passed."""
@@ -200,18 +233,26 @@ class ClosedPositionStore:
         Remove a symbol from the store (user dismissed the phantom row).
         Also removes from _seen so a backend restart cannot re-detect the same
         close and resurrect the dismissed row (P4-C fix).
+
+        Persists the symbol in _dismissed so it never reappears even after a
+        backend restart (full P4-C implementation).
         """
         with self._lock:
+            removed = False
             if symbol in self._data:
                 del self._data[symbol]
                 self._save_unlocked()
-                # Remove from _seen so startup close-detection doesn't re-add it
-                if symbol in self._seen:
-                    del self._seen[symbol]
-                    self._seen_dirty = True
-                    self._save_seen_unlocked()
-                return True
-        return False
+                removed = True
+            # Remove from _seen so startup close-detection doesn't re-add it
+            if symbol in self._seen:
+                del self._seen[symbol]
+                self._seen_dirty = True
+                self._save_seen_unlocked()
+            # Persist to dismissed set so it never reappears after restart
+            if symbol not in self._dismissed:
+                self._dismissed.add(symbol)
+                self._save_dismissed_unlocked()
+            return removed
 
     def record_seen_batch(self, positions: List[dict]) -> None:
         """
@@ -260,6 +301,13 @@ class ClosedPositionStore:
         with self._lock:
             self._purge_expired_unlocked()
             self._save_unlocked()
+            # Also purge expired dismissed symbols so the set doesn't grow unbounded
+            cutoff = time.time() - _POST_EXPIRY_RETAIN_SECS
+            stale = {s for s in self._dismissed if _parse_expiry_ts(s) < cutoff}
+            if stale:
+                self._dismissed -= stale
+                self._save_dismissed_unlocked()
+                log.info(f"[ClosedPositionStore] cleanup_expired: purged {len(stale)} expired dismissed symbols")
 
     # ------------------------------------------------------------------
     # Read API
@@ -273,12 +321,21 @@ class ClosedPositionStore:
         with self._lock:
             return symbol in self._data
 
+    def get_dismissed_symbols(self) -> List[str]:
+        """
+        Return the list of dismissed symbols (persisted across restarts).
+        Used by the dashboard endpoint to pre-seed the frontend dismissed set.
+        """
+        with self._lock:
+            return sorted(self._dismissed)
+
     def get_phantom_positions(self, exclude_symbols: Set[str] = None) -> List[dict]:
         """
         Return closed-position phantom dicts (size=0, is_closed=True) for all
         tracked symbols that:
           - Have not yet expired (or are within the post-expiry retain window)
           - Are not in exclude_symbols (those are already live in the response)
+          - Have not been dismissed by the user (P4-C full fix)
 
         Each phantom carries realized_pnl and unrealized_pnl = cumulative_realized_pnl
         so the frontend PnL column and payoff graph both show the historical value.
@@ -291,6 +348,8 @@ class ClosedPositionStore:
             for sym, entry in self._data.items():
                 if sym in exclude:
                     continue
+                if sym in self._dismissed:
+                    continue  # P4-C: user dismissed this symbol — never show again
                 if entry.get('expiry_ts', 0) < cutoff:
                     continue
                 cumulative = entry.get('cumulative_realized_pnl', 0.0)
