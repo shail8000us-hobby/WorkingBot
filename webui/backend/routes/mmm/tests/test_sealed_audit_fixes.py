@@ -1729,5 +1729,48 @@ class TestArbiterHedgeDecay(unittest.TestCase):
         self.assertEqual(decision.trigger, 'arbiter_beat_cooldown')
 
 
+class TestArbiterFullCapacity(unittest.TestCase):
+    """arbiter_use_full_capacity=True seeds remaining max_lots_per_side in emergency shifts.
+
+    Without this: arbiter seeds frozen_lots (64) at new strike.
+    With this:    arbiter seeds max_lots_per_side - total_lots (e.g. 136) at new strike.
+    Prevents leaving premium capacity unused in an emergency (mmm30apr26-1 analysis).
+    """
+
+    def test_full_capacity_param_default_true(self):
+        """arbiter_use_full_capacity must default True in DEFAULT_PARAMS."""
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertIn('arbiter_use_full_capacity', DEFAULT_PARAMS)
+        self.assertTrue(DEFAULT_PARAMS['arbiter_use_full_capacity'])
+
+    def test_full_capacity_param_hot_reloadable(self):
+        """arbiter_use_full_capacity must be in HOT_RELOAD_PARAMS."""
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        self.assertIn('arbiter_use_full_capacity', HOT_RELOAD_PARAMS)
+
+    def test_full_capacity_requested_lots_written_before_shift(self):
+        """_arbiter_execute_defensive_shift writes _arbiter_requested_lots = remaining capacity."""
+        import ast, inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._arbiter_execute_defensive_shift)
+        self.assertIn('arbiter_use_full_capacity', src,
+                      '_arbiter_execute_defensive_shift must check arbiter_use_full_capacity')
+        self.assertIn('_arbiter_requested_lots', src,
+                      '_arbiter_execute_defensive_shift must write _arbiter_requested_lots')
+        self.assertIn('max_lots_per_side', src,
+                      'Capacity calculation must reference max_lots_per_side')
+
+    def test_proactive_fallback_consumes_requested_lots(self):
+        """Proactive shift fallback block must pop and apply _arbiter_requested_lots."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._process_strike_shift)
+        # Must pop the key (consume-and-clear pattern)
+        self.assertIn("pop('_arbiter_requested_lots'", src,
+                      'Fallback block must pop _arbiter_requested_lots after use')
+        self.assertIn('arbiter full-capacity', src,
+                      'Fallback block must log arbiter full-capacity note')
+
+
 if __name__ == '__main__':
     unittest.main()

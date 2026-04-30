@@ -327,6 +327,7 @@ PARAM_RULES = {
     'god_cooldown_min':                  {'type': int,   'min': 5,    'max': 240,   'hot': True},
     # ── Phase 3 Coordination Arbiter (live) ──
     'arbiter_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'arbiter_use_full_capacity':         {'type': bool,  'min': None, 'max': None,  'hot': True},
     'gamma_dte_ladder_far_mult':         {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
     'gamma_dte_ladder_multi_mult':       {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},
     # ── Profit Ratchet ──
@@ -1076,6 +1077,7 @@ def get_param_info() -> Dict[str, Dict]:
         'god_cooldown_min': 'Cooldown period (minutes) after a God Layer intervention before it can fire again.',
         # Phase 3 Coordination Arbiter (live)
         'arbiter_enabled': 'Enable the Coordination Arbiter (live mode). When ON, at extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED) the arbiter bypasses operational gates (whipsaw, regime, cooldown) and executes defensive premium-aware shift / close / margin-recovery actions. Disabled in last 30 min before expiry per Rule 5. Default ON.',
+        'arbiter_use_full_capacity': 'When ON, Tier 1 defensive shifts seed up to max_lots_per_side (remaining capacity) instead of just the frozen_lots count. Collects maximum premium in one emergency shot — e.g. with max=200 and 64 lots frozen, seeds 136 lots at the new strike instead of 64. Hot-reloadable: switch mid-session if a conservative first shift did not move the breakeven enough. Default ON.',
         'gamma_dte_ladder_far_mult': 'Gamma limits multiplier for sessions > 5 days to expiry (γ structurally low at far DTE). Default 1.5×.',
         'gamma_dte_ladder_multi_mult': 'Gamma limits multiplier for sessions 1–5 days to expiry. Default 1.25×.',
         # Profit Ratchet

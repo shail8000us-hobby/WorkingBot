@@ -4965,6 +4965,25 @@ class MMMMonitor:
             },
         )
 
+        # Full-capacity hint: seed up to max_lots_per_side in one emergency shot.
+        # Computed BEFORE _process_strike_shift (before freeze_current_positions
+        # zeroes out active_lots). Consumed and cleared inside the proactive-shift
+        # lot-fallback block so it never leaks to non-arbiter shifts.
+        params = session.get('params', {})
+        if params.get('arbiter_use_full_capacity', True):
+            _max_per_side = int(params.get('max_lots_per_side', 0))
+            if _max_per_side > 0:
+                _opp_total = int(
+                    session.get(opposite_side, {}).get('total_lots', 0) or 0
+                )
+                _remaining = max(1, _max_per_side - _opp_total)
+                session['_arbiter_requested_lots'] = _remaining
+                log.info(
+                    f'[{sid}] Arbiter full-capacity: {opposite_side.upper()} '
+                    f'requesting {_remaining} lots '
+                    f'(max={_max_per_side}, current_total={_opp_total})'
+                )
+
         # Set bypass flags read by _process_strike_shift for cooldown skip.
         # `dangerous_mode` bypass already exists in the function — reuse the
         # same "this beat only" pattern. We use a dedicated flag to avoid
@@ -4974,6 +4993,7 @@ class MMMMonitor:
             await self._process_strike_shift(opposite_side, loss, ce_now, pe_now)
         finally:
             session.pop('_arbiter_shift_bypass_cooldown', None)
+            session.pop('_arbiter_requested_lots', None)  # clear if unused (e.g. shift aborted)
 
     async def _arbiter_execute_gamma_close(self, decision):
         """Tier 1 gamma_emergency_close: close N lots from the dominant-gamma side
@@ -6456,19 +6476,29 @@ class MMMMonitor:
         # inflate_cap = int(pre_match_lots * 1.5) = 0 when pre_match_lots=0,
         # so the seed must be > 0 for the cap math to work.
         if lots <= 0 and total_loss_to_cover <= 0:
-            fallback = max(freeze_result.get('frozen_lots', 0), 1)
+            frozen_lots = freeze_result.get('frozen_lots', 0)
+            # Arbiter full-capacity override: use remaining capacity instead of
+            # just frozen_lots. Set by _arbiter_execute_defensive_shift and
+            # cleared here (pop) so it never affects non-arbiter shifts.
+            _arb_requested = int(session.pop('_arbiter_requested_lots', 0) or 0)
+            if _arb_requested > 0:
+                fallback = _arb_requested
+                capacity_note = f'arbiter full-capacity={fallback}'
+            else:
+                fallback = max(frozen_lots, 1)
+                capacity_note = f'frozen={frozen_lots}'
             log.info(
                 f"[{sid}] PROACTIVE SHIFT LOT FALLBACK: {side.upper()} "
-                f"lots=0 (no loss) → {fallback} "
-                f"(frozen={freeze_result.get('frozen_lots', 0)})"
+                f"lots=0 (no loss) → {fallback} ({capacity_note})"
             )
             log_activity(
                 'proactive_shift_lot_fallback',
                 f'📌 Proactive Shift: {side.upper()} seeding {fallback} lots '
-                f'at new strike (premium decay — no aggressor loss to cover)',
+                f'at new strike ({capacity_note} — no aggressor loss to cover)',
                 sid, 'info',
                 {'side': side, 'lots': fallback,
-                 'frozen_lots': freeze_result.get('frozen_lots', 0)},
+                 'frozen_lots': frozen_lots,
+                 'arbiter_full_capacity': _arb_requested > 0},
             )
             lots = fallback
         # ── END PROACTIVE SHIFT LOT FALLBACK ──────────────────────────────

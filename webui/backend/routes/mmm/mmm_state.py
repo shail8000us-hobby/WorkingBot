@@ -829,6 +829,7 @@ DEFAULT_PARAMS = {
     'god_cooldown_min': 45,         # Minutes God stays silent after firing
     # Phase 3 Coordination Arbiter (live mode by default — see MMM_COORDINATION_PLAN.md)
     'arbiter_enabled': True,        # Master switch for the Coordination Arbiter (live execution)
+    'arbiter_use_full_capacity': True,  # Tier 1 shifts seed up to max_lots_per_side (not just frozen_lots)
     # Gamma engine DTE relax ladder — see audit/mmm/coordination/04_gamma_engine_audit.md
     'gamma_dte_ladder_far_mult': 1.5,    # > 5 days to expiry: limits × this
     'gamma_dte_ladder_multi_mult': 1.25, # 1–5 days to expiry: limits × this
@@ -995,7 +996,8 @@ HOT_RELOAD_PARAMS = {
     'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',
     'god_min_silence_min', 'god_cooldown_min',
     # Phase 3 Coordination Arbiter (live)
-    'arbiter_enabled', 'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
+    'arbiter_enabled', 'arbiter_use_full_capacity',
+    'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
     # Profit Ratchet
     'profit_ratchet_enabled', 'profit_ratchet_step_usd',
 }
