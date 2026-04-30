@@ -125,6 +125,8 @@ const SECTION_CATEGORY = {
   balanceControl:    'core',
   breakevenEngine:   'core',
   straddleRoll:      'core',   // STRADDLE_ROLL-specific params
+  profitTarget:      'core',   // Profit Target Exit
+  profitRatchet:     'core',   // Profit Ratchet
   perpHedge:         'execution',
   deltaEngine:       'execution',
   adaptive:          'execution',
@@ -498,6 +500,21 @@ const PARAM_GROUPS = {
       {
         header: 'Emergency Shift Capacity',
         params: ['arbiter_use_full_capacity'],
+      },
+    ],
+  },
+  profitTarget: {
+    title: '🎯 Profit Target',
+    color: '#2e7d32',
+    blurb: 'When net P&L hits a configured dollar target, the algo squares off all positions and stops. 0 = disabled — the feature is completely inert unless you explicitly set a non-zero profit_target_usd. The buffer compensates for bid-ask spread and multi-lot close slippage so your realized P&L matches the target. Clean Restart (Phase 2) is a future feature — OFF uses hard exit (close all + stop).',
+    sections: [
+      {
+        header: 'Target & Buffer',
+        params: ['profit_target_usd', 'profit_target_buffer_pct'],
+      },
+      {
+        header: 'Clean Restart (Phase 2)',
+        params: ['profit_target_restart_enabled'],
       },
     ],
   },

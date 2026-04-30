@@ -16,20 +16,14 @@ import logging
 import math
 import asyncio
 import threading
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP
 from typing import Dict, Any, Optional, Tuple
 from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
 from .mmm_trigger import update_trigger_snapshots
-from .mmm_constants import LOT_SIZE_BTC, strike_key
+from .mmm_constants import LOT_SIZE_BTC, strike_key, _D
 from webui.backend.sealed import sealed
-
-# Fix #19: Decimal precision helper — converts floats/ints to Decimal
-# for all internal P&L arithmetic to avoid IEEE 754 rounding accumulation.
-def _D(x) -> Decimal:
-    """Convert a float or int to Decimal via string to avoid float representation errors."""
-    return Decimal(str(x))
 
 _LOT = _D(LOT_SIZE_BTC)  # Decimal lot size constant
 

@@ -13,17 +13,12 @@ Created: February 15, 2026
 
 import logging
 import time
-from decimal import Decimal
 from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime, timezone
 
 from .mmm_state import recompute_side_lots
-from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key
+from .mmm_constants import LOT_SIZE_BTC, strike_key as _strike_key, _D
 from webui.backend.sealed import sealed
-
-# Fix #19: Decimal precision helper — mirrors mmm_engine._D
-def _D(x) -> Decimal:
-    return Decimal(str(x))
 
 _LOT = _D(LOT_SIZE_BTC)
 

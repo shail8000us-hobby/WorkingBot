@@ -41,15 +41,13 @@ Audit:  2026-03-25 — CRIT-1 (fee wipe), CRIT-2 (storage overwrite),
 
 import logging
 import uuid
-from decimal import Decimal
 from typing import Dict, List, Optional, Callable
 from datetime import datetime, timezone
 
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, _D
 from webui.backend.sealed import sealed
 
-_D = Decimal
-_LOT = _D(str(LOT_SIZE_BTC))
+_LOT = _D(LOT_SIZE_BTC)
 
 log = logging.getLogger('mmm_pnl_core')
 

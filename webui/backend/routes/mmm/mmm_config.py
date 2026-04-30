@@ -337,6 +337,10 @@ PARAM_RULES = {
     # ── Profit Ratchet ──
     'profit_ratchet_enabled':            {'type': bool,  'min': None, 'max': None,  'hot': True},
     'profit_ratchet_step_usd':           {'type': float, 'min': 1.0,  'max': 1000.0, 'hot': True},
+    # ── Profit Target Exit ──
+    'profit_target_usd':                 {'type': float, 'min': 0.0,  'max': 1e9,   'hot': True},
+    'profit_target_buffer_pct':          {'type': float, 'min': 0.0,  'max': 50.0,  'hot': True},
+    'profit_target_restart_enabled':     {'type': bool,  'min': None, 'max': None,  'hot': True},
     # ── F01-P1-009 fix: keys present in HOT_RELOAD_PARAMS but missing from PARAM_RULES ──
     # Strike-shift cooldown
     'shift_cooldown_sec':                {'type': int,   'min': 0,    'max': 3600,  'hot': True},
@@ -1091,6 +1095,10 @@ def get_param_info() -> Dict[str, Dict]:
         # Profit Ratchet
         'profit_ratchet_enabled': 'Enable the Profit Ratchet. When ON, each time cumulative P&L crosses a new milestone ($5→$10→$15...) trigger snapshots re-anchor to current premium levels. Keeps the algo maximally responsive to reversals as profit accumulates — prevents the common case where a profitable session becomes slow to react because triggers are still anchored at entry-level premiums. High-water mark guard: ratchet only fires on new profit highs, never during a drawdown. OFF by default — enable per session.',
         'profit_ratchet_step_usd': 'Re-anchor trigger snapshots every time P&L reaches a new multiple of this amount (e.g. $5 → milestones at $5, $10, $15...). Between milestones behavior is identical to normal operation. No time-based cooldown needed — earning the next step takes real market time.',
+        # Profit Target Exit
+        'profit_target_usd': 'Dollar profit target. When net P&L (realized + unrealized - fees) reaches this value × (1 + buffer%), all positions are squared off and the session stops. 0 = disabled. Must be explicitly set by the operator — zero-inert by default.',
+        'profit_target_buffer_pct': 'Buffer % above the dollar profit target to account for close slippage. The actual trigger threshold = profit_target_usd × (1 + buffer_pct/100). E.g. $30 target + 8% buffer = trigger at $32.40. The buffer compensates for bid-ask spread, multi-lot close slippage, and price movement during fill. Default 8%.',
+        'profit_target_restart_enabled': 'If True, execute a structured clean restart (Phase 2) instead of hard exit when the profit target is hit. Currently a Phase 2 stub — falls through to hard exit with a warning log. OFF by default.',
     }
 
     info = {}

@@ -24,10 +24,10 @@ Renamed from mmm_straddle_roll.py: 2026-04-10
 import logging
 import threading
 from datetime import datetime, timezone
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP
 from typing import Dict, Tuple, Any
 
-from .mmm_constants import LOT_SIZE_BTC
+from .mmm_constants import LOT_SIZE_BTC, _D
 from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
 from .mmm_dte_presets import STRADDLE_WITH_ADJUSTMENT_CATEGORY
 from .mmm_state import derive_strategy_type
@@ -39,18 +39,6 @@ from .mmm_activity import log_activity
 from webui.backend.sealed import sealed
 
 log = logging.getLogger('mmm_straddle_adjustment')
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# § Decimal Precision (HIGH-RISK FIX H-1)
-# ══════════════════════════════════════════════════════════════════════════════
-
-def _D(x) -> Decimal:
-    """Convert float/int to Decimal via string to avoid IEEE 754 rounding errors."""
-    if isinstance(x, Decimal):
-        return x
-    return Decimal(str(x))
-
 
 _LOT_DECIMAL = _D(LOT_SIZE_BTC)  # 0.001 BTC as Decimal constant
 

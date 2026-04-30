@@ -20,7 +20,6 @@ import asyncio  # M-3 fix: moved from inline imports inside retry loop to module
 import logging
 import math
 from datetime import datetime, timedelta, timezone
-from decimal import Decimal
 from typing import Dict, Any, Optional, Tuple
 
 log = logging.getLogger('mmm_perp_hedge')
@@ -29,12 +28,7 @@ log = logging.getLogger('mmm_perp_hedge')
 BTCUSD_SYMBOL = 'BTCUSD'
 
 # H-1 fix: import from canonical source instead of duplicating the constant
-from .mmm_constants import LOT_SIZE_BTC
-
-
-def _D(x) -> Decimal:
-    """Decimal precision helper (Fix #19 pattern)."""
-    return Decimal(str(x))
+from .mmm_constants import LOT_SIZE_BTC, _D
 
 
 # =============================================================================

@@ -840,6 +840,10 @@ DEFAULT_PARAMS = {
     # Profit Ratchet — re-anchors trigger snapshots at profit milestones
     'profit_ratchet_enabled': False,     # Off by default; operator enables per-session
     'profit_ratchet_step_usd': 10.0,     # Re-anchor every $X of new cumulative profit
+    # Profit Target Exit — hard close when net P&L hits a configured dollar target
+    'profit_target_usd': 0.0,            # Dollar profit target. 0 = disabled.
+    'profit_target_buffer_pct': 8.0,     # Buffer % above target to account for close slippage.
+    'profit_target_restart_enabled': False,  # If True, execute structured clean restart (Phase 2).
 }
 
 # Which parameters can be changed while algo is running
@@ -1006,6 +1010,8 @@ HOT_RELOAD_PARAMS = {
     'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
     # Profit Ratchet
     'profit_ratchet_enabled', 'profit_ratchet_step_usd',
+    # Profit Target Exit
+    'profit_target_usd', 'profit_target_buffer_pct', 'profit_target_restart_enabled',
 }
 
 # A9-01 fix: derive HOT_RELOAD_PARAMS from PARAM_RULES (single source of truth)

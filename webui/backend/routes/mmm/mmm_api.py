@@ -8533,6 +8533,108 @@ def get_session_execution_events(session_id: str):
 
 
 # =============================================================================
+# Profit Ratchet — Manual Trigger
+# =============================================================================
+
+@mmm_bp.route('/session/<session_id>/profit-ratchet/trigger', methods=['POST'])
+def manual_profit_ratchet_trigger(session_id: str):
+    """
+    POST /api/mmm/session/<session_id>/profit-ratchet/trigger
+
+    Manually fire the profit ratchet for the session right now:
+      1. Fetches current CE/PE mid prices from the exchange.
+      2. Calls update_trigger_snapshots() to re-anchor trigger snapshots.
+      3. Advances _profit_ratchet_hwm to the largest milestone already crossed.
+      4. Increments _profit_ratchet_count and records _profit_ratchet_last_pnl.
+      5. Saves session and logs activity.
+
+    Returns {success, ratchet_count, hwm, ce_now, pe_now} on success.
+    """
+    try:
+        storage = get_storage()
+        session = storage.get_session(session_id)
+        if not session:
+            return jsonify({'success': False, 'error': 'Session not found'}), 404
+
+        _session_status = session.get('strategy_status') or session.get('status') or 'IDLE'
+        if _session_status not in ('RUNNING', 'PAUSED'):
+            return jsonify({'success': False, 'error': 'Session is not active'}), 400
+
+        from .mmm_trigger import update_trigger_snapshots
+        from .mmm_activity import log_activity
+        from .mmm_pnl_core import compute_current_total_pnl as _pnl_total
+
+        params = session.get('params', {})
+        _pr_step = float(params.get('profit_ratchet_step_usd', 10.0))
+
+        # Fetch live premiums using the same helper pattern as manual reduce
+        ce_now = pe_now = 0.0
+        try:
+            async def _fetch_premiums():
+                from .mmm_executor import get_executor as _ge
+                from .mmm_initializer import get_initializer as _gi
+                _executor = _ge()
+                _initializer = _gi()
+                _expiry = params.get('expiry', '')
+                ce_strike = session.get('ce', {}).get('active_strike', 0)
+                pe_strike = session.get('pe', {}).get('active_strike', 0)
+                ce_sym = _initializer.build_symbol('call', 'BTC', ce_strike, _expiry)
+                pe_sym = _initializer.build_symbol('put', 'BTC', pe_strike, _expiry)
+                ce_mid = await _executor.get_mid_price(ce_sym)
+                pe_mid = await _executor.get_mid_price(pe_sym)
+                return ce_mid or 0.0, pe_mid or 0.0
+
+            ce_now, pe_now = _run_async(_fetch_premiums())
+        except Exception as prem_err:
+            log.warning(f'[{session_id}] manual ratchet: could not fetch live premiums: {prem_err}')
+
+        if ce_now <= 0 or pe_now <= 0:
+            return jsonify({'success': False, 'error': 'Could not fetch current premiums from exchange'}), 502
+
+        # Re-anchor trigger snapshots
+        update_trigger_snapshots(session, ce_now, pe_now)
+
+        # Advance HWM to the largest milestone crossed by current P&L
+        _pnl = _pnl_total(session)
+        _new_hwm = int(_pnl / _pr_step) * _pr_step if _pr_step > 0 else 0.0
+        _prev_hwm = session.get('_profit_ratchet_hwm', 0.0)
+        _new_hwm = max(_new_hwm, _prev_hwm)  # never regress HWM
+        session['_profit_ratchet_hwm'] = _new_hwm
+        session['_profit_ratchet_count'] = session.get('_profit_ratchet_count', 0) + 1
+        session['_profit_ratchet_last_pnl'] = round(_pnl, 2)
+        session['updated_at'] = __import__('datetime').datetime.now(
+            __import__('datetime').timezone.utc).isoformat()
+
+        log_activity(
+            'profit_ratchet',
+            (f'📈 PROFIT RATCHET #{session["_profit_ratchet_count"]} (MANUAL): '
+             f'HWM ${_new_hwm:.0f} (P&L ${_pnl:.2f}) — '
+             f'CE {ce_now:.2f}, PE {pe_now:.2f}'),
+            session_id, 'info',
+            {'milestone': _new_hwm, 'pnl': round(_pnl, 2), 'manual': True,
+             'ratchet_count': session['_profit_ratchet_count'],
+             'ce_after': round(ce_now, 2), 'pe_after': round(pe_now, 2)},
+        )
+
+        storage.save_session(session)
+        log.info(f'[{session_id}] Manual profit ratchet fired — HWM=${_new_hwm:.0f} '
+                 f'count={session["_profit_ratchet_count"]} CE={ce_now:.2f} PE={pe_now:.2f}')
+
+        return jsonify({
+            'success': True,
+            'ratchet_count': session['_profit_ratchet_count'],
+            'hwm': _new_hwm,
+            'pnl': round(_pnl, 2),
+            'ce_now': round(ce_now, 2),
+            'pe_now': round(pe_now, 2),
+        })
+
+    except Exception as e:
+        log.exception(f'[{session_id}] manual_profit_ratchet_trigger failed')
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# =============================================================================
 # Reverse Mode Endpoints
 # =============================================================================
 

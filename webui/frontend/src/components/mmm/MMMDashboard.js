@@ -2683,7 +2683,9 @@ const MMMInjectModal = ({ open, session, onClose }) => {
   );
 };
 
-export const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
+export const StrategyKPIBar = ({ session, heartbeat, strategyType, onRatchetFired }) => {
+  const [ratchetFiring, setRatchetFiring] = React.useState(false);
+  const [ratchetMsg, setRatchetMsg] = React.useState('');
   if (!session) return null;
 
   const resolvedStrategy = normalizeStrategyType(strategyType);
@@ -2750,6 +2752,29 @@ export const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
     ];
   }
 
+  const sessionId = session?.session_id;
+  const sessionStatus = session?.strategy_status || session?.status || 'IDLE';
+  const canFireRatchet = ratchetEnabled && sessionId && sessionStatus === 'RUNNING';
+
+  const handleFireRatchet = async () => {
+    setRatchetFiring(true);
+    setRatchetMsg('');
+    try {
+      const result = await mmmService.fireRatchetNow(sessionId);
+      if (result?.success) {
+        setRatchetMsg(`✓ Ratchet #${result.ratchet_count} fired — HWM $${result.hwm}`);
+        if (onRatchetFired) onRatchetFired(result);
+      } else {
+        setRatchetMsg(`✗ ${result?.error || 'Failed'}`);
+      }
+    } catch (e) {
+      setRatchetMsg(`✗ ${e?.response?.data?.error || e.message}`);
+    } finally {
+      setRatchetFiring(false);
+      setTimeout(() => setRatchetMsg(''), 5000);
+    }
+  };
+
   return (
     <Paper elevation={0} sx={{ p: 1.5, mb: 2, borderRadius: 2, border: `1px solid ${meta.color}40`, backgroundColor: `${meta.color}10` }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mb: 1 }}>
@@ -2766,14 +2791,41 @@ export const StrategyKPIBar = ({ session, heartbeat, strategyType }) => {
             md={resolvedStrategy === 'STRADDLE_ROLL' ? 3 : (resolvedStrategy === 'STRADDLE_WITH_ADJUSTMENT' ? 3 : 2)}
             key={metric.key}
           >
-            <Box sx={{ p: 1, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)' }}>
-              <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.4 }}>
-                {metric.label}
-              </Typography>
-              <Typography variant="body2" sx={{ mt: 0.2, fontWeight: 700, fontFamily: 'monospace', color: metric.color }}>
-                {metric.value}
-              </Typography>
-            </Box>
+            {metric.key === 'profitRatchet' && canFireRatchet ? (
+              <Box sx={{ p: 1, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {metric.label}
+                </Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, mt: 0.2 }}>
+                  <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', color: metric.color }}>
+                    {metric.value}
+                  </Typography>
+                  <Button
+                    size="small"
+                    variant="outlined"
+                    disabled={ratchetFiring}
+                    onClick={handleFireRatchet}
+                    sx={{ py: 0, px: 0.75, minWidth: 0, fontSize: '0.6rem', lineHeight: 1.4, borderColor: '#ffa726', color: '#ffa726', '&:hover': { borderColor: '#66bb6a', color: '#66bb6a' } }}
+                  >
+                    {ratchetFiring ? '…' : 'Fire Now'}
+                  </Button>
+                </Box>
+                {ratchetMsg && (
+                  <Typography variant="caption" sx={{ fontSize: '0.6rem', color: ratchetMsg.startsWith('✓') ? '#66bb6a' : '#f44336' }}>
+                    {ratchetMsg}
+                  </Typography>
+                )}
+              </Box>
+            ) : (
+              <Box sx={{ p: 1, borderRadius: 1, backgroundColor: 'rgba(0,0,0,0.18)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.68rem', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                  {metric.label}
+                </Typography>
+                <Typography variant="body2" sx={{ mt: 0.2, fontWeight: 700, fontFamily: 'monospace', color: metric.color }}>
+                  {metric.value}
+                </Typography>
+              </Box>
+            )}
           </Grid>
         ))}
       </Grid>

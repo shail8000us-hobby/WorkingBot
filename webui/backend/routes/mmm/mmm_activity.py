@@ -244,6 +244,9 @@ ACTIVITY_TYPES = {
     # Profit Ratchet
     'profit_ratchet': 'Profit Ratchet',
 
+    # Profit Target Exit
+    'profit_target_hit': 'Profit Target Hit',
+
     # FSU: Favorable Scale-Up
     'scale_up_triggered': 'Scale-Up Triggered',
     'scale_up_complete': 'Scale-Up Complete',
@@ -365,7 +368,8 @@ ACTIVITY_CATEGORIES = {
                'reverse_disabled',
                'arbiter_tier1', 'arbiter_stale_signal', 'arbiter_defensive_shift_exec',
                'arbiter_gamma_close_exec', 'arbiter_margin_recovery_exec',
-               'regime_emergency_arbiter'},
+               'regime_emergency_arbiter',
+               'profit_target_hit'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',
                 'session_adopted', 'session_paused', 'session_resumed', 'session_stopped',
                 'hot_reload', 'watchdog', 'force_heartbeat', 'emergency',

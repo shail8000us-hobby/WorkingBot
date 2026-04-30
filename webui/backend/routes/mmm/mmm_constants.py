@@ -13,8 +13,13 @@ LOT_SIZE_BTC = 0.001
 
 
 def _D(x) -> Decimal:
-    """Decimal precision helper for financial calculations."""
-    return Decimal(str(x))
+    """Canonical Decimal precision helper — single source of truth for all MMM modules."""
+    if isinstance(x, Decimal):
+        return x
+    try:
+        return Decimal(str(x))
+    except Exception:
+        return Decimal('0')
 
 
 _LOT = _D(LOT_SIZE_BTC)

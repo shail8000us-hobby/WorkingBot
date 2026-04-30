@@ -741,6 +741,20 @@ const mmmService = {
   },
 
   // =========================================================================
+  // Profit Ratchet
+  // =========================================================================
+
+  /**
+   * Manually fire the profit ratchet for a session right now.
+   * Re-anchors CE/PE trigger snapshots to live premiums and advances the HWM.
+   * @param {string} sessionId
+   */
+  async fireRatchetNow(sessionId) {
+    const { data } = await api.post(`${BASE_URL}/session/${sessionId}/profit-ratchet/trigger`);
+    return data;
+  },
+
+  // =========================================================================
   // Reverse Mode Control
   // =========================================================================
 
