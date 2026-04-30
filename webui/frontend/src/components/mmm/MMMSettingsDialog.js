@@ -491,6 +491,10 @@ const PARAM_GROUPS = {
         header: 'Gamma DTE Relax Ladder',
         params: ['gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult'],
       },
+      {
+        header: 'Emergency Shift Capacity',
+        params: ['arbiter_use_full_capacity'],
+      },
     ],
   },
   profitRatchet: {
@@ -850,6 +854,7 @@ const PARAM_TOOLTIPS = {
   arbiter_enabled: 'Master switch for the Coordination Arbiter. ON by default. When ON, the arbiter activates only at extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED): it bypasses operational gates (whipsaw, regime BLOCK_ALL, asymmetry, cooldown) and routes defensive premium-aware shift / close / margin-recovery actions per the sealed hierarchy. Disabled in last 30 min before expiry per Rule 5. Stale signals escalate one tier per Rule 6. Hard stop, ATM shield, and time stop (Tier 0) are NEVER overridden. Turn OFF only to fall back to the legacy un-coordinated module behaviour (gamma EMERGENCY pauses session, etc.).',
   gamma_dte_ladder_far_mult: 'Gamma limits multiplier for sessions > 5 days to expiry. γ_per_contract is structurally low at far DTE so engine relaxes thresholds. Default 1.5×. Range 1.0–3.0. Increase if your far-DTE sessions are firing gamma EMERGENCY when they shouldn\'t.',
   gamma_dte_ladder_multi_mult: 'Gamma limits multiplier for sessions 1–5 days to expiry. Light relaxation between far-DTE and baseline. Default 1.25×. Range 1.0–3.0.',
+  arbiter_use_full_capacity: 'When ON, arbiter emergency defensive shifts seed the maximum remaining capacity (max_lots_per_side − current total_lots) rather than just frozen_lots. Ensures a single arbiter action can fully hedge the threatened side up to your configured lot ceiling. Default ON. Hot-reloadable — change takes effect on the next heartbeat without session restart.',
 };
 
 // =============================================================================
