@@ -1719,6 +1719,10 @@ class MMMMonitor:
         session['_ce_now'] = ce_now
         session['_pe_now'] = pe_now
 
+        # Profit target check — after premiums fetched, before any adjustment logic
+        if await self._check_profit_target(session, ce_now, pe_now):
+            return
+
         # Feature 9: Compute data confidence after fetch (stale flags are now set on session)
         self._compute_data_confidence()
 
@@ -8890,6 +8894,63 @@ class MMMMonitor:
         else:
             # Equal → skip (don't add risk on both sides)
             return 'skip'
+
+    # =========================================================================
+    # Profit Target Exit — Phase 1 (Hard Exit)
+    # =========================================================================
+
+    async def _check_profit_target(self, session, ce_now, pe_now) -> bool:  # noqa: ce_now/pe_now reserved Phase 2
+        """Check if net P&L has hit the configured dollar profit target.
+
+        When profit_target_usd > 0 and net P&L >= target * (1 + buffer_pct/100),
+        this method closes all positions and stops the session.
+
+        Phase 1: Hard exit only. profit_target_restart_enabled is a Phase 2 stub —
+        if True, logs a warning and falls through to hard exit.
+
+        Returns True if the target was hit and positions were closed.
+        """
+        params = session.get('params', {})
+        target = params.get('profit_target_usd', 0.0)
+        if not target or target <= 0:
+            return False
+
+        buffer_pct = params.get('profit_target_buffer_pct', 8.0)
+        trigger_at = target * (1 + buffer_pct / 100.0)
+
+        current_pnl = _pnl_total(session)
+        if current_pnl < trigger_at:
+            return False
+
+        restart_enabled = params.get('profit_target_restart_enabled', False)
+        if restart_enabled:
+            # Phase 2 stub — do NOT implement restart logic
+            log.warning(
+                f"[{self.session_id}] profit_target_restart_enabled=True but "
+                f"Phase 2 is not implemented. Falling through to hard exit."
+            )
+
+        # Hard exit
+        sid = self.session_id
+        log_activity(
+            'profit_target_hit',
+            f'🎯 Profit target hit — squaring off all positions: '
+            f'Target=${target:.2f}, Trigger=${trigger_at:.2f}, P&L=${current_pnl:.2f}',
+            sid, 'info',
+            {
+                'target_usd': target,
+                'trigger_at': round(trigger_at, 2),
+                'current_pnl': round(current_pnl, 2),
+                'mode': 'hard_exit',
+            },
+        )
+        await self._auto_close_all(
+            f'Profit target: P&L ${current_pnl:.2f} >= ${trigger_at:.2f} '
+            f'(target ${target:.2f} + {buffer_pct}% buffer)',
+            emergency=False,
+        )
+        self._running = False
+        return True
 
     # =========================================================================
     # Auto-Close All (Near Expiry)

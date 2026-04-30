@@ -2,8 +2,8 @@
 
 **Created:** 2026-04-30  
 **Branch:** SSR  
-**Status:** Planning  
-**Priority:** Phase 1 first, Phase 2 only after Phase 1 is stable in live trading
+**Status:** Phase 1 complete ✅ — Phase 2 planning  
+**Priority:** Phase 2 only after Phase 1 is stable in live trading
 
 ---
 
@@ -255,14 +255,18 @@ Restart #2 of 3 max
 ## Build Order
 
 ```
-Phase 1
+Phase 1                                                                STATUS
   [x] Plan written
-  [ ] mmm_state.py — 2 params
-  [ ] mmm_config.py — validators
-  [ ] mmm_activity.py — profit_target_hit
-  [ ] mmm_monitor.py — _check_profit_target() + heartbeat call
-  [ ] MMMSettingsDialog.js — UI section (with restart_enabled toggle)
-  [ ] test_sealed_audit_fixes.py — 6 sealed tests
+  [x] mmm_state.py — 3 params (profit_target_usd, buffer_pct, restart_enabled)
+  [x] mmm_config.py — validators + descriptions
+  [x] mmm_activity.py — profit_target_hit (safety category)
+  [x] mmm_monitor.py — _check_profit_target() implemented
+  [x] mmm_monitor.py — call site wired in _heartbeat_inner after Step 1  ← audit fix
+  [x] MMMSettingsDialog.js — 🎯 Profit Target UI section
+  [x] test_sealed_audit_fixes.py — 6 sealed tests
+      (test_profit_target_hit_hard_exit rewritten: mocks _auto_close_all,
+       asserts _running=False — was false-green before audit fix)
+  [x] 1222 sealed tests passing, 0 failures
   [ ] Live test: 1 paper session, then 2 real sessions
   [ ] mmm_workdone_march.md — session log entry
 

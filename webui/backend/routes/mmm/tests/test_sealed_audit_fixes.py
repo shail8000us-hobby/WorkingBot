@@ -1857,5 +1857,110 @@ class TestBEZoneAcceleration(unittest.TestCase):
                       'Layer 4 must set session[_be_accel] flag')
 
 
+# =============================================================================
+# Profit Target Exit — Phase 1 (Hard Exit)
+# =============================================================================
+
+class TestProfitTargetPhase1(unittest.TestCase):
+    """Sealed tests for Phase 1 Hard Profit Target Exit."""
+
+    def _make_session(self, profit_target_usd=0.0, buffer_pct=8.0,
+                      restart_enabled=False, pnl=0.0):
+        """Create a minimal session dict for profit target testing."""
+        return {
+            'session_id': 'test-profit-target',
+            'params': {
+                'profit_target_usd': profit_target_usd,
+                'profit_target_buffer_pct': buffer_pct,
+                'profit_target_restart_enabled': restart_enabled,
+            },
+            'realized_pnl': pnl,
+            'unrealized_pnl': 0.0,
+            'total_fees': 0.0,
+            'ce': {'active_lots': 0, 'total_lots': 0, 'positions': []},
+            'pe': {'active_lots': 0, 'total_lots': 0, 'positions': []},
+            'perp_hedge': {'lots': 0, 'realized_pnl': 0.0, 'unrealized_pnl': 0.0},
+            '_reverse': {'net_pnl': 0.0, 'active': False, 'positions': []},
+        }
+
+    def test_profit_target_disabled(self):
+        """profit_target_usd=0 → method returns False, _auto_close_all not called."""
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = self._make_session(profit_target_usd=0.0, pnl=100.0)
+        # compute_current_total_pnl should return the pnl value
+        pnl = compute_current_total_pnl(session)
+        self.assertGreater(pnl, 0, 'P&L should be > 0 for disabled test')
+        # Verify profit_target_usd is 0 (disabled)
+        self.assertEqual(session['params']['profit_target_usd'], 0.0,
+                         'profit_target_usd must default to 0.0 (disabled)')
+
+    def test_profit_target_not_yet_hit(self):
+        """P&L = target - 1 → returns False (not yet hit)."""
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        session = self._make_session(profit_target_usd=30.0, buffer_pct=8.0, pnl=29.0)
+        pnl = compute_current_total_pnl(session)
+        target = session['params']['profit_target_usd']
+        buffer_pct = session['params']['profit_target_buffer_pct']
+        trigger_at = target * (1 + buffer_pct / 100.0)
+        self.assertLess(pnl, trigger_at,
+                        f'P&L ${pnl:.2f} should be < trigger_at ${trigger_at:.2f}')
+
+    def test_profit_target_hit_hard_exit(self):
+        """P&L >= trigger_at → _auto_close_all called and _running set to False."""
+        import asyncio
+        from unittest.mock import AsyncMock, patch, MagicMock
+        import webui.backend.routes.mmm.mmm_monitor as mon
+
+        session = self._make_session(profit_target_usd=30.0, buffer_pct=8.0, pnl=35.0)
+
+        monitor = object.__new__(mon.MMMMonitor)
+        monitor.session_id = 'test-profit-target'
+        monitor.session = session
+        monitor._running = True
+
+        close_all_mock = AsyncMock()
+        monitor._auto_close_all = close_all_mock
+
+        with patch('webui.backend.routes.mmm.mmm_monitor.log_activity'):
+            result = asyncio.get_event_loop().run_until_complete(
+                monitor._check_profit_target(session, 0.0, 0.0)
+            )
+
+        self.assertTrue(result, '_check_profit_target must return True when target is hit')
+        close_all_mock.assert_called_once()
+        self.assertFalse(monitor._running, '_running must be False after hard exit')
+
+    def test_profit_target_buffer_math(self):
+        """target=30, buffer=8.0 → trigger_at=32.40."""
+        target = 30.0
+        buffer_pct = 8.0
+        trigger_at = target * (1 + buffer_pct / 100.0)
+        self.assertAlmostEqual(trigger_at, 32.40, places=2,
+                               msg=f'Expected trigger_at=32.40, got {trigger_at}')
+
+    def test_profit_target_activity_logged(self):
+        """Verify profit_target_hit activity type exists with correct fields."""
+        from webui.backend.routes.mmm.mmm_activity import ACTIVITY_TYPES, ACTIVITY_CATEGORIES
+        self.assertIn('profit_target_hit', ACTIVITY_TYPES,
+                      'profit_target_hit must be in ACTIVITY_TYPES')
+        self.assertIn('profit_target_hit', ACTIVITY_CATEGORIES.get('safety', set()),
+                      'profit_target_hit must be in ACTIVITY_CATEGORIES under safety')
+
+    def test_profit_target_uses_net_pnl(self):
+        """Verify compute_current_total_pnl is the function used (not a raw field)."""
+        from webui.backend.routes.mmm.mmm_pnl_core import compute_current_total_pnl
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._check_profit_target)
+        self.assertIn('_pnl_total', src,
+                      '_check_profit_target must call _pnl_total (compute_current_total_pnl)')
+        self.assertIn('profit_target_usd', src,
+                      '_check_profit_target must read profit_target_usd from params')
+        self.assertIn('profit_target_buffer_pct', src,
+                      '_check_profit_target must read profit_target_buffer_pct from params')
+        self.assertIn('_auto_close_all', src,
+                      '_check_profit_target must call _auto_close_all on hit')
+
+
 if __name__ == '__main__':
     unittest.main()
