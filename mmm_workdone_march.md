@@ -6287,3 +6287,24 @@ Post-mortem analysis of session mmm30apr26-1 revealed two arbiter failure modes.
 
 **Files**: `mmm_arbiter.py`, `mmm_monitor.py`, `mmm_state.py`, `tests/test_sealed_audit_fixes.py`
 **Tests**: 1203 sealed passing / 0 failed (baseline 1190 + 8 new — `TestArbiterBeatCooldown` ×3, `TestArbiterHedgeDecay` ×5)
+
+## 2026-04-30 (rev2) — arbiter_use_full_capacity + BE zone beat acceleration
+
+Three follow-up features shipped after the mmm30apr26-1 arbiter fixes.
+
+### Feature 1 — arbiter_use_full_capacity (hot-reloadable, default True)
+- `mmm_state.py`: `'arbiter_use_full_capacity': True` in DEFAULT_PARAMS and HOT_RELOAD_PARAMS.
+- `mmm_config.py`: validator + description added.
+- `mmm_monitor.py` `_arbiter_execute_defensive_shift`: when True, computes `_remaining = max_lots_per_side - opposite_total_lots` and writes `session['_arbiter_requested_lots'] = _remaining` before calling `_process_strike_shift`. Clears in `finally` if unused.
+- `mmm_monitor.py` `_process_strike_shift` proactive fallback: pops `_arbiter_requested_lots` and uses it as `fallback` lots instead of `frozen_lots` when non-zero.
+- **Bug fixed**: param was never added to `MMMSettingsDialog.js` — added under Coordination Arbiter → Emergency Shift Capacity.
+
+### Feature 2 — BE zone beat acceleration (Layer 4 of _run_loop)
+- `mmm_trigger.py`: new pure function `compute_be_zone_accel(interval, be_zone, params) → dict`. Returns accelerated=True and `effective_interval = max(min_interval, int(interval × factor))` when zone is WARNING/DANGER/CRITICAL and enabled. Only shortens.
+- `mmm_monitor.py` `_run_loop`: Layer 4 block after margin rapid-check (Layer 3). Reads `session['_breakeven_zone']` (previous beat's value). Calls `compute_be_zone_accel`, updates `interval`, sets `session['_be_accel']` flag. Flag cleared when zone returns SAFE.
+- `mmm_state.py`: `be_accel_enabled=True`, `be_accel_factor=0.5`, `be_accel_min_interval=30` in DEFAULT_PARAMS and HOT_RELOAD_PARAMS.
+- `mmm_config.py`: validator + description for all 3 params.
+- `MMMSettingsDialog.js`: Beat Acceleration section added under Breakeven Engine with all 3 params and descriptions.
+
+**Files**: `mmm_trigger.py`, `mmm_monitor.py`, `mmm_state.py`, `mmm_config.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py`
+**Tests**: 1216 sealed passing / 0 failed (baseline 1207 + 9 new — `TestBEZoneAcceleration` ×9)

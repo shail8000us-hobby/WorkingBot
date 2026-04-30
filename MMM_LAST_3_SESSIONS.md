@@ -2,6 +2,20 @@
 
 ---
 
+## 2026-04-30 (rev2) — BE zone beat acceleration + arbiter full-capacity + UI fix
+
+Three features shipped after mmm30apr26-1 post-mortem fixes:
+
+**Feature 1 — arbiter_use_full_capacity (default True, hot-reloadable)**: Arbiter emergency defensive shifts now seed `max_lots_per_side − total_lots` (full remaining capacity) instead of `frozen_lots`. Prevents leaving capacity unused in an emergency — e.g. with max=200 and total=64, seeds 136 at the new strike instead of 64. Session hint `_arbiter_requested_lots` written by `_arbiter_execute_defensive_shift`, consumed via `pop()` in `_process_strike_shift` proactive fallback so it can never leak to normal shifts.
+
+**Feature 2 — BE zone beat acceleration (Layer 4 of _run_loop interval pipeline)**: When `session['_breakeven_zone']` is WARNING/DANGER/CRITICAL, the next heartbeat sleep is multiplied by `be_accel_factor` (default 0.5) subject to `be_accel_min_interval` floor (default 30s). At a 300s base interval this halves wait time to 150s — double check frequency with zero operator input. Pure function `compute_be_zone_accel()` added to `mmm_trigger.py`, Layer 4 block in `_run_loop` after margin rapid-check (Layer 3). Session flag `session['_be_accel']` set when active. Three new hot-reloadable params: `be_accel_enabled` / `be_accel_factor` / `be_accel_min_interval`. Visible in Strategy Settings under Breakeven Engine → Beat Acceleration.
+
+**Bug — arbiter_use_full_capacity missing from Strategy Settings UI**: Param was wired in backend but absent from `MMMSettingsDialog.js`. Added under Coordination Arbiter → Emergency Shift Capacity section.
+
+**Files**: `mmm_trigger.py` (new helper), `mmm_monitor.py`, `mmm_state.py`, `mmm_config.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py` | **Tests**: 1216 sealed passing (baseline 1207 + 9 new: `TestBEZoneAcceleration` ×9)
+
+---
+
 ## 2026-04-30 — Arbiter double-fire fix + early hedge-decay trigger (mmm30apr26-1 post-mortem)
 
 Post-mortem of mmm30apr26-1 revealed two arbiter failure modes:
