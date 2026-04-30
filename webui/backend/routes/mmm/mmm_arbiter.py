@@ -240,13 +240,42 @@ class CoordinationArbiter:
                 snapshot=snapshot,
             )
 
-        # ── Post-action cooldown: prevent consecutive-beat double-fire ─────
-        # After the arbiter executes a Tier 1 action, it records the timestamp.
-        # On the next beat, if < 2× beat_interval has elapsed, return NOOP so
-        # the new positions have time to be priced and BE recalculated before
-        # the arbiter re-evaluates. Without this, a CRITICAL condition that
-        # persists into the next heartbeat fires a second 64-lot shift seconds
-        # after the first (as observed in mmm30apr26-1 beats 2→3).
+        # ── Read signals with stale escalation per Rule 6 ──────────────────
+        be_zone, be_stale = get_effective_breakeven_zone(session, max_age_seconds)
+        gamma, gamma_stale = get_effective_gamma_regime(session, max_age_seconds)
+        margin, margin_stale = get_effective_margin_tier(session, max_age_seconds)
+
+        stale_records = tuple(s for s in (be_stale, gamma_stale, margin_stale) if s is not None)
+        snapshot.update({
+            'be_zone': be_zone,
+            'gamma_regime': gamma,
+            'margin_tier': margin,
+            'stale_count': len(stale_records),
+        })
+
+        # ── Tier 1 dispatch (Rule 2: act, don't block) ─────────────────────
+        # Order matters: margin RED first (capital constraint binds anything else),
+        # then gamma EMERGENCY (curvature reduce), then breakeven-based shifts.
+        # IMPORTANT: the beat cooldown (below) only gates breakeven-based defensive
+        # shifts. Margin RED and gamma EMERGENCY are never delayed by the cooldown —
+        # they are capital/curvature emergencies that must act immediately.
+
+        if margin == 'RED' or margin == 'CRITICAL':
+            return self._margin_recovery(session, margin, stale_records, snapshot)
+
+        if gamma == 'EMERGENCY':
+            # STRADDLE_WITH_ADJUSTMENT bypasses gamma entirely — no Tier 1 gamma action
+            if resolve_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY:
+                snapshot['gamma_bypass_strategy'] = 'STRADDLE_WITH_ADJUSTMENT'
+            else:
+                return self._gamma_emergency(session, gamma, stale_records, snapshot)
+
+        # ── Post-action cooldown: gates only BE-based defensive shifts ──────
+        # After a defensive shift executes, this cooldown prevents re-fire for
+        # 2× beat_interval (default 10 min) — time for new positions to settle
+        # and BE to recalculate. Placed HERE (after margin/gamma) so a capital
+        # or curvature emergency that arises during the cooldown window still
+        # gets an immediate response. The cooldown only silences premium shifts.
         _last_action_at = session.get('_arbiter_last_action_at')
         if _last_action_at:
             try:
@@ -268,40 +297,15 @@ class CoordinationArbiter:
             except (ValueError, TypeError):
                 pass  # malformed timestamp — don't block; let arbiter proceed
 
-        # ── Read signals with stale escalation per Rule 6 ──────────────────
-        be_zone, be_stale = get_effective_breakeven_zone(session, max_age_seconds)
-        gamma, gamma_stale = get_effective_gamma_regime(session, max_age_seconds)
-        margin, margin_stale = get_effective_margin_tier(session, max_age_seconds)
-
-        stale_records = tuple(s for s in (be_stale, gamma_stale, margin_stale) if s is not None)
-        snapshot.update({
-            'be_zone': be_zone,
-            'gamma_regime': gamma,
-            'margin_tier': margin,
-            'stale_count': len(stale_records),
-        })
-
-        # ── Tier 1 dispatch (Rule 2: act, don't block) ─────────────────────
-        # Order matters: margin RED first (capital constraint binds anything else),
-        # then gamma EMERGENCY (curvature reduce), then breakeven CRITICAL (premium shift).
-
-        if margin == 'RED' or margin == 'CRITICAL':
-            return self._margin_recovery(session, margin, stale_records, snapshot)
-
-        if gamma == 'EMERGENCY':
-            # STRADDLE_WITH_ADJUSTMENT bypasses gamma entirely — no Tier 1 gamma action
-            if resolve_strategy_type(session) == STRADDLE_WITH_ADJUSTMENT_CATEGORY:
-                snapshot['gamma_bypass_strategy'] = 'STRADDLE_WITH_ADJUSTMENT'
-            else:
-                return self._gamma_emergency(session, gamma, stale_records, snapshot)
-
-        # ── Early hedge-decay trigger at DANGER (Fix for mmm30apr26-1) ───────
-        # When BE=DANGER and the opposite side's live premium has decayed below
-        # shift_threshold × 1.5, the hedge book is degrading while whipsaw blocks
-        # normal adjustments. Act proactively — refresh the worthless hedge BEFORE
-        # the situation reaches CRITICAL. Prevents the scenario where 2.5h of
-        # whipsaw blocks leave CE at $29 (worthless) and the arbiter only wakes at 0.21%.
-        if be_zone == 'DANGER':
+        # ── Early hedge-decay trigger at WARNING or DANGER ──────────────────
+        # Fires when the opposite side's live premium has decayed below the
+        # standard shift_threshold — exactly when the normal proactive-shift
+        # would act but is blocked by whipsaw. Covers both DANGER and WARNING
+        # because in real sessions the zone can jump WARNING→CRITICAL in a
+        # single beat without passing through DANGER (as in mmm30apr26-1 where
+        # CE at 77800 decayed to $29 over 2.5h of whipsaw blocks, and the zone
+        # skipped DANGER entirely when spot finally broke).
+        if be_zone in ('DANGER', 'WARNING'):
             _decay_decision = self._check_hedge_decay_shift(session, stale_records, snapshot)
             if _decay_decision is not None:
                 return _decay_decision
@@ -391,8 +395,9 @@ class CoordinationArbiter:
         Returns an ArbiterDecision if decay condition is met, None otherwise.
         The caller loops to the CRITICAL check when None is returned.
 
-        Condition: opposite-side live premium < shift_threshold × 1.5
-        (i.e., the hedge has lost most of its value — below $75 if threshold=$50).
+        Condition: opposite-side live premium < shift_threshold (the standard proactive-shift
+        threshold). This is precisely when the normal proactive-shift engine would have acted
+        but was blocked by whipsaw. The arbiter's purpose here is to bypass that block.
         The live price is read from session['_ce_now'] / session['_pe_now'] which
         mmm_monitor writes immediately after the premium fetch each beat.
         """
@@ -412,20 +417,22 @@ class CoordinationArbiter:
             return None  # no live price available — don't act on stale/missing data
 
         shift_threshold = float(params.get('shift_threshold', 50.0))
-        decay_threshold = shift_threshold * 1.5  # e.g. $75 when threshold=$50
-
-        if opposite_live >= decay_threshold:
-            return None  # hedge still has meaningful premium — no early action needed
+        # Use exactly shift_threshold (not a multiple) — this fires at the same
+        # premium level where the normal proactive-shift engine would act but can't
+        # because whipsaw has it blocked. Arbiter bypasses the block.
+        if opposite_live >= shift_threshold:
+            return None  # hedge still above standard shift threshold — no early action needed
 
         target_premium = float(params.get('shift_target_premium', 100.0))
         tolerance = float(params.get('shift_premium_tolerance', 10.0))
+        be_zone = session.get('_breakeven_zone', 'UNKNOWN')
 
         snapshot.update({
             'threatened_side': threatened,
             'opposite_side': opposite,
             'opposite_live_premium': opposite_live,
-            'decay_threshold': decay_threshold,
             'shift_threshold': shift_threshold,
+            'be_zone_at_trigger': be_zone,
             'target_premium': target_premium,
             'tolerance': tolerance,
         })
@@ -433,15 +440,15 @@ class CoordinationArbiter:
         return ArbiterDecision(
             action_type=ACTION_DEFENSIVE_SHIFT,
             tier=TIER_1_EXTREME,
-            trigger=f'hedge_decay_danger_{threatened}',
+            trigger=f'hedge_decay_{be_zone.lower()}_{threatened}',
             side=opposite,
             target_premium=target_premium,
             reason=(
                 f'Tier 1 (early): {opposite.upper()} hedge decayed to '
-                f'${opposite_live:.0f} < ${decay_threshold:.0f} decay threshold '
-                f'while BE=DANGER on {threatened.upper()} side. '
-                f'Proactive shift to premium target ${target_premium:.0f}±${tolerance:.0f}. '
-                f'Rule 4: refresh worthless hedge before CRITICAL. '
+                f'${opposite_live:.0f} < ${shift_threshold:.0f} shift_threshold '
+                f'while BE={be_zone} on {threatened.upper()} side. '
+                f'Normal proactive-shift blocked by whipsaw — arbiter bypasses. '
+                f'Shift to premium target ${target_premium:.0f}±${tolerance:.0f}. '
                 f'Bypassing whipsaw / regime / cooldown / asymmetry per Rule 2.'
             ),
             stale_signals=stale_records,

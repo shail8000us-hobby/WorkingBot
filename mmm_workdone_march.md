@@ -6266,3 +6266,24 @@ This caused ITM strikes to be silently skipped during auto-promotion. Affected:
 - **Fix** (`mmm_activity.py`): Added all 6 arbiter types to `ACTIVITY_TYPES` dict (under Coordination Arbiter section) and to `ACTIVITY_CATEGORIES['safety']`. Added `profit_ratchet` to `ACTIVITY_CATEGORIES['adjustments']`.
 
 **Files**: `mmm_activity.py` | **Tests**: 1734 passed / 0 failed
+
+## 2026-04-30 — Arbiter double-fire fix + early hedge-decay trigger
+
+Post-mortem analysis of session mmm30apr26-1 revealed two arbiter failure modes. Two bugs were caught during self-review before shipping.
+
+### Fix 1 — Double-fire on consecutive beats (128 lots in 2 min)
+- `mmm_arbiter.py` `evaluate()`: time-based post-action cooldown — after any Tier 1 execution, `_arbiter_last_action_at` (UTC ISO) is checked; if `< 2× beat_interval` elapsed → NOOP with trigger `arbiter_beat_cooldown`. Cooldown placed **after** margin RED / gamma EMERGENCY checks so capital/curvature emergencies are never silenced by it.
+- `mmm_monitor.py`: writes `session['_arbiter_last_action_at']` after `_execute_arbiter_decision` succeeds.
+- `mmm_state.py`: `'_arbiter_last_action_at': None` added to `create_session()`.
+
+### Fix 2 — CE shift fired too late (whipsaw blocked proactive shift for 2.5h while CE decayed $73→$29)
+- `mmm_arbiter.py` new method `_check_hedge_decay_shift()`: fires when `be_zone in ('WARNING', 'DANGER')` AND `opposite_live_premium < shift_threshold`. This is exactly the condition where normal proactive-shift would fire but whipsaw has blocked it — arbiter bypasses the block. Trigger: `hedge_decay_{zone}_{threatened_side}`.
+- `mmm_monitor.py`: writes `session['_ce_now']` and `session['_pe_now']` immediately after premium fetch each beat. Arbiter reads these — no extra market calls.
+- Zone coverage is WARNING+DANGER (not DANGER only) because mmm30apr26-1's zone jumped WARNING→CRITICAL directly without passing through DANGER.
+
+### Self-review bugs caught and corrected
+- Bug A: cooldown was originally placed before margin/gamma checks — would have silenced RED margin emergencies during cooldown window. Moved after.
+- Bug B: decay threshold was `shift_threshold × 1.5` — corrected to `shift_threshold × 1.0` (exact standard proactive-shift threshold).
+
+**Files**: `mmm_arbiter.py`, `mmm_monitor.py`, `mmm_state.py`, `tests/test_sealed_audit_fixes.py`
+**Tests**: 1203 sealed passing / 0 failed (baseline 1190 + 8 new — `TestArbiterBeatCooldown` ×3, `TestArbiterHedgeDecay` ×5)

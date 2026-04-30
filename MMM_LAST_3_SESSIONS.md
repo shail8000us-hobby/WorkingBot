@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-04-30 — Arbiter double-fire fix + early hedge-decay trigger (mmm30apr26-1 post-mortem)
+
+Post-mortem of mmm30apr26-1 revealed two arbiter failure modes:
+
+**Fix 1 — Double-fire on consecutive beats**: After a Tier 1 action executes, the arbiter now records `session['_arbiter_last_action_at']`. On the next beat, if `< 2× beat_interval` has elapsed (default 10 min), the arbiter returns NOOP with trigger `arbiter_beat_cooldown`. Prevents back-to-back 64+64=128 lots in 2 minutes as happened in that session. The cooldown is placed **after** margin/gamma checks so a capital or curvature emergency arising during the cooldown still gets an immediate response — only BE-based defensive shifts are gated.
+
+**Fix 2 — CE shift fired too late (2.5h decay $73→$29)**: New `_check_hedge_decay_shift()` method fires Tier 1 at `BE=WARNING or DANGER` when the opposite side's live premium has decayed below `shift_threshold` (exactly the standard proactive-shift threshold — fires when whipsaw has blocked the normal mechanism). Monitor writes `session['_ce_now']` / `session['_pe_now']` each beat immediately after premium fetch. Zone coverage is WARNING+DANGER (not just DANGER) because in real sessions the zone can jump WARNING→CRITICAL in a single beat (as observed in mmm30apr26-1 where it never passed through DANGER). Trigger name: `hedge_decay_{zone}_{threatened_side}`.
+
+**Two bugs found during self-review and corrected before shipping**:
+- Cooldown was originally placed before margin/gamma checks (would have silenced capital emergencies) — moved after.
+- Decay threshold was originally `shift_threshold × 1.5` — corrected to `shift_threshold × 1.0` (exact proactive-shift threshold).
+
+**Files**: `mmm_arbiter.py`, `mmm_monitor.py`, `mmm_state.py`, `tests/test_sealed_audit_fixes.py` | **Tests**: 1203 sealed passing (baseline 1190 + 8 new: `TestArbiterBeatCooldown` ×3, `TestArbiterHedgeDecay` ×5)
+
+---
+
 ## 2026-04-28 (rev3) — Profit Ratchet: trigger snapshot re-anchor at profit milestones
 
 New feature (`profit_ratchet_enabled` / `profit_ratchet_step_usd`): at each cumulative-P&L milestone ($5→$10→$15...) the heartbeat calls `update_trigger_snapshots()` to re-anchor trigger snapshots to current premium levels. Prevents the common case where a profitable session's triggers stay anchored at entry-level premiums — making the algo progressively unresponsive as profit accumulates. With the ratchet, only a fresh move of `min_trigger_move`% above CURRENT premiums (not entry premiums) is needed to fire an adjustment. High-water mark guard (`_profit_ratchet_hwm`) prevents re-anchoring during a drawdown. Dollar step is the natural cooldown — earning the next milestone takes real market time. Feature is OFF by default; hot-reloadable toggle on WebUI under "📈 Profit Ratchet". 14 new sealed tests, 0 regression. All stale-monitor guards, safety invariants, and financial accounting untouched.

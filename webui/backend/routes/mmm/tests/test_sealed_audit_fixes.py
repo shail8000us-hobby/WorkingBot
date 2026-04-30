@@ -1631,11 +1631,14 @@ class TestArbiterBeatCooldown(unittest.TestCase):
         self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
 
 
-class TestArbiterHedgeDecayDanger(unittest.TestCase):
-    """Arbiter fires early (BE=DANGER) when opposite hedge has decayed below quality threshold.
+class TestArbiterHedgeDecay(unittest.TestCase):
+    """Arbiter fires early (BE=WARNING or DANGER) when opposite hedge decays below shift_threshold.
 
-    Prevents the mmm30apr26-1 pattern where CE at 77800 decayed to $29 over 2.5h
-    while whipsaw blocked normal adjustments and the arbiter waited for CRITICAL.
+    Prevents the mmm30apr26-1 pattern: CE at 77800 decayed $73→$29 over 2.5h of
+    whipsaw blocks while arbiter waited for CRITICAL. The zone jumped WARNING→CRITICAL
+    directly (no DANGER step) so DANGER-only trigger would also have failed.
+    Threshold = shift_threshold exactly (same level normal proactive-shift uses,
+    but blocked by whipsaw — arbiter bypasses the block).
     """
 
     def _make_session(self, be_zone='DANGER', ce_now=None, pe_now=None,
@@ -1669,11 +1672,10 @@ class TestArbiterHedgeDecayDanger(unittest.TestCase):
         return session
 
     def test_decay_fires_at_danger_with_decayed_ce(self):
-        """BE=DANGER + CE live $30 (< $75 = $50×1.5) + PE threatened → Tier 1 defensive_shift on CE."""
+        """BE=DANGER + CE live $30 (< shift_threshold $50) + PE threatened → Tier 1 shift on CE."""
         from webui.backend.routes.mmm.mmm_arbiter import (
             CoordinationArbiter, ACTION_DEFENSIVE_SHIFT, TIER_1_EXTREME,
         )
-        # nearest_side='lower' → PE threatened, CE is opposite (shift target)
         session = self._make_session(be_zone='DANGER', ce_now=30.0, nearest_side='lower')
         decision = CoordinationArbiter().evaluate(session)
         self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
@@ -1681,22 +1683,50 @@ class TestArbiterHedgeDecayDanger(unittest.TestCase):
         self.assertEqual(decision.side, 'ce')
         self.assertIn('hedge_decay_danger_pe', decision.trigger)
 
-    def test_decay_noop_when_hedge_still_healthy(self):
-        """BE=DANGER + CE live $90 (>= $75 decay threshold) → no early action."""
+    def test_decay_fires_at_warning_with_decayed_ce(self):
+        """BE=WARNING + CE live $30 (< shift_threshold $50) → Tier 1 shift.
+
+        Critical: covers the mmm30apr26-1 case where zone jumped WARNING→CRITICAL
+        directly, never passing through DANGER. DANGER-only trigger would have missed it.
+        """
+        from webui.backend.routes.mmm.mmm_arbiter import (
+            CoordinationArbiter, ACTION_DEFENSIVE_SHIFT, TIER_1_EXTREME,
+        )
+        session = self._make_session(be_zone='WARNING', ce_now=30.0, nearest_side='lower')
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_DEFENSIVE_SHIFT)
+        self.assertEqual(decision.tier, TIER_1_EXTREME)
+        self.assertEqual(decision.side, 'ce')
+        self.assertIn('hedge_decay_warning_pe', decision.trigger)
+
+    def test_decay_noop_when_hedge_above_threshold(self):
+        """BE=DANGER + CE live $60 (>= shift_threshold $50) → no early action."""
         from webui.backend.routes.mmm.mmm_arbiter import CoordinationArbiter, ACTION_NOOP
-        session = self._make_session(be_zone='DANGER', ce_now=90.0, nearest_side='lower')
+        session = self._make_session(be_zone='DANGER', ce_now=60.0, nearest_side='lower')
         decision = CoordinationArbiter().evaluate(session)
         self.assertEqual(decision.action_type, ACTION_NOOP,
-                         'Healthy hedge premium should not trigger early decay shift')
+                         'Hedge above shift_threshold must not trigger early decay shift')
 
     def test_decay_noop_when_no_live_price(self):
         """BE=DANGER but no _ce_now in session → skip decay check (no stale data action)."""
         from webui.backend.routes.mmm.mmm_arbiter import CoordinationArbiter, ACTION_NOOP
         session = self._make_session(be_zone='DANGER', nearest_side='lower')
-        # _ce_now not set — arbiter must not act on missing price
         self.assertNotIn('_ce_now', session)
         decision = CoordinationArbiter().evaluate(session)
         self.assertEqual(decision.action_type, ACTION_NOOP)
+
+    def test_cooldown_takes_priority_over_decay(self):
+        """Within 2-beat cooldown window, decay trigger must be silenced even at WARNING/DANGER."""
+        from datetime import datetime, timezone, timedelta
+        from webui.backend.routes.mmm.mmm_arbiter import CoordinationArbiter, ACTION_NOOP
+        session = self._make_session(be_zone='DANGER', ce_now=30.0, nearest_side='lower')
+        # Simulate: arbiter just acted 10s ago (far within 600s cooldown)
+        session['_arbiter_last_action_at'] = (
+            datetime.now(timezone.utc) - timedelta(seconds=10)
+        ).isoformat()
+        decision = CoordinationArbiter().evaluate(session)
+        self.assertEqual(decision.action_type, ACTION_NOOP)
+        self.assertEqual(decision.trigger, 'arbiter_beat_cooldown')
 
 
 if __name__ == '__main__':
