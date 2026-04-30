@@ -503,8 +503,10 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
       socketRef.current.on('order_filled', (data) => {
         console.log('[useOptionsPositions] ⚡ Order filled:', data.symbol);
         fetchPendingOrders();
-        // Small delay before fetching positions — exchange needs a moment to settle
-        setTimeout(() => fetchPositions(), 500);
+        // Use fetchDashboard (not fetchPositions) — dashboard includes phantom closed
+        // positions from the server store. fetchPositions only returns live positions,
+        // which would strip phantom rows and cause them to flicker off then reappear.
+        setTimeout(() => fetchDashboard(), 500);
       });
 
       // pending_orders_updated: any order state change (placed, cancelled)
@@ -514,7 +516,8 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
 
       // positions_updated: position changed (size, entry price, etc.)
       socketRef.current.on('positions_updated', () => {
-        fetchPositions();
+        // Use fetchDashboard to keep phantom closed positions in the state.
+        fetchDashboard();
       });
 
       socketRef.current.on('disconnect', () => {

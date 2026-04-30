@@ -4648,7 +4648,7 @@ const OptionsPanel = () => {
         open={rollModalOpen}
         position={rollPosition}
         onClose={() => { setRollModalOpen(false); setRollPosition(null); }}
-        onRollComplete={() => { setRollModalOpen(false); setRollPosition(null); fetchPositions(); }}
+        onRollComplete={() => { setRollModalOpen(false); setRollPosition(null); fetchDashboard(); }}
       />
 
       {/* Delta Hedge Modal */}
@@ -4659,7 +4659,7 @@ const OptionsPanel = () => {
         onClose={() => setHedgeModalOpen(false)}
         onSuccess={() => {
           setHedgeModalOpen(false);
-          fetchPositions();
+          fetchDashboard();
         }}
       />
 
