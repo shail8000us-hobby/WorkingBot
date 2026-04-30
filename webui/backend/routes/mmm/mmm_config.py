@@ -325,6 +325,10 @@ PARAM_RULES = {
     'god_pnl_threshold':                 {'type': float, 'min': 1.0,  'max': 500.0, 'hot': True},
     'god_min_silence_min':               {'type': int,   'min': 1,    'max': 120,   'hot': True},
     'god_cooldown_min':                  {'type': int,   'min': 5,    'max': 240,   'hot': True},
+    # ── BE zone beat acceleration (Layer 4 of _run_loop interval pipeline) ──
+    'be_accel_enabled':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'be_accel_factor':                   {'type': float, 'min': 0.2,  'max': 0.9,   'hot': True},
+    'be_accel_min_interval':             {'type': int,   'min': 10,   'max': 120,   'hot': True},
     # ── Phase 3 Coordination Arbiter (live) ──
     'arbiter_enabled':                   {'type': bool,  'min': None, 'max': None,  'hot': True},
     'arbiter_use_full_capacity':         {'type': bool,  'min': None, 'max': None,  'hot': True},
@@ -1075,6 +1079,10 @@ def get_param_info() -> Dict[str, Dict]:
         'god_pnl_threshold': 'P&L loss threshold (USD) that triggers a God Layer intervention. If net P&L drops below negative this value, intervention fires.',
         'god_min_silence_min': 'Minimum quiet time (minutes) required before God Layer will fire again after a recent adjustment.',
         'god_cooldown_min': 'Cooldown period (minutes) after a God Layer intervention before it can fire again.',
+        # BE zone beat acceleration
+        'be_accel_enabled': 'When ON, automatically shortens the heartbeat interval when the breakeven zone reaches WARNING, DANGER, or CRITICAL. Default ON. Hot-reloadable.',
+        'be_accel_factor': 'Fraction of the current effective interval to use during BE zone acceleration. Default 0.5 (halve). At 300s base and WARNING zone, next beat fires in 150s instead of 300s. Range 0.2–0.9.',
+        'be_accel_min_interval': 'Minimum heartbeat interval (seconds) that BE zone acceleration will not go below. Default 30s. Prevents excessive API load during extended elevated-zone periods. Range 10–120.',
         # Phase 3 Coordination Arbiter (live)
         'arbiter_enabled': 'Enable the Coordination Arbiter (live mode). When ON, at extreme conditions (breakeven CRITICAL, gamma EMERGENCY, margin RED) the arbiter bypasses operational gates (whipsaw, regime, cooldown) and executes defensive premium-aware shift / close / margin-recovery actions. Disabled in last 30 min before expiry per Rule 5. Default ON.',
         'arbiter_use_full_capacity': 'When ON, Tier 1 defensive shifts seed up to max_lots_per_side (remaining capacity) instead of just the frozen_lots count. Collects maximum premium in one emergency shot — e.g. with max=200 and 64 lots frozen, seeds 136 lots at the new strike instead of 64. Hot-reloadable: switch mid-session if a conservative first shift did not move the breakeven enough. Default ON.',

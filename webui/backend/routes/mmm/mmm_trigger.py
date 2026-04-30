@@ -777,3 +777,34 @@ def apply_theta_acceleration_v2(
         'effective_interval': effective_interval,
     }
 
+
+def compute_be_zone_accel(interval: float, be_zone: str, params: dict) -> dict:
+    """Layer 4: BE-zone beat acceleration.
+
+    When breakeven zone is WARNING/DANGER/CRITICAL, shrinks the next sleep
+    interval by be_accel_factor (default 0.5 = halve) so the algo checks
+    more frequently without any operator input.  Only ever shortens — if
+    margin rapid-check or theta acceleration already produced a shorter
+    interval, the caller takes the min of all layers.
+
+    Args:
+        interval:  Current effective interval after Layers 1–3 (seconds).
+        be_zone:   session['_breakeven_zone'] from the previous beat.
+        params:    session['params'].
+
+    Returns:
+        dict with keys:
+          accelerated (bool)
+          effective_interval (int, seconds)
+    """
+    if not params.get('be_accel_enabled', True):
+        return {'accelerated': False, 'effective_interval': int(interval)}
+    if be_zone not in ('WARNING', 'DANGER', 'CRITICAL'):
+        return {'accelerated': False, 'effective_interval': int(interval)}
+    factor = float(params.get('be_accel_factor', 0.5))
+    min_interval = int(params.get('be_accel_min_interval', 30))
+    accel = max(min_interval, int(interval * factor))
+    if accel >= int(interval):
+        return {'accelerated': False, 'effective_interval': int(interval)}
+    return {'accelerated': True, 'effective_interval': accel}
+

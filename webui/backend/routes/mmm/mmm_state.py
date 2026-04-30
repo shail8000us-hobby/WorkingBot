@@ -830,6 +830,10 @@ DEFAULT_PARAMS = {
     # Phase 3 Coordination Arbiter (live mode by default — see MMM_COORDINATION_PLAN.md)
     'arbiter_enabled': True,        # Master switch for the Coordination Arbiter (live execution)
     'arbiter_use_full_capacity': True,  # Tier 1 shifts seed up to max_lots_per_side (not just frozen_lots)
+    # BE zone beat acceleration (Layer 4 of _run_loop interval pipeline)
+    'be_accel_enabled': True,           # Halve beat interval when BE zone is WARNING/DANGER/CRITICAL
+    'be_accel_factor': 0.5,             # Multiply interval by this when BE zone is elevated (0.2–0.9)
+    'be_accel_min_interval': 30,        # Floor: never go below this many seconds even with factor
     # Gamma engine DTE relax ladder — see audit/mmm/coordination/04_gamma_engine_audit.md
     'gamma_dte_ladder_far_mult': 1.5,    # > 5 days to expiry: limits × this
     'gamma_dte_ladder_multi_mult': 1.25, # 1–5 days to expiry: limits × this
@@ -995,6 +999,8 @@ HOT_RELOAD_PARAMS = {
     # God Layer (strategic integrity monitor)
     'god_enabled', 'god_check_interval_min', 'god_pnl_threshold',
     'god_min_silence_min', 'god_cooldown_min',
+    # BE zone beat acceleration
+    'be_accel_enabled', 'be_accel_factor', 'be_accel_min_interval',
     # Phase 3 Coordination Arbiter (live)
     'arbiter_enabled', 'arbiter_use_full_capacity',
     'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',

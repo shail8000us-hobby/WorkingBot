@@ -407,6 +407,10 @@ const PARAM_GROUPS = {
         header: 'DTE Safety Limits',
         params: ['breakeven_dte_pnl_clamp_pct', 'breakeven_critical_lot_ceiling'],
       },
+      {
+        header: 'Beat Acceleration',
+        params: ['be_accel_enabled', 'be_accel_factor', 'be_accel_min_interval'],
+      },
     ],
   },
   straddleRoll: {
@@ -824,6 +828,9 @@ const PARAM_TOOLTIPS = {
   breakeven_high_risk_mode: 'Emergency override: set all aggression damps to 0 (maximum breakeven response). Intended for sessions where you manually determine that maximum lot boost is warranted. Auto-expires after 4 hours — set _high_risk_mode_expires_at in session to control duration.',
   breakeven_dte_pnl_clamp_pct: 'Safety clamp: if |pnl_at_spot| / total_premium_collected exceeds this ratio, dte_scale reverts to 1.0. Prevents dte_scale from keeping thresholds artificially wide when the position is already deeply in trouble. Requires ≥5 lots total to trigger (avoids false clamp on tiny positions). Default 1.5.',
   breakeven_critical_lot_ceiling: 'Combined multiplier ceiling specifically for CRITICAL zone. Replaces max_combined_lot_multiplier when zone=CRITICAL, allowing a higher ceiling during genuine emergencies. Default 4.0 (vs typical 3.0 combined cap). Still bounded by max_lots_per_side.',
+  be_accel_enabled: 'When ON, automatically shortens the heartbeat interval when breakeven zone reaches WARNING, DANGER, or CRITICAL. At a 300s base interval and WARNING zone the next beat fires in 150s (factor 0.5). Hot-reloadable. Default ON.',
+  be_accel_factor: 'Fraction of the current interval to use when BE zone acceleration is active. Default 0.5 (halve). Lower = faster response, higher API usage. Range 0.2–0.9. Hot-reloadable.',
+  be_accel_min_interval: 'Minimum heartbeat interval (seconds) that BE zone acceleration will not go below. Default 30s. Prevents excessive API load during extended high-zone periods. Range 10–120. Hot-reloadable.',
   // Gamma Detector Engine
   gamma_detector_enabled: 'Enable real-time portfolio gamma boundary scanning. The detector computes the P&L curve from your open positions and finds BTC price levels where the curve kinks sharply — these are gamma boundaries where hedging urgency spikes. Observation-only by default (no lot changes) until gamma_severity_multiplier_enabled is turned on. Safe to enable: no trades are affected.',
   gamma_step_pct: 'Step size as % of BTC spot for the P&L curve scan. Smaller = finer resolution but more computation. 0.5% at BTC $87k ≈ $435 per step. Range: 0.1–5.0. Default 0.5%.',

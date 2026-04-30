@@ -32,6 +32,7 @@ from .mmm_trigger import (
     evaluate_triggers, update_trigger_snapshots, check_frozen_pnl_trigger,
     apply_theta_acceleration, compute_adaptive_interval,
     apply_theta_acceleration_v2, compute_adaptive_interval_v2,
+    compute_be_zone_accel,
     OUTCOME_NONE, OUTCOME_CE,
     OUTCOME_PE, OUTCOME_BOTH,
 )
@@ -1232,6 +1233,17 @@ class MMMMonitor:
                         self.session['_margin_rapid_check'] = True
                 elif self.session.pop('_margin_rapid_check', None):
                     pass  # cleared — back to normal interval
+
+                # Layer 4: BE zone acceleration
+                # Uses zone from the previous beat (already stored in session).
+                # Only shortens — whichever layer produced the shortest interval wins.
+                _be_zone_for_accel = self.session.get('_breakeven_zone', 'SAFE')
+                _be_accel_result = compute_be_zone_accel(interval, _be_zone_for_accel, params)
+                if _be_accel_result['accelerated']:
+                    interval = _be_accel_result['effective_interval']
+                    self.session['_be_accel'] = True
+                elif self.session.pop('_be_accel', None):
+                    pass  # cleared — zone returned to SAFE
 
                 # Store effective interval so _heartbeat() can log it
                 self._effective_interval = interval

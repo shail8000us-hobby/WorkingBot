@@ -1772,5 +1772,90 @@ class TestArbiterFullCapacity(unittest.TestCase):
                       'Fallback block must log arbiter full-capacity note')
 
 
+class TestBEZoneAcceleration(unittest.TestCase):
+    """BE zone beat acceleration (Layer 4 of _run_loop interval pipeline).
+
+    When breakeven zone is WARNING/DANGER/CRITICAL, the next sleep interval
+    is shortened by be_accel_factor (default 0.5) subject to be_accel_min_interval
+    floor. SAFE zone never accelerates. Disabled when be_accel_enabled=False.
+    """
+
+    def _params(self, **overrides):
+        p = {'be_accel_enabled': True, 'be_accel_factor': 0.5, 'be_accel_min_interval': 30}
+        p.update(overrides)
+        return p
+
+    def test_warning_zone_halves_interval(self):
+        """WARNING zone with factor=0.5 halves a 300s interval to 150s."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        result = compute_be_zone_accel(300, 'WARNING', self._params())
+        self.assertTrue(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 150)
+
+    def test_danger_zone_accelerates(self):
+        """DANGER zone also triggers acceleration."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        result = compute_be_zone_accel(300, 'DANGER', self._params())
+        self.assertTrue(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 150)
+
+    def test_critical_zone_accelerates(self):
+        """CRITICAL zone accelerates (arbiter fires, but subsequent beats must also be fast)."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        result = compute_be_zone_accel(300, 'CRITICAL', self._params())
+        self.assertTrue(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 150)
+
+    def test_safe_zone_no_acceleration(self):
+        """SAFE zone: no acceleration, original interval preserved."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        result = compute_be_zone_accel(300, 'SAFE', self._params())
+        self.assertFalse(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 300)
+
+    def test_min_interval_floor_respected(self):
+        """Floor be_accel_min_interval is honoured: factor×interval cannot go below it."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        # interval=150, factor=0.5 → 75, but min=100 → effective=100
+        result = compute_be_zone_accel(150, 'WARNING', self._params(be_accel_min_interval=100))
+        self.assertTrue(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 100)
+
+    def test_disabled_no_acceleration(self):
+        """be_accel_enabled=False suppresses acceleration regardless of zone."""
+        from webui.backend.routes.mmm.mmm_trigger import compute_be_zone_accel
+        result = compute_be_zone_accel(300, 'CRITICAL', self._params(be_accel_enabled=False))
+        self.assertFalse(result['accelerated'])
+        self.assertEqual(result['effective_interval'], 300)
+
+    def test_default_params_present(self):
+        """be_accel_enabled/factor/min_interval must all exist in DEFAULT_PARAMS."""
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertIn('be_accel_enabled', DEFAULT_PARAMS)
+        self.assertIn('be_accel_factor', DEFAULT_PARAMS)
+        self.assertIn('be_accel_min_interval', DEFAULT_PARAMS)
+        self.assertTrue(DEFAULT_PARAMS['be_accel_enabled'])
+        self.assertAlmostEqual(DEFAULT_PARAMS['be_accel_factor'], 0.5)
+        self.assertEqual(DEFAULT_PARAMS['be_accel_min_interval'], 30)
+
+    def test_hot_reload_params_registered(self):
+        """All three be_accel params must be in HOT_RELOAD_PARAMS."""
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        for key in ('be_accel_enabled', 'be_accel_factor', 'be_accel_min_interval'):
+            self.assertIn(key, HOT_RELOAD_PARAMS, f'{key} missing from HOT_RELOAD_PARAMS')
+
+    def test_layer4_in_run_loop_source(self):
+        """Layer 4 block must call compute_be_zone_accel inside _run_loop."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._run_loop)
+        self.assertIn('compute_be_zone_accel', src,
+                      'Layer 4 must call compute_be_zone_accel inside _run_loop')
+        self.assertIn('_breakeven_zone', src,
+                      'Layer 4 must read session[_breakeven_zone]')
+        self.assertIn('_be_accel', src,
+                      'Layer 4 must set session[_be_accel] flag')
+
+
 if __name__ == '__main__':
     unittest.main()
