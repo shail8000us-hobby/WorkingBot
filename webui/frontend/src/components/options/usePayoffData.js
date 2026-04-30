@@ -30,7 +30,11 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
   return useMemo(() => {
     if (!positions || positions.length === 0) return null;
 
-    const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
+    // When no positions are explicitly selected, show all — keeping the payoff
+    // aligned with the position rows by default. An explicit selection narrows the view.
+    const visiblePositions = selectedPositions.length > 0
+      ? positions.filter((p) => selectedPositions.includes(p.product_symbol))
+      : positions;
 
     // Determine underlying asset from visible positions (BTC or ETH)
     const underlying = visiblePositions.length > 0
@@ -89,7 +93,19 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
       const bestBid = parseFloat(pos.best_bid || 0);
       const bestAsk = parseFloat(pos.best_ask || 0);
       const midPrice = bestBid > 0 && bestAsk > 0 ? (bestBid + bestAsk) / 2 : 0;
-      const markPrice = midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || entryPrice);
+      let markPrice = midPrice > 0 ? midPrice : parseFloat(pos.mid_price || pos.mark_price || 0);
+      if (!isClosed && markPrice === 0 && Math.abs(size) > 0 && entryPrice > 0) {
+        // All price fields are missing — derive effective mark price from the exchange's
+        // unrealized_pnl so the payoff curve at current spot matches the position row.
+        // unrealized_pnl = (mark - entry) * size * multiplier  →  mark = entry + pnl/(size*mult)
+        const exchPnl = parseFloat(pos.unrealized_pnl);
+        if (isFinite(exchPnl) && exchPnl !== 0) {
+          const mult = getContractMultiplier(pos.product_symbol);
+          const derived = entryPrice + exchPnl / (size * mult);
+          if (isFinite(derived) && derived > 0) markPrice = derived;
+        }
+      }
+      if (markPrice === 0) markPrice = entryPrice;
 
       let iv = 0.8;
       const exchangeIV = pos.greeks?.iv ? parseFloat(pos.greeks.iv) : null;
