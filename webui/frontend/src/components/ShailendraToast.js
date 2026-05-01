@@ -13,7 +13,9 @@ const ShailendraToast = () => {
             : window.location.origin;
             
         const socket = io(origin, {
-            transports: ['websocket', 'polling']
+            transports: ['polling'],
+            upgrade: false,
+            rememberUpgrade: false,
         });
 
         socket.on('shailendra_signal', (data) => {

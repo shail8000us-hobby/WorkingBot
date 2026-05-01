@@ -72,12 +72,6 @@ log = logging.getLogger(__name__)
 # Create blueprint
 options_bp = Blueprint('options', __name__, url_prefix='/api/options')
 
-# Rate limiting state
-# NOTE: These globals work for single-worker Flask. For production with Gunicorn
-# multiple workers, consider using Redis for shared state across workers.
-_last_order_time = {}
-RATE_LIMIT_SECONDS = 1.0  # Reduced from 2.0 to 1.0 for better UX
-
 # Duplicate order prevention
 # NOTE: In multi-worker environments, this dict won't be shared across workers.
 # Use Redis or a shared cache for production deployments with multiple workers.
@@ -121,34 +115,6 @@ from .ssr_monitor import (
 from .delta_hedge import get_hedge_events_snapshot, register_delta_hedge_routes
 
 
-def rate_limit(f):
-    """Decorator to enforce per-user cooldown between orders"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        global _last_order_time
-        
-        # Use IP address as user identifier (better than global limit)
-        user_id = request.remote_addr or 'unknown'
-        now = time.time()
-        
-        # Clean old entries
-        _last_order_time = {k: v for k, v in _last_order_time.items() 
-                           if now - v < RATE_LIMIT_SECONDS * 10}
-        
-        last_time = _last_order_time.get(user_id, 0)
-        elapsed = now - last_time
-        
-        if elapsed < RATE_LIMIT_SECONDS:
-            wait_time = RATE_LIMIT_SECONDS - elapsed
-            log.warning(f"⏱️ Rate limit for {user_id}: wait {wait_time:.1f}s")
-            return jsonify({
-                'success': False,
-                'error': f'Please wait {wait_time:.1f}s before next order'
-            }), 429
-        
-        _last_order_time[user_id] = now
-        return f(*args, **kwargs)
-    return decorated_function
 
 
 def prevent_duplicate(f):
@@ -819,7 +785,6 @@ def _close_position_by_symbol(symbol: str):
 
 
 @options_bp.route('/close', methods=['POST'])
-@rate_limit
 @prevent_duplicate
 def close_options_position():
     """
@@ -929,7 +894,6 @@ def close_options_position():
             )
         
         result = _run_async(place_close_order())
-        # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
         fill_price = result.get('fill_price') or result.get('average_fill_price') or 0
@@ -1014,7 +978,6 @@ def close_options_position():
 
 
 @options_bp.route('/add', methods=['POST'])
-@rate_limit
 @prevent_duplicate
 def add_to_options_position():
     """
@@ -1144,7 +1107,6 @@ def add_to_options_position():
             )
         
         result = _run_async(place_add_order())
-        # Note: _last_order_time is managed by the @rate_limit decorator
         
         execution_type = result.get('execution_type', 'unknown')
         fill_price = result.get('fill_price') or result.get('limit_price') or result.get('average_fill_price')
@@ -1275,7 +1237,7 @@ def get_options_status():
         'enabled': True,
         'guardian_signal': guardian_signal,
         'trading_allowed': guardian_signal == 'GO',
-        'rate_limit_seconds': RATE_LIMIT_SECONDS,
+        'rate_limit_seconds': 0,
         'index_prices': index_prices,  # Will be populated by frontend from positions
         'timestamp': time.strftime('%Y-%m-%d %H:%M:%S')
     })

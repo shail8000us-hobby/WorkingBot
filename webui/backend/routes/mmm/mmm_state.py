@@ -465,6 +465,7 @@ DEFAULT_PARAMS = {
     'shift_premium_tolerance': 10.0,   # ±$ tolerance around shift_target_premium for candidate validation
     'close_at_threshold': 5.0,          # close positions at this premium or below
     'close_at_use_bid': True,           # use bid price (not mark) for close_at_5 checks — more accurate for illiquid options
+    'close_at_bid_mark_ratio_floor': 0.1,  # if bid/mark < this, bid is anomalous (wide-spread illiquid) — use mark instead
     'close_at_watch_interval': 30,      # seconds between proactive close-at-5 watcher checks (0 = disabled)
     'close_at_max_per_beat': 3,         # max positions to close per heartbeat (prevents heartbeat stall on mass-close)
     'close_at_watcher_force_enabled': False,  # UI toggle: force watcher on regardless of expiry window
@@ -548,7 +549,7 @@ DEFAULT_PARAMS = {
     'margin_target_pct': 50.0,            # target utilization to wind down to
 
     # Regime Controls — pre-adjustment risk intelligence
-    'regime_enabled': False,                 # MASTER switch for ALL regime controls (vol/gamma/trend)
+    'regime_enabled': True,                  # MASTER switch for ALL regime controls (vol/gamma/trend)
     # Section A: Volatility Regime Filter
     'vol_regime_enabled': True,            # per-subsystem switch for vol regime filter
     'vol_iv_spike_pct': 30,               # IV change % threshold to trigger ELEVATED/HIGH
@@ -942,7 +943,7 @@ HOT_RELOAD_PARAMS = {
     'delta_engine_cooldown_sec', 'delta_engine_use_exchange_delta',
     'delta_engine_rebalance_band',
     # AUDIT FIX BUG3: close_at_use_bid was missing from hot-reload
-    'close_at_use_bid',
+    'close_at_use_bid', 'close_at_bid_mark_ratio_floor',
     # FSU: Favorable Scale-Up
     'scale_enabled', 'scale_min_decay_pct', 'scale_lots_pct',
     'scale_max_events', 'scale_cooldown_mins', 'scale_target_premium',

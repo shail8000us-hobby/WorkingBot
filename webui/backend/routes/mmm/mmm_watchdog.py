@@ -180,8 +180,19 @@ class MMMWatchdog:
         if status == 'EXITING':
             thread = getattr(monitor, '_thread', None)
             is_running = getattr(monitor, '_running', False)
+            # EXITING sessions need extended time: scissor exit is patient by design —
+            # up to 10 minutes of limit-order attempts to protect P&L (no market orders).
+            # 12-minute (720s) floor covers the 10-minute exit window plus API overhead.
+            # Kill switch also benefits: its 3 fast rounds finish well within 720s.
+            _beat_problem = self._check_beat_timeout(sid, monitor, session)
+            if _beat_problem is not None:
+                # Re-check against the 720s floor before declaring stuck.
+                health = getattr(monitor, '_health', None)
+                secs_since = health.seconds_since_last_beat if health else None
+                if secs_since is not None and secs_since < 720:
+                    _beat_problem = None  # within 12-minute grace, not stuck yet
             stuck = (is_running and (thread is None or not thread.is_alive())) or \
-                    (self._check_beat_timeout(sid, monitor, session) is not None)
+                    (_beat_problem is not None)
             if stuck:
                 log.error(
                     f"[{sid}] Watchdog: EXITING session stuck (beat timeout or dead thread) — "

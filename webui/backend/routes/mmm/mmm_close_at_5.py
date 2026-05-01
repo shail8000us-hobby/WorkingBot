@@ -225,6 +225,7 @@ async def close_position(
     mechanism: str = 'close_at_5',
     side: str = None,
     order_type: str = 'limit',
+    fill_timeout: int = None,
 ) -> Dict[str, Any]:
     """
     §11: Buy back a single position at market/ask price.
@@ -460,6 +461,7 @@ async def close_position(
             session_id=session.get('session_id', ''),
             use_bid_entry=(mechanism == 'close_at_5'),  # Bid-entry for close_at_5: cheaper maker fill
             max_buy_price=_max_buy_price,               # Abort reprice if premium rises above threshold
+            fill_timeout=fill_timeout,                  # None = executor default (60s); exit_all passes 25s
         )
 
         if not result.get('success'):

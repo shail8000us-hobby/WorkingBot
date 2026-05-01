@@ -307,3 +307,40 @@ class TestJestSealedKillSwitchAndHardStop:
             f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
             f"--testPathPattern=test_sealed_kill_switch_and_hard_stop"
         )
+
+
+class TestJestSealedReducePosition:
+    """
+    @sealed — handleReduceSelected + confirmReduceSelected (entry #86)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_reduce_position.test.js
+
+    Contracts RD1–RD17:
+      RD1–RD2:  pct guard (0 and 100 rejected)
+      RD3–RD5:  lotsToClose = Math.max(1, Math.ceil(size * pct / 100)) — ceil not round
+      RD6–RD7:  direction: size<0 → BUY, size>0 → SELL
+      RD8:      remaining = currentSize - lotsToClose (non-negative)
+      RD9:      is_closed positions excluded
+      RD10–RD11: limit_price = mid(bid,ask); undefined when both zero
+      RD12:     API confirm=true
+      RD13:     API order_preference='maker_first' (never 'market_only')
+      RD14–RD16: selectedStrikes/{dialog/percent cleared BEFORE first await
+      RD17:     double-fire guard — inFlightRef blocks second concurrent call
+    """
+
+    def test_all_reduce_position_contracts_pass(self):
+        """
+        CONTRACT: handleReduceSelected + confirmReduceSelected must satisfy all 20
+        RD contracts. FAILURE = reduce-by-% feature is broken or unsafe (real money).
+        """
+        result = _run_jest("test_sealed_reduce_position")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed ReducePosition tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_reduce_position"
+        )

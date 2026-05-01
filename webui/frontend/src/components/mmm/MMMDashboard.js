@@ -749,7 +749,7 @@ export const SessionCard = ({ session, selected, onSelect, onControl, heartbeat 
             </Tooltip>
           )}
           {['RUNNING', 'PAUSED', 'BOTH_SIDES_UP', 'PARTIAL_ENTRY'].includes(status) && (
-            <Tooltip title="Exit Strategy — close all positions and stop">
+            <Tooltip title="Peaceful Exit — close all positions with limit orders (slow, profit-protecting)">
               <IconButton
                 size="small"
                 sx={{
@@ -4723,12 +4723,13 @@ const MMMDashboard = () => {
           const ceLots = (sess?.ce_active_lots || 0) + (sess?.ce_frozen_lots || 0);
           const peLots = (sess?.pe_active_lots || 0) + (sess?.pe_frozen_lots || 0);
           const confirmed = window.confirm(
-            `Exit Strategy — Close ALL Positions\n\n` +
-            `This will close ALL open options positions:\n` +
-            `  CE: ${ceLots} lots\n` +
-            `  PE: ${peLots} lots\n\n` +
-            `The session will stop after all positions are closed.\n\n` +
-            `This cannot be undone. Confirm?`
+            `Peaceful Exit — Close ALL Positions\n\n` +
+            `Uses limit orders only (slow, profit-protecting).\n` +
+            `CE: ${ceLots} lots  |  PE: ${peLots} lots\n\n` +
+            `CE and PE close together (delta-neutral pairs).\n` +
+            `Near-worthless positions will expire — no market orders.\n\n` +
+            `Session stops after all positions are closed.\n` +
+            `Confirm peaceful exit?`
           );
           if (!confirmed) return;
           result = await mmmService.exitAllSession(sessionId);

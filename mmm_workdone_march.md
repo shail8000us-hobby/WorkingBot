@@ -6308,3 +6308,174 @@ Three follow-up features shipped after the mmm30apr26-1 arbiter fixes.
 
 **Files**: `mmm_trigger.py`, `mmm_monitor.py`, `mmm_state.py`, `mmm_config.py`, `MMMSettingsDialog.js`, `tests/test_sealed_audit_fixes.py`
 **Tests**: 1216 sealed passing / 0 failed (baseline 1207 + 9 new — `TestBEZoneAcceleration` ×9)
+
+## 2026-04-30 (rev3) — Audit + seal: profit ratchet fixes for mmm30apr26-1
+
+Audit of external AI work on profit ratchet non-firing (mmm30apr26-1 post-mortem). Both critical fixes were correctly implemented; one non-issue was misdiagnosed; one stale comment and two missing sealed tests corrected.
+
+**Fix 1 verified (Issue 2 — ratchet inside `_skip_to_pnl` guard)**: Profit ratchet block moved from inside `if not _skip_to_pnl:` to before the guard (now at `mmm_monitor.py:3645`). Fires even when safety/whipsaw/regime/cooldown blocks set `_skip_to_pnl=True`. Correct — ratchet only calls `update_trigger_snapshots()` (pure in-memory, no orders).
+
+**Fix 2 verified (Issue 1 — `_arbiter_decision_active` persists across restarts)**: `session.pop('_arbiter_decision_active', None)` added to `_row_to_session()` in `mmm_storage.py:471`. Prevents the flag surviving a session save/restore cycle and permanently blocking the ratchet gate.
+
+**Issue 3 was a false positive**: Other AI diagnosed a 405 error on `POST /api/mmm/session/<id>/profit-ratchet/trigger`. Log inspection showed no such 405 HTTP responses — the "405" strings in logs are timestamps and socket.io request IDs, not HTTP errors. Route at `mmm_api.py:8539` is correctly registered with `methods=['POST']` and tested by live session logs showing no routing failures.
+
+**Stale comment fixed**: `mmm_storage.py:468` referenced "line 3707" for the ratchet gate check; updated to "line ~3656" after the ratchet was moved earlier in the heartbeat.
+
+**3 new sealed tests added** to `test_sealed_audit_fixes.py`:
+- `TestProfitRatchetSourcePresence::test_ratchet_outside_skip_to_pnl_guard` — source-level guard that ratchet block appears before the `_emit_heartbeat_data` skip guard
+- `TestArbiterFlagClearedOnLoad::test_flag_cleared_in_row_to_session` — `_row_to_session()` must contain `session.pop('_arbiter_decision_active', None)`
+- `TestArbiterFlagClearedOnLoad::test_flag_not_in_monitor_heartbeat_reset_only` — per-beat reset in monitor also still present
+
+**Files**: `mmm_storage.py` (comment), `tests/test_sealed_audit_fixes.py` (3 new sealed tests)
+**Tests**: 1219 sealed passing / 0 failed (baseline 1216 + 3 new)
+
+## 2026-05-01 — Arbiter + proactive shift double-sell guard (mmm01may26-1 post-mortem)
+
+**Incident**: session mmm01may26-1 on 30 Apr — 225 + 85 = 310 PE-75000 lots sold in 11 seconds.
+Market was flat; no justification for velocity burst. Root cause: two independent paths both fired for PE in the same beat.
+
+**Root cause confirmed**:
+1. `_proactive_shift_scan` (line ~3335) fires for PE when `premium < shift_threshold` → calls `_process_strike_shift('pe', 0.0, ...)` → sells lots (225 in the incident)
+2. Arbiter (line ~3464) evaluates immediately after → `_check_hedge_decay_shift` sees same condition (pe_now still < shift_threshold, _arbiter_last_action_at not set since cooldown only tracks arbiter-initiated actions) → fires `ACTION_DEFENSIVE_SHIFT` for PE
+3. `_arbiter_execute_defensive_shift` sets `_arbiter_shift_bypass_cooldown=True` which bypasses the 120s shift_cooldown that would otherwise block the second call
+4. Result: two `_process_strike_shift('pe')` calls in one beat
+
+**Fix** (3 changes to `mmm_monitor.py`):
+1. `_process_strike_shift`: sets `session[f'_shift_placed_this_beat_{side}'] = True` immediately after `result.get('success')` — flags that real orders were placed on exchange this beat
+2. Before `_proactive_shift_scan`: pops `_shift_placed_this_beat_ce/pe` (clears each beat alongside existing `_proactive_shifted_*` flags)
+3. Arbiter execution block: computes `_double_sell` flag — if `action_type=='defensive_shift'` AND `_shift_placed_this_beat_{arbiter_side}` is True → suppresses `_execute_arbiter_decision`, logs `arbiter_suppressed_double_sell` activity, still records `_arbiter_last_action_at` for next-beat cooldown
+
+**Invariants preserved**:
+- Non-defensive_shift arbiter actions (gamma_close, margin_recovery) are NOT suppressed
+- If proactive shift was blocked by cooldown (orders NOT placed), flag is not set → arbiter still fires
+- Arbiter still records `_arbiter_last_action_at` even when suppressed (prevents retry next beat if condition persists)
+
+**Files**: `mmm_monitor.py` (3 locations), `tests/test_sealed_audit_fixes.py` (4 new sealed tests: `TestArbiterDoubleSellPrevention`)
+**Tests**: 1229 sealed passing / 0 failed (baseline 1225 + 4 new)
+
+## 2026-05-01 — mmm01may26-1 post-mortem: position cap bypass + combined size check + regime default
+
+Three bugs from session mmm01may26-1 post-mortem fixed. That session had a 290-lot shift at 03:25 that crashed P&L from +$9.25 to -$49.67 despite the position cap correctly returning 0 lots.
+
+**Bug #1 fixed — Proactive shift fallback bypassed position cap** (`mmm_monitor.py`):
+- Root cause: At line ~6524, when `calculate_lots_to_sell` returns 0 and `total_loss_to_cover <= 0`, the fallback seeds `lots = frozen_lots` without re-checking the position cap. PE had 303 frozen lots (cap=300), fallback seeded 290, the 300-cap at delta-neutral match was not aware of the 303 frozen.
+- Fix 1a: After `lots = fallback`, added position cap re-check: `_current_total = session[side]['total_lots']` (= frozen_total_lots after freeze). If `_current_total + lots > max_per_side`, caps to `max(max_per_side - _current_total, 0)`. Logs `proactive_shift_fallback_cap`.
+- Fix 1b: Delta-neutral matching cap changed from `min(target, max_per_side, inflate_cap)` to `min(target, remaining_cap, inflate_cap)` where `remaining_cap = max(max_per_side - total_lots, 0)`. Prevents inflation into already-exceeded frozen capacity.
+
+**Bug #2 fixed — No combined CE+PE position size circuit breaker** (`mmm_safety.py`):
+- Root cause: No check existed for combined CE+PE lots. Session reached CE=300 + PE=303 = 603 lots with only per-side caps.
+- Fix: Added `check_combined_position_size()` method. Fires `stop_adjustments` at `max_per_side × 2`, warning at 80%. Called from `run_all_checks()` after `check_position_cap`.
+
+**Config fix — regime_enabled default changed to True** (`mmm_state.py`):
+- Root cause: `DEFAULT_PARAMS['regime_enabled'] = False` — vol/gamma/trend regime was OFF the entire mmm01may26-1 session (only enabled at 04:08 AFTER the crash).
+- Fix: Changed to `True`. Already `True` in the straddle DTE preset (line 243) so no preset conflict.
+
+**Activity registry** (`mmm_activity.py`):
+- Registered `proactive_shift_fallback_cap` and `arbiter_suppressed_double_sell` (the latter was missing from the previous session's registry — caused test failure).
+
+**Note on Bug #3 from analysis (velocity counter)**: The report claimed velocity is in-memory only, but the code already computes it from `adjustment_history` which IS persisted to DB. No fix needed — the analysis was incorrect about this specific bug.
+
+**Files**: `mmm_monitor.py`, `mmm_safety.py`, `mmm_state.py`, `mmm_activity.py`, `tests/test_sealed_audit_fixes.py`
+**Tests**: 1781 passing / 0 failed (baseline 1773 + 8 new: `TestProactiveShiftFallbackCap` ×2, `TestCombinedPositionSizeCheck` ×5, `TestRegimeEnabledDefault` ×1)
+
+## 2026-05-01 — fix: close_at_5 phantom retry on wide-spread frozen position
+
+**Symptom**: Frozen PE @ 75500 (bid=$0.19, ask=$96.50, mark=$10.50) was being detected as eligible for close_at_5 (bid=$0.19 < threshold=$5.00) but close order failed every heartbeat because smart_execute with max_buy_price=$5.00 couldn't fill when ask=$96.50. The _being_closed flag was cleared after each failure, causing infinite retries.
+
+**Root cause**: `_make_bid_fetch_fn` returns the raw bid price when bid > 0. For deeply illiquid options, market makers quote extreme spreads (bid≈$0 / ask≈$100) that can't be executed. Bid/mark ratio of 0.018 (1.8%) is an anomalous quote, not real market price discovery.
+
+**Fix** (`mmm_monitor.py`, `_make_bid_fetch_fn`):
+- Added bid/mark sanity check: if `bid < mark × close_at_bid_mark_ratio_floor` (default 0.1), the bid is anomalous — return mark instead.
+- For 75500 case: bid=0.19, mark=10.50, ratio=0.018 < 0.10 → returns mark=10.50 → not eligible (10.50 > threshold 5.00) → no retry.
+- Normal liquid markets: bid/mark ≥ 0.1, bid is returned as-is (unchanged behavior).
+- New param `close_at_bid_mark_ratio_floor` (default 0.1, hot-reloadable). Added to `mmm_state.py` defaults and `mmm_config.py`.
+
+**Files**: `mmm_monitor.py`, `mmm_state.py`, `mmm_config.py`, `tests/test_sealed_audit_fixes.py`
+**Tests**: 1785 passing / 0 failed (baseline 1781 + 4 new: `TestBidMarkRatioFloor` ×4)
+
+## 2026-05-01 — mmm01may26-3 exit investigation + exit reliability fixes
+
+**Context**: User triggered exit button for mmm01may26-3. Session had 4 CE + 6 PE positions (10 total) to close.
+
+**What happened (investigation findings)**:
+- Exit initiated at 09:09:14 UTC. Pre-flight ran and correctly reopened 2 PE positions (no close_order_id).
+- Round 1 started at 09:09:31 UTC with 10 positions.
+- ZERO close orders were placed. Session was killed by watchdog 75s later ("last beat 100s ago").
+- Root cause: `FILL_TIMEOUT=60s` per position × 10 positions ÷ 3 concurrent (semaphore) = ~200s needed. Watchdog threshold = 30s interval × 3 = 90s. Exit hung on slow exchange API → timeout killed it before any orders could be placed.
+- Options expired at 12:00 UTC (2h 51min after exit). Far OTM PE positions (75000/75500 with spot ~77300) likely expired worthless.
+
+**Fixes applied (3 changes)**:
+
+1. **`mmm_watchdog.py` (EXITING stuck detection)**: EXITING sessions now have a 300-second floor on beat timeout. `_check_beat_timeout` result is re-verified against 5-minute grace window before declaring stuck. Thread-dead detection still fires immediately.
+
+2. **`mmm_exit_all.py` (_run_exit_rounds)**: Added `monitor._health.record_beat()` at the start of each exit round. Keeps watchdog satisfied during multi-round exits where close_position API calls take time.
+
+3. **`mmm_close_at_5.py` (close_position) + `mmm_exit_all.py`**: Added optional `fill_timeout: int = None` parameter to `close_position()`. Passed to `smart_execute()`. Exit_all passes `fill_timeout=25` (25s reprice cycle) instead of the default 60s — ensures each round completes in bounded time.
+
+**Note on manual/other-algo positions**: Exit uses `reduce_only=True` — safe even with shared strikes. `_verify_and_alert_remaining` is alert-only (never places orders) — correctly designed for multi-algo environment.
+
+**Files**: `mmm_watchdog.py`, `mmm_exit_all.py`, `mmm_close_at_5.py` | **Tests**: 1785 passing (no change)
+
+## 2026-05-01 — Scissor exit redesign: paired groups + fill-sync + market cleanup + P&L report
+
+**Context**: mmm01may26-3 exit button failed — zero close orders placed, session killed by watchdog. Three improvement sessions to make the ✂️ exit clean, reliable, and P&L-verified.
+
+**Changes (all in `mmm_exit_all.py`):**
+
+1. **New constants**: `CLOSE_GROUP_SIZE=2`, `INTER_GROUP_DELAY_SEC=0.5`
+
+2. **Grouped paired close (`_run_exit_rounds`)**: Replaced flat `asyncio.gather(*all_tasks)` + shared semaphore with grouped paired execution: 2 CE + 2 PE close simultaneously per group (sorted ATM-closest first). This keeps delta balanced throughout the exit — market movement during close offsets both legs. `fill_timeout=25s` per position (was 60s default). Heartbeat recorded per round AND per group.
+
+3. **Phase 2 — Fill sync (`_exit_fill_sync`)**: After rounds, pull exchange fills via `_fill_syncer.sync()`. Sets `_fill_confirmed=True` on confirmed positions. Source of truth for "did the exchange execute the close?"
+
+4. **Phase 3 — Market cleanup (`_final_market_cleanup`)**: Scissor exit only (not kill switch). After fill sync, any position without `_fill_confirmed` gets a market close order (reduce_only=True). Uses same paired group logic. `reduce_only` = safe with manual/other-algo positions (fails gracefully if already gone). Second fill sync after cleanup confirms market fills.
+
+5. **Phase 4 — P&L report (`_exit_report_final_pnl`)**: Fires while monitor is still alive. Shows net realized P&L, premium collected, buyback cost. Sends Telegram + websocket event (`mmm_exit_pnl_report`).
+
+6. **Phase 5 — Exchange alert (`_verify_and_alert_remaining`)**: Existing alert-only exchange check, kept unchanged.
+
+**Kill switch (⚡) unchanged**: Phases 2+4+5 run for both; Phase 3 (market cleanup) is `if not kill_switch_mode`.
+
+**Files**: `mmm_exit_all.py`, `mmm_watchdog.py`, `mmm_close_at_5.py` | **Tests**: 1785 passing (no regressions)
+
+---
+
+## 2026-05-01 — Scissor exit: profit-protecting redesign (time-based, limit-only)
+
+**Problem**: Market cleanup phase used market orders for illiquid 0DTE options. Far-OTM near-expiry options have huge bid-ask spreads — a market order can close a $2 option for $50, destroying P&L. The exit should protect profit, not rush.
+
+**Design principle**: Scissor exit (✂️) = peaceful profit booking. Limit orders only, 10-minute patient window, delta-neutral pairs. If positions can't fill in 10 minutes they are near-worthless 0DTE options that will expire for free — market orders would cost more than the option's value. Kill switch (⚡) = emergency. Market orders. Unchanged.
+
+**Changes** (`mmm_exit_all.py`):
+- Replaced `MAX_EXIT_ROUNDS=3` (arbitrary fixed count) with `MAX_EXIT_DURATION_SEC=600` (10-minute time window)
+- `FILL_TIMEOUT_SCISSOR=60s` (was 25s) — patient limit orders, slow is OK
+- Extracted `_run_scissor_exit_loop()` (time-based, limit orders, loops until done or 10 min)
+- Extracted `_run_kill_switch_rounds()` (existing round logic, market orders, unchanged behaviour)
+- Extracted `_close_paired_groups()` helper shared by both paths (paired CE+PE, delta-neutral)
+- `run_exit_all` Phase 3: removed `_final_market_cleanup` from scissor path entirely; replaced with second fill sync only. Residual positions after 10 min are logged as "will expire" (not an error)
+
+**Changes** (`mmm_watchdog.py`):
+- EXITING session watchdog grace: 300s → 720s (12 minutes to cover 10-min exit window + overhead)
+
+**Files**: `mmm_exit_all.py`, `mmm_watchdog.py` | **Tests**: 1785 passing (no regressions)
+
+---
+
+## 2026-05-01 — mmm01may26-1 exit investigation + "Peaceful Exit" rename + P&L report fix
+
+**P&L investigation (mmm01may26-1)**:
+
+Last heartbeat before exit (15:31:19 IST): total_pnl=$39.36, realized=$49.05, unrealized=-$4.77, fees≈$4.92.
+After exit: realized=$46.78, fees=$6.69, **net P&L=$40.09** (exit improved P&L by $0.73).
+
+The "slippage from exit mechanism: ~$0". The user's "$50→$10" was a misread:
+- "$50" = watching `R` (realized $49.05) without subtracting unrealized (-$4.77) and fees (~$5)
+- Real pre-exit P&L = $39.36
+- Real post-exit P&L = $40.09 (BETTER than before)
+- Root cause of P&L below entry P&L: ATM CE+PE @ 77200 had negative unrealized (-$4.77) because BTC moved to the 77200 strike during the session; the exit closes at market prices confirmed this
+
+**Fixes applied**:
+1. **Exit P&L report** (`mmm_exit_all.py`): now shows `Net P&L (after fees)` prominently at the top = realized - exchange_fees. Also shows fees clearly. "EXIT COMPLETE" renamed to "PEACEFUL EXIT COMPLETE".
+2. **Frontend button** (`MMMDashboard.js`): tooltip renamed "Peaceful Exit — close all positions with limit orders (slow, profit-protecting)". Confirmation dialog explains paired close, no market orders, near-worthless positions expire.
+
+**Files**: `mmm_exit_all.py`, `MMMDashboard.js` | **Tests**: 1785 passing (no regressions)

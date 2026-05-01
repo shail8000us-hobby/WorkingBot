@@ -457,6 +457,18 @@ class MMMStorage:
             stored_strategy,
             session.get('params', {}),
         )
+        # ── Transient flag cleanup on session load ──────────────────────────
+        # _arbiter_decision_active is a per-beat transient flag set by the
+        # Coordination Arbiter during _heartbeat_inner().  It is reset to False
+        # at the start of each heartbeat (line 3464 in mmm_monitor.py), but if
+        # the session was saved mid-beat (e.g. during a STOP while arbiter was
+        # executing a Tier 1 action), the flag persists in storage as True.
+        # On session restore (backend restart / monitor reload), the flag starts
+        # as True from the loaded session — permanently blocking the profit
+        # ratchet gate (line ~3656: `not session.get('_arbiter_decision_active', False)`)
+        # until the next heartbeat resets it.  Clearing it here ensures the
+        # ratchet is never permanently blocked by a stale persisted flag.
+        session.pop('_arbiter_decision_active', None)
         return session
 
     def _backfill_session_side_premiums(self, session: Dict) -> None:

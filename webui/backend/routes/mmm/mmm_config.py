@@ -346,6 +346,7 @@ PARAM_RULES = {
     'shift_cooldown_sec':                {'type': int,   'min': 0,    'max': 3600,  'hot': True},
     # Close-at price source (bid vs mark)
     'close_at_use_bid':                  {'type': bool,  'min': None, 'max': None,  'hot': True},
+    'close_at_bid_mark_ratio_floor':     {'type': float, 'min': 0.0,  'max': 1.0,   'hot': True},
     # Gamma-Aware Lot Multiplier (T3-2)
     'gamma_aware_enabled':               {'type': bool,  'min': None, 'max': None,  'hot': True},
     'gamma_aware_max_multiplier':        {'type': float, 'min': 1.0,  'max': 3.0,   'hot': True},

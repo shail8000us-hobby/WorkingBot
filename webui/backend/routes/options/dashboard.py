@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
 from config.loader import get_config, get_api_credentials
 from webui.backend.sealed import sealed
+from services.delta_price_websocket import get_price_websocket
 
 log = logging.getLogger(__name__)
 
@@ -213,6 +214,15 @@ def _fetch_dashboard_fresh(is_background=False):
             store = get_closed_position_store()
             live_symbols = {p.get('product_symbol') for p in positions}
 
+            # Carry over prior-session realized P&L so re-entered positions don't show zero history.
+            positions = list(positions)  # materialize to allow mutation below
+            for p in positions:
+                sym = p.get('product_symbol', '')
+                if sym:
+                    prior = store.get_cumulative_pnl(sym)  # returns 0.0 if no history
+                    if prior != 0.0:
+                        p['partial_realized_pnl'] = prior
+
             # Immediate close detection: compare against the PREVIOUS dashboard response.
             # If a live (non-phantom) position was in the last response but is now absent
             # from live positions, record it right now — in the same fetch that first
@@ -237,6 +247,23 @@ def _fetch_dashboard_fresh(is_background=False):
 
             phantoms = store.get_phantom_positions(exclude_symbols=live_symbols)
             if phantoms:
+                # Seed bid/ask from WS cache on initial REST load so phantom rows don't
+                # show $0.00 before the first WS tick arrives.
+                # Use raw cache (not get_option_price) — phantom symbols may be stale
+                # beyond that method's 3-second freshness cutoff.
+                try:
+                    price_ws = get_price_websocket()
+                    with price_ws._option_prices_lock:
+                        prices_snapshot = dict(price_ws.option_prices)
+                    for p in phantoms:
+                        cached = prices_snapshot.get(p.get('product_symbol', ''))
+                        if cached:
+                            p['best_bid'] = cached.get('best_bid', 0)
+                            p['best_ask'] = cached.get('best_ask', 0)
+                            if p['best_bid'] > 0 and p['best_ask'] > 0:
+                                p['mid_price'] = (p['best_bid'] + p['best_ask']) / 2
+                except Exception:
+                    log.debug('[Dashboard] Phantom bid/ask cache lookup failed', exc_info=True)
                 positions = list(positions) + phantoms
                 log.debug(f"[Dashboard] Merged {len(phantoms)} phantom closed positions")
         except Exception as exc:

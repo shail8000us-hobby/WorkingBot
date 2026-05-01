@@ -1565,6 +1565,54 @@ class TestProfitRatchetSourcePresence(unittest.TestCase):
         self.assertIn('_arbiter_decision_active', ratchet_block,
                       'Ratchet block must check _arbiter_decision_active before firing')
 
+    def test_ratchet_outside_skip_to_pnl_guard(self):
+        """Ratchet block must appear BEFORE the `if _skip_to_pnl:` guard so it
+        fires even when safety/whipsaw/regime/cooldown blocks have set that flag.
+        Per design doc: ratchet only updates in-memory snapshots (no orders placed)
+        so it is safe to run outside the _skip_to_pnl gate."""
+        src = self._src()
+        ratchet_pos = src.find('profit_ratchet_enabled')
+        skip_guard_pos = src.find('\n        if _skip_to_pnl:\n            self._emit_heartbeat_data')
+        self.assertNotEqual(ratchet_pos, -1, 'profit_ratchet_enabled not found in mmm_monitor.py')
+        self.assertNotEqual(skip_guard_pos, -1, '_skip_to_pnl emit guard not found in mmm_monitor.py')
+        self.assertLess(ratchet_pos, skip_guard_pos,
+                        'Ratchet block must appear BEFORE the _skip_to_pnl guard in _heartbeat_inner()')
+
+
+class TestArbiterFlagClearedOnLoad(unittest.TestCase):
+    """_arbiter_decision_active must be removed from session when loaded from storage.
+
+    This is a per-beat transient flag. If the session was saved mid-beat (e.g.
+    during a STOP while arbiter was executing a Tier 1 action), the flag persists
+    in storage as True. On restore it would permanently block the profit ratchet
+    gate until the next heartbeat reset. Clearing it in _row_to_session() is the fix.
+    """
+
+    def _storage_src(self):
+        storage_path = os.path.join(os.path.dirname(__file__), '..', 'mmm_storage.py')
+        with open(storage_path) as f:
+            return f.read()
+
+    def test_flag_cleared_in_row_to_session(self):
+        src = self._storage_src()
+        row_to_session_start = src.find('def _row_to_session(')
+        self.assertNotEqual(row_to_session_start, -1, '_row_to_session not found in mmm_storage.py')
+        # Find next method boundary (~200 lines is more than enough for _row_to_session)
+        row_to_session_body = src[row_to_session_start:row_to_session_start + 5000]
+        next_def = row_to_session_body.find('\n    def ', 5)
+        method_body = row_to_session_body[:next_def] if next_def != -1 else row_to_session_body
+        self.assertIn("session.pop('_arbiter_decision_active', None)", method_body,
+                      '_row_to_session must clear _arbiter_decision_active on session load')
+
+    def test_flag_not_in_monitor_heartbeat_reset_only(self):
+        """The per-beat reset in mmm_monitor.py (line ~3464) is not enough by itself —
+        the storage clear must also exist."""
+        monitor_path = os.path.join(os.path.dirname(__file__), '..', 'mmm_monitor.py')
+        with open(monitor_path) as f:
+            src = f.read()
+        self.assertIn("session['_arbiter_decision_active'] = False", src,
+                      'Per-beat reset of _arbiter_decision_active must exist in mmm_monitor.py')
+
 
 class TestArbiterBeatCooldown(unittest.TestCase):
     """Arbiter must not double-fire on consecutive beats (mmm30apr26-1 incident).
@@ -1960,6 +2008,210 @@ class TestProfitTargetPhase1(unittest.TestCase):
                       '_check_profit_target must read profit_target_buffer_pct from params')
         self.assertIn('_auto_close_all', src,
                       '_check_profit_target must call _auto_close_all on hit')
+
+
+class TestArbiterDoubleSellPrevention(unittest.TestCase):
+    """Regression: proactive shift + arbiter firing same beat for same side (mmm01may26-1).
+
+    Root cause: _proactive_shift_scan (line ~3335) fires for PE, places orders, then
+    arbiter (line ~3464) evaluates and also fires defensive_shift for PE — cooldown
+    bypass (_arbiter_shift_bypass_cooldown) made shift_cooldown ineffective.
+    Fix: _process_strike_shift sets _shift_placed_this_beat_{side}=True on success;
+    arbiter block checks this flag and suppresses execution when True.
+    """
+
+    def test_shift_placed_flag_suppresses_arbiter_double_sell(self):
+        """If _shift_placed_this_beat_pe is True, arbiter defensive_shift on PE is suppressed."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._heartbeat_inner)
+        self.assertIn('_shift_placed_this_beat_', src,
+                      '_heartbeat_inner must check _shift_placed_this_beat_{side} flag')
+        self.assertIn('_double_sell', src,
+                      '_heartbeat_inner must have a _double_sell guard')
+        self.assertIn('arbiter_suppressed_double_sell', src,
+                      '_heartbeat_inner must log arbiter_suppressed_double_sell activity')
+
+    def test_flag_cleared_each_beat(self):
+        """_shift_placed_this_beat_{side} flags must be popped before proactive shift scan."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._heartbeat_inner)
+        self.assertIn("pop('_shift_placed_this_beat_ce'", src,
+                      '_heartbeat_inner must pop _shift_placed_this_beat_ce each beat')
+        self.assertIn("pop('_shift_placed_this_beat_pe'", src,
+                      '_heartbeat_inner must pop _shift_placed_this_beat_pe each beat')
+
+    def test_flag_set_on_shift_success(self):
+        """_process_strike_shift must set _shift_placed_this_beat_{side} on successful order."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._process_strike_shift)
+        self.assertIn('_shift_placed_this_beat_', src,
+                      '_process_strike_shift must set _shift_placed_this_beat_{side} on fill')
+
+    def test_double_sell_guard_checks_defensive_shift_only(self):
+        """Guard must be specific to defensive_shift — not suppress gamma/margin actions."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._heartbeat_inner)
+        # The guard must check action_type == 'defensive_shift'
+        self.assertIn("'defensive_shift'", src,
+                      "Double-sell guard must specifically check for 'defensive_shift' action")
+
+
+# =============================================================================
+# mmm01may26-1 post-mortem fixes
+# =============================================================================
+
+class TestProactiveShiftFallbackCap(unittest.TestCase):
+    """Proactive shift lot fallback must re-check position cap (Bug #1, mmm01may26-1)."""
+
+    def _make_session(self, total_lots, max_lots_per_side=300):
+        return {
+            'params': {'max_lots_per_side': max_lots_per_side},
+            'pe': {'total_lots': total_lots, 'active_lots': 0},
+            'ce': {'total_lots': 0, 'active_lots': 0},
+        }
+
+    def test_fallback_cap_enforced_in_source(self):
+        """_process_strike_shift must re-check position cap after fallback lot seeding."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._process_strike_shift)
+        self.assertIn('proactive_shift_fallback_cap', src,
+                      '_process_strike_shift must log proactive_shift_fallback_cap '
+                      'when fallback lots exceed position cap')
+
+    def test_combined_cap_check_in_source(self):
+        """Delta-neutral matching must use remaining_cap not raw max_per_side."""
+        import inspect
+        import webui.backend.routes.mmm.mmm_monitor as mon
+        src = inspect.getsource(mon.MMMMonitor._process_strike_shift)
+        self.assertIn('remaining_cap', src,
+                      '_process_strike_shift delta-neutral match must use remaining_cap '
+                      '(max_per_side minus existing total_lots) not raw max_per_side')
+
+
+class TestCombinedPositionSizeCheck(unittest.TestCase):
+    """check_combined_position_size must fire when CE+PE combined lots >= 2×max (Bug #2)."""
+
+    def _safety(self):
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety
+        return MMMSafety()
+
+    def _session(self, ce_total, pe_total, max_per_side=300):
+        return {
+            'params': {'max_lots_per_side': max_per_side},
+            'ce': {'total_lots': ce_total},
+            'pe': {'total_lots': pe_total},
+        }
+
+    def test_fires_at_cap(self):
+        s = self._safety()
+        events = s.check_combined_position_size(self._session(300, 300))
+        self.assertTrue(any(e['type'] == 'combined_position_cap' and
+                            e['action'] == 'stop_adjustments' for e in events),
+                        'combined check must block at 600 combined lots (max=300×2=600)')
+
+    def test_fires_above_cap(self):
+        s = self._safety()
+        events = s.check_combined_position_size(self._session(303, 300))
+        self.assertTrue(any(e['type'] == 'combined_position_cap' and
+                            e['action'] == 'stop_adjustments' for e in events),
+                        'combined check must block when combined > 600')
+
+    def test_warning_at_80pct(self):
+        s = self._safety()
+        events = s.check_combined_position_size(self._session(240, 241))
+        self.assertTrue(any(e['type'] == 'combined_position_cap' and
+                            e['action'] == 'continue' for e in events),
+                        'combined check must warn at 80% of combined cap')
+
+    def test_no_event_below_threshold(self):
+        s = self._safety()
+        events = s.check_combined_position_size(self._session(100, 100))
+        self.assertFalse(any(e['type'] == 'combined_position_cap' for e in events))
+
+    def test_called_from_run_all_checks(self):
+        """run_all_checks must call check_combined_position_size."""
+        import inspect
+        from webui.backend.routes.mmm.mmm_safety import MMMSafety
+        src = inspect.getsource(MMMSafety.run_all_checks)
+        self.assertIn('check_combined_position_size', src,
+                      'run_all_checks must invoke check_combined_position_size')
+
+
+class TestRegimeEnabledDefault(unittest.TestCase):
+    """regime_enabled must default to True in mmm_state DEFAULT_PARAMS (mmm01may26-1)."""
+
+    def test_regime_enabled_default_is_true(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertTrue(
+            DEFAULT_PARAMS.get('regime_enabled', False),
+            "DEFAULT_PARAMS['regime_enabled'] must be True — it defaulted to False "
+            "during mmm01may26-1, leaving the vol/gamma/trend regime off the entire session"
+        )
+
+
+# =============================================================================
+# Bid/mark sanity guard in _make_bid_fetch_fn
+# Frozen PE @ 75500: bid=$0.19 ask=$96.50 mark=$10.50 — wide spread anomaly
+# caused close_at_5 to flag as eligible and retry every heartbeat forever.
+# =============================================================================
+
+class TestBidMarkRatioFloor(unittest.TestCase):
+    """_make_bid_fetch_fn must return mark when bid/mark < close_at_bid_mark_ratio_floor."""
+
+    def _make_monitor_stub(self, bid, mark, floor=0.1):
+        """Build a minimal MMMMonitor-like object with the caches pre-populated."""
+        import webui.backend.routes.mmm.mmm_monitor as mon
+
+        class _Stub:
+            _bid_cache = {(75500.0, 'put'): bid}
+            _premium_cache = {(75500.0, 'put'): mark}
+            session = {'params': {'close_at_bid_mark_ratio_floor': floor}}
+
+        # Bind _make_bid_fetch_fn from MMMMonitor to our stub
+        stub = _Stub()
+        stub._make_bid_fetch_fn = mon.MMMMonitor._make_bid_fetch_fn.__get__(stub)
+        return stub
+
+    def test_normal_spread_returns_bid(self):
+        """When bid/mark >= floor, return bid (normal liquid market)."""
+        stub = self._make_monitor_stub(bid=4.0, mark=5.0, floor=0.1)
+        fn = stub._make_bid_fetch_fn()
+        result = fn(75500, 'put')
+        self.assertAlmostEqual(result, 4.0,
+                               msg='Normal spread (bid/mark=0.8): should return bid')
+
+    def test_anomalous_spread_returns_mark(self):
+        """When bid/mark < floor (extreme spread), return mark (illiquid quote guard)."""
+        stub = self._make_monitor_stub(bid=0.19, mark=10.50, floor=0.1)
+        fn = stub._make_bid_fetch_fn()
+        result = fn(75500, 'put')
+        self.assertAlmostEqual(result, 10.50,
+                               msg='Anomalous spread (bid/mark=0.018): should return mark '
+                                   'to prevent false-positive close_at_5 eligibility')
+
+    def test_bid_below_floor_prevents_close_at_5_eligibility(self):
+        """When mark > close_at_threshold and bid/mark < floor, close_at_5 must not trigger."""
+        stub = self._make_monitor_stub(bid=0.19, mark=10.50, floor=0.1)
+        fn = stub._make_bid_fetch_fn()
+        premium = fn(75500, 'put')  # should return mark=10.50
+        threshold = 5.0
+        self.assertGreater(premium, threshold,
+                           msg='With anomalous spread, returned premium must exceed threshold '
+                               'so scan_closeable_positions does not flag as eligible')
+
+    def test_floor_param_respected(self):
+        """custom close_at_bid_mark_ratio_floor param must be used."""
+        # With floor=0.5, bid=0.30, mark=1.00 → ratio=0.30 < 0.50 → return mark
+        stub = self._make_monitor_stub(bid=0.30, mark=1.00, floor=0.5)
+        fn = stub._make_bid_fetch_fn()
+        result = fn(75500, 'put')
+        self.assertAlmostEqual(result, 1.00,
+                               msg='With floor=0.5 and ratio=0.3, should return mark')
 
 
 if __name__ == '__main__':

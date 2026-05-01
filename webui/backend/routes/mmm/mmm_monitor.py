@@ -3335,6 +3335,8 @@ class MMMMonitor:
         if not _skip_to_pnl and (not _is_straddle_adj or _straddle_adj_allow_proactive) and session.get('params', {}).get('proactive_shift_enabled', True):
             session.pop('_proactive_shifted_ce', None)
             session.pop('_proactive_shifted_pe', None)
+            session.pop('_shift_placed_this_beat_ce', None)
+            session.pop('_shift_placed_this_beat_pe', None)
             await self._proactive_shift_scan(ce_now, pe_now)
 
         # Step 5.7: Breakeven Engine — compute portfolio breakeven awareness
@@ -3512,8 +3514,36 @@ class MMMMonitor:
                     # action immediately. Failures inside _execute_arbiter_decision
                     # are caught there and emit safety events; this try/except
                     # is a final safety net so heartbeat continuity is preserved.
+                    #
+                    # Double-sell guard: proactive_shift_scan (line ~3335) runs
+                    # before the arbiter. If it already placed orders for the same
+                    # side this beat, _shift_placed_this_beat_{side}=True. The
+                    # arbiter's defensive_shift on the same side would sell again —
+                    # suppress it. (The cooldown bypass in _arbiter_execute_defensive_
+                    # shift makes this otherwise impossible to catch via shift_cooldown.)
+                    _arb_side = _arb_decision.side or ''
+                    _double_sell = (
+                        _arb_decision.action_type == 'defensive_shift'
+                        and _arb_side
+                        and session.get(f'_shift_placed_this_beat_{_arb_side}')
+                    )
+                    if _double_sell:
+                        log.warning(
+                            f'[{sid}] Arbiter defensive_shift on {_arb_side.upper()} '
+                            f'SUPPRESSED: proactive shift already placed orders this beat '
+                            f'(trigger={_arb_decision.trigger}). Preventing double-sell.'
+                        )
+                        log_activity(
+                            'arbiter_suppressed_double_sell',
+                            f'[ARBITER] {_arb_decision.action_type} on {_arb_side.upper()} '
+                            f'suppressed — proactive shift already sold this beat',
+                            sid, 'warning',
+                            {'side': _arb_side, 'trigger': _arb_decision.trigger,
+                             'reason': 'proactive_shift_placed_same_beat'},
+                        )
                     try:
-                        await self._execute_arbiter_decision(_arb_decision, ce_now, pe_now)
+                        if not _double_sell:
+                            await self._execute_arbiter_decision(_arb_decision, ce_now, pe_now)
                         # Record execution time so evaluate() can enforce beat cooldown
                         from datetime import datetime as _dt, timezone as _tz
                         session['_arbiter_last_action_at'] = _dt.now(_tz.utc).isoformat()
@@ -3642,6 +3672,43 @@ class MMMMonitor:
             _skip_to_pnl = True
             log.info(f"[{sid}] Delta engine fired — suppressing premium trigger this beat")
 
+        # ── Profit Ratchet: re-anchor trigger snapshots at profit milestones ──
+        # Runs BEFORE the _skip_to_pnl guard because ratchet only updates in-memory
+        # trigger snapshots (no orders placed).  Per design doc: "Ratchet never
+        # places orders — update_trigger_snapshots() is pure in-memory. Safe to
+        # run outside _skip_to_pnl gate."  Moving it here ensures it fires even
+        # when safety/whipsaw/regime blocks have set _skip_to_pnl=True.
+        # Arbiter gate: skip when arbiter executed a Tier 1 action this beat.
+        # The arbiter's shift/close already calls update_trigger_snapshots() with
+        # the fill price — overwriting the ratchet's anchor would discard that.
+        _pr_step = params.get('profit_ratchet_step_usd', 0.0)
+        if (params.get('profit_ratchet_enabled', False) and _pr_step > 0
+                and not session.get('_arbiter_decision_active', False)):
+            _pr_pnl = _pnl_total(session)
+            _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
+            if _pr_pnl >= _pr_hwm + _pr_step:
+                _pr_new_hwm = int(_pr_pnl / _pr_step) * _pr_step
+                _pr_ce_snap = (session.get('ce', {}).get('trigger_snapshot', {})
+                               .get(_strike_key(session.get('ce', {}).get('active_strike', 0)), 0.0))
+                _pr_pe_snap = (session.get('pe', {}).get('trigger_snapshot', {})
+                               .get(_strike_key(session.get('pe', {}).get('active_strike', 0)), 0.0))
+                update_trigger_snapshots(session, ce_now, pe_now)
+                session['_profit_ratchet_hwm'] = _pr_new_hwm
+                session['_profit_ratchet_count'] = session.get('_profit_ratchet_count', 0) + 1
+                session['_profit_ratchet_last_pnl'] = round(_pr_pnl, 2)
+                log_activity(
+                    'profit_ratchet',
+                    (f'📈 PROFIT RATCHET #{session["_profit_ratchet_count"]}: '
+                     f'milestone ${_pr_new_hwm:.0f} (P&L ${_pr_pnl:.2f}) — '
+                     f'CE {_pr_ce_snap:.2f}→{ce_now:.2f}, '
+                     f'PE {_pr_pe_snap:.2f}→{pe_now:.2f}'),
+                    sid, 'info',
+                    {'milestone': _pr_new_hwm, 'pnl': round(_pr_pnl, 2),
+                     'ratchet_count': session['_profit_ratchet_count'],
+                     'ce_before': round(_pr_ce_snap, 2), 'ce_after': round(ce_now, 2),
+                     'pe_before': round(_pr_pe_snap, 2), 'pe_after': round(pe_now, 2)},
+                )
+
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
         # skip directly to P&L update so peak_pnl decays and session saves.
@@ -3692,43 +3759,6 @@ class MMMMonitor:
                 _theta_widened = session.get('_effective_min_trigger_move', _raw_trigger)
                 session['_effective_min_trigger_move'] = max(_ws_widened, _theta_widened)
                 session['_whipsaw_trigger_widened'] = True
-
-            # ── Profit Ratchet: re-anchor trigger snapshots at profit milestones ──
-            # When P&L crosses a new multiple of profit_ratchet_step_usd ($5→$10→$15...),
-            # call update_trigger_snapshots() so triggers stay sensitive to reversals
-            # after profit accumulates (prevents stale high-entry anchors). High-water
-            # mark guard: only fires on new profit highs, never during a drawdown.
-            # Between milestones: zero change to trigger behavior.
-            # Arbiter gate: skip when arbiter executed a Tier 1 action this beat.
-            # The arbiter's shift/close already calls update_trigger_snapshots() with
-            # the fill price — overwriting the ratchet's anchor would discard that.
-            _pr_step = params.get('profit_ratchet_step_usd', 0.0)
-            if (params.get('profit_ratchet_enabled', False) and _pr_step > 0
-                    and not session.get('_arbiter_decision_active', False)):
-                _pr_pnl = _pnl_total(session)
-                _pr_hwm = session.get('_profit_ratchet_hwm', 0.0)
-                if _pr_pnl >= _pr_hwm + _pr_step:
-                    _pr_new_hwm = int(_pr_pnl / _pr_step) * _pr_step
-                    _pr_ce_snap = (session.get('ce', {}).get('trigger_snapshot', {})
-                                   .get(_strike_key(session.get('ce', {}).get('active_strike', 0)), 0.0))
-                    _pr_pe_snap = (session.get('pe', {}).get('trigger_snapshot', {})
-                                   .get(_strike_key(session.get('pe', {}).get('active_strike', 0)), 0.0))
-                    update_trigger_snapshots(session, ce_now, pe_now)
-                    session['_profit_ratchet_hwm'] = _pr_new_hwm
-                    session['_profit_ratchet_count'] = session.get('_profit_ratchet_count', 0) + 1
-                    session['_profit_ratchet_last_pnl'] = round(_pr_pnl, 2)
-                    log_activity(
-                        'profit_ratchet',
-                        (f'📈 PROFIT RATCHET #{session["_profit_ratchet_count"]}: '
-                         f'milestone ${_pr_new_hwm:.0f} (P&L ${_pr_pnl:.2f}) — '
-                         f'CE {_pr_ce_snap:.2f}→{ce_now:.2f}, '
-                         f'PE {_pr_pe_snap:.2f}→{pe_now:.2f}'),
-                        sid, 'info',
-                        {'milestone': _pr_new_hwm, 'pnl': round(_pr_pnl, 2),
-                         'ratchet_count': session['_profit_ratchet_count'],
-                         'ce_before': round(_pr_ce_snap, 2), 'ce_after': round(ce_now, 2),
-                         'pe_before': round(_pr_pe_snap, 2), 'pe_after': round(pe_now, 2)},
-                    )
 
             trigger_result = evaluate_triggers(session, ce_now, pe_now)
             outcome = trigger_result['outcome']
@@ -6517,6 +6547,32 @@ class MMMMonitor:
                  'arbiter_full_capacity': _arb_requested > 0},
             )
             lots = fallback
+
+            # Position cap re-check: total_lots = active(0 after freeze) + frozen_total_lots.
+            # The cap in calculate_lots_to_sell fired (returned 0), but this fallback
+            # bypasses that result. Re-enforce the cap here so an already-exceeded
+            # frozen position cannot seed new lots. (Incident mmm01may26-1: 303 frozen
+            # + 290 fallback = 593 lots, cap was 300.)
+            _max_per_side = params.get('max_lots_per_side', 100)
+            _current_total = session.get(side, {}).get('total_lots', 0)
+            if _current_total + lots > _max_per_side:
+                _capped_lots = max(_max_per_side - _current_total, 0)
+                log.warning(
+                    f"[{sid}] PROACTIVE SHIFT FALLBACK CAP: {side.upper()} "
+                    f"total={_current_total} + fallback={lots} > max={_max_per_side} "
+                    f"→ capped to {_capped_lots}"
+                )
+                log_activity(
+                    'proactive_shift_fallback_cap',
+                    f'🛑 Proactive Shift Fallback CAP: {side.upper()} '
+                    f'total_lots={_current_total} + seeded={lots} > max={_max_per_side} '
+                    f'→ capped to {_capped_lots}',
+                    sid, 'warning',
+                    {'side': side, 'total_lots': _current_total,
+                     'seeded': lots, 'max_per_side': _max_per_side,
+                     'capped_to': _capped_lots},
+                )
+                lots = _capped_lots
         # ── END PROACTIVE SHIFT LOT FALLBACK ──────────────────────────────
 
         # ── DELTA-NEUTRAL LOT MATCHING ────────────────────────────────────
@@ -6556,13 +6612,19 @@ class MMMMonitor:
                     mult = max(1.0 - lot_reduction, 0.1)
                     # Floor at formula lots — never go below what hedging demands
                     target = max(int(opposite_active * mult + 0.999), lots)
-                # Respect position cap (after freeze, active_lots for this side is 0)
+                # Respect position cap (after freeze, active_lots for this side is 0).
+                # remaining_cap = max_per_side - total_lots (active=0 + frozen).
+                # Using total_lots prevents the delta-neutral match from inflating into
+                # already-exceeded frozen capacity. (Incident mmm01may26-1: match would
+                # have produced min(290, 300, cap) = 290 despite frozen=303.)
                 max_per_side = params.get('max_lots_per_side', 100)
+                _dn_current_total = session.get(side, {}).get('total_lots', 0)
+                remaining_cap = max(max_per_side - _dn_current_total, 0)
                 # Fix A5: Cap inflation — don't jump from formula lots to opposite lots
                 # uncapped. March 12 incident inflated 81→126 creating destructive cascade.
                 max_inflate = params.get('shift_match_max_inflate_mult', 1.5)
                 inflate_cap = int(pre_match_lots * max_inflate + 0.999)
-                lots = min(target, max_per_side, inflate_cap)
+                lots = min(target, remaining_cap, inflate_cap)
                 if lots > pre_match_lots:
                     if trend_tier >= 1 and params.get('trend_boost_enabled', False) and is_safe_side:
                         trend_note = f' (trend T{trend_tier} boost {boost_mult:.1f}x)'
@@ -6659,6 +6721,9 @@ class MMMMonitor:
 
         if result.get('success'):
             fill_price = result.get('fill_price', 0)
+            # Mark that a real shift order was placed this beat so the arbiter
+            # can detect it and avoid double-selling the same side.
+            session[f'_shift_placed_this_beat_{side}'] = True
 
             # Record exchange commission via ledger (CRIT-1 fix)
             _od = result.get('order_details') or {}
@@ -11720,17 +11785,38 @@ class MMMMonitor:
         theoretical mark price that can lag reality.
 
         Falls back to mark price if bid not available.
+
+        Bid sanity guard: illiquid options sometimes have bid << mark due to
+        market makers quoting extremely wide (e.g. bid=$0.19, ask=$96.50,
+        mark=$10.50). In this case the bid is not representative — it cannot
+        be executed and does NOT mean the option is cheap. Using it causes
+        close_at_5 to flag the position as eligible (bid < threshold) and then
+        fail every heartbeat because smart_execute with max_buy_price=threshold
+        cannot fill when the ask is 500x above the bid.
+
+        Rule: if bid/mark < close_at_bid_mark_ratio_floor (default 0.1), the
+        bid is anomalous — return mark instead so close_at_5 eligibility is
+        evaluated against the fair value, not a stale/unexecutable quote.
         """
         bid_cache = getattr(self, '_bid_cache', {})
         mark_cache = getattr(self, '_premium_cache', {})
+        params = self.session.get('params', {})
+        bid_mark_floor = params.get('close_at_bid_mark_ratio_floor', 0.1)
 
         def fetch(strike, option_type):
             key = (float(strike), option_type)
-            # Prefer bid price, fall back to mark
-            if key in bid_cache and bid_cache[key] > 0:
-                return bid_cache[key]
-            if key in mark_cache:
-                return mark_cache[key]
+            bid = bid_cache.get(key, 0)
+            mark = mark_cache.get(key)
+
+            if bid > 0:
+                # Sanity: if bid is < bid_mark_floor × mark, the spread is extreme and
+                # the bid is not executable. Return mark so close_at_5 uses fair value
+                # for eligibility instead of an unexecutable wide-spread quote.
+                if mark and mark > 0 and bid < mark * bid_mark_floor:
+                    return mark
+                return bid
+            if mark is not None:
+                return mark
             # If neither cache has it, return None so scan_closeable_positions skips it.
             # (Matches _make_fetch_fn audit fix — returning 0 would make 0 <= threshold
             #  appear eligible and trigger a spurious market buyback at wrong price.)

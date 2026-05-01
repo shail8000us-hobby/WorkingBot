@@ -118,6 +118,7 @@ ACTIVITY_TYPES = {
     'shift_post_fill_error': 'Shift Post-Fill Error',
     'proactive_shift': 'Proactive Shift',
     'proactive_shift_lot_fallback': 'Proactive Shift Lot Fallback',
+    'proactive_shift_fallback_cap': 'Proactive Shift Fallback Cap',
     'delta_neutral_match': 'Delta-Neutral Match',
     'cap_auto_shift': 'Cap Auto Shift',
     'capacity_full': 'Capacity Full',
@@ -239,6 +240,7 @@ ACTIVITY_TYPES = {
     'arbiter_defensive_shift_exec':   'Arbiter Defensive Shift',
     'arbiter_gamma_close_exec':       'Arbiter Gamma Close',
     'arbiter_margin_recovery_exec':   'Arbiter Margin Recovery',
+    'arbiter_suppressed_double_sell': 'Arbiter Suppressed (Double-Sell Guard)',
     'regime_emergency_arbiter':       'Regime Emergency (Arbiter)',
 
     # Profit Ratchet
@@ -325,6 +327,7 @@ ACTIVITY_CATEGORIES = {
                     'shift_no_strike', 'shift_aborted', 'shift_candidate_stale',
                     'shift_fallback_below_floor', 'shift_sell_failed_unfreeze',
                     'proactive_shift', 'proactive_shift_lot_fallback',
+                    'proactive_shift_fallback_cap',
                     'delta_neutral_match', 'cap_auto_shift',
                     'reversal_skip', 'reversal_skip_force_through',
                     'cooldown_blocking', 'itm_guard_blocked', 'itm_guard_bypassed',
@@ -368,6 +371,7 @@ ACTIVITY_CATEGORIES = {
                'reverse_disabled',
                'arbiter_tier1', 'arbiter_stale_signal', 'arbiter_defensive_shift_exec',
                'arbiter_gamma_close_exec', 'arbiter_margin_recovery_exec',
+               'arbiter_suppressed_double_sell',
                'regime_emergency_arbiter',
                'profit_target_hit'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',

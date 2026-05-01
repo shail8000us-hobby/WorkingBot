@@ -142,6 +142,7 @@ import VolSmilePanel from './VolSmilePanel';
 import RollManagerModal from './RollManagerModal';
 import AutoLoopBanner from './AutoLoopBanner';
 import ClosePositionDialog from './ClosePositionDialog';
+import ReducePositionDialog from './ReducePositionDialog';
 
 // Phase 3: Lazy load heavy components
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
@@ -562,19 +563,28 @@ const OptionsPanel = () => {
   }, [selectedExpiries]);
 
   // Active slice for the current expiry.
-  // When expiryGroupKey is 'ALL' (no filter applied) and there is no data stored directly under
-  // 'ALL', build a merged view from individual per-expiry scopes whose groups contain symbols
-  // that are currently visible. This keeps groups visible even when the expiry filter is cleared.
+  // - Exact key match (single expiry or previously saved composite): use directly.
+  // - 'ALL' or composite key without a direct match: merge individual per-expiry slices
+  //   whose groups contain currently-visible symbols. This handles two cases:
+  //   (a) user clears the expiry filter → 'ALL'
+  //   (b) user selects multiple expiries → composite key like "010526|290526" that was
+  //       never stored directly; groups exist under each individual expiry key and must
+  //       be merged so they remain visible.
   const activeExpiryData = useMemo(() => {
     const direct = allExpiryGroupData[expiryGroupKey];
     if (direct) return direct;
 
-    if (expiryGroupKey === 'ALL') {
+    const isComposite = expiryGroupKey.includes('|');
+    const componentKeys = isComposite ? expiryGroupKey.split('|') : null;
+
+    if (expiryGroupKey === 'ALL' || isComposite) {
       const visibleSymbols = new Set(positions.map((p) => p.product_symbol));
       const merged = { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       let hadAny = false;
       Object.entries(allExpiryGroupData).forEach(([key, slice]) => {
         if (key.includes('|') || key === 'ALL') return; // skip composite/ALL keys
+        // For composite mode, only include slices that belong to one of the selected expiries
+        if (isComposite && !componentKeys.includes(key)) return;
         const groups = slice.groups || {};
         const hasVisible = Object.values(groups).some((g) =>
           (g.symbols || []).some((s) => visibleSymbols.has(s))
@@ -594,10 +604,10 @@ const OptionsPanel = () => {
     return { groups: {}, collapsed: {}, order: [], groupOrder: [] };
   }, [allExpiryGroupData, expiryGroupKey, positions]);
 
-  // In 'ALL' merged mode, groups live under their original expiry keys, not under 'ALL'.
+  // In 'ALL' / composite merged mode, groups live under their original per-expiry keys.
   // This helper finds the actual storage key for a group so write operations target the right key.
   const getGroupActualKey = useCallback((groupId) => {
-    if (expiryGroupKey !== 'ALL') return expiryGroupKey;
+    if (expiryGroupKey !== 'ALL' && !expiryGroupKey.includes('|')) return expiryGroupKey;
     for (const [key, slice] of Object.entries(allExpiryGroupData)) {
       if (key.includes('|') || key === 'ALL') continue;
       if (slice.groups && slice.groups[groupId]) return key;
@@ -1007,6 +1017,10 @@ const OptionsPanel = () => {
 
   // Dialog state
   const [closeDialog, setCloseDialog] = useState({ open: false, position: null });
+  const [reducePercent, setReducePercent] = useState('10');
+  const [reduceDialog, setReduceDialog] = useState({ open: false, rows: [], pct: 0 });
+  const [reduceExecuting, setReduceExecuting] = useState(false);
+  const reduceInFlightRef = useRef(false); // sync guard — prevents double-fire before React re-renders
   const [addDialog, setAddDialog] = useState({
     open: false,
     position: null,
@@ -1819,7 +1833,7 @@ const OptionsPanel = () => {
       Object.values(positionGroups).flatMap((g) => g.symbols)
     );
     const ordered = [];
-    // 1. Each group's positions in groupOrder display order
+    // 1. Each group's positions in groupOrder display order (group order is unchanged)
     groupOrder.forEach((gid) => {
       const grp = positionGroups[gid];
       if (!grp) return;
@@ -1827,10 +1841,18 @@ const OptionsPanel = () => {
         if (grp.symbols.includes(p.product_symbol)) ordered.push(p);
       });
     });
-    // 2. Ungrouped positions
-    sortedPositions.forEach((p) => {
-      if (!assigned.has(p.product_symbol)) ordered.push(p);
+    // 2. Ungrouped positions — always enforce: open Calls → open Puts → closed.
+    // This is a stable sort so relative order within each bucket (expiry, custom
+    // drag order, strike, size) is preserved from sortedPositions.
+    const ungroupedRaw = sortedPositions.filter((p) => !assigned.has(p.product_symbol));
+    const ungrouped = [...ungroupedRaw].sort((a, b) => {
+      if (a.is_closed !== b.is_closed) return a.is_closed ? 1 : -1;
+      const aIsCall = a.product_symbol.startsWith('C-');
+      const bIsCall = b.product_symbol.startsWith('C-');
+      if (aIsCall !== bIsCall) return aIsCall ? -1 : 1;
+      return 0;
     });
+    ungrouped.forEach((p) => ordered.push(p));
     return ordered;
   }, [sortedPositions, positionGroups, groupOrder]);
 
@@ -2182,6 +2204,82 @@ const OptionsPanel = () => {
     }
 
     // Clear result after 5 seconds
+    setTimeout(() => setOrderResult(null), 5000);
+  };
+
+  const handleReduceSelected = () => {
+    const pct = parseFloat(reducePercent);
+    if (!pct || pct <= 0 || pct >= 100) return;
+    const selected = sortedPositions.filter(
+      (p) => selectedStrikes[p.product_symbol] && !p.is_closed
+    );
+    if (selected.length === 0) return;
+    const rows = selected.map((p) => {
+      const currentSize = Math.abs(p.size);
+      const lotsToClose = Math.max(1, Math.ceil(currentSize * pct / 100));
+      return {
+        position: p,
+        currentSize,
+        lotsToClose,
+        action: p.size < 0 ? 'BUY' : 'SELL',
+        remaining: currentSize - lotsToClose,
+      };
+    });
+    setReduceDialog({ open: true, rows, pct });
+  };
+
+  const confirmReduceSelected = async () => {
+    // Sync ref guard — prevents double-fire in the gap before React re-renders executing=true
+    if (reduceInFlightRef.current) return;
+    reduceInFlightRef.current = true;
+
+    const { rows } = reduceDialog;
+    const actionable = rows.filter((r) => r.lotsToClose >= 1);
+
+    // Close dialog and clear inputs immediately — before any await — so there is no
+    // window where the user could re-trigger while orders are in flight.
+    setReduceExecuting(true);
+    setReduceDialog({ open: false, rows: [], pct: 0 });
+    setReducePercent('');
+    setSelectedStrikes({}); // deselect all rows so reduce can't fire again accidentally
+
+    // Fire all reduce orders concurrently — same behaviour as the batch order button
+    const results = await Promise.all(
+      actionable.map(async (r) => {
+        const midPrice = ((r.position.best_bid || 0) + (r.position.best_ask || 0)) / 2;
+        try {
+          const { data } = await api.post('/api/options/close', {
+            symbol: r.position.product_symbol,
+            size: r.lotsToClose,
+            confirm: true,
+            order_preference: 'maker_first',
+            limit_price: midPrice > 0 ? midPrice : undefined,
+          });
+          if (data?.success) {
+            const execType = data.execution_type || 'unknown';
+            if (isOrderFilled(execType)) soundManager.playTradeFilled();
+            return { success: true };
+          }
+          return { success: false, error: data?.error || `Failed for ${r.position.product_symbol}` };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      })
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const lastError = results.find((r) => !r.success)?.error || null;
+
+    setReduceExecuting(false);
+    reduceInFlightRef.current = false;
+
+    if (successCount > 0) {
+      setOrderResult({ type: 'success', message: `Reduced ${successCount} position${successCount !== 1 ? 's' : ''} — limit orders placed at mid-price` });
+      fetchDashboard();
+    }
+    if (lastError) {
+      setOrderResult({ type: 'error', message: lastError });
+    }
     setTimeout(() => setOrderResult(null), 5000);
   };
 
@@ -3550,6 +3648,11 @@ const OptionsPanel = () => {
             lastDataUpdate={lastDataUpdate}
             manualPnL={manualPnL}
             manualPnLBadge={<ManualPnLBadge value={manualPnL} onChange={setManualPnL} />}
+            reducePercent={reducePercent}
+            onReducePercentChange={setReducePercent}
+            selectedStrikesCount={Object.values(selectedStrikes).filter(Boolean).length}
+            onReduceSelected={handleReduceSelected}
+            feesMap={feesMap}
           />
 
           {/* ── Group Manager Strip ──────────────────────────────────── */}
@@ -3786,7 +3889,8 @@ const OptionsPanel = () => {
               </Button>
             </Paper>
           ) : (
-            <TableContainer component={Paper} sx={{ maxHeight: 500, width: '100%', overflowX: 'auto' }}>
+            <>
+              <TableContainer component={Paper} sx={{ maxHeight: 500, width: '100%', overflowX: 'auto' }}>
               <Table stickyHeader size="small">
                 <TableHead>
                   <TableRow>
@@ -4421,10 +4525,11 @@ const OptionsPanel = () => {
                           }
                         });
 
-                        // Render ungrouped positions
+                        // Render ungrouped positions — use visualOrderedPositions which
+                        // already applies the default Call → Put → Closed ordering.
                         const ungroupedPositions = hasGroups
-                          ? sortedPositions.filter((p) => !assignedSymbols.has(p.product_symbol))
-                          : sortedPositions;
+                          ? visualOrderedPositions.filter((p) => !assignedSymbols.has(p.product_symbol))
+                          : visualOrderedPositions;
 
                         if (hasGroups && ungroupedPositions.length > 0) {
                           // Ungrouped header — also a DroppableGroupHeader so dragging
@@ -4454,6 +4559,7 @@ const OptionsPanel = () => {
                 </DndContext>
               </Table>
             </TableContainer>
+            </>
           )}
 
           {/* F3: Expiry Greek Subtotals — shown when any Greek column is visible */}
@@ -4680,6 +4786,16 @@ const OptionsPanel = () => {
         position={closeDialog.position}
         onClose={() => setCloseDialog({ open: false, position: null })}
         onConfirm={confirmClose}
+      />
+
+      {/* Reduce by % dialog */}
+      <ReducePositionDialog
+        open={reduceDialog.open}
+        rows={reduceDialog.rows}
+        pct={reduceDialog.pct}
+        executing={reduceExecuting}
+        onClose={() => { if (!reduceExecuting) setReduceDialog({ open: false, rows: [], pct: 0 }); }}
+        onConfirm={confirmReduceSelected}
       />
 
       <AddPositionDialog

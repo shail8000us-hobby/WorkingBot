@@ -7,8 +7,10 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box,
+  Button,
   Chip,
   LinearProgress,
+  TextField,
   Tooltip,
   Typography,
 } from '@mui/material';
@@ -30,6 +32,11 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   lastDataUpdate,
   manualPnL = 0,
   manualPnLBadge = null,
+  reducePercent = '',
+  onReducePercentChange,
+  selectedStrikesCount = 0,
+  onReduceSelected,
+  feesMap = {},
 }) {
   // Phase 6.6: Stale data detection — tick every second (hooks must be before early return)
   const [dataAgeSec, setDataAgeSec] = useState(0);
@@ -45,8 +52,13 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
 
   if (!sortedPositions || sortedPositions.length === 0) return null;
 
-  const livePnl = sortedPositions.reduce((sum, p) => sum + (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0), 0);
+  const { livePnl, totalFees } = sortedPositions.reduce((acc, p) => {
+    acc.livePnl += (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
+    acc.totalFees += feesMap[p.product_symbol] != null ? Number(feesMap[p.product_symbol]) : 0;
+    return acc;
+  }, { livePnl: 0, totalFees: 0 });
   const totalPnl = livePnl + manualPnL;
+  const netPnl = totalPnl - totalFees;
   const callCount = sortedPositions.filter((p) => isCallSymbol(p.product_symbol)).length;
   const putCount = sortedPositions.filter((p) => isPutSymbol(p.product_symbol)).length;
 
@@ -401,6 +413,18 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           </Tooltip>
 
           <Box sx={metricRowSx}>
+            <Typography sx={metricLabelSx}>Total Fees</Typography>
+            <Typography sx={metricValueSx('#f87171')}>
+              {totalFees > 0 ? formatPnl(-totalFees) : '$0.00'}
+            </Typography>
+          </Box>
+
+          <Box sx={metricRowSx}>
+            <Typography sx={metricLabelSx}>Net P&amp;L</Typography>
+            <Typography sx={metricValueSx(getPnlColor(netPnl))}>{formatPnl(netPnl)}</Typography>
+          </Box>
+
+          <Box sx={metricRowSx}>
             <Typography sx={metricLabelSx}>Live PnL</Typography>
             <Typography sx={metricValueSx(getPnlColor(livePnl))}>{formatPnl(livePnl)}</Typography>
           </Box>
@@ -490,6 +514,134 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
                   </Typography>
                 </Box>
               </Tooltip>
+
+              {/* ── REDUCE control row ─────────────────────────────── */}
+              <Box sx={{ mt: 0.55, borderTop: `1px dashed ${alpha('#f59e0b', 0.18)}`, pt: 0.45 }}>
+                <Box
+                  sx={{
+                    display: 'grid',
+                    gridTemplateColumns: '44px 1fr auto auto auto',
+                    gap: 0.6,
+                    alignItems: 'center',
+                    px: 0.5,
+                    py: 0.45,
+                    borderRadius: 1,
+                    border: `1px solid ${alpha('#f59e0b', selectedStrikesCount > 0 && reducePercent ? 0.4 : 0.18)}`,
+                    bgcolor: alpha('#f59e0b', selectedStrikesCount > 0 ? 0.07 : 0.03),
+                    transition: 'border-color 180ms ease, background-color 180ms ease',
+                  }}
+                >
+                  {/* REDUCE badge */}
+                  <Box sx={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    px: 0.55,
+                    py: 0.18,
+                    borderRadius: 0.6,
+                    bgcolor: alpha('#f59e0b', 0.15),
+                    border: `1px solid ${alpha('#f59e0b', 0.35)}`,
+                  }}>
+                    <Typography sx={{
+                      color: '#f59e0b',
+                      fontSize: '0.62rem',
+                      fontWeight: 900,
+                      letterSpacing: '0.07em',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      lineHeight: 1,
+                    }}>
+                      REDUCE
+                    </Typography>
+                  </Box>
+
+                  {/* Status text */}
+                  <Typography sx={{
+                    fontSize: '0.61rem',
+                    color: selectedStrikesCount > 0 ? '#f59e0b' : alpha('#64748b', 0.9),
+                    fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    letterSpacing: '0.03em',
+                    fontWeight: selectedStrikesCount > 0 ? 700 : 500,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}>
+                    {selectedStrikesCount > 0
+                      ? `${selectedStrikesCount} strike${selectedStrikesCount !== 1 ? 's' : ''} selected`
+                      : 'select strikes in table ↓'}
+                  </Typography>
+
+                  {/* % input — slim, amber */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                    <TextField
+                      size="small"
+                      type="number"
+                      value={reducePercent}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (onReducePercentChange && (v === '' || (Number(v) > 0 && Number(v) < 100))) {
+                          onReducePercentChange(v);
+                        }
+                      }}
+                      placeholder="0"
+                      inputProps={{ min: 1, max: 99, step: 1 }}
+                      sx={{
+                        width: 46,
+                        '& .MuiOutlinedInput-root': {
+                          fontSize: '0.78rem',
+                          fontWeight: 900,
+                          fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                          color: reducePercent ? '#f59e0b' : alpha('#94a3b8', 0.8),
+                          bgcolor: alpha('#f59e0b', reducePercent ? 0.08 : 0.03),
+                          '& fieldset': { borderColor: alpha('#f59e0b', reducePercent ? 0.5 : 0.22) },
+                          '&:hover fieldset': { borderColor: alpha('#f59e0b', 0.6) },
+                          '&.Mui-focused fieldset': { borderColor: '#f59e0b', borderWidth: 1.5 },
+                        },
+                        '& .MuiInputBase-input': { py: 0.28, px: 0.45, textAlign: 'center' },
+                        '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none' },
+                      }}
+                    />
+                    <Typography sx={{
+                      fontSize: '0.7rem',
+                      color: reducePercent ? '#f59e0b' : alpha('#64748b', 0.7),
+                      fontWeight: 800,
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                    }}>%</Typography>
+                  </Box>
+
+                  {/* GO button */}
+                  <Button
+                    size="small"
+                    variant="contained"
+                    disabled={
+                      !reducePercent ||
+                      Number(reducePercent) <= 0 ||
+                      Number(reducePercent) >= 100 ||
+                      selectedStrikesCount === 0
+                    }
+                    onClick={onReduceSelected}
+                    sx={{
+                      fontSize: '0.65rem',
+                      py: 0.3,
+                      px: 1.1,
+                      minWidth: 0,
+                      fontWeight: 900,
+                      letterSpacing: '0.06em',
+                      fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                      bgcolor: '#f59e0b',
+                      color: '#0f172a',
+                      boxShadow: `0 0 10px ${alpha('#f59e0b', 0.35)}`,
+                      '&:hover': { bgcolor: '#fbbf24', boxShadow: `0 0 14px ${alpha('#f59e0b', 0.5)}` },
+                      '&.Mui-disabled': {
+                        bgcolor: alpha('#334155', 0.4),
+                        color: alpha('#475569', 0.55),
+                        boxShadow: 'none',
+                      },
+                    }}
+                  >
+                    GO
+                  </Button>
+                </Box>
+              </Box>
             </>
           ) : (
             <Typography sx={{ color: alpha('#cbd5e1', 0.74), fontSize: '0.74rem', py: 0.5 }}>

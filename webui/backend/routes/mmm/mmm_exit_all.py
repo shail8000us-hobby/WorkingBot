@@ -42,14 +42,26 @@ def _enqueue_exit_event(sid, event_type, details):
 
 log = logging.getLogger('mmm_exit_all')
 
-# Max closing rounds before giving up and stopping as partial
-MAX_EXIT_ROUNDS = 3
+# ── Scissor exit: patient, profit-protecting limit orders ─────────────────────
+# 10-minute window of limit-order attempts before declaring residual positions
+# as "near-worthless 0DTE — will expire". Market orders are never used for scissor
+# exit because far-OTM options near expiry have huge spreads that destroy P&L.
+# Expiry is always free; a market order on illiquid options is always expensive.
+MAX_EXIT_DURATION_SEC = 600   # 10-minute patient window for scissor exit
+FILL_TIMEOUT_SCISSOR = 60     # Seconds per limit order attempt (slow = OK)
+INTER_PASS_DELAY_SEC = 2      # Pause between passes so fills land on exchange
 
-# Seconds to wait between rounds (lets exchange settle)
-INTER_ROUND_DELAY_SEC = 1
+# ── Kill switch exit: fast, market orders (emergency only) ────────────────────
+MAX_KILL_ROUNDS = 3            # Kill switch: at most 3 quick passes
+INTER_KILL_ROUND_DELAY_SEC = 1 # Kill switch: 1s between rounds
 
-# Max concurrent close orders per side (limits Delta Exchange API pressure)
-MAX_CONCURRENT_CLOSES_PER_SIDE = 3
+# ── Both modes: paired CE+PE group size ───────────────────────────────────────
+# Paired CE+PE closing keeps delta balanced throughout the exit window — market
+# movement during closes offsets both sides rather than leaving one side naked.
+CLOSE_GROUP_SIZE = 2
+
+# Seconds to wait between groups within a pass (exchange settle, API relief)
+INTER_GROUP_DELAY_SEC = 0.5
 
 
 # =============================================================================
@@ -147,13 +159,34 @@ async def run_exit_all(monitor) -> None:
         except Exception as _perp_err:
             log.error(f"[{sid}] EXIT ALL: Failed to close perp hedge: {_perp_err}")
 
-        # ── Close options positions (CE/PE) via round-based logic ──
-        # Kill switch → market orders (immediate fill, no price-improvement wait).
-        # Normal exit  → limit orders (smart_execute with repricing).
+        # ── Close options positions (CE/PE) ────────────────────────────────────
+        # Kill switch → fast market orders (3 rounds, no waiting).
+        # Scissor exit → patient limit orders (10-minute window, delta-neutral pairs).
         await _run_exit_rounds(monitor, use_market_orders=kill_switch_mode)
     except Exception as e:
         log.error(f"[{sid}] EXIT ALL: Unexpected exception during exit rounds: {e}", exc_info=True)
         session['_exit_all_partial'] = True
+
+    # ── Phase 2: Fill sync — pull exchange fills to lock in realized P&L ────────
+    # Runs AFTER rounds so that close_order_ids set by close_position() are synced.
+    # Sets _fill_confirmed=True on positions whose orders were confirmed on exchange.
+    # This is the source of truth for "did the exchange actually execute the close?"
+    await _exit_fill_sync(monitor, session, sid)
+
+    # ── Phase 3: Second fill sync (both modes) ──────────────────────────────────
+    # A second fill sync catches fills that landed after the first sync ran
+    # (e.g. orders that filled during the fill sync's own API call window).
+    # No market-order cleanup for scissor exit: any position the 10-minute limit
+    # loop could not close is a far-OTM 0DTE option worth near zero. Closing at a
+    # market order's wide spread destroys more P&L than simply letting it expire.
+    # Kill switch already used market orders in its rounds — no extra cleanup needed.
+    await _exit_fill_sync(monitor, session, sid)
+
+    # ── Phase 4: Final P&L report ────────────────────────────────────────────────
+    # Compute and emit final realized P&L to Telegram + frontend.
+    # This runs while the monitor is still alive so the operator sees the result
+    # before the session disappears from the UI.
+    _exit_report_final_pnl(session, sid)
 
     # Record completion timestamp
     completed_at = datetime.now(timezone.utc).isoformat()
@@ -170,12 +203,10 @@ async def run_exit_all(monitor) -> None:
         log.warning(f"[{sid}] EXIT ALL COMPLETE: all positions closed")
         _emit_exit_completed(sid, completed_at, initiated_at)
 
-    # --- Exchange-side alert-only verification ---
-    # Query the exchange to detect any remaining positions at managed strikes.
-    # This is ALERT-ONLY — no orders are placed here. Multiple algos can share
-    # the same strike, so we cannot safely close exchange positions without
-    # knowing which session owns them. Session-internal safety re-close (for
-    # unconfirmed-closed positions) is handled earlier via _collect_side_positions.
+    # ── Phase 5: Exchange-side alert-only verification ───────────────────────────
+    # Query the exchange for open positions at ALL strikes this session ever managed.
+    # ALERT-ONLY — never places orders (multiple algos may share strikes; we cannot
+    # safely close exchange positions without knowing which session owns them).
     await _verify_and_alert_remaining(monitor, session, sid)
 
     # Zero unrealized_pnl in-memory so stop()'s full save writes 0.0.
@@ -240,108 +271,78 @@ async def run_exit_all(monitor) -> None:
 # =============================================================================
 
 async def _run_exit_rounds(monitor, use_market_orders: bool = False) -> None:
-    """Execute up to MAX_EXIT_ROUNDS of position closing.
+    """Execute position closing.
 
-    Args:
-        use_market_orders: When True (kill switch mode), each close_position call
-                           uses order_type='market' for immediate fills at any price.
-                           When False (normal exit), uses limit orders with repricing.
+    Kill switch mode (use_market_orders=True):
+        Fast, up to MAX_KILL_ROUNDS passes, market orders at any price.
+
+    Scissor exit (use_market_orders=False):
+        Patient, limit orders only, up to MAX_EXIT_DURATION_SEC (10 minutes).
+        CE+PE close simultaneously in paired groups — delta stays balanced.
+        Positions that cannot fill within 10 minutes are far-OTM 0DTE options
+        worth near zero; they expire for free. Market orders on illiquid options
+        destroy P&L with wide spreads — we never use them for scissor exit.
     """
     session = monitor.session
     sid = monitor.session_id
-
-    if use_market_orders:
-        log.warning(f"[{sid}] EXIT ALL: KILL SWITCH MODE — using market orders for all closes")
-
-    # Spot price for ATM-proximity risk sorting
+    _health = getattr(monitor, '_health', None)
     spot_price = float(session.get('_regime_spot_price') or 0)
 
-    for round_num in range(1, MAX_EXIT_ROUNDS + 1):
+    if use_market_orders:
+        # ── KILL SWITCH: fast market orders, fixed rounds ─────────────────────
+        log.warning(f"[{sid}] EXIT ALL: KILL SWITCH MODE — using market orders for all closes")
+        await _run_kill_switch_rounds(monitor, session, sid, _health, spot_price)
+    else:
+        # ── SCISSOR EXIT: patient limit orders, 10-minute time-based loop ─────
+        log.warning(
+            f"[{sid}] EXIT ALL: Scissor exit — limit orders, "
+            f"up to {MAX_EXIT_DURATION_SEC}s, delta-neutral paired groups"
+        )
+        await _run_scissor_exit_loop(monitor, session, sid, _health, spot_price)
 
-        # Always record that this round was attempted BEFORE any early-return check.
-        # Keeping this at 0 would falsely imply "nothing was tried" if we bail early.
+
+async def _run_kill_switch_rounds(monitor, session, sid, _health, spot_price) -> None:
+    """Kill switch: up to MAX_KILL_ROUNDS fast passes with market orders."""
+    for round_num in range(1, MAX_KILL_ROUNDS + 1):
         session['_exit_all_rounds_attempted'] = round_num
 
-        # Short-circuit only AFTER round 1 has actually run.
-        # The pre-round-1 check was the source of a critical bug: check_both_sides_closed()
-        # reads total_lots (a derived scalar) which can be stale if recompute_side_lots()
-        # hasn't run. A false True meant zero close orders were ever fired while positions
-        # remained open on the exchange. We now only trust this check after real work is done.
+        if _health is not None:
+            try:
+                _health.record_beat()
+            except Exception:
+                pass
+
         if round_num > 1 and check_both_sides_closed(session):
-            log.info(f"[{sid}] EXIT ALL: All positions closed after round {round_num - 1}")
+            log.info(f"[{sid}] EXIT ALL: All positions closed after kill round {round_num - 1}")
             return
 
-        # Build sorted position lists for this round
         ce_positions = _collect_side_positions(session, 'ce', spot_price)
         pe_positions = _collect_side_positions(session, 'pe', spot_price)
         total_open = len(ce_positions) + len(pe_positions)
 
         if total_open == 0:
-            log.info(f"[{sid}] EXIT ALL: No closeable positions found in round {round_num}")
+            log.info(f"[{sid}] EXIT ALL: No positions to close in kill round {round_num}")
             return
 
         log.warning(
-            f"[{sid}] EXIT ALL Round {round_num}/{MAX_EXIT_ROUNDS}: "
-            f"CE={len(ce_positions)} pos, PE={len(pe_positions)} pos to close"
+            f"[{sid}] EXIT ALL Kill Round {round_num}/{MAX_KILL_ROUNDS}: "
+            f"CE={len(ce_positions)}, PE={len(pe_positions)} to close"
         )
         _enqueue_exit_event(sid, 'EXIT_ROUND_START', {
             'round_num': round_num, 'positions_to_close': total_open,
             'ce_count': len(ce_positions), 'pe_count': len(pe_positions),
+            'mode': 'kill_switch',
         })
-
         _emit_exit_progress(sid, round_num, 0, total_open,
                             len(session.get('_exit_all_failed_positions', [])))
 
-        closed_count = 0
-
-        # Close CE and PE concurrently, with up to MAX_CONCURRENT_CLOSES_PER_SIDE
-        # parallel close orders within each side. This is safe because:
-        #   - asyncio is single-threaded: session mutations happen between awaits
-        #   - Each close_position gets its own position dict from the pre-collected list
-        #   - recompute_side_lots() is idempotent
-        #   - Semaphore limits API pressure on Delta Exchange
-        _sem = asyncio.Semaphore(MAX_CONCURRENT_CLOSES_PER_SIDE)
-
-        _order_type = 'market' if use_market_orders else 'limit'
-
-        async def _close_one(side_key: str, pos: dict) -> bool:
-            pos_id = pos.get('_pos_id') or f"{side_key}@{pos.get('strike')}"
-            async with _sem:
-                try:
-                    result = await close_position(
-                        executor=monitor.executor,
-                        initializer=monitor.initializer,
-                        session=session,
-                        position=pos,
-                        mechanism='exit_all',
-                        hedge_guard=False,
-                        side=side_key,
-                        order_type=_order_type,
-                    )
-                    if result.get('success'):
-                        log.info(
-                            f"[{sid}] EXIT ALL: Closed {side_key.upper()} @ {pos['strike']} "
-                            f"({result.get('lots_closed', pos['lots'])} lots, "
-                            f"pnl={result.get('realized_pnl', 0):.4f}, "
-                            f"order_type={_order_type})"
-                        )
-                        return True
-                    else:
-                        err = result.get('error', 'unknown')
-                        log.warning(f"[{sid}] EXIT ALL: Failed to close {pos_id} ({_order_type}): {err}")
-                except Exception as e:
-                    log.error(f"[{sid}] EXIT ALL: Exception closing {pos_id}: {e}")
-            return False
-
-        # Launch all close tasks across both sides — semaphore limits concurrency
-        all_tasks = (
-            [_close_one('ce', p) for p in ce_positions] +
-            [_close_one('pe', p) for p in pe_positions]
+        closed_count = await _close_paired_groups(
+            monitor, session, sid, _health,
+            ce_positions, pe_positions,
+            order_type='market', fill_timeout=None,
+            pass_label=f"Kill {round_num}/{MAX_KILL_ROUNDS}",
         )
-        results = await asyncio.gather(*all_tasks, return_exceptions=True)
-        closed_count = sum(1 for r in results if r is True)
 
-        # Recompute both sides after each round
         for sk in ('ce', 'pe'):
             side_state = session.get(sk)
             if isinstance(side_state, dict):
@@ -349,40 +350,367 @@ async def _run_exit_rounds(monitor, use_market_orders: bool = False) -> None:
                 session[sk] = side_state
 
         remaining_open = _count_open_positions(session)
-
         _emit_exit_progress(sid, round_num, closed_count, remaining_open,
                             len(session.get('_exit_all_failed_positions', [])))
-
-        log.info(
-            f"[{sid}] EXIT ALL Round {round_num} complete: "
-            f"closed={closed_count}, remaining={remaining_open}"
-        )
         _enqueue_exit_event(sid, 'EXIT_ROUND_END', {
             'round_num': round_num, 'closed_count': closed_count,
-            'remaining_open': remaining_open, 'partial': remaining_open > 0,
+            'remaining_open': remaining_open, 'mode': 'kill_switch',
         })
 
         if remaining_open == 0:
             return
+        if round_num < MAX_KILL_ROUNDS:
+            await asyncio.sleep(INTER_KILL_ROUND_DELAY_SEC)
 
-        # Wait before next round (unless this is the last round)
-        if round_num < MAX_EXIT_ROUNDS:
-            await asyncio.sleep(INTER_ROUND_DELAY_SEC)
-
-    # All rounds exhausted — check for residual positions
     remaining_open = _count_open_positions(session)
     if remaining_open > 0:
         log.warning(
             f"[{sid}] EXIT ALL: {remaining_open} position(s) remain after "
-            f"{MAX_EXIT_ROUNDS} rounds — marking as partial exit"
+            f"{MAX_KILL_ROUNDS} kill rounds — marking as partial"
         )
         session['_exit_all_partial'] = True
         session['_exit_all_failed_positions'] = _build_failed_list(session)
 
 
+async def _run_scissor_exit_loop(monitor, session, sid, _health, spot_price) -> None:
+    """Scissor exit: patient limit-order loop for up to MAX_EXIT_DURATION_SEC."""
+    import time as _time
+    start_time = _time.monotonic()
+    pass_num = 0
+
+    while True:
+        elapsed = _time.monotonic() - start_time
+
+        # Time limit reached before we even start a pass — stop now
+        if elapsed >= MAX_EXIT_DURATION_SEC and pass_num > 0:
+            break
+
+        pass_num += 1
+        session['_exit_all_rounds_attempted'] = pass_num
+
+        if _health is not None:
+            try:
+                _health.record_beat()
+            except Exception:
+                pass
+
+        # After the first pass, check if everything already filled
+        if pass_num > 1 and check_both_sides_closed(session):
+            log.info(f"[{sid}] EXIT ALL: All positions closed after scissor pass {pass_num - 1}")
+            return
+
+        ce_positions = _collect_side_positions(session, 'ce', spot_price)
+        pe_positions = _collect_side_positions(session, 'pe', spot_price)
+        total_open = len(ce_positions) + len(pe_positions)
+
+        if total_open == 0:
+            log.info(f"[{sid}] EXIT ALL: No positions to close in scissor pass {pass_num}")
+            return
+
+        elapsed = _time.monotonic() - start_time
+        time_remaining = int(MAX_EXIT_DURATION_SEC - elapsed)
+        log.warning(
+            f"[{sid}] EXIT ALL Scissor Pass {pass_num} "
+            f"({int(elapsed)}s elapsed, {time_remaining}s remaining): "
+            f"CE={len(ce_positions)}, PE={len(pe_positions)} to close"
+        )
+        _enqueue_exit_event(sid, 'EXIT_ROUND_START', {
+            'round_num': pass_num, 'positions_to_close': total_open,
+            'ce_count': len(ce_positions), 'pe_count': len(pe_positions),
+            'mode': 'scissor', 'elapsed_sec': int(elapsed),
+        })
+        _emit_exit_progress(sid, pass_num, 0, total_open,
+                            len(session.get('_exit_all_failed_positions', [])))
+
+        closed_count = await _close_paired_groups(
+            monitor, session, sid, _health,
+            ce_positions, pe_positions,
+            order_type='limit', fill_timeout=FILL_TIMEOUT_SCISSOR,
+            pass_label=f"Scissor {pass_num}",
+        )
+
+        for sk in ('ce', 'pe'):
+            side_state = session.get(sk)
+            if isinstance(side_state, dict):
+                recompute_side_lots(side_state)
+                session[sk] = side_state
+
+        remaining_open = _count_open_positions(session)
+        elapsed = _time.monotonic() - start_time
+        _emit_exit_progress(sid, pass_num, closed_count, remaining_open,
+                            len(session.get('_exit_all_failed_positions', [])))
+        _enqueue_exit_event(sid, 'EXIT_ROUND_END', {
+            'round_num': pass_num, 'closed_count': closed_count,
+            'remaining_open': remaining_open, 'elapsed_sec': int(elapsed),
+        })
+
+        if remaining_open == 0:
+            return
+
+        # Out of time — residual positions are near-worthless 0DTE; let expire
+        if elapsed >= MAX_EXIT_DURATION_SEC:
+            break
+
+        await asyncio.sleep(INTER_PASS_DELAY_SEC)
+
+    # Time limit exhausted — remaining positions left to expire
+    remaining_open = _count_open_positions(session)
+    if remaining_open > 0:
+        log.warning(
+            f"[{sid}] EXIT ALL: {remaining_open} position(s) not closed within "
+            f"{MAX_EXIT_DURATION_SEC}s — positions are likely near-worthless far-OTM "
+            f"0DTE options and will expire. No market orders placed (protect P&L)."
+        )
+        session['_exit_all_partial'] = True
+        session['_exit_all_failed_positions'] = _build_failed_list(session)
+
+
+async def _close_paired_groups(
+    monitor, session, sid, _health,
+    ce_positions, pe_positions,
+    order_type: str, fill_timeout,
+    pass_label: str,
+) -> int:
+    """Close CE+PE in paired groups concurrently. Returns total closed count."""
+    ce_q = list(ce_positions)
+    pe_q = list(pe_positions)
+    group_num = 0
+    closed_count = 0
+
+    while ce_q or pe_q:
+        ce_group = ce_q[:CLOSE_GROUP_SIZE]
+        pe_group = pe_q[:CLOSE_GROUP_SIZE]
+        ce_q = ce_q[CLOSE_GROUP_SIZE:]
+        pe_q = pe_q[CLOSE_GROUP_SIZE:]
+        group_num += 1
+
+        log.info(
+            f"[{sid}] EXIT ALL {pass_label} Group {group_num}: "
+            f"CE={len(ce_group)}, PE={len(pe_group)} (concurrent)"
+        )
+        group_tasks = (
+            [_close_one_exit(monitor, session, sid, 'ce', p, order_type, fill_timeout)
+             for p in ce_group] +
+            [_close_one_exit(monitor, session, sid, 'pe', p, order_type, fill_timeout)
+             for p in pe_group]
+        )
+        group_results = await asyncio.gather(*group_tasks, return_exceptions=True)
+        closed_count += sum(1 for r in group_results if r is True)
+
+        if _health is not None:
+            try:
+                _health.record_beat()
+            except Exception:
+                pass
+
+        if ce_q or pe_q:
+            await asyncio.sleep(INTER_GROUP_DELAY_SEC)
+
+    return closed_count
+
+
 # =============================================================================
 # Helpers
 # =============================================================================
+
+async def _close_one_exit(
+    monitor,
+    session: Dict,
+    sid: str,
+    side_key: str,
+    pos: dict,
+    order_type: str,
+    fill_timeout: int,
+) -> bool:
+    """Close a single position during exit_all. Returns True on success."""
+    pos_id = pos.get('_pos_id') or f"{side_key}@{pos.get('strike')}"
+    try:
+        result = await close_position(
+            executor=monitor.executor,
+            initializer=monitor.initializer,
+            session=session,
+            position=pos,
+            mechanism='exit_all',
+            hedge_guard=False,
+            side=side_key,
+            order_type=order_type,
+            fill_timeout=fill_timeout,
+        )
+        if result.get('success'):
+            log.info(
+                f"[{sid}] EXIT ALL: Closed {side_key.upper()} @ {pos['strike']} "
+                f"({result.get('lots_closed', pos['lots'])} lots, "
+                f"pnl={result.get('realized_pnl', 0):.4f}, order_type={order_type})"
+            )
+            return True
+        err = result.get('error', 'unknown')
+        log.warning(f"[{sid}] EXIT ALL: Failed to close {pos_id} ({order_type}): {err}")
+    except Exception as e:
+        log.error(f"[{sid}] EXIT ALL: Exception closing {pos_id}: {e}")
+    return False
+
+
+async def _exit_fill_sync(monitor, session: Dict, sid: str) -> int:
+    """
+    Pull exchange fills after exit rounds to set _fill_confirmed and lock in
+    realized P&L with actual fill prices.
+
+    Returns count of positions updated. Never raises — fill sync failure is
+    non-critical (positions may still be confirmed by other checks).
+    """
+    try:
+        fill_syncer = getattr(monitor, '_fill_syncer', None)
+        if fill_syncer is None:
+            log.warning(f"[{sid}] EXIT fill sync: _fill_syncer not initialized — skipping")
+            return 0
+        rest = monitor._create_heartbeat_rest_client()
+        expiry = session.get('params', {}).get('expiry', '')
+        n = await fill_syncer.sync(rest, session, expiry)
+        if n:
+            log.info(f"[{sid}] EXIT fill sync: confirmed {n} fill(s)")
+        else:
+            log.debug(f"[{sid}] EXIT fill sync: no new fills found")
+        # Keep watchdog alive during sync
+        _health = getattr(monitor, '_health', None)
+        if _health is not None:
+            try:
+                _health.record_beat()
+            except Exception:
+                pass
+        return n
+    except Exception as e:
+        log.warning(f"[{sid}] EXIT fill sync failed (non-critical): {e}")
+        return 0
+
+
+async def _final_market_cleanup(monitor, session: Dict, sid: str) -> None:
+    """
+    Final safety sweep: fire market close orders (reduce_only=True) for any
+    session position that fill sync could not confirm as closed.
+
+    Uses _collect_side_positions() — which includes:
+      • status != 'closed' (rounds didn't close it)
+      • status == 'closed' but _fill_confirmed=False (close order not confirmed)
+
+    reduce_only=True is safe in multi-algo environments: if the position is
+    already gone on exchange (closed by another algo or expired), the exchange
+    rejects gracefully with no_position_for_reduce_only — treated as success.
+
+    Closes in paired CE+PE groups (same logic as rounds) to keep delta balanced.
+    """
+    spot_price = float(session.get('_regime_spot_price') or 0)
+    ce_remaining = _collect_side_positions(session, 'ce', spot_price)
+    pe_remaining = _collect_side_positions(session, 'pe', spot_price)
+    total = len(ce_remaining) + len(pe_remaining)
+
+    if total == 0:
+        log.info(f"[{sid}] EXIT cleanup: all positions fill-confirmed — no market cleanup needed")
+        return
+
+    log.warning(
+        f"[{sid}] EXIT cleanup: {total} position(s) unconfirmed after fill sync — "
+        f"firing market orders (CE={len(ce_remaining)}, PE={len(pe_remaining)})"
+    )
+
+    _health = getattr(monitor, '_health', None)
+    ce_q = list(ce_remaining)
+    pe_q = list(pe_remaining)
+
+    while ce_q or pe_q:
+        ce_group = ce_q[:CLOSE_GROUP_SIZE]
+        pe_group = pe_q[:CLOSE_GROUP_SIZE]
+        ce_q = ce_q[CLOSE_GROUP_SIZE:]
+        pe_q = pe_q[CLOSE_GROUP_SIZE:]
+
+        tasks = (
+            [_close_one_exit(monitor, session, sid, 'ce', p, 'market', None) for p in ce_group] +
+            [_close_one_exit(monitor, session, sid, 'pe', p, 'market', None) for p in pe_group]
+        )
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        if _health is not None:
+            try:
+                _health.record_beat()
+            except Exception:
+                pass
+
+        if ce_q or pe_q:
+            await asyncio.sleep(INTER_GROUP_DELAY_SEC)
+
+    # Recompute lot counts after cleanup
+    for sk in ('ce', 'pe'):
+        side_state = session.get(sk)
+        if isinstance(side_state, dict):
+            recompute_side_lots(side_state)
+            session[sk] = side_state
+
+    remaining = _count_open_positions(session)
+    if remaining > 0:
+        log.warning(f"[{sid}] EXIT cleanup: {remaining} position(s) still open after market cleanup")
+        session['_exit_all_partial'] = True
+        session['_exit_all_failed_positions'] = _build_failed_list(session)
+    else:
+        log.info(f"[{sid}] EXIT cleanup: all positions closed after market cleanup")
+
+
+def _exit_report_final_pnl(session: Dict, sid: str) -> None:
+    """
+    Compute and broadcast final P&L after all closes and fill sync.
+
+    Net P&L = realized - exchange_fees. This is the real number: what you
+    actually made from the strategy. Reported before monitor.stop() so the
+    operator sees the result before the session disappears from the UI.
+    """
+    realized = round(session.get('realized_pnl', 0.0), 4)
+    collected = round(session.get('total_premium_collected', 0.0), 4)
+    fees = round(session.get('total_fees', 0.0), 4)
+    net_pnl = round(realized - fees, 4)
+    rounds = session.get('_exit_all_rounds_attempted', 0)
+    is_partial = bool(session.get('_exit_all_partial'))
+
+    status_icon = '⚠️' if is_partial else '✅'
+    status_label = 'PARTIAL EXIT' if is_partial else 'PEACEFUL EXIT COMPLETE'
+
+    buyback_cost = round(max(0.0, collected - realized), 4)
+    report_lines = [
+        f"{status_icon} [{sid}] {status_label}",
+        f"Net P&L (after fees): ${net_pnl:+.2f}",
+        f"  Realized (gross)  : ${realized:+.2f}",
+        f"  Exchange fees     : ${fees:.2f}",
+        f"Premium collected   : ${collected:.2f}",
+        f"Buyback cost        : ${buyback_cost:.2f}",
+        f"Passes (limit only) : {rounds}",
+    ]
+    if is_partial:
+        failed = session.get('_exit_all_failed_positions', [])
+        report_lines.append(
+            f"Near-zero residual : {len(failed)} pos — expected to expire worthless"
+        )
+
+    report_msg = '\n'.join(report_lines)
+    log.warning(f"[{sid}] EXIT P&L REPORT:\n{report_msg}")
+
+    try:
+        from .mmm_telegram import send_telegram_message
+        send_telegram_message(report_msg)
+    except Exception:
+        pass
+
+    try:
+        from .mmm_websocket import emit_to_session
+        emit_to_session(sid, 'mmm_exit_pnl_report', {
+            'realized_pnl': realized,
+            'net_pnl': net_pnl,
+            'total_fees': fees,
+            'total_premium_collected': collected,
+            'buyback_cost': buyback_cost,
+            'rounds': rounds,
+            'is_partial': is_partial,
+            'failed_count': len(session.get('_exit_all_failed_positions', [])),
+        })
+    except Exception:
+        pass
+
 
 async def _verify_and_alert_remaining(monitor, session: Dict, sid: str) -> None:
     """
@@ -905,7 +1233,7 @@ def _emit_exit_progress(sid: str, round_num: int, closed_count: int,
         from .mmm_websocket import emit_to_session
         emit_to_session(sid, 'mmm_exit_progress', {
             'round': round_num,
-            'max_rounds': MAX_EXIT_ROUNDS,
+            'max_rounds': MAX_KILL_ROUNDS,
             'closed_count': closed_count,
             'remaining_count': remaining_count,
             'failed_count': failed_count,

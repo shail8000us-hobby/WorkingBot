@@ -59,6 +59,7 @@ class MMMSafety:
         events = []
 
         events.extend(self.check_position_cap(session))
+        events.extend(self.check_combined_position_size(session))
         events.extend(self.check_total_exposure(session))   # Split Ledger
         events.extend(self.check_max_adjustments(session))
         events.extend(self.check_max_loss(session))
@@ -136,6 +137,62 @@ class MMMSafety:
                         'max': max_lots,
                     },
                 })
+
+        return events
+
+    # =========================================================================
+    # §13.1b: Combined Position Size Circuit Breaker
+    # =========================================================================
+
+    def check_combined_position_size(self, session: Dict) -> List[Dict]:
+        """Block adjustments when combined CE+PE total lots exceeds 2×max_lots_per_side.
+
+        Per-side cap (check_position_cap) checks each leg in isolation. This check
+        catches the case where both sides approach their individual caps simultaneously,
+        creating outsized combined exposure. (Incident mmm01may26-1: CE=300 + PE=303 =
+        603 combined lots with no circuit breaker.)
+        """
+        events = []
+        params = session.get('params', {})
+        max_per_side = params.get('max_lots_per_side', 100)
+        max_combined = max_per_side * 2
+
+        ce_total = session.get('ce', {}).get('total_lots', 0)
+        pe_total = session.get('pe', {}).get('total_lots', 0)
+        combined = ce_total + pe_total
+
+        if combined >= max_combined:
+            events.append({
+                'type': 'combined_position_cap',
+                'level': 'alert',
+                'message': (
+                    f'COMBINED POSITION CAP: CE={ce_total} + PE={pe_total} = {combined} '
+                    f'>= {max_combined} — adjustments blocked'
+                ),
+                'action': 'stop_adjustments',
+                'details': {
+                    'ce_total': ce_total,
+                    'pe_total': pe_total,
+                    'combined': combined,
+                    'max_combined': max_combined,
+                },
+            })
+        elif combined >= max_combined * 0.8:
+            events.append({
+                'type': 'combined_position_cap',
+                'level': 'warning',
+                'message': (
+                    f'Combined position warning: CE={ce_total} + PE={pe_total} = {combined} '
+                    f'({combined / max_combined:.0%} of {max_combined})'
+                ),
+                'action': 'continue',
+                'details': {
+                    'ce_total': ce_total,
+                    'pe_total': pe_total,
+                    'combined': combined,
+                    'max_combined': max_combined,
+                },
+            })
 
         return events
 

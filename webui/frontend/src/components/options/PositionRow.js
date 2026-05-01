@@ -668,8 +668,8 @@ function PositionRow({
                     {(() => {
                         const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
                         const realizedPnl = Number(pos.realized_pnl) || 0;
-                        // Closed rows: unrealized=0, realized=cumulative from store. Live rows: both from exchange.
-                        const totalPnl = isClosed ? realizedPnl : unrealizedPnl + realizedPnl;
+                        const partialRealized = Number(pos.partial_realized_pnl) || 0;
+                        const totalPnl = isClosed ? realizedPnl : unrealizedPnl + realizedPnl + partialRealized;
                         const totalPnlColor = getPnlColor(totalPnl);
                         const rawPct = pos.pnl_percentage || 0;
                         const cashflowVal = Number(pos.cashflow) || 0;
@@ -684,6 +684,11 @@ function PositionRow({
                             if (isClosed) {
                                 const pctStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)` : '';
                                 return `Realized PnL: ${formatPnl(realizedPnl)}${pctStr}`;
+                            }
+                            if (partialRealized !== 0) {
+                                const parts = [`Prior sessions: ${formatPnl(partialRealized)}`, `Unrealized: ${formatPnl(unrealizedPnl)}`];
+                                if (realizedPnl !== 0) parts.push(`Realized: ${formatPnl(realizedPnl)}`);
+                                return `${parts.join(' + ')} = Total: ${formatPnl(totalPnl)}`;
                             }
                             if (realizedPnl !== 0) {
                                 return `Unrealized: ${formatPnl(unrealizedPnl)} + Realized: ${formatPnl(realizedPnl)} = Total: ${formatPnl(totalPnl)}`;
@@ -705,6 +710,10 @@ function PositionRow({
                                             {returnPct != null
                                                 ? `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}% realized`
                                                 : 'Realized'}
+                                        </Typography>
+                                    ) : partialRealized !== 0 ? (
+                                        <Typography variant="caption" sx={{ color: getPnlColor(partialRealized), fontStyle: 'italic' }}>
+                                            incl. {formatPnl(partialRealized)} prior
                                         </Typography>
                                     ) : realizedPnl !== 0 ? (
                                         <Typography variant="caption" sx={{ color: getPnlColor(realizedPnl), fontStyle: 'italic' }}>
