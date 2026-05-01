@@ -197,12 +197,14 @@ class ClosedPositionStore:
                 return
             # 120 s guard: same close event detected by a second source
             last_closed_ts = existing.get('last_closed_ts', 0)
-            if last_closed_ts and (time.time() - last_closed_ts) < 120:
-                log.debug(
-                    f"[ClosedPositionStore] Skipping duplicate close for {symbol} "
-                    f"(already recorded {time.time() - last_closed_ts:.0f}s ago)"
-                )
-                return
+            if last_closed_ts:
+                elapsed = time.time() - last_closed_ts
+                if elapsed < 120:
+                    log.debug(
+                        f"[ClosedPositionStore] Skipping duplicate close for {symbol} "
+                        f"(already recorded {elapsed:.0f}s ago)"
+                    )
+                    return
             prev_cumulative = existing.get('cumulative_realized_pnl', 0.0)
             new_cumulative = prev_cumulative + realized_pnl
             self._data[symbol] = {

@@ -575,12 +575,11 @@ const OptionsPanel = () => {
     if (direct) return direct;
 
     const isComposite = expiryGroupKey.includes('|');
-    const componentKeys = isComposite ? expiryGroupKey.split('|') : null;
 
     if (expiryGroupKey === 'ALL' || isComposite) {
+      const componentKeys = isComposite ? expiryGroupKey.split('|') : null;
       const visibleSymbols = new Set(positions.map((p) => p.product_symbol));
       const merged = { groups: {}, collapsed: {}, order: [], groupOrder: [] };
-      let hadAny = false;
       Object.entries(allExpiryGroupData).forEach(([key, slice]) => {
         if (key.includes('|') || key === 'ALL') return; // skip composite/ALL keys
         // For composite mode, only include slices that belong to one of the selected expiries
@@ -590,7 +589,6 @@ const OptionsPanel = () => {
           (g.symbols || []).some((s) => visibleSymbols.has(s))
         );
         if (hasVisible) {
-          hadAny = true;
           Object.assign(merged.groups, groups);
           Object.assign(merged.collapsed, slice.collapsed || {});
           (slice.groupOrder || []).forEach((id) => {
@@ -598,7 +596,7 @@ const OptionsPanel = () => {
           });
         }
       });
-      if (hadAny) return merged;
+      if (Object.keys(merged.groups).length > 0) return merged;
     }
 
     return { groups: {}, collapsed: {}, order: [], groupOrder: [] };
@@ -2272,19 +2270,28 @@ const OptionsPanel = () => {
     );
 
     const successCount = results.filter((r) => r.success).length;
-    const lastError = results.find((r) => !r.success)?.error || null;
+    const failureCount = results.length - successCount;
+    const firstError = results.find((r) => !r.success)?.error || null;
 
     setReduceExecuting(false);
     reduceInFlightRef.current = false;
 
-    if (successCount > 0) {
-      setOrderResult({ type: 'success', message: `Reduced ${successCount} position${successCount !== 1 ? 's' : ''} — limit orders placed at mid-price` });
-      fetchDashboard();
+    // Show success/failure status. If both exist, prioritize the success feedback.
+    if (successCount > 0 || failureCount > 0) {
+      if (failureCount === 0) {
+        // All succeeded
+        setOrderResult({ type: 'success', message: `Reduced ${successCount} position${successCount !== 1 ? 's' : ''} — limit orders placed at mid-price` });
+        fetchDashboard();
+      } else if (successCount === 0) {
+        // All failed
+        setOrderResult({ type: 'error', message: firstError });
+      } else {
+        // Partial success — show both outcomes
+        setOrderResult({ type: 'warning', message: `Reduced ${successCount}/${results.length} positions — ${failureCount} failed: ${firstError}` });
+        fetchDashboard();
+      }
+      setTimeout(() => setOrderResult(null), 5000);
     }
-    if (lastError) {
-      setOrderResult({ type: 'error', message: lastError });
-    }
-    setTimeout(() => setOrderResult(null), 5000);
   };
 
   // Quick execute order without confirmation (for skipped strikes)

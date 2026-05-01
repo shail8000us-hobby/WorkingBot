@@ -51,13 +51,14 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   const isCallSymbol = (symbol) => String(symbol || '').startsWith('C-');
   const isPutSymbol = (symbol) => String(symbol || '').startsWith('P-');
 
-  if (!sortedPositions || sortedPositions.length === 0) return null;
-
-  const { livePnl, totalFees } = useMemo(() => sortedPositions.reduce((acc, p) => {
-    acc.livePnl += (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
-    acc.totalFees += feesMap[p.product_symbol] != null ? Number(feesMap[p.product_symbol]) : 0;
-    return acc;
-  }, { livePnl: 0, totalFees: 0 }), [sortedPositions, feesMap]);
+  const { livePnl, totalFees } = useMemo(() => {
+    if (!sortedPositions || sortedPositions.length === 0) return { livePnl: 0, totalFees: 0 };
+    return sortedPositions.reduce((acc, p) => {
+      acc.livePnl += (Number(p.unrealized_pnl) || 0) + (Number(p.realized_pnl) || 0) + (Number(p.partial_realized_pnl) || 0);
+      acc.totalFees += feesMap[p.product_symbol] != null ? Number(feesMap[p.product_symbol]) : 0;
+      return acc;
+    }, { livePnl: 0, totalFees: 0 });
+  }, [sortedPositions, feesMap]);
   const totalPnl = livePnl + manualPnL;
   const netPnl = totalPnl - totalFees;
   const callCount = sortedPositions.filter((p) => isCallSymbol(p.product_symbol)).length;
@@ -351,6 +352,8 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
       />
     );
   }
+
+  if (!sortedPositions || sortedPositions.length === 0) return null;
 
   return (
     <Box

@@ -232,6 +232,7 @@ def _fetch_dashboard_fresh(is_background=False):
             with _dashboard_lock:
                 prev_data = _dashboard_cache.get('data')
             if prev_data:
+                refresh_bucket = int(time.time() // 30)
                 for prev_pos in prev_data.get('positions', []):
                     sym = prev_pos.get('product_symbol', '')
                     if not sym or prev_pos.get('is_closed') or not prev_pos.get('size'):
@@ -241,7 +242,7 @@ def _fetch_dashboard_fresh(is_background=False):
                     ex_realized = float(prev_pos.get('realized_pnl', 0) or 0)
                     ex_unrealized = float(prev_pos.get('unrealized_pnl', 0) or 0)
                     realized = ex_realized + ex_unrealized
-                    store.record_close(prev_pos, realized, refresh_id=f"dashboard-{int(time.time() // 30)}")
+                    store.record_close(prev_pos, realized, refresh_id=f"dashboard-{refresh_bucket}")
                     log.info(f"[Dashboard] Immediate phantom recorded: {sym} realized=${realized:+.4f}")
 
             phantoms = store.get_phantom_positions(exclude_symbols=live_symbols)
