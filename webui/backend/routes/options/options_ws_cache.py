@@ -447,11 +447,14 @@ class _OptionsWSCache:
                 new_positions[symbol] = p
 
             with self._lock:
-                # Invariant: _prev_positions = new_positions from THIS refresh.
-                # Close detection on the NEXT refresh compares these against the
-                # next exchange_map, so it always sees fresh size data — not data
-                # from two cycles ago (the old bug: dict(self._positions) was stale).
-                self._prev_positions = dict(new_positions)
+                # Only update _prev_positions when close detection was allowed to run.
+                # On "fill-event" refreshes, detection is skipped intentionally (exchange
+                # may transiently show size=0 during adjustments). If we also overwrote
+                # _prev_positions here, the delayed fill-followup would find _prev empty
+                # and never detect the close. Keeping the pre-fill snapshot lets the
+                # fill-followup (8 s later) correctly see the size→0 transition.
+                if reason != "fill-event":
+                    self._prev_positions = dict(new_positions)
                 self._positions = new_positions
                 # Merge any fresher mark prices from WS
                 for sym, mark in self._mark_prices.items():

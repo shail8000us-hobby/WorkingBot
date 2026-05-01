@@ -136,8 +136,8 @@ def get_dashboard():
             "response_time_ms": float
         }
     """
-    global _dashboard_cache, _refresh_in_progress
-    
+    global _dashboard_cache, _refresh_in_progress, _refresh_started_at
+
     now = time.time()
     age = now - _dashboard_cache['time']
     cached = _dashboard_cache['data']
@@ -212,6 +212,29 @@ def _fetch_dashboard_fresh(is_background=False):
             from .closed_position_store import get_closed_position_store
             store = get_closed_position_store()
             live_symbols = {p.get('product_symbol') for p in positions}
+
+            # Immediate close detection: compare against the PREVIOUS dashboard response.
+            # If a live (non-phantom) position was in the last response but is now absent
+            # from live positions, record it right now — in the same fetch that first
+            # notices it's gone. This eliminates the 8 s gap between a fill and the WS
+            # cache's delayed fill-followup detection, so the row NEVER disappears.
+            # The 120 s idempotency guard in record_close() prevents double-accumulation
+            # when the WS cache's fill-followup also detects the same close 8 s later.
+            with _dashboard_lock:
+                prev_data = _dashboard_cache.get('data')
+            if prev_data:
+                for prev_pos in prev_data.get('positions', []):
+                    sym = prev_pos.get('product_symbol', '')
+                    if not sym or prev_pos.get('is_closed') or not prev_pos.get('size'):
+                        continue  # skip phantoms and zero-size rows
+                    if sym in live_symbols:
+                        continue  # still alive — no action needed
+                    ex_realized = float(prev_pos.get('realized_pnl', 0) or 0)
+                    ex_unrealized = float(prev_pos.get('unrealized_pnl', 0) or 0)
+                    realized = ex_realized + ex_unrealized
+                    store.record_close(prev_pos, realized, refresh_id=f"dashboard-{int(time.time() // 30)}")
+                    log.info(f"[Dashboard] Immediate phantom recorded: {sym} realized=${realized:+.4f}")
+
             phantoms = store.get_phantom_positions(exclude_symbols=live_symbols)
             if phantoms:
                 positions = list(positions) + phantoms

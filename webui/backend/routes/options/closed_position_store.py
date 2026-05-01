@@ -180,6 +180,11 @@ class ClosedPositionStore:
         caller.  If the same refresh_id was already recorded for this symbol we
         skip the accumulation — prevents double-counting when fill-followup and
         the periodic 60 s refresh both detect the same close.
+
+        120-second idempotency guard: if this symbol was closed within the last
+        120 s, a second detector (dashboard immediate vs WS cache fill-followup)
+        is firing for the same event — skip to prevent double-accumulation.
+        Re-entry closes happen hours apart so they are never affected.
         """
         symbol = position.get('product_symbol', '')
         if not symbol:
@@ -190,6 +195,14 @@ class ClosedPositionStore:
             if refresh_id and existing.get('last_detect_refresh_id') == refresh_id:
                 log.debug(f"[ClosedPositionStore] Skipping duplicate close for {symbol} (refresh_id={refresh_id})")
                 return
+            # 120 s guard: same close event detected by a second source
+            last_closed_ts = existing.get('last_closed_ts', 0)
+            if last_closed_ts and (time.time() - last_closed_ts) < 120:
+                log.debug(
+                    f"[ClosedPositionStore] Skipping duplicate close for {symbol} "
+                    f"(already recorded {time.time() - last_closed_ts:.0f}s ago)"
+                )
+                return
             prev_cumulative = existing.get('cumulative_realized_pnl', 0.0)
             new_cumulative = prev_cumulative + realized_pnl
             self._data[symbol] = {
@@ -198,6 +211,7 @@ class ClosedPositionStore:
                 'cumulative_realized_pnl': new_cumulative,
                 'last_realized_pnl': realized_pnl,
                 'last_closed_at': datetime.utcnow().isoformat(),
+                'last_closed_ts': time.time(),
                 'last_entry_price': float(position.get('entry_price') or 0),
                 'last_mark_price': float(position.get('mark_price') or 0),
                 'last_size': float(position.get('size') or 0),
