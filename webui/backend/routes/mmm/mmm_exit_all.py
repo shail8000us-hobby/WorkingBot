@@ -18,6 +18,7 @@ Created: March 2026
 
 import asyncio
 import logging
+import time
 from datetime import datetime, timezone
 from typing import Dict, List
 
@@ -41,6 +42,15 @@ def _enqueue_exit_event(sid, event_type, details):
         pass
 
 log = logging.getLogger('mmm_exit_all')
+
+
+def _safe_record_beat(health) -> None:
+    if health is not None:
+        try:
+            health.record_beat()
+        except Exception:
+            pass
+
 
 # ── Scissor exit: patient, profit-protecting limit orders ─────────────────────
 # 10-minute window of limit-order attempts before declaring residual positions
@@ -171,11 +181,6 @@ async def run_exit_all(monitor) -> None:
     # Runs AFTER rounds so that close_order_ids set by close_position() are synced.
     # Sets _fill_confirmed=True on positions whose orders were confirmed on exchange.
     # This is the source of truth for "did the exchange actually execute the close?"
-    await _exit_fill_sync(monitor, session, sid)
-
-    # ── Phase 3: Second fill sync (both modes) ──────────────────────────────────
-    # A second fill sync catches fills that landed after the first sync ran
-    # (e.g. orders that filled during the fill sync's own API call window).
     # No market-order cleanup for scissor exit: any position the 10-minute limit
     # loop could not close is a far-OTM 0DTE option worth near zero. Closing at a
     # market order's wide spread destroys more P&L than simply letting it expire.
@@ -306,11 +311,7 @@ async def _run_kill_switch_rounds(monitor, session, sid, _health, spot_price) ->
     for round_num in range(1, MAX_KILL_ROUNDS + 1):
         session['_exit_all_rounds_attempted'] = round_num
 
-        if _health is not None:
-            try:
-                _health.record_beat()
-            except Exception:
-                pass
+        _safe_record_beat(_health)
 
         if round_num > 1 and check_both_sides_closed(session):
             log.info(f"[{sid}] EXIT ALL: All positions closed after kill round {round_num - 1}")
@@ -374,27 +375,19 @@ async def _run_kill_switch_rounds(monitor, session, sid, _health, spot_price) ->
 
 async def _run_scissor_exit_loop(monitor, session, sid, _health, spot_price) -> None:
     """Scissor exit: patient limit-order loop for up to MAX_EXIT_DURATION_SEC."""
-    import time as _time
-    start_time = _time.monotonic()
+    start_time = time.monotonic()
     pass_num = 0
 
     while True:
-        elapsed = _time.monotonic() - start_time
+        elapsed = time.monotonic() - start_time
 
-        # Time limit reached before we even start a pass — stop now
         if elapsed >= MAX_EXIT_DURATION_SEC and pass_num > 0:
             break
 
         pass_num += 1
         session['_exit_all_rounds_attempted'] = pass_num
+        _safe_record_beat(_health)
 
-        if _health is not None:
-            try:
-                _health.record_beat()
-            except Exception:
-                pass
-
-        # After the first pass, check if everything already filled
         if pass_num > 1 and check_both_sides_closed(session):
             log.info(f"[{sid}] EXIT ALL: All positions closed after scissor pass {pass_num - 1}")
             return
@@ -407,7 +400,6 @@ async def _run_scissor_exit_loop(monitor, session, sid, _health, spot_price) -> 
             log.info(f"[{sid}] EXIT ALL: No positions to close in scissor pass {pass_num}")
             return
 
-        elapsed = _time.monotonic() - start_time
         time_remaining = int(MAX_EXIT_DURATION_SEC - elapsed)
         log.warning(
             f"[{sid}] EXIT ALL Scissor Pass {pass_num} "
@@ -436,7 +428,7 @@ async def _run_scissor_exit_loop(monitor, session, sid, _health, spot_price) -> 
                 session[sk] = side_state
 
         remaining_open = _count_open_positions(session)
-        elapsed = _time.monotonic() - start_time
+        elapsed = time.monotonic() - start_time
         _emit_exit_progress(sid, pass_num, closed_count, remaining_open,
                             len(session.get('_exit_all_failed_positions', [])))
         _enqueue_exit_event(sid, 'EXIT_ROUND_END', {
@@ -447,19 +439,17 @@ async def _run_scissor_exit_loop(monitor, session, sid, _health, spot_price) -> 
         if remaining_open == 0:
             return
 
-        # Out of time — residual positions are near-worthless 0DTE; let expire
         if elapsed >= MAX_EXIT_DURATION_SEC:
             break
 
         await asyncio.sleep(INTER_PASS_DELAY_SEC)
 
-    # Time limit exhausted — remaining positions left to expire
     remaining_open = _count_open_positions(session)
     if remaining_open > 0:
         log.warning(
             f"[{sid}] EXIT ALL: {remaining_open} position(s) not closed within "
-            f"{MAX_EXIT_DURATION_SEC}s — positions are likely near-worthless far-OTM "
-            f"0DTE options and will expire. No market orders placed (protect P&L)."
+            f"{MAX_EXIT_DURATION_SEC}s — likely near-worthless far-OTM 0DTE options, "
+            f"will expire. No market orders placed (protect P&L)."
         )
         session['_exit_all_partial'] = True
         session['_exit_all_failed_positions'] = _build_failed_list(session)
@@ -472,8 +462,8 @@ async def _close_paired_groups(
     pass_label: str,
 ) -> int:
     """Close CE+PE in paired groups concurrently. Returns total closed count."""
-    ce_q = list(ce_positions)
-    pe_q = list(pe_positions)
+    ce_q = ce_positions[:]
+    pe_q = pe_positions[:]
     group_num = 0
     closed_count = 0
 
@@ -497,11 +487,7 @@ async def _close_paired_groups(
         group_results = await asyncio.gather(*group_tasks, return_exceptions=True)
         closed_count += sum(1 for r in group_results if r is True)
 
-        if _health is not None:
-            try:
-                _health.record_beat()
-            except Exception:
-                pass
+        _safe_record_beat(_health)
 
         if ce_q or pe_q:
             await asyncio.sleep(INTER_GROUP_DELAY_SEC)
@@ -572,85 +558,12 @@ async def _exit_fill_sync(monitor, session: Dict, sid: str) -> int:
             log.debug(f"[{sid}] EXIT fill sync: no new fills found")
         # Keep watchdog alive during sync
         _health = getattr(monitor, '_health', None)
-        if _health is not None:
-            try:
-                _health.record_beat()
-            except Exception:
-                pass
+        _safe_record_beat(_health)
         return n
     except Exception as e:
         log.warning(f"[{sid}] EXIT fill sync failed (non-critical): {e}")
         return 0
 
-
-async def _final_market_cleanup(monitor, session: Dict, sid: str) -> None:
-    """
-    Final safety sweep: fire market close orders (reduce_only=True) for any
-    session position that fill sync could not confirm as closed.
-
-    Uses _collect_side_positions() — which includes:
-      • status != 'closed' (rounds didn't close it)
-      • status == 'closed' but _fill_confirmed=False (close order not confirmed)
-
-    reduce_only=True is safe in multi-algo environments: if the position is
-    already gone on exchange (closed by another algo or expired), the exchange
-    rejects gracefully with no_position_for_reduce_only — treated as success.
-
-    Closes in paired CE+PE groups (same logic as rounds) to keep delta balanced.
-    """
-    spot_price = float(session.get('_regime_spot_price') or 0)
-    ce_remaining = _collect_side_positions(session, 'ce', spot_price)
-    pe_remaining = _collect_side_positions(session, 'pe', spot_price)
-    total = len(ce_remaining) + len(pe_remaining)
-
-    if total == 0:
-        log.info(f"[{sid}] EXIT cleanup: all positions fill-confirmed — no market cleanup needed")
-        return
-
-    log.warning(
-        f"[{sid}] EXIT cleanup: {total} position(s) unconfirmed after fill sync — "
-        f"firing market orders (CE={len(ce_remaining)}, PE={len(pe_remaining)})"
-    )
-
-    _health = getattr(monitor, '_health', None)
-    ce_q = list(ce_remaining)
-    pe_q = list(pe_remaining)
-
-    while ce_q or pe_q:
-        ce_group = ce_q[:CLOSE_GROUP_SIZE]
-        pe_group = pe_q[:CLOSE_GROUP_SIZE]
-        ce_q = ce_q[CLOSE_GROUP_SIZE:]
-        pe_q = pe_q[CLOSE_GROUP_SIZE:]
-
-        tasks = (
-            [_close_one_exit(monitor, session, sid, 'ce', p, 'market', None) for p in ce_group] +
-            [_close_one_exit(monitor, session, sid, 'pe', p, 'market', None) for p in pe_group]
-        )
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-        if _health is not None:
-            try:
-                _health.record_beat()
-            except Exception:
-                pass
-
-        if ce_q or pe_q:
-            await asyncio.sleep(INTER_GROUP_DELAY_SEC)
-
-    # Recompute lot counts after cleanup
-    for sk in ('ce', 'pe'):
-        side_state = session.get(sk)
-        if isinstance(side_state, dict):
-            recompute_side_lots(side_state)
-            session[sk] = side_state
-
-    remaining = _count_open_positions(session)
-    if remaining > 0:
-        log.warning(f"[{sid}] EXIT cleanup: {remaining} position(s) still open after market cleanup")
-        session['_exit_all_partial'] = True
-        session['_exit_all_failed_positions'] = _build_failed_list(session)
-    else:
-        log.info(f"[{sid}] EXIT cleanup: all positions closed after market cleanup")
 
 
 def _exit_report_final_pnl(session: Dict, sid: str) -> None:
@@ -861,9 +774,8 @@ def _collect_side_positions(session: Dict, side_key: str, spot_price: float) -> 
         # Stale flags (>180s) are auto-cleared by close_position() on the next
         # close attempt so we include them here and let close_position handle it.
         if pos.get('_being_closed'):
-            import time as _time
             set_at = pos.get('_being_closed_at', 0)
-            if set_at and _time.monotonic() - set_at <= 180:
+            if set_at and time.monotonic() - set_at <= 180:
                 log.debug(
                     f"[{session.get('session_id', '?')}] EXIT ALL: skipping "
                     f"{side_key.upper()} pos {pos.get('id')} — _being_closed (in-flight)"

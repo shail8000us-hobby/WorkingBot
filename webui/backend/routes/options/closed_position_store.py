@@ -331,6 +331,11 @@ class ClosedPositionStore:
         with self._lock:
             return self._data.get(symbol, {}).get('cumulative_realized_pnl', 0.0)
 
+    def get_all_cumulative_pnl(self) -> Dict[str, float]:
+        """Return {symbol: cumulative_realized_pnl} for all tracked symbols under one lock."""
+        with self._lock:
+            return {sym: entry.get('cumulative_realized_pnl', 0.0) for sym, entry in self._data.items()}
+
     def has_history(self, symbol: str) -> bool:
         with self._lock:
             return symbol in self._data

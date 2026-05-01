@@ -33,6 +33,7 @@ import OIChangeChart from './OIChangeChart';
 import OITable from './OITable';
 import OISpikeLog from './OISpikeLog';
 import GammaDashboard from './GammaDashboard';
+import { POLLING_SOCKET_OPTIONS } from '../../utils/socketConfig';
 
 const API_BASE = process.env.REACT_APP_API_URL || 'http://localhost:5555';
 
@@ -211,9 +212,7 @@ export default function OIPanel() {
           : window.location.origin;
 
         socket = io(`${baseUrl}/oi`, {
-          transports: ['polling'],
-          upgrade: false,
-          rememberUpgrade: false,
+          ...POLLING_SOCKET_OPTIONS,
           reconnection: true,
           reconnectionDelay: 2000,
           reconnectionAttempts: Infinity,

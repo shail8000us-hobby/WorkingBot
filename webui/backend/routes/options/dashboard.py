@@ -215,13 +215,12 @@ def _fetch_dashboard_fresh(is_background=False):
             live_symbols = {p.get('product_symbol') for p in positions}
 
             # Carry over prior-session realized P&L so re-entered positions don't show zero history.
-            positions = list(positions)  # materialize to allow mutation below
+            all_cumulative = store.get_all_cumulative_pnl()
             for p in positions:
                 sym = p.get('product_symbol', '')
-                if sym:
-                    prior = store.get_cumulative_pnl(sym)  # returns 0.0 if no history
-                    if prior != 0.0:
-                        p['partial_realized_pnl'] = prior
+                prior = all_cumulative.get(sym, 0.0)
+                if prior != 0.0:
+                    p['partial_realized_pnl'] = prior
 
             # Immediate close detection: compare against the PREVIOUS dashboard response.
             # If a live (non-phantom) position was in the last response but is now absent
@@ -253,8 +252,9 @@ def _fetch_dashboard_fresh(is_background=False):
                 # beyond that method's 3-second freshness cutoff.
                 try:
                     price_ws = get_price_websocket()
+                    phantom_syms = {p.get('product_symbol', '') for p in phantoms}
                     with price_ws._option_prices_lock:
-                        prices_snapshot = dict(price_ws.option_prices)
+                        prices_snapshot = {s: price_ws.option_prices[s] for s in phantom_syms if s in price_ws.option_prices}
                     for p in phantoms:
                         cached = prices_snapshot.get(p.get('product_symbol', ''))
                         if cached:

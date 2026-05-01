@@ -13,6 +13,7 @@
     "atm_shield_enabled",
     "replenish_enabled",
     "profit_ratchet_enabled",
-    "profit_ratchet_step_usd"
+    "profit_ratchet_step_usd",
+    "god_enabled"
   ]
 }

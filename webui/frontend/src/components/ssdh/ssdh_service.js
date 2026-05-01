@@ -9,6 +9,7 @@
 
 import api from '../../utils/apiShim';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../../utils/socketConfig';
 
 const BASE_URL = '/api/ssdh';
 
@@ -23,9 +24,7 @@ const wsListeners = {};
 function getSocket() {
   if (!_socket) {
     _socket = io('/ssdh', {
-      transports: ['polling'],
-      upgrade: false,
-      rememberUpgrade: false,
+      ...POLLING_SOCKET_OPTIONS,
       autoConnect: true,
     });
 

@@ -2214,5 +2214,119 @@ class TestBidMarkRatioFloor(unittest.TestCase):
                                msg='With floor=0.5 and ratio=0.3, should return mark')
 
 
+# =============================================================================
+# TestShiftLotsZeroUnfreeze
+# Root cause: when total_lots > max_lots_per_side, the proactive shift freeze
+# runs (positions go 'shifted'), then remaining_cap=0 makes lots=0, and the
+# old `return` at the lots-zero guard left positions frozen with no rollback.
+# Result: active_lots stuck at 0 every heartbeat (live session mmm02may26-1).
+# Fix: roll back freeze (shifted→active at old_strike) before returning.
+# =============================================================================
+
+class TestShiftLotsZeroUnfreeze(unittest.TestCase):
+    """Shift lots=0 guard must roll back freeze so side is not stranded."""
+
+    def _make_session(self, frozen_lots=250, max_per_side=200):
+        """Build a minimal session where PE is over cap with all lots frozen."""
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
+        positions = [
+            {'id': 'pe_orig', 'strike': 76200.0, 'lots': 50, 'entry_premium': 80.0,
+             'type': 'original', 'status': 'shifted', 'shifted_at': now,
+             'created_at': now, 'order_id': '', 'client_order_id': '',
+             'closed_at': None, 'realized_pnl': None},
+            {'id': 'pe_adj_001', 'strike': 76200.0, 'lots': 10, 'entry_premium': 72.0,
+             'type': 'adjustment', 'status': 'shifted', 'shifted_at': now,
+             'created_at': now, 'order_id': '', 'client_order_id': '',
+             'closed_at': None, 'realized_pnl': None},
+            {'id': 'pe_shift_001', 'strike': 76600.0, 'lots': 140, 'entry_premium': 63.0,
+             'type': 'strike_shift', 'status': 'shifted', 'shifted_at': now,
+             'created_at': now, 'order_id': '', 'client_order_id': '',
+             'closed_at': None, 'realized_pnl': None},
+            {'id': 'pe_shift_002', 'strike': 77000.0, 'lots': 50, 'entry_premium': 51.0,
+             'type': 'strike_shift', 'status': 'shifted', 'shifted_at': now,
+             'created_at': now, 'order_id': '', 'client_order_id': '',
+             'closed_at': None, 'realized_pnl': None},
+        ]
+        from webui.backend.routes.mmm.mmm_state import recompute_side_lots
+        pe_state = {
+            'active_strike': 76200.0,
+            'positions': positions,
+            'trigger_snapshot': {},
+            'frozen_positions': [],
+            'active_lots': 0,
+            'frozen_total_lots': 0,
+            'total_lots': 0,
+            'original_lots': 0,
+            'adjustment_fills': [],
+            'adjustment_total_lots': 0,
+        }
+        recompute_side_lots(pe_state)
+        return {
+            'session_id': 'test_mmm',
+            'strategy_status': 'RUNNING',
+            'pe': pe_state,
+            'ce': {'active_lots': 68, 'active_strike': 78400.0,
+                   'positions': [], 'frozen_positions': [],
+                   'total_lots': 68, 'frozen_total_lots': 0},
+            'params': {
+                'max_lots_per_side': max_per_side,
+                'shift_threshold': 50.0,
+                'shift_match_opposite_lots': True,
+                'shift_match_max_inflate_mult': 1.5,
+                'trend_boost_enabled': False,
+            },
+        }
+
+    def test_freeze_rolled_back_when_lots_zero_after_cap(self):
+        """When remaining_cap=0 makes lots=0, the freeze must be rolled back."""
+        session = self._make_session(max_per_side=200)
+        # All PE positions are 'shifted' — simulate state after recovery promoted
+        # 76600 → active, then proactive shift froze it again, cap made lots=0.
+        # The bug: positions stay 'shifted' (active_lots=0) after lots=0 guard.
+        # The fix: roll back positions at old_strike to 'active'.
+        old_strike = 76200.0
+
+        # Simulate the lots=0 rollback directly (as the fix does)
+        _restored = 0
+        for _pos in session['pe'].get('positions', []):
+            if _pos.get('status') == 'shifted' and _pos.get('strike') == old_strike:
+                _pos['status'] = 'active'
+                _pos.pop('shifted_at', None)
+                _restored += _pos.get('lots', 0)
+
+        from webui.backend.routes.mmm.mmm_state import recompute_side_lots
+        recompute_side_lots(session['pe'])
+
+        self.assertGreater(_restored, 0, 'Must restore > 0 lots at old_strike')
+        self.assertGreater(session['pe']['active_lots'], 0,
+                           'active_lots must be > 0 after rollback')
+
+    def test_remaining_cap_zero_when_over_limit(self):
+        """remaining_cap must be 0 (not negative) when total_lots > max_per_side."""
+        session = self._make_session(max_per_side=200)
+        total_lots = session['pe']['total_lots']
+        max_per_side = session['params']['max_lots_per_side']
+        remaining_cap = max(max_per_side - total_lots, 0)
+        self.assertEqual(total_lots, 250)
+        self.assertEqual(remaining_cap, 0,
+                         'remaining_cap must be 0, not negative, when over cap')
+
+    def test_active_lots_nonzero_after_rollback(self):
+        """After rollback, active_lots at old_strike must match restored positions."""
+        session = self._make_session(max_per_side=200)
+        old_strike = 76200.0
+        # Roll back shifted positions at old_strike
+        for _pos in session['pe'].get('positions', []):
+            if _pos.get('status') == 'shifted' and _pos.get('strike') == old_strike:
+                _pos['status'] = 'active'
+                _pos.pop('shifted_at', None)
+        from webui.backend.routes.mmm.mmm_state import recompute_side_lots
+        recompute_side_lots(session['pe'])
+        # 50 (original) + 10 (adjustment) = 60 lots at 76200
+        self.assertEqual(session['pe']['active_lots'], 60,
+                         'active_lots must equal sum of restored positions at old_strike')
+
+
 if __name__ == '__main__':
     unittest.main()

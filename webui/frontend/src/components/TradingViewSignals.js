@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 import {
   Box,
   Card,
@@ -275,10 +276,7 @@ const TradingViewSignals = () => {
     fetchWebhookConfig();
 
     const socket = io(API_URL, {
-      // Use polling only — backend async_mode='threading' doesn't support WebSocket
-      transports: ['polling'],
-      upgrade: false,
-      rememberUpgrade: false,
+      ...POLLING_SOCKET_OPTIONS,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: Infinity,

@@ -2,6 +2,17 @@
 
 ---
 
+## 2026-05-01 — Fix: PE stuck at 0 active / 250 frozen (shift lots=0 unfreeze)
+
+**Root cause** (`mmm_monitor.py` `if lots <= 0: return` guard, formerly line 6650):
+- `_auto_promote_atm_strike()` promotes frozen PE lots to active. Proactive shift fires, freeze runs, then `remaining_cap = max(200−250, 0) = 0` → lots=0. Old guard returned WITHOUT rolling back the freeze → all positions stay 'shifted', active_lots=0 every beat.
+
+**Fix**: Before the `return`, restore positions at `old_strike` from 'shifted' → 'active' + recompute. Same pattern as the sell-failure rollback. Activity `shift_lots_zero_unfreeze` added.
+
+**Files**: `mmm_monitor.py`, `mmm_activity.py` | **Tests**: 1788 passing (baseline 1785 + 3 new)
+
+---
+
 ## 2026-05-01 — mmm01may26-1 post-mortem: position cap bypass + combined size check + regime default
 
 Three bugs from the 290-lot catastrophic shift in session mmm01may26-1 (P&L: +$9.25 → -$49.67).

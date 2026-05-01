@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 import api from '../utils/apiShim';
 import { readWarmJSON, setWarmJSON } from '../utils/dataWarmCache';
 import { applyTickerUpdate } from './wsTickerUpdater';
@@ -504,9 +505,7 @@ export default function useOptionsPositions({ pollInterval = 5000 } = {}) {
     if (!socketRef.current) {
       socketRef.current = io({
         path: '/socket.io',
-        transports: ['polling'],
-        upgrade: false,
-        rememberUpgrade: false,
+        ...POLLING_SOCKET_OPTIONS,
         reconnection: true,
         reconnectionDelay: 1000,
         reconnectionAttempts: 10,

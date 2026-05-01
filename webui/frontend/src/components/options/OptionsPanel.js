@@ -1021,6 +1021,10 @@ const OptionsPanel = () => {
   const [reduceDialog, setReduceDialog] = useState({ open: false, rows: [], pct: 0 });
   const [reduceExecuting, setReduceExecuting] = useState(false);
   const reduceInFlightRef = useRef(false); // sync guard — prevents double-fire before React re-renders
+  const selectedStrikesCount = useMemo(
+    () => Object.values(selectedStrikes).filter(Boolean).length,
+    [selectedStrikes]
+  );
   const [addDialog, setAddDialog] = useState({
     open: false,
     position: null,
@@ -3650,7 +3654,7 @@ const OptionsPanel = () => {
             manualPnLBadge={<ManualPnLBadge value={manualPnL} onChange={setManualPnL} />}
             reducePercent={reducePercent}
             onReducePercentChange={setReducePercent}
-            selectedStrikesCount={Object.values(selectedStrikes).filter(Boolean).length}
+            selectedStrikesCount={selectedStrikesCount}
             onReduceSelected={handleReduceSelected}
             feesMap={feesMap}
           />

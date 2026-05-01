@@ -1,8 +1,8 @@
 {
-  "timestamp": 1777637468.942434,
+  "timestamp": 1777656507.7705228,
   "mode": "SHORT",
   "symbol": "BTCUSD",
-  "uptime": 19158.332606077194,
+  "uptime": 38197.160693883896,
   "state": {
     "open_tranches": [
       {
@@ -13,18 +13,36 @@
         "correlation_id": "fill-8366e8b2176a499fbd60b7e3d5e85619-1777634486927",
         "timestamp": 1777634487.759619,
         "entry_order_id": "ba3c8d4d-3036-4722-b268-9693a4f4c90c"
+      },
+      {
+        "position_id": "711741b9-a670-403b-b3a5-7bb6ae60b49f",
+        "entry_price": 78000.0,
+        "tp_price": 77500.0,
+        "size": 5,
+        "correlation_id": "fill-2589e1ef1118469ea0d262bc9fec2279-1777638853090",
+        "timestamp": 1777638854.26544,
+        "entry_order_id": "711741b9-a670-403b-b3a5-7bb6ae60b49f"
+      },
+      {
+        "position_id": "cd91e32e-7b44-4e06-b479-7154c705c201",
+        "entry_price": 78500.0,
+        "tp_price": 78000.0,
+        "size": 5,
+        "correlation_id": "fill-21171e5c02a6458ba291c9c355ca586f-1777643600861",
+        "timestamp": 1777643601.943789,
+        "entry_order_id": "cd91e32e-7b44-4e06-b479-7154c705c201"
       }
     ],
     "pending_buy": null,
     "pending_sell": {
-      "order_id": 1297883558,
-      "price": 78000.0,
+      "order_id": 1298166174,
+      "price": 79000.0,
       "size": 5,
-      "timestamp": 1777634498.9737651
+      "timestamp": 1777643615.643606
     },
     "last_buy_order_time": 0,
-    "last_sell_order_time": 1777634498.9737659,
-    "total_positions_opened": 10,
+    "last_sell_order_time": 1777643615.6436071,
+    "total_positions_opened": 12,
     "total_positions_closed": 9,
     "tp_retry_queue": [],
     "opportunistic_recovery_stats": {
@@ -38,31 +56,35 @@
   },
   "metrics": {
     "positions": {
-      "open_count": 1,
-      "total_opened": 10,
+      "open_count": 3,
+      "total_opened": 12,
       "total_closed": 9,
-      "avg_entry_price": 77500.0,
-      "total_size": 5,
-      "oldest_position_age": 2981.1806790828705,
+      "avg_entry_price": 78000.0,
+      "total_size": 15,
+      "oldest_position_age": 22019.062046051025,
       "has_pending_buy": false,
       "has_pending_sell": true
     },
     "orders": {
-      "active_orders": 3,
-      "total_placed": 3,
+      "active_orders": 7,
+      "total_placed": 7,
       "total_cancelled": 0,
       "total_failures": 0,
       "success_rate": 1.0,
       "active_order_ids": [
         1297583025,
         1297882860,
-        1297883558
+        1297883558,
+        1298021221,
+        1298021582,
+        1298165471,
+        1298166174
       ]
     },
     "sagas": {
       "active_sagas": 0,
-      "total_started": 1,
-      "total_completed": 1,
+      "total_started": 3,
+      "total_completed": 3,
       "total_failed": 0,
       "total_compensated": 0,
       "success_rate": 1.0,
@@ -75,10 +97,10 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 12245,
+        "processed_count": 24196,
         "error_count": 0,
-        "avg_processing_time_ms": 0.06283210124820471,
-        "max_processing_time_ms": 0.5028749583289027,
+        "avg_processing_time_ms": 0.08321953355334699,
+        "max_processing_time_ms": 1.2444999301806092,
         "error_rate": 0.0
       },
       "order_actor": {
@@ -86,15 +108,15 @@
         "running": true,
         "mailbox_size": 0,
         "mailbox_capacity": 1000,
-        "processed_count": 3716,
+        "processed_count": 7300,
         "error_count": 0,
-        "avg_processing_time_ms": 0.04625158733688295,
-        "max_processing_time_ms": 0.4646250745281577,
+        "avg_processing_time_ms": 0.05450207972899079,
+        "max_processing_time_ms": 0.5489580798894167,
         "error_rate": 0.0
       }
     },
-    "fills_processed": 1,
-    "sagas_completed": 1,
+    "fills_processed": 3,
+    "sagas_completed": 3,
     "sagas_failed": 0
   },
   "grid_config": {
@@ -107,8 +129,8 @@
   "monitoring": {
     "price_health": {
       "active": true,
-      "price": 77396.5,
-      "price_age_seconds": 4.187634229660034,
+      "price": 78175.5,
+      "price_age_seconds": 0.5713682174682617,
       "source": "WEBSOCKET",
       "status": "FRESH",
       "is_fresh": true,
@@ -118,7 +140,7 @@
         "critical": 60.0
       },
       "statistics": {
-        "total_updates": 3814,
+        "total_updates": 7604,
         "websocket_updates": 0,
         "rest_api_updates": 2,
         "stale_warnings": 0,

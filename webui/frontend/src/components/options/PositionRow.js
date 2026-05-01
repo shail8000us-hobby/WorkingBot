@@ -669,6 +669,7 @@ function PositionRow({
                         const unrealizedPnl = Number(pos.unrealized_pnl) || 0;
                         const realizedPnl = Number(pos.realized_pnl) || 0;
                         const partialRealized = Number(pos.partial_realized_pnl) || 0;
+                        const hasPartialRealized = partialRealized !== 0;
                         const totalPnl = isClosed ? realizedPnl : unrealizedPnl + realizedPnl + partialRealized;
                         const totalPnlColor = getPnlColor(totalPnl);
                         const rawPct = pos.pnl_percentage || 0;
@@ -685,7 +686,7 @@ function PositionRow({
                                 const pctStr = returnPct != null ? ` (${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}%)` : '';
                                 return `Realized PnL: ${formatPnl(realizedPnl)}${pctStr}`;
                             }
-                            if (partialRealized !== 0) {
+                            if (hasPartialRealized) {
                                 const parts = [`Prior sessions: ${formatPnl(partialRealized)}`, `Unrealized: ${formatPnl(unrealizedPnl)}`];
                                 if (realizedPnl !== 0) parts.push(`Realized: ${formatPnl(realizedPnl)}`);
                                 return `${parts.join(' + ')} = Total: ${formatPnl(totalPnl)}`;
@@ -711,7 +712,7 @@ function PositionRow({
                                                 ? `${returnPct >= 0 ? '+' : ''}${returnPct.toFixed(1)}% realized`
                                                 : 'Realized'}
                                         </Typography>
-                                    ) : partialRealized !== 0 ? (
+                                    ) : hasPartialRealized ? (
                                         <Typography variant="caption" sx={{ color: getPnlColor(partialRealized), fontStyle: 'italic' }}>
                                             incl. {formatPnl(partialRealized)} prior
                                         </Typography>

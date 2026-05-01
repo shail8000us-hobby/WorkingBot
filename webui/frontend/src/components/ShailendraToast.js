@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Snackbar, Alert, Typography, Box } from '@mui/material';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 
 const ShailendraToast = () => {
     const [open, setOpen] = useState(false);
@@ -12,11 +13,7 @@ const ShailendraToast = () => {
             ? 'http://localhost:5555' 
             : window.location.origin;
             
-        const socket = io(origin, {
-            transports: ['polling'],
-            upgrade: false,
-            rememberUpgrade: false,
-        });
+        const socket = io(origin, { ...POLLING_SOCKET_OPTIONS });
 
         socket.on('shailendra_signal', (data) => {
             console.log("🔥 Shailendra Signal Received:", data);

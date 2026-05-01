@@ -6648,6 +6648,33 @@ class MMMMonitor:
         # ── END DELTA-NEUTRAL LOT MATCHING ────────────────────────────────
 
         if lots <= 0:
+            # Freeze already ran above — roll it back so the side is not stranded.
+            # Without this, active_lots stays 0 forever when total_lots > cap
+            # (remaining_cap=0 → lots=0 → return without restoring).
+            _zero_side_state = session.get(side, {})
+            _restored = 0
+            for _pos in _zero_side_state.get('positions', []):
+                if _pos.get('status') == 'shifted' and _pos.get('strike') == old_strike:
+                    _pos['status'] = 'active'
+                    _pos.pop('shifted_at', None)
+                    _restored += _pos.get('lots', 0)
+            recompute_side_lots(_zero_side_state)
+            _total_lots = _zero_side_state.get('total_lots', 0)
+            log.warning(
+                f"[{sid}] SHIFT LOT ZERO: {side.upper()} lots=0 after cap "
+                f"(total={_total_lots}, max={params.get('max_lots_per_side', 0)}) — "
+                f"restored {_restored} lots at {old_strike} to prevent stranded side"
+            )
+            log_activity(
+                'shift_lots_zero_unfreeze',
+                f'♻️ Shift lots=0 (cap exceeded): {side.upper()} restored '
+                f'{_restored} lots at {old_strike} (preventing zero-active-lots trap)',
+                sid, 'warning',
+                {'side': side.upper(), 'old_strike': old_strike,
+                 'restored_lots': _restored,
+                 'total_lots': _total_lots,
+                 'max_per_side': params.get('max_lots_per_side', 0)},
+            )
             return
 
         # GUARD: Abort if monitor was stopped (e.g. by watchdog restart).

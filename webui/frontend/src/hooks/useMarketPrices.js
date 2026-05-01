@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 
 const POLLING_INTERVAL = 5000; // 5 seconds fallback polling
 
@@ -73,14 +74,9 @@ export const useMarketPrices = () => {
 
   useEffect(() => {
     // Initialize Socket.IO connection
-    // NOTE: Backend runs in Flask-SocketIO threading mode on this stack.
-    // Polling transport is stable; websocket-first attempts produce noisy
-    // browser console errors (invalid frame header / HTTP 400) on some setups.
     const socket = io({
       path: '/socket.io',
-      transports: ['polling'],
-      upgrade: false,
-      rememberUpgrade: false,
+      ...POLLING_SOCKET_OPTIONS,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,

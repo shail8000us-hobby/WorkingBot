@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 import api from '../utils/apiShim';
 
 /**
@@ -106,13 +107,9 @@ export default function useOptionsSettings() {
       Promise.all([loadSLTPSettings(), loadMaxLossSettings(), loadTakeProfitSettings()]);
     }, 30000);
 
-    // WebSocket listener for immediate auto-trigger notifications
     const socket = io({
       path: '/socket.io',
-      // Use polling only — backend async_mode='threading' doesn't support WebSocket
-      transports: ['polling'],
-      upgrade: false,
-      rememberUpgrade: false,
+      ...POLLING_SOCKET_OPTIONS,
       reconnection: true,
       reconnectionDelay: 2000,
       reconnectionAttempts: 5,

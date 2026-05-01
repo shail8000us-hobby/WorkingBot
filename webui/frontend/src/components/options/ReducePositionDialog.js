@@ -37,7 +37,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                 },
             }}
         >
-            {/* Header */}
             <DialogTitle sx={{ pb: 1, pt: 2, px: 2.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                     <Box sx={{
@@ -75,7 +74,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
             <DialogContent sx={{ px: 2.5, pb: 1 }}>
                 {actionable.length > 0 && (
                     <Box sx={{ mt: 0.5 }}>
-                        {/* Column headers */}
                         <Box sx={{
                             display: 'grid',
                             gridTemplateColumns: '1fr 60px 90px 60px 70px',
@@ -117,7 +115,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                                     alignItems: 'center',
                                 }}
                             >
-                                {/* Symbol */}
                                 <Typography sx={{
                                     fontSize: '0.7rem',
                                     fontFamily: MONO,
@@ -130,7 +127,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                                     {r.position.product_symbol}
                                 </Typography>
 
-                                {/* Current size */}
                                 <Typography sx={{
                                     fontSize: '0.72rem',
                                     fontFamily: MONO,
@@ -141,7 +137,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                                     {r.currentSize}
                                 </Typography>
 
-                                {/* Action chip */}
                                 <Box sx={{ display: 'flex', justifyContent: 'flex-end' }}>
                                     <Chip
                                         label={`${r.action}  ${r.lotsToClose}`}
@@ -162,7 +157,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                                     />
                                 </Box>
 
-                                {/* Closing */}
                                 <Typography sx={{
                                     fontSize: '0.72rem',
                                     fontFamily: MONO,
@@ -173,7 +167,6 @@ function ReducePositionDialog({ open, rows, pct, onClose, onConfirm, executing }
                                     {r.lotsToClose}
                                 </Typography>
 
-                                {/* Remaining */}
                                 <Typography sx={{
                                     fontSize: '0.72rem',
                                     fontFamily: MONO,

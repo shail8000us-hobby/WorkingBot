@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { io } from 'socket.io-client';
+import { POLLING_SOCKET_OPTIONS } from '../utils/socketConfig';
 
 let socketInstance = null;
 
@@ -19,10 +20,9 @@ export const useSocket = () => {
       return;
     }
 
-    // Create new socket connection — try WebSocket first, fall back to polling
     const newSocket = io({
       path: '/socket.io',
-      transports: ['polling'],
+      ...POLLING_SOCKET_OPTIONS,
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,

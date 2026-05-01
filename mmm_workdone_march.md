@@ -6479,3 +6479,21 @@ The "slippage from exit mechanism: ~$0". The user's "$50→$10" was a misread:
 2. **Frontend button** (`MMMDashboard.js`): tooltip renamed "Peaceful Exit — close all positions with limit orders (slow, profit-protecting)". Confirmation dialog explains paired close, no market orders, near-worthless positions expire.
 
 **Files**: `mmm_exit_all.py`, `MMMDashboard.js` | **Tests**: 1785 passing (no regressions)
+
+## 2026-05-01 — Fix: PE stuck at 0 active / 250 frozen (shift lots=0 unfreeze)
+
+**Session**: mmm02may26-1 — PE side frozen with 0 active lots for 20+ hours.
+
+**Root cause** (`mmm_monitor.py` line 6650):
+- `_auto_promote_atm_strike()` correctly promotes frozen lots (e.g. 76600 → active)
+- Proactive shift fires immediately: `find_new_strike` succeeds, `freeze_current_positions` runs (76600 → shifted again)
+- Cap check: `max_lots_per_side=200` but `total_lots=250` → `remaining_cap = max(200−250, 0) = 0` → `lots = 0`
+- Old `if lots <= 0: return` exited WITHOUT rolling back the freeze
+- Result: all PE positions stay 'shifted', active_lots=0. Cycle repeats every heartbeat.
+
+**Fix** (`mmm_monitor.py`, `mmm_activity.py`):
+- Before the `return` at the lots=0 guard, roll back the freeze: restore positions at `old_strike` from 'shifted' → 'active', call `recompute_side_lots`, log `shift_lots_zero_unfreeze` warning
+- Same pattern as the existing sell-failure rollback at line ~7014
+- Activity type `shift_lots_zero_unfreeze` registered in `mmm_activity.py`
+
+**Files**: `mmm_monitor.py` (lots=0 guard), `mmm_activity.py` (activity registry) | **Tests**: 1788 passing (baseline 1785 + 3 new: `TestShiftLotsZeroUnfreeze`)
