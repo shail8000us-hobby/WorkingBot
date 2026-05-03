@@ -19,11 +19,11 @@ from pathlib import Path
 from flask import Blueprint, jsonify
 
 # Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))  # webui/backend
 
 from config.loader import get_config, get_api_credentials
 from webui.backend.sealed import sealed
-from services.delta_price_websocket import get_price_websocket
+from webui.backend.services.delta_price_websocket import get_price_websocket
 
 log = logging.getLogger(__name__)
 
@@ -212,7 +212,10 @@ def _fetch_dashboard_fresh(is_background=False):
         try:
             from .closed_position_store import get_closed_position_store
             store = get_closed_position_store()
+            store_stats = store.stats()
             live_symbols = {p.get('product_symbol') for p in positions}
+
+            log.info(f"[Dashboard] ClosedPositionStore loaded: {store_stats['tracked']} closed positions tracked")
 
             # Carry over prior-session realized P&L so re-entered positions don't show zero history.
             all_cumulative = store.get_all_cumulative_pnl()
@@ -246,6 +249,11 @@ def _fetch_dashboard_fresh(is_background=False):
                     log.info(f"[Dashboard] Immediate phantom recorded: {sym} realized=${realized:+.4f}")
 
             phantoms = store.get_phantom_positions(exclude_symbols=live_symbols)
+            log.info(f"[Dashboard] get_phantom_positions returned {len(phantoms)} phantoms (live_symbols={len(live_symbols)})")
+            if not phantoms:
+                dismissed = store.get_dismissed_symbols()
+                log.warning(f"[Dashboard] No phantoms returned. Dismissed symbols: {dismissed}; Tracked symbols: {store_stats['symbols']}")
+
             if phantoms:
                 # Seed bid/ask from WS cache on initial REST load so phantom rows don't
                 # show $0.00 before the first WS tick arrives.
@@ -266,9 +274,9 @@ def _fetch_dashboard_fresh(is_background=False):
                 except Exception:
                     log.debug('[Dashboard] Phantom bid/ask cache lookup failed', exc_info=True)
                 positions = list(positions) + phantoms
-                log.debug(f"[Dashboard] Merged {len(phantoms)} phantom closed positions")
+                log.info(f"[Dashboard] ✅ Merged {len(phantoms)} phantom closed positions into response")
         except Exception as exc:
-            log.debug(f"[Dashboard] Phantom merge skipped: {exc}")
+            log.error(f"[Dashboard] ❌ Phantom merge failed: {exc}", exc_info=True)
 
         # Calculate portfolio Greeks server-side (Phase 2 optimization)
         # Exclude is_closed phantoms from Greeks — they have no live exposure

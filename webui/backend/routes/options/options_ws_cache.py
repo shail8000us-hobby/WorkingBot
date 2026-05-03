@@ -32,6 +32,7 @@ import asyncio
 import logging
 import time
 from typing import Dict, List, Optional
+from webui.backend.sealed import sealed
 
 log = logging.getLogger(__name__)
 
@@ -205,8 +206,23 @@ class _OptionsWSCache:
     # WebSocket event handlers
     # ------------------------------------------------------------------
 
+    @sealed
     async def _on_l1_orderbook(self, message: dict) -> None:
-        """Update mark price from l1_orderbook push (~500 ms cadence)."""
+        """Update mark price from l1_orderbook push (~500 ms cadence).
+
+        SEALED — v1.0.0 — May 1, 2026
+        DO NOT MODIFY. This function is critical for max_loss safety checks.
+
+        BUG HISTORY: On 2026-04-28, a 1000x PnL deflation bug was introduced via
+        formula (mark-entry)*size*0.001. This caused max_loss checks to fail,
+        preventing automatic position squareoff. The bug was FIXED on 2026-05-01
+        by removing the incorrect recalculation. This sealed decorator prevents
+        any future modification that could reintroduce the bug.
+
+        RULE: Never recalculate unrealized_pnl from mark/entry prices here.
+        The API already returns correct unrealized_pnl in USD. Updating mark_price
+        for display is fine, but do NOT touch unrealized_pnl field.
+        """
         try:
             data = message.get("data", {})
             symbol = data.get("symbol", "")
@@ -232,13 +248,12 @@ class _OptionsWSCache:
                 self._mark_prices[symbol] = mark
                 if symbol in self._positions:
                     self._positions[symbol]["mark_price"] = mark
-                    # Recalculate unrealized PnL with fresh mark.
-                    # Prices are USD/BTC; 1 lot = 0.001 BTC — must apply LOT_MULT.
-                    pos = self._positions[symbol]
-                    size = pos.get("size", 0)
-                    entry = pos.get("entry_price", 0)
-                    if size and entry:
-                        pos["unrealized_pnl"] = (mark - entry) * size * 0.001
+                    # NOTE: Do NOT recalculate unrealized_pnl here.
+                    # The formula (mark - entry) * size * 0.001 deflates PnL by 1000x
+                    # (bug introduced 2026-04-28 with incorrect multiplier assumption).
+                    # API unrealized_pnl is already correct in USD; updating mark_price
+                    # for display is sufficient. Max loss checks and other safety systems
+                    # depend on accurate unrealized_pnl from the exchange API.
         except Exception as exc:
             log.debug(f"[OptionsWSCache] l1_orderbook handler error: {exc}")
 
@@ -369,8 +384,25 @@ class _OptionsWSCache:
     # REST position refresh
     # ------------------------------------------------------------------
 
+    @sealed
     async def _refresh_positions(self, reason: str = "") -> None:
-        """Fetch all options positions via REST and merge with cached mark prices."""
+        """Fetch all options positions via REST and merge with cached mark prices.
+
+        SEALED — v1.0.0 — May 1, 2026
+        DO NOT MODIFY. This function is critical for max_loss safety checks.
+
+        BUG HISTORY: On 2026-04-28, a 1000x PnL deflation bug was introduced via
+        the loop at lines 463-467 that recalculated:
+            pos["unrealized_pnl"] = (mark - entry) * size * 0.001
+        This deflated all PnL values by 1000x, causing max_loss checks to fail.
+        The bug was FIXED on 2026-05-01 by removing the entire recalculation loop.
+        This sealed decorator prevents any future modification that could
+        reintroduce the bug.
+
+        RULE: Never recalculate unrealized_pnl from mark/entry prices.
+        The API already returns correct unrealized_pnl in USD. Updating mark_price
+        for display is fine, but do NOT touch unrealized_pnl field.
+        """
         try:
             all_pos = await self._rest_client.get_positions_margined()
 
@@ -456,15 +488,14 @@ class _OptionsWSCache:
                 if reason != "fill-event":
                     self._prev_positions = dict(new_positions)
                 self._positions = new_positions
-                # Merge any fresher mark prices from WS
+                # Merge any fresher mark prices from WS — but DO NOT recalculate unrealized_pnl.
+                # The API already returns correct unrealized_pnl in USD. Recalculating it with
+                # (mark - entry) * size * 0.001 deflates it 1000x, causing max_loss checks to fail
+                # when they should trigger. The mark price update is for display only (bid/ask in UI);
+                # PnL tracking must always use the API value.
                 for sym, mark in self._mark_prices.items():
                     if sym in self._positions:
                         self._positions[sym]["mark_price"] = mark
-                        pos = self._positions[sym]
-                        size = pos.get("size", 0)
-                        entry = pos.get("entry_price", 0)
-                        if size and entry:
-                            pos["unrealized_pnl"] = (mark - entry) * size * 0.001
                 self._last_position_refresh = time.time()
 
             count = len(new_positions)

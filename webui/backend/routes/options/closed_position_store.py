@@ -87,10 +87,17 @@ class ClosedPositionStore:
             if _STORE_PATH.exists():
                 with open(_STORE_PATH, 'r') as f:
                     self._data = json.load(f)
-                log.info(f"[ClosedPositionStore] Loaded {len(self._data)} entries from {_STORE_PATH}")
+                before_purge = len(self._data)
                 self._purge_expired_unlocked()
+                after_purge = len(self._data)
+                log.info(f"[ClosedPositionStore] ✅ Loaded {before_purge} entries, kept {after_purge} after purging expired (file: {_STORE_PATH})")
+                if before_purge != after_purge:
+                    log.info(f"[ClosedPositionStore] Purged {before_purge - after_purge} expired entries")
+            else:
+                log.warning(f"[ClosedPositionStore] Store file not found at {_STORE_PATH} — starting empty")
+                self._data = {}
         except Exception as exc:
-            log.warning(f"[ClosedPositionStore] Load failed ({exc}) — starting empty")
+            log.error(f"[ClosedPositionStore] ❌ Load failed: {exc}", exc_info=True)
             self._data = {}
 
     def _save_unlocked(self) -> None:
@@ -103,20 +110,23 @@ class ClosedPositionStore:
 
     def _load_seen(self) -> None:
         try:
+            before_load = 0
             if _SEEN_PATH.exists():
                 with open(_SEEN_PATH, 'r') as f:
                     self._seen = json.load(f)
+                before_load = len(self._seen)
             # Purge seen entries whose post-expiry retain window has passed
             # (same logic as _purge_expired_unlocked for closed entries).
             cutoff = time.time() - _POST_EXPIRY_RETAIN_SECS
             expired = [sym for sym, e in self._seen.items() if e.get('expiry_ts', 0) < cutoff]
             for sym in expired:
                 del self._seen[sym]
+            after_purge = len(self._seen)
             if expired:
                 log.info(f"[ClosedPositionStore] Purged {len(expired)} expired seen entries")
-            log.info(f"[ClosedPositionStore] Loaded {len(self._seen)} seen entries from {_SEEN_PATH}")
+            log.info(f"[ClosedPositionStore] ✅ Seen entries: loaded {before_load}, kept {after_purge} after purging (file: {_SEEN_PATH})")
         except Exception as exc:
-            log.warning(f"[ClosedPositionStore] Seen load failed ({exc}) — starting empty")
+            log.error(f"[ClosedPositionStore] ❌ Seen load failed: {exc}", exc_info=True)
             self._seen = {}
 
     def _save_seen_unlocked(self) -> None:
@@ -133,10 +143,12 @@ class ClosedPositionStore:
     def _load_dismissed(self) -> None:
         """Load persisted dismissed symbols set from disk."""
         try:
+            before_load = 0
             if _DISMISSED_PATH.exists():
                 with open(_DISMISSED_PATH, 'r') as f:
                     raw = json.load(f)
                     self._dismissed = set(raw) if isinstance(raw, list) else set()
+                before_load = len(self._dismissed)
             # Purge dismissed entries whose post-expiry retain window has passed
             cutoff = time.time() - _POST_EXPIRY_RETAIN_SECS
             stale = {s for s in self._dismissed if _parse_expiry_ts(s) < cutoff}
@@ -144,9 +156,9 @@ class ClosedPositionStore:
                 self._dismissed -= stale
                 self._save_dismissed_unlocked()
                 log.info(f"[ClosedPositionStore] Purged {len(stale)} expired dismissed symbols")
-            log.info(f"[ClosedPositionStore] Loaded {len(self._dismissed)} dismissed symbols from {_DISMISSED_PATH}")
+            log.info(f"[ClosedPositionStore] ✅ Dismissed symbols: loaded {before_load}, kept {len(self._dismissed)} after purging (file: {_DISMISSED_PATH})")
         except Exception as exc:
-            log.warning(f"[ClosedPositionStore] Dismissed load failed ({exc}) — starting empty")
+            log.error(f"[ClosedPositionStore] ❌ Dismissed load failed: {exc}", exc_info=True)
             self._dismissed = set()
 
     def _save_dismissed_unlocked(self) -> None:
