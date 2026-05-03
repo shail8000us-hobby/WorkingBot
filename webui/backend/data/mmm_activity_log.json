@@ -1,83 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_20260502_232640_157920",
-      "timestamp": "2026-05-02T23:26:40.897910+00:00",
-      "type": "arbiter_stale_signal",
-      "type_label": "Arbiter Stale Signal",
-      "category": "safety",
-      "message": "[ARBITER] Stale signal margin_tier: GREEN \u2192 effective YELLOW",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "signal": "margin_tier",
-        "raw": "GREEN",
-        "effective": "YELLOW",
-        "last_updated_at": null
-      }
-    },
-    {
-      "id": "act_20260502_232640_157921",
-      "timestamp": "2026-05-02T23:26:40.898472+00:00",
-      "type": "arbiter_suppressed_double_sell",
-      "type_label": "Arbiter Suppressed (Double-Sell Guard)",
-      "category": "safety",
-      "message": "[ARBITER] defensive_shift on PE suppressed \u2014 proactive shift already sold this beat",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "side": "pe",
-        "trigger": "breakeven_critical_ce",
-        "reason": "proactive_shift_placed_same_beat"
-      }
-    },
-    {
-      "id": "act_20260502_232640_157922",
-      "timestamp": "2026-05-02T23:26:40.898630+00:00",
-      "type": "info",
-      "type_label": "Info",
-      "category": "system",
-      "message": "\ud83d\udccd Frozen PnL trigger: CE=$3.74 PE=$0.00 (threshold=$0.20) \u2192 ce_triggered",
-      "session_id": "mmm03may26-3",
-      "severity": "info",
-      "details": {
-        "ce_frozen_loss": 3.7445,
-        "pe_frozen_loss": 0.0,
-        "trigger_type": "frozen_pnl"
-      }
-    },
-    {
-      "id": "act_20260502_232640_157923",
-      "timestamp": "2026-05-02T23:26:40.898706+00:00",
-      "type": "adjustment_triggered",
-      "type_label": "Adjustment Triggered",
-      "category": "adjustments",
-      "message": "\ud83c\udfaf Adjustment Triggered: CE side breached trigger ($197.50), hedging with PE ($79.50)",
-      "session_id": "mmm03may26-3",
-      "severity": "info",
-      "details": {
-        "aggressor": "CE",
-        "aggressor_premium": 197.5,
-        "hedge": "PE",
-        "hedge_premium": 79.5
-      }
-    },
-    {
-      "id": "act_20260502_232641_157924",
-      "timestamp": "2026-05-02T23:26:41.027396+00:00",
-      "type": "order_placing",
-      "type_label": "Placing Order",
-      "category": "orders",
-      "message": "SELL 7 lot(s) P-BTC-78400-030526 \u2014 fetching prices...",
-      "session_id": "mmm03may26-3",
-      "severity": "progress",
-      "details": {
-        "symbol": "P-BTC-78400-030526",
-        "side": "sell",
-        "size": 7
-      }
-    },
-    {
       "id": "act_20260502_232642_157925",
       "timestamp": "2026-05-02T23:26:42.498016+00:00",
       "type": "order_placed",
@@ -9133,7 +9056,91 @@
         "mode": "NORMAL",
         "score": 0.1
       }
+    },
+    {
+      "id": "act_20260503_032551_158420",
+      "timestamp": "2026-05-03T03:25:51.855853+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 CE active @ 87000: session=7 vs exchange=7.0 (other_mmm=6) \u2014 session has MORE than exchange \u2014 verify position!",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "SIZE_MISMATCH",
+        "detail": "CE active @ 87000: session=7 vs exchange=7.0 (other_mmm=6) \u2014 session has MORE than exchange \u2014 verify position!",
+        "symbol": "C-BTC-87000-260626",
+        "session_lots": 7,
+        "exchange_size": 7.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_032551_158421",
+      "timestamp": "2026-05-03T03:25:51.856982+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE frozen @ 53000: session=9 vs exchange=9.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 53000: session=9 vs exchange=9.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+        "symbol": "P-BTC-53000-260626",
+        "session_lots": 9,
+        "exchange_size": 9.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_032553_158422",
+      "timestamp": "2026-05-03T03:25:53.231423+00:00",
+      "type": "info",
+      "type_label": "Info",
+      "category": "system",
+      "message": "\ud83d\udd04 Hot Reload: god_enabled updated False \u2192 True",
+      "session_id": "mmm29may26-1",
+      "severity": "success",
+      "details": {
+        "param": "god_enabled",
+        "old_value": false,
+        "new_value": true
+      }
+    },
+    {
+      "id": "act_20260503_032554_158423",
+      "timestamp": "2026-05-03T03:25:54.587006+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_032554_158424",
+      "timestamp": "2026-05-03T03:25:54.587261+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.175)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.175
+      }
     }
   ],
-  "updated_at": "2026-05-03T02:56:47.478557+00:00"
+  "updated_at": "2026-05-03T03:25:54.631371+00:00"
 }

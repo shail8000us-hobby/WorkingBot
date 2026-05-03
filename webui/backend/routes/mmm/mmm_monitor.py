@@ -2417,6 +2417,8 @@ class MMMMonitor:
                     )
                     if _ocs_awake:
                         # Awake hours: pause, set AWAITING_USER_ACTION flag, fire Telegram.
+                        # Re-read current lots to avoid stale state from concurrent close_at_5
+                        _os_lots_for_alert = session.get(_os, {}).get('total_lots', 0)
                         _ocs_pnl = (session.get('unrealized_pnl', 0)
                                     + session.get('realized_pnl', 0)
                                     - session.get('total_fees', 0))
@@ -2428,12 +2430,12 @@ class MMMMonitor:
                         session['_awaiting_user_action'] = True
                         session['_awaiting_user_action_reason'] = (
                             f'{_cs.upper()} fully closed — '
-                            f'{_os.upper()} unhedged ({_os_lots} lots @ {_os_strike})'
+                            f'{_os.upper()} unhedged ({_os_lots_for_alert} lots @ {_os_strike})'
                         )
                         session['_awaiting_user_action_details'] = {
                             'closed_side': _cs,
                             'open_side': _os,
-                            'open_lots': _os_lots,
+                            'open_lots': _os_lots_for_alert,
                             'open_strike': _os_strike,
                             'current_pnl': round(_ocs_pnl, 2),
                             'detected_at_ist': _detected_ist,
@@ -2447,7 +2449,7 @@ class MMMMonitor:
                             try:
                                 from .mmm_telegram import alert_active_hours_unhedged_pause as _tg_ahup
                                 asyncio.ensure_future(
-                                    _tg_ahup(sid, _cs, _os, _os_lots, _ocs_pnl,
+                                    _tg_ahup(sid, _cs, _os, _os_lots_for_alert, _ocs_pnl,
                                               session['_awaiting_user_action_details'])
                                 )
                             except Exception:
@@ -2459,29 +2461,40 @@ class MMMMonitor:
                         # If the open side has any lots, convert STOP → PAUSE so the OCS
                         # watchdog can keep retrying replenish on subsequent heartbeats.
                         # Only stop when there are truly no open lots (nothing left to protect).
+                        #
+                        # CRITICAL FIX: Re-read _os_lots before the decision because close_at_5
+                        # or other processes may have closed the open side during replenish.
+                        # Using a stale _os_lots value causes incorrect auto-stop decisions.
+                        _os_lots_current = session.get(_os, {}).get('total_lots', 0)
                         _ocs_pnl_v = (session.get('unrealized_pnl', 0)
                                       + session.get('realized_pnl', 0)
                                       - session.get('total_fees', 0))
                         try:
                             from .mmm_telegram import alert_offhours_unhedged_stop as _tg_ohs
                             asyncio.ensure_future(
-                                _tg_ohs(sid, _cs, _os, _os_lots, _ocs_pnl_v)
+                                _tg_ohs(sid, _cs, _os, _os_lots_current, _ocs_pnl_v)
                             )
                         except Exception:
                             pass
-                        if _os_lots > 0:
+                        if _os_lots_current > 0:
                             # Stop lock: open exposure detected — PAUSE so watchdog can
                             # continue replenishing.  Stopping would kill the monitor and
                             # leave the open side completely unmonitored.
                             log.warning(
-                                f"[{sid}] STOP LOCK: {_os.upper()} has {_os_lots} open lots — "
+                                f"[{sid}] STOP LOCK: {_os.upper()} has {_os_lots_current} open lots — "
                                 f"converting off-hours STOP to PAUSE so OCS watchdog can recover"
                             )
                             self.pause(
                                 f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
-                                f'(stop lock: {_os_lots} lots protected, off-hours → PAUSE)'
+                                f'(stop lock: {_os_lots_current} lots protected, off-hours → PAUSE)'
                             )
                         else:
+                            # All lots on open side are gone (closed by close_at_5/expires/manual).
+                            # Safe to stop since there's nothing left to protect.
+                            log.warning(
+                                f"[{sid}] Off-hours OCS with {_os.upper()} now fully closed "
+                                f"(was {_os_lots} lots, now {_os_lots_current}) — safe to stop"
+                            )
                             self.stop(
                                 f'{_cs.upper()} fully closed — {_os.upper()} unhedged '
                                 f'(off-hours auto-stop)'
