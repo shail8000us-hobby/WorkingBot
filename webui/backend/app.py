@@ -12,10 +12,25 @@ Architecture: Flask Blueprints pattern
 import os
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 
 # Setup paths
 BASE_DIR = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(BASE_DIR))
+
+def _load_environment_variables():
+    """Load API credentials from env files. Runs before any other imports to ensure
+    credentials are available when DeltaClient is instantiated."""
+    secrets_file = BASE_DIR / 'secrets' / 'api_keys.env'
+
+    for env_file in [BASE_DIR / '.env', BASE_DIR / '.env.local', secrets_file]:
+        try:
+            if load_dotenv(env_file, override=False):
+                print(f"✅ Loaded environment from: {env_file}")
+        except Exception as e:
+            print(f"⚠️  Failed to load {env_file}: {e}")
+
+_load_environment_variables()
 
 # Load config from YAML (SINGLE SOURCE OF TRUTH)
 from config.loader import get_config, get_api_credentials
@@ -30,15 +45,17 @@ elif hasattr(cfg, 'bot') and hasattr(cfg.bot, 'symbol'):
 else:
     print(f"✅ Loaded config v{cfg.version}")
 
-# Load API credentials from .env (security best practice)
+# Load and validate API credentials
 credentials = get_api_credentials(cfg.trading_mode)
-if credentials['api_key']:
-    os.environ['DELTA_API_KEY'] = credentials['api_key']
-    os.environ['DELTA_API_SECRET'] = credentials['api_secret']
-    print(f"✅ Trading mode: {cfg.trading_mode}")
-    print("✅ API credentials loaded from secrets/api_keys.env (Key: [REDACTED])")
-else:
-    print(f"⚠️  WARNING: API credentials not found in secrets/api_keys.env")
+if not credentials.get('api_key') or not credentials.get('api_secret'):
+    print(f"❌ FATAL: API credentials not found for {cfg.trading_mode} mode")
+    print(f"   Expected: secrets/api_keys.env with LIVE_DELTA_API_KEY/SECRET or DEMO_DELTA_API_KEY/SECRET")
+    sys.exit(1)
+
+os.environ['DELTA_API_KEY'] = credentials['api_key']
+os.environ['DELTA_API_SECRET'] = credentials['api_secret']
+print(f"✅ Trading mode: {cfg.trading_mode}")
+print(f"✅ API credentials loaded (Key: ...{credentials['api_key'][-8:]})")
 
 # Flask imports
 from flask import Flask, jsonify, request, send_from_directory

@@ -75,12 +75,30 @@ case "${1:-start}" in
 esac
 
 # ============================================================================
+# Load environment variables
+# ============================================================================
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+fi
+
+if [ -f "$PROJECT_DIR/secrets/api_keys.env" ]; then
+    set -a
+    source "$PROJECT_DIR/secrets/api_keys.env"
+    set +a
+fi
+
+# ============================================================================
 # Start
 # ============================================================================
 stop_server
 sleep 1
 
 echo "🚀 Starting GridBot WebUI Backend..."
+echo "   Trading Mode: ${TRADING_MODE:-live}"
+echo "   API Key Loaded: $([ -n "$DELTA_API_KEY" ] && echo '✅ YES' || echo '❌ NO')"
+echo ""
 
 nohup "$PYTHON" "$PROJECT_DIR/webui/backend/app.py" \
     > "$LOG_FILE" 2>&1 &

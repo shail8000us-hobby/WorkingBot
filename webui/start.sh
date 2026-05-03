@@ -37,6 +37,26 @@ echo ""
 echo "=================================="
 echo ""
 
+# Load environment variables (BEFORE starting backend)
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    source "$PROJECT_DIR/.env"
+    set +a
+    echo "✅ Loaded .env"
+fi
+
+if [ -f "$PROJECT_DIR/secrets/api_keys.env" ]; then
+    set -a
+    source "$PROJECT_DIR/secrets/api_keys.env"
+    set +a
+    echo "✅ Loaded secrets/api_keys.env"
+fi
+
+echo "   Trading Mode: ${TRADING_MODE:-live}"
+echo "   API Key: $([ -n "$DELTA_API_KEY" ] && echo '✅ Loaded' || echo '❌ Missing')"
+echo ""
+
 # Start the backend server
 cd backend
 python3 app.py

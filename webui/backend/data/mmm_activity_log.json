@@ -1,360 +1,6 @@
 {
   "activities": [
     {
-      "id": "act_20260502_232642_157925",
-      "timestamp": "2026-05-02T23:26:42.498016+00:00",
-      "type": "order_placed",
-      "type_label": "Order Placed",
-      "category": "orders",
-      "message": "SELL 7 P-BTC-78400-030526 @ $75.50 (bid=$74.00, ask=$77.00)",
-      "session_id": "mmm03may26-3",
-      "severity": "info",
-      "details": {
-        "order_id": "1299736031",
-        "mid_price": 75.5,
-        "bid": 74.0,
-        "ask": 77.0
-      }
-    },
-    {
-      "id": "act_20260502_232646_157926",
-      "timestamp": "2026-05-02T23:26:46.373263+00:00",
-      "type": "order_filled",
-      "type_label": "Order Filled",
-      "category": "orders",
-      "message": "\u2705 SELL P-BTC-78400-030526 FILLED @ $75.50 in 5.3s (7/7 lots total)",
-      "session_id": "mmm03may26-3",
-      "severity": "success",
-      "details": {
-        "order_id": "1299736031",
-        "fill_price": 75.5,
-        "filled_size": 7,
-        "elapsed": 5.3,
-        "attempts": 1
-      }
-    },
-    {
-      "id": "act_20260502_232646_157927",
-      "timestamp": "2026-05-02T23:26:46.853361+00:00",
-      "type": "adjustment_complete",
-      "type_label": "Adjustment Complete",
-      "category": "adjustments",
-      "message": "\u2713 Adjustment Complete: SELL 7 lots PE @ 78400.0 for $75.50 (Type: first_reversal)",
-      "session_id": "mmm03may26-3",
-      "severity": "success",
-      "details": {
-        "side": "PE",
-        "strike": 78400.0,
-        "lots": 7,
-        "fill_price": 75.5,
-        "type": "first_reversal",
-        "adjustment_number": 8
-      }
-    },
-    {
-      "id": "act_20260502_232710_157928",
-      "timestamp": "2026-05-02T23:27:10.399365+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
-      "id": "act_20260502_232710_157929",
-      "timestamp": "2026-05-02T23:27:10.399563+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260502_233012_157930",
-      "timestamp": "2026-05-02T23:30:12.580951+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_233152_157931",
-      "timestamp": "2026-05-02T23:31:52.639681+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_233334_157932",
-      "timestamp": "2026-05-02T23:33:34.335096+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_233524_157933",
-      "timestamp": "2026-05-02T23:35:24.811868+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_233714_157934",
-      "timestamp": "2026-05-02T23:37:14.580851+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_233736_157935",
-      "timestamp": "2026-05-02T23:37:36.201590+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
-      "id": "act_20260502_233736_157936",
-      "timestamp": "2026-05-02T23:37:36.201820+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260502_233737_157937",
-      "timestamp": "2026-05-02T23:37:37.533552+00:00",
-      "type": "breakeven_zone_change",
-      "type_label": "Breakeven Zone Change",
-      "category": "safety",
-      "message": "Breakeven zone: CRITICAL \u2192 DANGER | nearest=0.5086% | multiplier=1.99x",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "prev_zone": "CRITICAL",
-        "new_zone": "DANGER",
-        "nearest_pct": 0.5086,
-        "multiplier": 1.9879
-      }
-    },
-    {
-      "id": "act_20260502_233737_157938",
-      "timestamp": "2026-05-02T23:37:37.533641+00:00",
-      "type": "breakeven_narrow_band",
-      "type_label": "Narrow Breakeven Band",
-      "category": "safety",
-      "message": "Narrow Breakeven Band: 1.4% \u2014 Consider reducing exposure",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "band_width_pct": 1.3993,
-        "threshold": 1.8
-      }
-    },
-    {
-      "id": "act_20260502_233831_157939",
-      "timestamp": "2026-05-02T23:38:31.713727+00:00",
-      "type": "auto_atm_promote",
-      "type_label": "Auto ATM Promote",
-      "category": "adjustments",
-      "message": "\ud83d\udccc Auto-ATM: CE active strike 78800 \u2192 78600 [ITM] (spot $78691, dist $91)",
-      "session_id": "mmm03may26-3",
-      "severity": "info",
-      "details": {
-        "side": "CE",
-        "old_strike": 78800.0,
-        "new_strike": 78600.0,
-        "spot": 78690.64216884,
-        "itm": true
-      }
-    },
-    {
-      "id": "act_20260502_233833_157940",
-      "timestamp": "2026-05-02T23:38:33.424304+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
-      "id": "act_20260502_233833_157941",
-      "timestamp": "2026-05-02T23:38:33.424548+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260502_234135_157942",
-      "timestamp": "2026-05-02T23:41:35.045848+00:00",
-      "type": "safety_block",
-      "type_label": "Safety Block",
-      "category": "safety",
-      "message": "\u26d4 P&L calculation incomplete \u2014 pausing session",
-      "session_id": "mmm03may26-3",
-      "severity": "error",
-      "details": {
-        "fetch_errors": 7
-      }
-    },
-    {
-      "id": "act_20260502_234203_157943",
-      "timestamp": "2026-05-02T23:42:03.143950+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
-      "id": "act_20260502_234203_157944",
-      "timestamp": "2026-05-02T23:42:03.144159+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260502_234251_157945",
-      "timestamp": "2026-05-02T23:42:51.746734+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
-      "id": "act_20260502_234251_157946",
-      "timestamp": "2026-05-02T23:42:51.746973+00:00",
-      "type": "adjustments_stopped",
-      "type_label": "Adjustments Stopped",
-      "category": "safety",
-      "message": "\u26d4 Adjustments blocked: LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "reason": "LOT VELOCITY LIMIT: 57 lots sold in last 30min (limit: 30) \u2014 adjustments blocked",
-        "action_type": "stop_adjustments"
-      }
-    },
-    {
-      "id": "act_20260502_234431_157947",
-      "timestamp": "2026-05-02T23:44:31.122088+00:00",
-      "type": "safety_warning",
-      "type_label": "Safety Warning",
-      "category": "safety",
-      "message": "\u26a0\ufe0f Safety: 3 event(s) \u2014 position_cap (warning), margin_warning (alert), lot_velocity (alert)",
-      "session_id": "mmm03may26-3",
-      "severity": "warning",
-      "details": {
-        "event_count": 3,
-        "events": [
-          "position_cap",
-          "margin_warning",
-          "lot_velocity"
-        ]
-      }
-    },
-    {
       "id": "act_20260502_234431_157948",
       "timestamp": "2026-05-02T23:44:31.122407+00:00",
       "type": "adjustments_stopped",
@@ -9140,7 +8786,377 @@
         "mode": "NORMAL",
         "score": 0.175
       }
+    },
+    {
+      "id": "act_20260503_035632_158425",
+      "timestamp": "2026-05-03T03:56:32.279770+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE @ 69000.0: exchange has 101.0 lots but session has NO record (other sessions own 0)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "UNTRACKED_EXCHANGE_POSITION",
+        "detail": "PE @ 69000.0: exchange has 101.0 lots but session has NO record (other sessions own 0)",
+        "symbol": "P-BTC-69000-290526",
+        "session_lots": 0,
+        "exchange_size": 101.0,
+        "other_sessions_lots": 0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_035632_158426",
+      "timestamp": "2026-05-03T03:56:32.281382+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE @ 73000.0: exchange has 104.0 lots but session has NO record (other sessions own 0)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "UNTRACKED_EXCHANGE_POSITION",
+        "detail": "PE @ 73000.0: exchange has 104.0 lots but session has NO record (other sessions own 0)",
+        "symbol": "P-BTC-73000-290526",
+        "session_lots": 0,
+        "exchange_size": 104.0,
+        "other_sessions_lots": 0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_035748_158427",
+      "timestamp": "2026-05-03T03:57:48.926573+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.100)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.1
+      }
+    },
+    {
+      "id": "act_20260503_042545_158428",
+      "timestamp": "2026-05-03T04:25:45.543211+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_042545_158429",
+      "timestamp": "2026-05-03T04:25:45.543406+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.175)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.175
+      }
+    },
+    {
+      "id": "act_20260503_045556_158430",
+      "timestamp": "2026-05-03T04:55:56.099659+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.100)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.1
+      }
+    },
+    {
+      "id": "act_20260503_052544_158431",
+      "timestamp": "2026-05-03T05:25:44.959580+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_052544_158432",
+      "timestamp": "2026-05-03T05:25:44.960253+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.175)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.175
+      }
+    },
+    {
+      "id": "act_20260503_055600_158435",
+      "timestamp": "2026-05-03T05:56:00.054917+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.000)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "act_20260503_062544_158436",
+      "timestamp": "2026-05-03T06:25:44.761591+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_062544_158437",
+      "timestamp": "2026-05-03T06:25:44.761786+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.175)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.175
+      }
+    },
+    {
+      "id": "act_20260503_065203_158438",
+      "timestamp": "2026-05-03T06:52:03.500600+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.000)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "act_20260503_065203_158439",
+      "timestamp": "2026-05-03T06:52:03.672895+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_065203_158440",
+      "timestamp": "2026-05-03T06:52:03.672979+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.075)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.075
+      }
+    },
+    {
+      "id": "act_20260503_065947_158441",
+      "timestamp": "2026-05-03T06:59:47.934818+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 CE active @ 87000: session=7 vs exchange=7.0 (other_mmm=6) \u2014 session has MORE than exchange \u2014 verify position!",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "side": "CE",
+        "type": "SIZE_MISMATCH",
+        "detail": "CE active @ 87000: session=7 vs exchange=7.0 (other_mmm=6) \u2014 session has MORE than exchange \u2014 verify position!",
+        "symbol": "C-BTC-87000-260626",
+        "session_lots": 7,
+        "exchange_size": 7.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_065947_158442",
+      "timestamp": "2026-05-03T06:59:47.935550+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE frozen @ 53000: session=9 vs exchange=9.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 53000: session=9 vs exchange=9.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+        "symbol": "P-BTC-53000-260626",
+        "session_lots": 9,
+        "exchange_size": 9.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260503_065949_158443",
+      "timestamp": "2026-05-03T06:59:49.168352+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_065949_158444",
+      "timestamp": "2026-05-03T06:59:49.168551+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.075)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.075
+      }
+    },
+    {
+      "id": "act_20260503_070235_158445",
+      "timestamp": "2026-05-03T07:02:35.035603+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_070235_158446",
+      "timestamp": "2026-05-03T07:02:35.038263+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.075)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.075
+      }
+    },
+    {
+      "id": "act_20260503_070236_158447",
+      "timestamp": "2026-05-03T07:02:36.380062+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.000)",
+      "session_id": "mmm29may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.0
+      }
+    },
+    {
+      "id": "act_20260503_070945_158448",
+      "timestamp": "2026-05-03T07:09:45.695958+00:00",
+      "type": "safety_warning",
+      "type_label": "Safety Warning",
+      "category": "safety",
+      "message": "\u26a0\ufe0f Safety: 1 event(s) \u2014 asymmetry (warning)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "event_count": 1,
+        "events": [
+          "asymmetry"
+        ]
+      }
+    },
+    {
+      "id": "act_20260503_070945_158449",
+      "timestamp": "2026-05-03T07:09:45.696149+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.075)",
+      "session_id": "mmm26jun26-2",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.075
+      }
     }
   ],
-  "updated_at": "2026-05-03T03:25:54.631371+00:00"
+  "updated_at": "2026-05-03T07:09:45.708458+00:00"
 }
