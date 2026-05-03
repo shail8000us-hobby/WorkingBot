@@ -9737,6 +9737,28 @@ class MMMMonitor:
             log.debug(f"Order verify failed for {order_id}: {e}")
             return 'unknown'
 
+    def _extract_external_position_record(self, record: any) -> tuple:
+        """
+        Extract 'lots' and 'first_beat' from external position record.
+        Handles both old format (scalar value) and new format (dict).
+
+        Returns: (lots, first_beat)
+        """
+        if isinstance(record, dict):
+            return record.get('lots', 0), record.get('first_beat')
+        return record, None
+
+    def _should_suppress_external_alert(self, first_detected_beat: any, current_beat: int) -> bool:
+        """
+        Check if external position alerts should be suppressed based on elapsed beats.
+
+        Returns True if external position was first detected 5+ beats ago.
+        This prevents Telegram spam when positions stably grow over time.
+        """
+        if first_detected_beat is None:
+            return False
+        return (current_beat - first_detected_beat) >= 5
+
     def _get_session_order_ids_at_strike(self, side_state: Dict, strike: float) -> set:
         """
         Return set of order_ids from THIS session at a given strike.
@@ -9761,6 +9783,47 @@ class MMMMonitor:
                 order_ids.add(str(fill['order_id']))
 
         return order_ids
+
+    async def _verify_external_position_ownership(
+        self, rest, side_state: Dict, strike: float, exchange_size: float, side_key: str
+    ) -> tuple:
+        """
+        Attempt to verify if an external position at this strike actually belongs
+        to THIS session by matching order_ids.
+
+        Used by Phase 3 (Ownership Verification) to distinguish:
+        - Positions we created but didn't track (adopt into session state)
+        - Positions from manual trades or other bots (mark as external, skip)
+
+        Returns: (is_owned, matched_order_id, reason_text)
+            is_owned: True if position matches a session order_id at this strike
+            matched_order_id: the order_id that matched (if is_owned)
+            reason_text: diagnostic info
+        """
+        session_order_ids = self._get_session_order_ids_at_strike(side_state, strike)
+
+        if not session_order_ids:
+            return False, None, "No session order_ids found at this strike"
+
+        # Try to find a session order_id with matching fill size
+        # Exchange size is in BTC lots; order filled_qty is in contracts (1 lot = 0.001 BTC)
+        for oid in session_order_ids:
+            try:
+                order_data = await rest.get_order(str(oid))
+                if not order_data:
+                    continue
+                # Check if order was filled and size matches (within tolerance)
+                state = (order_data.get('state', '') or order_data.get('status', '')).lower()
+                filled_qty = float(order_data.get('filled_quantity', 0) or 0)
+                # Convert exchange_size (lots) to contract count: lots / 0.001 = contracts
+                expected_contracts = exchange_size / 0.001 if exchange_size > 0 else 0
+                if state in ('filled', 'closed', 'completed') and abs(filled_qty - expected_contracts) < 5:
+                    return True, oid, f"Matched order_id {oid} (filled_qty={filled_qty})"
+            except Exception as e:
+                log.debug(f"Order verification failed for {oid}: {e}")
+                continue
+
+        return False, None, "No matching filled order found at this strike"
 
     def _auto_correct_missing_positions(
         self, side_state: Dict, strike: float, reason: str, close_price: float = 0.0
@@ -10252,17 +10315,9 @@ class MMMMonitor:
                         # ── Sub-case A: External positions at this session's active strike ──
                         _cur_excess = effective_exchange_size - active_lots
                         _prev_record = _size_ext.get(_smk)
-                        _prev_excess = _prev_record.get('lots', 0) if isinstance(_prev_record, dict) else _prev_record
-                        _first_detected_beat = _prev_record.get('first_beat') if isinstance(_prev_record, dict) else None
-
-                        # SUPPRESSION: Only alert on FIRST detection (beat 0) or after alert_suppression_resets.
-                        # Subsequent heartbeats are logged as debug unless the excess *changes* after stabilization.
+                        _prev_excess, _first_detected_beat = self._extract_external_position_record(_prev_record)
                         _current_beat = session.get('_heartbeat_counter', 0)
-                        _alert_suppression_duration = 5  # beats
-                        _should_suppress_alert = (
-                            _first_detected_beat is not None and
-                            (_current_beat - _first_detected_beat) >= _alert_suppression_duration
-                        )
+                        _should_suppress_alert = self._should_suppress_external_alert(_first_detected_beat, _current_beat)
 
                         if _prev_excess is not None and abs(_prev_excess - _cur_excess) < 0.1:
                             # Same known external excess — stable. This algo's position is
@@ -10557,10 +10612,8 @@ class MMMMonitor:
                         _ext_key = f"{side_key.upper()}@{int(ex_strike)}"
                         _known_ext = session.setdefault('_known_external_positions', {})
                         _last_record = _known_ext.get(_ext_key)
-                        _last_size = _last_record.get('lots', 0) if isinstance(_last_record, dict) else _last_record
-                        _first_detected_beat = _last_record.get('first_beat') if isinstance(_last_record, dict) else None
+                        _last_size, _first_detected_beat = self._extract_external_position_record(_last_record)
                         _current_beat = session.get('_heartbeat_counter', 0)
-                        _alert_suppression_duration = 5  # beats — suppress Telegram after first 5 beats
 
                         if _last_size is not None and _last_size == ex_size:
                             continue  # already known, size unchanged — suppress noise
@@ -10570,13 +10623,8 @@ class MMMMonitor:
                         _known_ext[_ext_key] = {'lots': ex_size, 'first_beat': _first_detected_beat or _current_beat}
                         _external_positions_changed = True  # persist so restarts don't re-fire Telegram
 
-                        # Send Telegram only on FIRST detection or size growth, and only
-                        # for the first 5 beats. After that, suppress to avoid spam when
-                        # external positions genuinely grow over time (other bots, manual trades).
-                        _should_suppress_tg = (
-                            _first_detected_beat is not None and
-                            (_current_beat - _first_detected_beat) >= _alert_suppression_duration
-                        )
+                        # Send Telegram only on FIRST detection or size growth, and only for the first 5 beats.
+                        _should_suppress_tg = self._should_suppress_external_alert(_first_detected_beat, _current_beat)
                         if not _should_suppress_tg and (_size_grew or _last_size is None):
                             try:
                                 from .mmm_telegram import alert_ghost_positions_growing as _tg_ghost
