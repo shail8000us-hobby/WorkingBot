@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-05-03 — Core Design Fix: Remove OCS auto-stop, implement expiry-based graceful exit
+
+**Problem** (root cause of mmm03may26-3 and mmm03may26-2 unexplained stops):
+- OCS (One-Side-Close) guard was auto-stopping in two wrong scenarios:
+  1. When both sides fully closed (normal balanced hedge state) — line 2264 `self.stop('Both sides fully closed')`
+  2. Off-hours with one side closed and other side empty — line 2498 `self.stop('off-hours auto-stop')`
+- User requirement: algo should ONLY auto-stop on ONE condition: **contracts no longer exist on exchange** (expiry passed)
+- All other auto-stop logic violates the core design
+
+**Three fixes applied** (`mmm_monitor.py`):
+1. **Remove both-sides-closed auto-stop (line 2277)**: Both sides closing = normal balanced state, not a stop condition. Changed to comment.
+2. **Add expiry-based graceful stop (line 1567-1579)**: Check `minutes_to_expiry` in main heartbeat. If <= 0, gracefully close all positions and stop. This is the ONLY legitimate auto-stop.
+3. **Redesign OCS fallback (line 2403-2490)**: When replenish fails, PAUSE (not STOP), both in awake and off-hours. Let watchdog keep retrying replenish with `ocs_emergency=True` flag until: hedge restored OR expiry reached OR user stops.
+
+**Key principle**: Algo runs continuously until 5:30 PM IST contract expiry, using replenish system to maintain hedge balance. Watchdog retries replenish indefinitely. Only stops on: contract expiry OR user manual stop.
+
+**Files**: `mmm_monitor.py` | **Tests**: To verify with live sessions (mmm03may26-4+)
+
+---
+
 ## 2026-05-01 — Fix: PE stuck at 0 active / 250 frozen (shift lots=0 unfreeze)
 
 **Root cause** (`mmm_monitor.py` `if lots <= 0: return` guard, formerly line 6650):
