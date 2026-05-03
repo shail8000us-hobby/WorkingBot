@@ -9737,6 +9737,31 @@ class MMMMonitor:
             log.debug(f"Order verify failed for {order_id}: {e}")
             return 'unknown'
 
+    def _get_session_order_ids_at_strike(self, side_state: Dict, strike: float) -> set:
+        """
+        Return set of order_ids from THIS session at a given strike.
+
+        Used to match exchange positions back to session ownership.
+        Checks both active positions and adjustment fills.
+        """
+        order_ids = set()
+        strike_tol = 1.0
+
+        # Active positions at this strike
+        for pos in side_state.get('positions', []):
+            if (pos.get('status') in ('active', 'shifted') and
+                abs(float(pos.get('strike', 0) or 0) - strike) < strike_tol and
+                pos.get('order_id')):
+                order_ids.add(str(pos['order_id']))
+
+        # Adjustment fills at this strike
+        for fill in side_state.get('adjustment_fills', []):
+            if (abs(float(fill.get('strike', 0) or 0) - strike) < strike_tol and
+                fill.get('order_id')):
+                order_ids.add(str(fill['order_id']))
+
+        return order_ids
+
     def _auto_correct_missing_positions(
         self, side_state: Dict, strike: float, reason: str, close_price: float = 0.0
     ):
@@ -10226,7 +10251,18 @@ class MMMMonitor:
                     if effective_exchange_size > active_lots:
                         # ── Sub-case A: External positions at this session's active strike ──
                         _cur_excess = effective_exchange_size - active_lots
-                        _prev_excess = _size_ext.get(_smk)
+                        _prev_record = _size_ext.get(_smk)
+                        _prev_excess = _prev_record.get('lots', 0) if isinstance(_prev_record, dict) else _prev_record
+                        _first_detected_beat = _prev_record.get('first_beat') if isinstance(_prev_record, dict) else None
+
+                        # SUPPRESSION: Only alert on FIRST detection (beat 0) or after alert_suppression_resets.
+                        # Subsequent heartbeats are logged as debug unless the excess *changes* after stabilization.
+                        _current_beat = session.get('_heartbeat_counter', 0)
+                        _alert_suppression_duration = 5  # beats
+                        _should_suppress_alert = (
+                            _first_detected_beat is not None and
+                            (_current_beat - _first_detected_beat) >= _alert_suppression_duration
+                        )
 
                         if _prev_excess is not None and abs(_prev_excess - _cur_excess) < 0.1:
                             # Same known external excess — stable. This algo's position is
@@ -10239,8 +10275,18 @@ class MMMMonitor:
                                 f"Exchange={exchange_size}, session={active_lots}, "
                                 f"other_mmm={other_lots_at_active}."
                             )
+                        elif _should_suppress_alert:
+                            # Growing ghost position, but already alerted 5+ beats ago. Log as debug only.
+                            log.debug(
+                                f"[{sid}] Recon: EXTERNAL_EXCESS still present "
+                                f"{side_key.upper()} @ {active_strike}: "
+                                f"session={active_lots} exchange={exchange_size} "
+                                f"external={_cur_excess:.0f} (first detected {_current_beat - _first_detected_beat} beats ago, alerts suppressed)"
+                            )
+                            # Update the record in case size changes later
+                            _size_ext[_smk] = {'lots': _cur_excess, 'first_beat': _first_detected_beat}
                         else:
-                            # New or changed external excess — alert once, then record.
+                            # New or first-time external excess — alert once, then record.
                             if _prev_excess is None:
                                 _reason = "First detection of external positions at this strike"
                             elif _cur_excess > _prev_excess:
@@ -10253,7 +10299,7 @@ class MMMMonitor:
                                     f"External excess changed "
                                     f"{_prev_excess:.0f}→{_cur_excess:.0f} lots"
                                 )
-                            _size_ext[_smk] = _cur_excess
+                            _size_ext[_smk] = {'lots': _cur_excess, 'first_beat': _current_beat}
                             _external_positions_changed = True
 
                             discrepancies.append({
@@ -10281,7 +10327,7 @@ class MMMMonitor:
                                 f'ℹ️ External positions at {side_key.upper()} @ {active_strike}: '
                                 f'{int(_cur_excess)} lots not owned by this session '
                                 f'(manual/other algo). Exchange={int(exchange_size)}, '
-                                f'session={active_lots}. NOT adopted. Will suppress until changed.',
+                                f'session={active_lots}. NOT adopted. Will suppress after 5 beats.',
                                 sid, 'info',
                                 {'side': side_key, 'strike': active_strike,
                                  'exchange_lots': int(exchange_size),
@@ -10510,17 +10556,28 @@ class MMMMonitor:
                         # changes (e.g., external trade partially closed or added to).
                         _ext_key = f"{side_key.upper()}@{int(ex_strike)}"
                         _known_ext = session.setdefault('_known_external_positions', {})
-                        _last_size = _known_ext.get(_ext_key)
+                        _last_record = _known_ext.get(_ext_key)
+                        _last_size = _last_record.get('lots', 0) if isinstance(_last_record, dict) else _last_record
+                        _first_detected_beat = _last_record.get('first_beat') if isinstance(_last_record, dict) else None
+                        _current_beat = session.get('_heartbeat_counter', 0)
+                        _alert_suppression_duration = 5  # beats — suppress Telegram after first 5 beats
+
                         if _last_size is not None and _last_size == ex_size:
                             continue  # already known, size unchanged — suppress noise
-                        # First detection or size changed — record and warn once.
-                        # If size INCREASED (growing ghost positions), send Telegram so
-                        # user is alerted even if sleeping. Stale monitors produce this
-                        # pattern: untracked lot count grows every ~5min heartbeat.
+
+                        # Size changed (new detection or growth) — record and consider alert.
                         _size_grew = (_last_size is not None and ex_size > _last_size)
-                        _known_ext[_ext_key] = ex_size
+                        _known_ext[_ext_key] = {'lots': ex_size, 'first_beat': _first_detected_beat or _current_beat}
                         _external_positions_changed = True  # persist so restarts don't re-fire Telegram
-                        if _size_grew or _last_size is None:
+
+                        # Send Telegram only on FIRST detection or size growth, and only
+                        # for the first 5 beats. After that, suppress to avoid spam when
+                        # external positions genuinely grow over time (other bots, manual trades).
+                        _should_suppress_tg = (
+                            _first_detected_beat is not None and
+                            (_current_beat - _first_detected_beat) >= _alert_suppression_duration
+                        )
+                        if not _should_suppress_tg and (_size_grew or _last_size is None):
                             try:
                                 from .mmm_telegram import alert_ghost_positions_growing as _tg_ghost
                                 asyncio.ensure_future(_tg_ghost(
@@ -10528,6 +10585,11 @@ class MMMMonitor:
                                 ))
                             except Exception as _ge:
                                 log.warning(f"[{sid}] Ghost position Telegram failed: {_ge}")
+                        elif _should_suppress_tg:
+                            log.debug(
+                                f"[{sid}] UNTRACKED position {side_key.upper()} @ {ex_strike}: "
+                                f"size={ex_size} (Telegram suppressed, first detected {_current_beat - _first_detected_beat} beats ago)"
+                            )
                         # ── end known external suppression ────────────────────────────
 
                         discrepancies.append({

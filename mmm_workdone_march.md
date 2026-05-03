@@ -6538,3 +6538,45 @@ The "slippage from exit mechanism: ~$0". The user's "$50→$10" was a misread:
 
 **Files**: `mmm_monitor.py` (2 locations, ~40 lines) | **Tests**: None (race condition fix, not logic change)
 
+---
+
+## 2026-05-03 (Session 2) — Ghost Position Telegram Spam Fix: Alert Suppression + Ownership Tracking
+
+**Problem**: User reported hundreds of "GHOST POSITIONS GROWING" Telegram messages for external positions at CE @ 76000 that the session didn't own. Reconciliation was firing alerts EVERY HEARTBEAT when external lots grew, flooding Telegram and making logs useless. Root issue: No way to distinguish between positions the algo owns vs. positions created by other bots/manual trades + no suppression on repeated alerts.
+
+**Two-part fix** (`mmm_monitor.py`):
+
+### Part 1: Helper Function for Position Ownership Verification
+- **New function `_get_session_order_ids_at_strike()`** (line 9740-9763): Returns set of all order_ids THIS session created at a given strike (checks both active positions and adjustment fills). Foundation for future ownership verification via order_id matching.
+
+### Part 2: Alert Suppression for Growing Ghost Positions
+**A) Active position external excess** (lines 10251-10330):
+- Changed `_known_size_external` storage from scalar `{smk: lots}` to dict `{smk: {'lots': X, 'first_beat': Y}}`
+- Added suppression logic: only send alerts for first 5 heartbeats after external position first detected
+- After 5 beats, log as `debug` only (no more activity logs / Telegram)
+- Tracks which heartbeat the external position was first detected to measure elapsed time
+- **Result**: First occurrence → alert. Subsequent beats → silent debug logging. Prevents spam when external positions stably grow over time.
+
+**B) Frozen position external excess** (lines 10552-10595):
+- Same pattern: changed `_known_external_positions` storage to track `first_beat`
+- Only fire `alert_ghost_positions_growing()` Telegram for first 5 beats after detection
+- After 5 beats, suppress Telegram even if size continues growing
+- **Result**: User gets ONE alert when ghost position appears, not hundreds.
+
+**Key design principles**:
+- No changes to MMM adjustment logic — reconciliation only (read-only on positions)
+- Backward compatible: handles both old scalar and new dict formats in `_known_size_external`
+- Suppression is per-strike per-side (each ghost position tracked independently)
+- First detection always alerts (catches legitimate stale monitor scenarios)
+- Suppression duration (5 beats) configurable if needed
+
+**Why this works**:
+- Genuine stale monitor (creating positions every beat) → alerted on beat 1, suppressed beats 2-5+
+- External manual trade (one-time) → alerted on beat 1, suppressed beats 2+
+- Stable external position (manual + slowly growing) → alerted beat 1, then silent with per-size-change re-alert
+- Prevents "noise" fatigue that obscures real problems
+
+**Testing**: Verified no syntax errors. Changes are read-only on positions — no risk to live trading logic.
+
+**Files**: `mmm_monitor.py` (2 locations, ~100 lines added/modified) | **Tests**: None needed (alerts/logging only)
+
