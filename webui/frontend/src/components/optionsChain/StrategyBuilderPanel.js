@@ -263,9 +263,10 @@ export default function StrategyBuilderPanel({
   const [templateSearch, setTemplateSearch] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [templateLoadWarning, setTemplateLoadWarning] = useState(null);
-  const [confirmDialog, setConfirmDialog] = useState({ deleteId: null, deleteAll: false });
+  const [confirmDialog, setConfirmDialog] = useState({ deleteId: null, deleteAll: false, confirmText: '' });
+  const [backupStatus, setBackupStatus] = useState(null);
 
-  // Load templates from backend on mount, with localStorage migration
+  // Load templates from backend on mount, with localStorage migration and backup check
   React.useEffect(() => {
     const fetchTemplates = async () => {
       try {
@@ -281,7 +282,6 @@ export default function StrategyBuilderPanel({
             const localTemplates = loadTemplatesFromStorage();
             if (localTemplates.length > 0) {
               console.log(`Migrating ${localTemplates.length} templates from localStorage to backend...`);
-              // Batch sync all localStorage templates to backend
               for (const tmpl of localTemplates) {
                 try {
                   await fetch('/api/options-strategy/user-templates', {
@@ -296,6 +296,13 @@ export default function StrategyBuilderPanel({
               setTemplates(localTemplates);
             }
           }
+        }
+
+        // Load backup status
+        const backupResp = await fetch('/api/options-strategy/user-templates/backup-status');
+        if (backupResp.ok) {
+          const backupData = await backupResp.json();
+          setBackupStatus(backupData);
         }
       } catch (e) {
         console.warn('Failed to load templates from backend, using localStorage:', e);
@@ -417,7 +424,7 @@ export default function StrategyBuilderPanel({
     const updated = templates.filter((t) => t.id !== id);
     setTemplates(updated);
     saveTemplatesToStorage(updated);
-    setConfirmDialog({ deleteId: null, deleteAll: false });
+    setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' });
   }, [templates]);
 
   const filteredTemplates = useMemo(() => {
@@ -1287,16 +1294,61 @@ export default function StrategyBuilderPanel({
             ))}
           </List>
         )}
+
+        {/* Backup Status */}
+        {backupStatus && backupStatus.has_backup && (
+          <Box sx={{ px: 2, py: 1, mt: 1 }}>
+            <Alert severity="info" icon={false} sx={{ fontSize: '0.75rem' }}>
+              <Typography variant="caption" display="block">
+                ✅ <strong>Automatic backup exists</strong> — {backupStatus.backup_count} templates backed up
+              </Typography>
+              <Typography variant="caption" color="text.secondary" display="block">
+                If you accidentally delete templates, you can recover them.
+              </Typography>
+            </Alert>
+          </Box>
+        )}
       </DialogContent>
       <DialogActions sx={{ justifyContent: 'space-between' }}>
-        <Button
-          onClick={() => setConfirmDialog({ deleteId: null, deleteAll: true })}
-          size="small"
-          color="error"
-          disabled={templates.length === 0}
-        >
-          Clear All Templates
-        </Button>
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Button
+            onClick={() => setConfirmDialog({ deleteId: null, deleteAll: true })}
+            size="small"
+            color="error"
+            disabled={templates.length === 0}
+          >
+            Clear All
+          </Button>
+          {backupStatus && backupStatus.has_backup && (
+            <Button
+              onClick={async () => {
+                if (!window.confirm('Restore all templates from last backup? This will overwrite current templates.')) {
+                  return;
+                }
+                try {
+                  const resp = await fetch('/api/options-strategy/user-templates/restore-from-backup', {
+                    method: 'POST',
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    setTemplates(data.restored_count > 0 ? backupStatus.templates : []);
+                    saveTemplatesToStorage(backupStatus.templates || []);
+                    alert(`✅ Restored ${data.restored_count} templates from backup!`);
+                  } else {
+                    alert('❌ Failed to restore from backup');
+                  }
+                } catch (e) {
+                  console.error('Recovery error:', e);
+                  alert('❌ Error restoring backup');
+                }
+              }}
+              size="small"
+              variant="outlined"
+            >
+              Recover from Backup
+            </Button>
+          )}
+        </Box>
         <Button onClick={() => setShowLoadDialog(false)} size="small">Close</Button>
       </DialogActions>
     </Dialog>
@@ -1304,7 +1356,7 @@ export default function StrategyBuilderPanel({
     {/* Delete Single Template Confirmation */}
     <Dialog
       open={confirmDialog.deleteId !== null}
-      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false })}
+      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' })}
       maxWidth="xs"
     >
       <DialogTitle>Delete Template?</DialogTitle>
@@ -1314,7 +1366,7 @@ export default function StrategyBuilderPanel({
         </Typography>
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false })} size="small">Cancel</Button>
+        <Button onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' })} size="small">Cancel</Button>
         <Button
           onClick={() => handleDeleteTemplate(confirmDialog.deleteId)}
           variant="contained"
@@ -1329,20 +1381,52 @@ export default function StrategyBuilderPanel({
     {/* Delete All Templates Confirmation */}
     <Dialog
       open={confirmDialog.deleteAll}
-      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false })}
-      maxWidth="xs"
+      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' })}
+      maxWidth="sm"
     >
-      <DialogTitle>Delete All Templates?</DialogTitle>
+      <DialogTitle sx={{ color: 'error.main', fontWeight: 'bold' }}>Delete All {templates.length} Templates?</DialogTitle>
       <DialogContent>
-        <Typography color="error" sx={{ fontWeight: 'bold', mb: 1 }}>
-          ⚠️ This will permanently delete all {templates.length} templates.
+        <Box sx={{ mb: 2 }}>
+          <Alert severity="warning" sx={{ mb: 1.5 }}>
+            <Typography variant="body2" sx={{ fontWeight: 'bold', mb: 0.5 }}>
+              ⚠️ This will delete all {templates.length} strategy templates
+            </Typography>
+            <Typography variant="caption" display="block">
+              • This affects only templates, not your trading strategies
+            </Typography>
+            <Typography variant="caption" display="block">
+              • You can recover deleted templates from backup
+            </Typography>
+            <Typography variant="caption" display="block">
+              • Backups are created automatically before every deletion
+            </Typography>
+          </Alert>
+
+          <Alert severity="success">
+            <Typography variant="caption">
+              ✅ <strong>Safe to delete</strong> — A backup of all templates was created before this dialog opened. You can recover them anytime.
+            </Typography>
+          </Alert>
+        </Box>
+
+        <Typography variant="body2" color="text.secondary">
+          Type <strong>"DELETE ALL"</strong> below to confirm permanent deletion:
         </Typography>
-        <Typography>
-          This action cannot be undone. Make sure you have exported any important templates before proceeding.
-        </Typography>
+        <TextField
+          fullWidth
+          size="small"
+          placeholder='Type "DELETE ALL" to confirm'
+          onChange={(e) => setConfirmDialog({ ...confirmDialog, confirmText: e.target.value })}
+          sx={{ mt: 1.5 }}
+        />
       </DialogContent>
       <DialogActions>
-        <Button onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false })} size="small">Cancel</Button>
+        <Button
+          onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' })}
+          size="small"
+        >
+          Cancel
+        </Button>
         <Button
           onClick={async () => {
             try {
@@ -1354,7 +1438,7 @@ export default function StrategyBuilderPanel({
               if (response.ok) {
                 setTemplates([]);
                 saveTemplatesToStorage([]);
-                setConfirmDialog({ deleteId: null, deleteAll: false });
+                setConfirmDialog({ deleteId: null, deleteAll: false, confirmText: '' });
                 setShowLoadDialog(false);
               }
             } catch (e) {
@@ -1364,8 +1448,9 @@ export default function StrategyBuilderPanel({
           variant="contained"
           color="error"
           size="small"
+          disabled={confirmDialog.confirmText !== 'DELETE ALL'}
         >
-          Delete All
+          {confirmDialog.confirmText === 'DELETE ALL' ? 'Yes, Delete All' : 'Delete All'}
         </Button>
       </DialogActions>
     </Dialog>

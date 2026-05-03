@@ -1520,8 +1520,24 @@ _templates_lock = threading.Lock()
 _templates_cache = None
 
 def get_templates_file_path():
-    """Get the path to the user templates JSON file"""
+    """Get the path to the user templates JSON file (persistent forever)"""
     return Path(__file__).parent.parent.parent / 'data' / 'strategy_templates.json'
+
+def get_templates_backup_path():
+    """Get the path to the automatic backup file"""
+    return Path(__file__).parent.parent.parent / 'data' / 'strategy_templates.backup.json'
+
+def create_backup():
+    """Create an automatic backup before any destructive operation"""
+    try:
+        file_path = get_templates_file_path()
+        backup_path = get_templates_backup_path()
+        if file_path.exists():
+            import shutil
+            shutil.copy2(file_path, backup_path)
+            log.info(f"✅ Template backup created: {backup_path}")
+    except Exception as e:
+        log.error(f"Failed to create backup: {e}")
 
 
 def load_user_templates():
@@ -1600,16 +1616,17 @@ def save_user_template():
 @options_strategy_bp.route('/user-templates/<template_id>', methods=['DELETE'])
 @handle_errors
 def delete_user_template(template_id):
-    """Delete a user custom template by ID"""
+    """Delete a user custom template by ID (creates automatic backup)"""
     templates = load_user_templates()
-    found = any(t.get('id') == template_id for t in templates)
-    if not found:
+    found_template = next((t for t in templates if t.get('id') == template_id), None)
+    if not found_template:
         return jsonify({'error': 'Template not found'}), 404
 
+    create_backup()  # Always backup before deletion
     templates = [t for t in templates if t.get('id') != template_id]
     if save_user_templates(templates):
-        log.info(f"✅ Template deleted: {template_id}")
-        return jsonify({'success': True, 'remaining': len(templates)})
+        log.info(f"✅ Template deleted: {found_template.get('name')} (id={template_id})")
+        return jsonify({'success': True, 'deleted': found_template.get('name'), 'remaining': len(templates)})
     else:
         return jsonify({'error': 'Failed to delete template'}), 500
 
@@ -1617,7 +1634,7 @@ def delete_user_template(template_id):
 @options_strategy_bp.route('/user-templates/batch-delete', methods=['POST'])
 @handle_errors
 def batch_delete_user_templates():
-    """Delete multiple user templates by ID list
+    """Delete multiple user templates by ID list (creates automatic backup)
 
     Request body:
     {
@@ -1631,12 +1648,17 @@ def batch_delete_user_templates():
     ids_to_delete = set(data['ids'])
     templates = load_user_templates()
     original_count = len(templates)
+    deleted_names = [t.get('name') for t in templates if t.get('id') in ids_to_delete]
     templates = [t for t in templates if t.get('id') not in ids_to_delete]
     deleted_count = original_count - len(templates)
 
+    if deleted_count == 0:
+        return jsonify({'error': 'No templates found to delete'}), 404
+
+    create_backup()  # Always backup before batch deletion
     if save_user_templates(templates):
-        log.info(f"✅ Deleted {deleted_count} templates")
-        return jsonify({'success': True, 'deleted': deleted_count, 'remaining': len(templates)})
+        log.info(f"✅ Deleted {deleted_count} templates: {', '.join(deleted_names)}")
+        return jsonify({'success': True, 'deleted': deleted_count, 'deleted_names': deleted_names, 'remaining': len(templates)})
     else:
         return jsonify({'error': 'Failed to delete templates'}), 500
 
@@ -1647,3 +1669,55 @@ def export_user_templates():
     """Export all user templates as JSON for backup"""
     templates = load_user_templates()
     return jsonify({'templates': templates, 'exported_at': datetime.now().isoformat()})
+
+
+@options_strategy_bp.route('/user-templates/backup-status', methods=['GET'])
+@handle_errors
+def get_backup_status():
+    """Check if a backup exists and get its info"""
+    backup_path = get_templates_backup_path()
+    if backup_path.exists():
+        import os
+        stat = os.stat(backup_path)
+        with open(backup_path, 'r') as f:
+            backup_templates = json.load(f)
+        return jsonify({
+            'has_backup': True,
+            'backup_count': len(backup_templates),
+            'backup_size': stat.st_size,
+            'backup_modified': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+            'templates': backup_templates
+        })
+    else:
+        return jsonify({'has_backup': False, 'backup_count': 0})
+
+
+@options_strategy_bp.route('/user-templates/restore-from-backup', methods=['POST'])
+@handle_errors
+def restore_from_backup():
+    """Restore all templates from the last backup (dangerous operation)"""
+    backup_path = get_templates_backup_path()
+    if not backup_path.exists():
+        return jsonify({'error': 'No backup file found'}), 404
+
+    try:
+        with open(backup_path, 'r') as f:
+            backup_templates = json.load(f)
+
+        # Create a backup of current state before restoring
+        current = load_user_templates()
+        create_backup()
+
+        # Restore from backup
+        if save_user_templates(backup_templates):
+            log.warning(f"⚠️ Restored {len(backup_templates)} templates from backup")
+            return jsonify({
+                'success': True,
+                'restored_count': len(backup_templates),
+                'previous_count': len(current)
+            })
+        else:
+            return jsonify({'error': 'Failed to restore from backup'}), 500
+    except Exception as e:
+        log.error(f"Error restoring from backup: {e}")
+        return jsonify({'error': str(e)}), 500
