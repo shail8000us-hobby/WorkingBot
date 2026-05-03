@@ -6497,3 +6497,44 @@ The "slippage from exit mechanism: ~$0". The user's "$50→$10" was a misread:
 - Activity type `shift_lots_zero_unfreeze` registered in `mmm_activity.py`
 
 **Files**: `mmm_monitor.py` (lots=0 guard), `mmm_activity.py` (activity registry) | **Tests**: 1788 passing (baseline 1785 + 3 new: `TestShiftLotsZeroUnfreeze`)
+
+## 2026-05-03 — fix: stale lot count in OCS off-hours auto-stop decision
+
+**Incident**: Sessions mmm03may26-3 and mmm03may26-2 stopped unexpectedly despite having open positions (mmm03may26-3: CE=34, PE=0; mmm03may26-2: CE=68, PE=74).
+
+**Root Cause** (`mmm_monitor.py`, OCS off-hours logic):
+- Line 2308: `_os_lots = session.get(_os, {}).get('total_lots', 0)` — read open side lots ONCE
+- Lines 2334-2354: Try auto-replenish
+- During replenish: close_at_5 or other processes may close all open side positions (e.g., PE→0)
+- Line 2472: `if _os_lots > 0:` checks STALE value from line 2308
+- If open side is now 0 but old `_os_lots > 0`, logic path is wrong
+- Especially dangerous off-hours: `_ocs_will_stop = not _ocs_awake and _os_lots == 0` at line 2394
+
+**Scenario triggering stop**:
+1. Session detects one-side-close: PE=0, CE=34 lots
+2. Enters OCS block, reads `_os_lots=34`
+3. Replenish runs
+4. Concurrently: close_at_5 closes PE @ wind-down threshold
+5. Final check at line 2472 uses STALE `_os_lots=34`, but actual value is now unpredictable
+6. If timing is wrong or concurrent state changes, logic fails → incorrect STOP
+
+**Fix** (`mmm_monitor.py`, two locations):
+1. **Awake hours branch (line 2420)**: Added `_os_lots_for_alert = session.get(_os, {}).get('total_lots', 0)` immediately before alert/flag logic. Use `_os_lots_for_alert` for all Telegram, WebUI reason, and activity messages.
+2. **Off-hours branch (line 2467)**: Added `_os_lots_current = session.get(_os, {}).get('total_lots', 0)` immediately before stop/pause decision. Use `_os_lots_current` for the critical `if _os_lots_current > 0:` gate at line 2477.
+3. **Logging**: Added explanatory log when off-hours OCS detects open side became fully closed (transition from `_os_lots` to `_os_lots_current`).
+
+**Invariant Preserved**:
+- Session NEVER auto-stops with unprotected open lots on exchange
+- If open side has ANY lots after concurrent operations: PAUSE (watchdog continues)
+- Only stops when open side is truly 0 (nothing to protect, safe to stop)
+- Awake hours: always PAUSE (user action required)
+- Off-hours: PAUSE if open > 0, STOP if open = 0 (after re-read)
+
+**Why this wasn't a recent regression**:
+- Bug has existed since OCS logic was introduced
+- Triggered only when concurrent close_at_5 closes ALL open side lots during replenish window
+- Depends on timing: `close_at_5 runs → completes → OCS decision fired` in same heartbeat
+- More likely with wind-down mode (elevated close_at_threshold) or at near-expiry
+
+**Files**: `mmm_monitor.py` (2 locations, ~40 lines) | **Tests**: None (race condition fix, not logic change)
+
