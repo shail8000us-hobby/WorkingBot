@@ -6580,3 +6580,27 @@ The "slippage from exit mechanism: ~$0". The user's "$50→$10" was a misread:
 
 **Files**: `mmm_monitor.py` (2 locations, ~100 lines added/modified) | **Tests**: None needed (alerts/logging only)
 
+---
+
+## 2026-05-03 (Session 2 Continued) — Phase 3 + Code Cleanup: Ownership Verification Foundation + DRY Refactor
+
+**Phase 3: Position Ownership Verification Foundation**
+- **New async function `_verify_external_position_ownership()`** (lines 9775-9809): Attempts to match exchange positions to session order_ids by querying exchange order details and comparing fill sizes. Returns ownership status and matched order_id. Not yet integrated into main reconciliation (that would require more complex async coordination), but provides the foundation for future work.
+- **New helper `_get_session_order_ids_at_strike()`** already in place (lines 9762-9784) to extract all order_ids THIS session created at a strike.
+- **Design**: Phase 3 enables future adoption of untracked positions that we actually created (reducing false "ghost" alerts) while firmly rejecting positions from other sources.
+
+**Code Cleanup (DRY Refactoring)**
+Eliminated 30+ lines of duplicated alert suppression logic across two reconciliation blocks:
+- **New helper `_extract_external_position_record()`** (lines 9740-9748): Converts both old (scalar) and new (dict) record formats to (lots, first_beat) tuple. Backward compatible, handles format migration seamlessly.
+- **New helper `_should_suppress_external_alert()`** (lines 9750-9760): Single source of truth for suppression logic — returns True if external position first detected 5+ beats ago. Replaces two identical conditional blocks.
+- **Applied in 2 places**: Active position reconciliation (line 10306) + frozen position reconciliation (line 10620).
+- **Result**: Reduced file size, easier to change suppression duration (single point of change), clearer intent.
+
+**Quality Assurance**
+- ✅ Verified: `python3 -m py_compile` passed (no syntax errors)
+- ✅ No changes to trading logic — reconciliation/logging only
+- ✅ Backward compatible: Handles both old and new data formats
+- ✅ DRY principle: Eliminated duplicated conditional chains
+
+**Files**: `mmm_monitor.py` (3 helper functions added, 2 locations refactored) | **Tests**: Syntax verified
+
