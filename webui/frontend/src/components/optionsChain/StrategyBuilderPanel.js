@@ -263,10 +263,50 @@ export default function StrategyBuilderPanel({
   const [templateSearch, setTemplateSearch] = useState('');
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [templateLoadWarning, setTemplateLoadWarning] = useState(null);
+  const [confirmDialog, setConfirmDialog] = useState({ deleteId: null, deleteAll: false });
+
+  // Load templates from backend on mount, with localStorage migration
+  React.useEffect(() => {
+    const fetchTemplates = async () => {
+      try {
+        const response = await fetch('/api/options-strategy/user-templates');
+        if (response.ok) {
+          const data = await response.json();
+          const backendTemplates = data.templates || [];
+          setTemplates(backendTemplates);
+          saveTemplatesToStorage(backendTemplates);
+
+          // Migration: if backend is empty but localStorage has templates, sync them up
+          if (backendTemplates.length === 0) {
+            const localTemplates = loadTemplatesFromStorage();
+            if (localTemplates.length > 0) {
+              console.log(`Migrating ${localTemplates.length} templates from localStorage to backend...`);
+              // Batch sync all localStorage templates to backend
+              for (const tmpl of localTemplates) {
+                try {
+                  await fetch('/api/options-strategy/user-templates', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(tmpl),
+                  });
+                } catch (e) {
+                  console.warn(`Failed to migrate template ${tmpl.id}:`, e);
+                }
+              }
+              setTemplates(localTemplates);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load templates from backend, using localStorage:', e);
+      }
+    };
+    fetchTemplates();
+  }, []);
 
   // ---- Template handlers ----
 
-  const handleSaveTemplate = useCallback(() => {
+  const handleSaveTemplate = useCallback(async () => {
     if (!legs.length) return;
     const name = (templateName || strategyName || 'My Strategy').trim();
     if (!name) return;
@@ -282,16 +322,31 @@ export default function StrategyBuilderPanel({
         side: leg.side,
         quantity: leg.quantity || 1,
         strike: leg.strike,
-        // Store ATM-relative offset so it can be reused at different spot levels
         atm_offset: atmRef > 0 ? leg.strike - atmRef : 0,
       })),
     };
+
+    // Save to backend first
+    try {
+      const response = await fetch('/api/options-strategy/user-templates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newTemplate),
+      });
+      if (!response.ok) {
+        console.error('Failed to save template to backend');
+        return;
+      }
+    } catch (e) {
+      console.error('Error saving template to backend:', e);
+      return;
+    }
+
     const updated = [newTemplate, ...templates];
     setTemplates(updated);
     saveTemplatesToStorage(updated);
     setShowSaveDialog(false);
     setTemplateName('');
-    // Show inline confirmation
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
   }, [legs, templates, templateName, strategyName, underlying, spotPrice]);
@@ -345,11 +400,24 @@ export default function StrategyBuilderPanel({
     }
   }, [expiry, spotPrice, underlying, onSetLegs]);
 
-  const handleDeleteTemplate = useCallback((id, e) => {
-    if (e) { e.preventDefault(); e.stopPropagation(); }
+  const handleDeleteTemplate = useCallback(async (id) => {
+    try {
+      const response = await fetch(`/api/options-strategy/user-templates/${id}`, {
+        method: 'DELETE',
+      });
+      if (!response.ok) {
+        console.error('Failed to delete template from backend');
+        return;
+      }
+    } catch (e) {
+      console.error('Error deleting template from backend:', e);
+      return;
+    }
+
     const updated = templates.filter((t) => t.id !== id);
     setTemplates(updated);
     saveTemplatesToStorage(updated);
+    setConfirmDialog({ deleteId: null, deleteAll: false });
   }, [templates]);
 
   const filteredTemplates = useMemo(() => {
@@ -1159,7 +1227,7 @@ export default function StrategyBuilderPanel({
                       <IconButton
                         edge="end"
                         size="small"
-                        onClick={(e) => handleDeleteTemplate(tmpl.id, e)}
+                        onClick={() => setConfirmDialog({ deleteId: tmpl.id, deleteAll: false })}
                         sx={{ opacity: 0.4, mr: 0.5, '&:hover': { opacity: 1, color: 'error.main' } }}
                       >
                         <DeleteIcon fontSize="small" />
@@ -1220,8 +1288,85 @@ export default function StrategyBuilderPanel({
           </List>
         )}
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ justifyContent: 'space-between' }}>
+        <Button
+          onClick={() => setConfirmDialog({ deleteId: null, deleteAll: true })}
+          size="small"
+          color="error"
+          disabled={templates.length === 0}
+        >
+          Clear All Templates
+        </Button>
         <Button onClick={() => setShowLoadDialog(false)} size="small">Close</Button>
+      </DialogActions>
+    </Dialog>
+
+    {/* Delete Single Template Confirmation */}
+    <Dialog
+      open={confirmDialog.deleteId !== null}
+      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false })}
+      maxWidth="xs"
+    >
+      <DialogTitle>Delete Template?</DialogTitle>
+      <DialogContent>
+        <Typography>
+          Are you sure you want to delete this template? This action cannot be undone.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false })} size="small">Cancel</Button>
+        <Button
+          onClick={() => handleDeleteTemplate(confirmDialog.deleteId)}
+          variant="contained"
+          color="error"
+          size="small"
+        >
+          Delete
+        </Button>
+      </DialogActions>
+    </Dialog>
+
+    {/* Delete All Templates Confirmation */}
+    <Dialog
+      open={confirmDialog.deleteAll}
+      onClose={() => setConfirmDialog({ deleteId: null, deleteAll: false })}
+      maxWidth="xs"
+    >
+      <DialogTitle>Delete All Templates?</DialogTitle>
+      <DialogContent>
+        <Typography color="error" sx={{ fontWeight: 'bold', mb: 1 }}>
+          ⚠️ This will permanently delete all {templates.length} templates.
+        </Typography>
+        <Typography>
+          This action cannot be undone. Make sure you have exported any important templates before proceeding.
+        </Typography>
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={() => setConfirmDialog({ deleteId: null, deleteAll: false })} size="small">Cancel</Button>
+        <Button
+          onClick={async () => {
+            try {
+              const response = await fetch('/api/options-strategy/user-templates/batch-delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: templates.map(t => t.id) }),
+              });
+              if (response.ok) {
+                setTemplates([]);
+                saveTemplatesToStorage([]);
+                setConfirmDialog({ deleteId: null, deleteAll: false });
+                setShowLoadDialog(false);
+              }
+            } catch (e) {
+              console.error('Error batch deleting templates:', e);
+            }
+          }}
+          variant="contained"
+          color="error"
+          size="small"
+        >
+          Delete All
+        </Button>
       </DialogActions>
     </Dialog>
     </>

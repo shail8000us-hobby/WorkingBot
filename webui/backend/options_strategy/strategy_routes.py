@@ -20,8 +20,11 @@ Created: January 5, 2026
 
 import asyncio
 import logging
+import json
+import threading
 from functools import wraps
 from datetime import datetime
+from pathlib import Path
 from flask import Blueprint, jsonify, request
 
 from .strategy_manager import StrategyManager
@@ -1509,3 +1512,138 @@ def adjust_mv_straddle_ratio(strategy_id):
     except Exception as e:
         log.error(f"❌ Error adjusting ratio: {e}", exc_info=True)
         return jsonify({'success': False, 'error': str(e)}), 500
+
+
+# ==================== Custom User Templates (Persistent Backend Storage) ====================
+
+_templates_lock = threading.Lock()
+_templates_cache = None
+
+def get_templates_file_path():
+    """Get the path to the user templates JSON file"""
+    return Path(__file__).parent.parent.parent / 'data' / 'strategy_templates.json'
+
+
+def load_user_templates():
+    """Load all user-saved templates from disk (thread-safe with caching)"""
+    global _templates_cache
+    try:
+        with _templates_lock:
+            file_path = get_templates_file_path()
+            if file_path.exists():
+                with open(file_path, 'r') as f:
+                    _templates_cache = json.load(f)
+                    return _templates_cache
+            _templates_cache = []
+            return []
+    except Exception as e:
+        log.error(f"Error loading templates: {e}")
+        return _templates_cache if _templates_cache is not None else []
+
+
+def save_user_templates(templates):
+    """Save user templates to disk (thread-safe)"""
+    global _templates_cache
+    try:
+        with _templates_lock:
+            file_path = get_templates_file_path()
+            file_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(file_path, 'w') as f:
+                json.dump(templates, f, indent=2)
+            _templates_cache = templates
+            return True
+    except Exception as e:
+        log.error(f"Error saving templates: {e}")
+        return False
+
+
+@options_strategy_bp.route('/user-templates', methods=['GET'])
+@handle_errors
+def get_user_templates():
+    """Get all user-saved custom templates (persistent backend storage)"""
+    templates = load_user_templates()
+    return jsonify({'templates': templates, 'count': len(templates)})
+
+
+@options_strategy_bp.route('/user-templates', methods=['POST'])
+@handle_errors
+def save_user_template():
+    """Save a new user custom template to persistent backend storage
+
+    Request body:
+    {
+        "id": "1744567890123",
+        "name": "Iron Condor",
+        "underlying": "BTC",
+        "saved_spot": 83000,
+        "created_at": "2026-04-13T...",
+        "legs": [...]
+    }
+    """
+    data = request.json
+    if not data or 'id' not in data or 'name' not in data:
+        return jsonify({'error': 'Missing required fields: id, name'}), 400
+
+    templates = load_user_templates()
+    # Remove if already exists (update case)
+    templates = [t for t in templates if t.get('id') != data['id']]
+    # Add new template to front
+    templates.insert(0, data)
+
+    if save_user_templates(templates):
+        log.info(f"✅ Template saved: {data.get('name')}")
+        return jsonify({'success': True, 'template': data}), 201
+    else:
+        return jsonify({'error': 'Failed to save template'}), 500
+
+
+@options_strategy_bp.route('/user-templates/<template_id>', methods=['DELETE'])
+@handle_errors
+def delete_user_template(template_id):
+    """Delete a user custom template by ID"""
+    templates = load_user_templates()
+    found = any(t.get('id') == template_id for t in templates)
+    if not found:
+        return jsonify({'error': 'Template not found'}), 404
+
+    templates = [t for t in templates if t.get('id') != template_id]
+    if save_user_templates(templates):
+        log.info(f"✅ Template deleted: {template_id}")
+        return jsonify({'success': True, 'remaining': len(templates)})
+    else:
+        return jsonify({'error': 'Failed to delete template'}), 500
+
+
+@options_strategy_bp.route('/user-templates/batch-delete', methods=['POST'])
+@handle_errors
+def batch_delete_user_templates():
+    """Delete multiple user templates by ID list
+
+    Request body:
+    {
+        "ids": ["id1", "id2", "id3"]
+    }
+    """
+    data = request.json
+    if not data or 'ids' not in data:
+        return jsonify({'error': 'Missing required field: ids'}), 400
+
+    ids_to_delete = set(data['ids'])
+    templates = load_user_templates()
+    original_count = len(templates)
+    templates = [t for t in templates if t.get('id') not in ids_to_delete]
+    deleted_count = original_count - len(templates)
+
+    if save_user_templates(templates):
+        log.info(f"✅ Deleted {deleted_count} templates")
+        return jsonify({'success': True, 'deleted': deleted_count, 'remaining': len(templates)})
+    else:
+        return jsonify({'error': 'Failed to delete templates'}), 500
+
+
+@options_strategy_bp.route('/user-templates/export', methods=['GET'])
+@handle_errors
+def export_user_templates():
+    """Export all user templates as JSON for backup"""
+    templates = load_user_templates()
+    return jsonify({'templates': templates, 'exported_at': datetime.now().isoformat()})
