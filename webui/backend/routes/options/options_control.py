@@ -801,8 +801,6 @@ def close_options_position():
     Returns:
         JSON: Order result or confirmation request
     """
-    global _last_order_time
-    
     # Check Guardian signal
     guardian_signal = check_guardian_signal()
     if guardian_signal != 'GO':
@@ -995,8 +993,6 @@ def add_to_options_position():
     Returns:
         JSON: Order result or confirmation request
     """
-    global _last_order_time
-    
     # Check Guardian signal
     guardian_signal = check_guardian_signal()
     if guardian_signal != 'GO':

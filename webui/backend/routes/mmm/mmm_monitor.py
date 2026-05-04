@@ -6690,8 +6690,13 @@ class MMMMonitor:
                 f"{side.upper()} shift {old_strike}→{new_strike} "
                 f"(would create orphan). Unfreezing positions."
             )
-            # Unfreeze positions so the new monitor sees them correctly
-            from .mmm_state import recompute_side_lots
+            # Unfreeze positions so the new monitor sees them correctly.
+            # NOTE: do NOT re-import recompute_side_lots here. A local
+            # `from ... import recompute_side_lots` makes Python treat the
+            # name as a function-scope local, which broke the earlier
+            # `if lots <= 0:` rollback at line ~6664 with UnboundLocalError
+            # when that path ran before this one (incident mmm04may26-1,
+            # 2026-05-04). The module-level import at line 30 covers all uses.
             for pos in session.get(side, {}).get('positions', []):
                 if pos.get('status') == 'shifted':
                     pos['status'] = 'active'

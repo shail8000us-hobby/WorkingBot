@@ -26,15 +26,20 @@ import {
  * @param {Array} futuresPositions - Futures positions
  * @returns {Object|null} Parsed positions + spotPrice + minDaysToExpiry + nearestExpiry
  */
+// @sealed v1.0.0 — useParsedPositions — 2026-05-04
+// Contract: MUST NOT break selection filtering or realizedPnl accumulation
+// Invariant A: selectedPositions is a strict whitelist — empty → null (no ghost portfolio)
+// Invariant B: realizedPnl = realized_pnl + partial_realized_pnl (prior-close carryover)
+// Failure: payoff graph shows wrong positions or wrong P&L at current spot
+// Test: webui/frontend/src/components/options/__tests__/test_sealed_useParsedPositions.test.js
 export const useParsedPositions = (positions, selectedPositions, futuresPositions, indexPrices = {}) => {
   return useMemo(() => {
     if (!positions || positions.length === 0) return null;
 
-    // When no positions are explicitly selected, show all — keeping the payoff
-    // aligned with the position rows by default. An explicit selection narrows the view.
-    const visiblePositions = selectedPositions.length > 0
-      ? positions.filter((p) => selectedPositions.includes(p.product_symbol))
-      : positions;
+    // Strict whitelist: only positions explicitly checked in the payoff selection
+    // contribute to the curve. An empty selection means an empty payoff — use the
+    // master "select all" checkbox above the position list to include everything.
+    const visiblePositions = positions.filter((p) => selectedPositions.includes(p.product_symbol));
 
     // Determine underlying asset from visible positions (BTC or ETH)
     const underlying = visiblePositions.length > 0
@@ -88,7 +93,9 @@ export const useParsedPositions = (positions, selectedPositions, futuresPosition
       const entryPrice = parseFloat(pos.entry_price || 0);
       const isClosed = pos.is_closed === true || size === 0;
       // realized_pnl: cumulative for closed rows (from ClosedPositionStore), partial-exit total for live rows (from exchange)
-      const realizedPnl = parseFloat(pos.realized_pnl || 0);
+      // partial_realized_pnl: prior-session carryover for re-entered live symbols (set in dashboard.py from ClosedPositionStore).
+      // Both must be summed so the payoff at current spot matches Net P&L in the Performance strip.
+      const realizedPnl = parseFloat(pos.realized_pnl || 0) + parseFloat(pos.partial_realized_pnl || 0);
 
       const bestBid = parseFloat(pos.best_bid || 0);
       const bestAsk = parseFloat(pos.best_ask || 0);

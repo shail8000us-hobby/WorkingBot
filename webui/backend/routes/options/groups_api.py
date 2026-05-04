@@ -34,6 +34,21 @@ get_groups_storage = _storage_mod.get_groups_storage
 groups_bp = Blueprint('options_groups', __name__, url_prefix='/api/options/groups')
 
 
+def _validate_expiry_key(key: str):
+    """
+    Reject UI-only synthetic keys that must never be stored in the DB.
+    'ALL' and composite keys (containing '|') are frontend view constructs only.
+    Storing them corrupts the activeExpiryData merge logic and makes real groups invisible.
+    Raises ValueError if the key is invalid.
+    """
+    if not key:
+        raise ValueError("expiry_key is empty")
+    if key == 'ALL':
+        raise ValueError("'ALL' is a UI-only key and cannot be stored server-side")
+    if '|' in key:
+        raise ValueError(f"Composite key '{key}' is a UI-only key and cannot be stored server-side")
+
+
 @groups_bp.route('/', methods=['GET'])
 def get_all_groups():
     """Get all group data for all expiry keys."""
@@ -90,6 +105,12 @@ def create_group():
         if not expiry_key or not group_id or not name:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
 
+        try:
+            _validate_expiry_key(expiry_key)
+        except ValueError as ve:
+            log.warning(f"Rejected create_group for bad expiry_key {expiry_key!r}: {ve}")
+            return jsonify({'success': False, 'error': str(ve)}), 400
+
         storage = get_groups_storage()
         group = storage.create_group(expiry_key, group_id, name, color)
         return jsonify({'success': True, 'group': group})
@@ -111,6 +132,12 @@ def delete_group():
 
         if not expiry_key or not group_id:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
+
+        try:
+            _validate_expiry_key(expiry_key)
+        except ValueError as ve:
+            log.warning(f"Rejected delete_group for bad expiry_key {expiry_key!r}: {ve}")
+            return jsonify({'success': False, 'error': str(ve)}), 400
 
         storage = get_groups_storage()
         storage.delete_group(expiry_key, group_id)
@@ -135,6 +162,12 @@ def update_group():
         if not expiry_key or not group_id:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
 
+        try:
+            _validate_expiry_key(expiry_key)
+        except ValueError as ve:
+            log.warning(f"Rejected update_group for bad expiry_key {expiry_key!r}: {ve}")
+            return jsonify({'success': False, 'error': str(ve)}), 400
+
         storage = get_groups_storage()
         storage.update_group(expiry_key, group_id, updates)
         return jsonify({'success': True})
@@ -158,6 +191,12 @@ def assign_symbol():
         if not expiry_key or not symbol:
             return jsonify({'success': False, 'error': 'Missing required fields'}), 400
 
+        try:
+            _validate_expiry_key(expiry_key)
+        except ValueError as ve:
+            log.warning(f"Rejected assign_symbol for bad expiry_key {expiry_key!r}: {ve}")
+            return jsonify({'success': False, 'error': str(ve)}), 400
+
         storage = get_groups_storage()
         storage.assign_symbol(expiry_key, symbol, target_group_id)
         return jsonify({'success': True})
@@ -177,6 +216,12 @@ def update_meta():
         expiry_key = body.get('expiry_key')
         if not expiry_key:
             return jsonify({'success': False, 'error': 'Missing expiry_key'}), 400
+
+        try:
+            _validate_expiry_key(expiry_key)
+        except ValueError as ve:
+            log.warning(f"Rejected update_meta for bad expiry_key {expiry_key!r}: {ve}")
+            return jsonify({'success': False, 'error': str(ve)}), 400
 
         storage = get_groups_storage()
         storage.update_meta(

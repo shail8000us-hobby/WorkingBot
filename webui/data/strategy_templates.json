@@ -1,0 +1,132 @@
+[
+  {
+    "id": "1777900901855",
+    "name": "Friday 8",
+    "underlying": "BTC",
+    "saved_spot": 78915.05167754,
+    "created_at": "2026-05-04T13:21:41.855Z",
+    "legs": [
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 79000,
+        "atm_offset": 84.94832245999714
+      },
+      {
+        "type": "call",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 79000,
+        "atm_offset": 84.94832245999714
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 2,
+        "strike": 77000,
+        "atm_offset": -1915.0516775400029
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 2,
+        "strike": 80500,
+        "atm_offset": 1584.9483224599971
+      },
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 2,
+        "strike": 75500,
+        "atm_offset": -3415.051677540003
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 4,
+        "strike": 74500,
+        "atm_offset": -4415.051677540003
+      },
+      {
+        "type": "call",
+        "side": "buy",
+        "quantity": 2,
+        "strike": 82000,
+        "atm_offset": 3084.948322459997
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 4,
+        "strike": 83000,
+        "atm_offset": 4084.948322459997
+      }
+    ]
+  },
+  {
+    "id": "1777899867588",
+    "name": "trial",
+    "underlying": "BTC",
+    "saved_spot": 78569.61556484,
+    "created_at": "2026-05-04T13:04:27.588Z",
+    "legs": [
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 78600,
+        "atm_offset": 30.384435159998247
+      },
+      {
+        "type": "call",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 78600,
+        "atm_offset": 30.384435159998247
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 2,
+        "strike": 78200,
+        "atm_offset": -369.61556484000175
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 2,
+        "strike": 79000,
+        "atm_offset": 430.38443515999825
+      },
+      {
+        "type": "call",
+        "side": "buy",
+        "quantity": 2,
+        "strike": 79400,
+        "atm_offset": 830.3844351599982
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 4,
+        "strike": 80000,
+        "atm_offset": 1430.3844351599982
+      },
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 2,
+        "strike": 77800,
+        "atm_offset": -769.6155648400018
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 4,
+        "strike": 77400,
+        "atm_offset": -1169.6155648400018
+      }
+    ]
+  }
+]

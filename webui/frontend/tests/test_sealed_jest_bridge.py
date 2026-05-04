@@ -346,6 +346,80 @@ class TestJestSealedReducePosition:
         )
 
 
+class TestJestSealedIncreasePosition:
+    """
+    @sealed — handleIncreaseSelected + confirmIncreaseSelected (entry #87)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_increase_position.test.js
+
+    Contracts IA1–IA19:
+      IA1–IA2:  pct guard (0 and 100 rejected)
+      IA3–IA5:  lotsToAdd = Math.max(1, Math.ceil(size * pct / 100)) — ceil not round
+      IA6:      short (size<0) → action=SELL (add more shorts)
+      IA7:      long  (size>0) → action=BUY  (add more longs)
+      IA8:      newSize = currentSize + lotsToAdd
+      IA9:      is_closed positions excluded
+      IA10–IA11: limit_price = mid(bid,ask); undefined when both zero
+      IA12:     API confirm=true
+      IA13:     API order_preference='maker_first' (never 'market_only')
+      IA14:     API side='sell' for shorts, 'buy' for longs
+      IA15–IA17: selectedStrikes/dialog/percent cleared BEFORE first await
+      IA18:     double-fire guard — inFlightRef blocks second concurrent call
+      IA18b:    inFlightRef reset to false after completion
+      IA19:     all N orders placed via Promise.all (concurrent)
+    """
+
+    def test_all_increase_position_contracts_pass(self):
+        """
+        CONTRACT: handleIncreaseSelected + confirmIncreaseSelected must satisfy all 22
+        IA contracts. FAILURE = increase-by-% feature is broken or unsafe (real money).
+        """
+        result = _run_jest("test_sealed_increase_position")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed IncreasePosition tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_increase_position"
+        )
+
+
+class TestJestSealedUseParsedPositions:
+    """
+    @sealed — useParsedPositions (entry #88)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_useParsedPositions.test.js
+
+    Contracts PP1–PP5:
+      PP1: empty selectedPositions + no futures → null (no ghost portfolio)
+      PP2: 1 of 3 selected → only that 1 in parsedPositions (strict whitelist)
+      PP3: realized_pnl=10, partial_realized_pnl=-71.14 → realizedPnl ≈ -61.14
+      PP4: realized_pnl=5, no partial_realized_pnl → realizedPnl ≈ 5
+      PP5: all N selected → all N in parsedPositions
+    """
+
+    def test_all_use_parsed_positions_contracts_pass(self):
+        """
+        CONTRACT: useParsedPositions must pass all 5 Jest contract tests.
+        FAILURE = payoff graph shows wrong positions or wrong P&L at current spot.
+        Do NOT ignore — directly affects P&L accuracy on a live trading UI.
+        """
+        result = _run_jest("test_sealed_useParsedPositions")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed useParsedPositions tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_useParsedPositions"
+        )
+
+
 class TestJestSealedHandleAssignToGroup:
     """
     @sealed — handleAssignToGroup (drag-and-drop group assignment) (entry #87)

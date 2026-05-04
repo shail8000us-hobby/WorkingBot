@@ -6604,3 +6604,36 @@ Eliminated 30+ lines of duplicated alert suppression logic across two reconcilia
 
 **Files**: `mmm_monitor.py` (3 helper functions added, 2 locations refactored) | **Tests**: Syntax verified
 
+
+---
+
+## 2026-05-04 — P0 Fix: UnboundLocalError in _process_strike_shift (mmm04may26-1 crash)
+
+**Incident**: Session `mmm04may26-1` stopped at 07:19:41 with "Unrecoverable error: UnboundLocalError". Trigger sequence (from prod log + sqlite event log):
+
+1. PE at 100/100 cap (max_lots_per_side).
+2. Arbiter Tier 1 fired `defensive_shift` on PE → `_arbiter_execute_defensive_shift` → `_process_strike_shift(side='pe')`.
+3. Inside the shift: `freeze_current_positions` ran, `calculate_lots_to_sell` returned 0 (no loss to cover for arbiter shift), proactive-shift fallback seeded 1 lot, then the cap re-check capped it to 0.
+4. Control reached the `if lots <= 0:` rollback at `mmm_monitor.py:6664`, which calls `recompute_side_lots(_zero_side_state)`.
+5. **Crash**: `UnboundLocalError: cannot access local variable 'recompute_side_lots' where it is not associated with a value`.
+
+**Root cause**: `_process_strike_shift` had a redundant `from .mmm_state import recompute_side_lots` inside its `if not self._running or session.get('_save_disabled'):` block (line ~6694). Python's scoping rules treat any name assigned anywhere in a function as a function-local for the WHOLE function — so all references to `recompute_side_lots` inside `_process_strike_shift`, including the line 6664 reference that runs BEFORE the import statement, were resolved against an unbound local rather than the module-level import at `mmm_monitor.py:30`.
+
+This is the same class of bug as the 2026-04-17 `_pre_adj_trigger` UnboundLocalError in `_process_adjustment` — except here a from-import (not a conditional assignment) was creating the local binding.
+
+**Why it never triggered before**: the `if not self._running` guard branch is rare (monitor stop during in-flight shift), and the `if lots <= 0:` rollback path was added in the 2026-05-01 fix. Until 2026-05-04, no production session had reached the lots=0 path while the function still contained the conditional from-import.
+
+**Fix** (`mmm_monitor.py:6694`):
+- Removed the local `from .mmm_state import recompute_side_lots`. The module-level import at line 30 is sufficient and shared by every other call site in the function (lines 6664 and 6698). Added an explanatory comment so the redundant import is not re-introduced.
+
+**Static audit**: Walked every function in `mmm_monitor.py` with AST. Confirmed no other function has the dangerous pattern (call to bare `recompute_side_lots` before an unaliased local from-import). The other 8 inner from-imports (`_record_fill_from_pending`, `_process_scale_up`, `_process_replenish`, four `_auto_correct_*`, `_reconcile_exchange_positions`, `_auto_promote_atm_strike`) all have the import statement BEFORE every call, so they are safe. The aliased import at line 7027 (`as _rsl_shift_fail`) is also safe — `as` only binds the alias name.
+
+**Sealed regression test** (`tests/test_sealed_audit_fixes.py`):
+- New class `TestProcessStrikeShiftNoLocalRecomputeImport` with a `pytest.mark.sealed` AST contract test that walks `_process_strike_shift` and fails if any unaliased `from ... import recompute_side_lots` appears inside it. Equivalent to verifying the bug stays fixed; reliable and does not require mocking the strike shift.
+
+**Verification**: `pytest test_sealed_audit_fixes.py` → 137 passed, 0 failed (was 136, +1 new).
+
+**Files**: `mmm_monitor.py` (1 location), `tests/test_sealed_audit_fixes.py` (1 sealed test added)
+
+**Side note — Session 2 (mmm04may26-2) hard-stop overshoot**: The same morning, mmm04may26-2 fired `max_loss` at -$105.07 (event log timestamp 07:29:41) on a $100 limit (5% overshoot) and final realized after `auto_close_all` was -$122.65 (DB row, 23% overshoot). The screenshot the user attached shows -$2,128.46 — far larger than either. The DB-recorded numbers do NOT match the screenshot, so the discrepancy is most likely a frontend display issue (stale cache, misread field, or perp/closed-position aggregation bug). No code fix applied this session for the slippage / display divergence — it needs a fresh screenshot taken alongside a snapshot of the WebSocket payload before the right fix can be written. Logged here so the next session has the diagnostic context.
+

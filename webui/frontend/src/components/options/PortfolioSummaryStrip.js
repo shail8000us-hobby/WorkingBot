@@ -37,6 +37,9 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   onReducePercentChange,
   selectedStrikesCount = 0,
   onReduceSelected,
+  increasePercent = '',
+  onIncreasePercentChange,
+  onIncreaseSelected,
   feesMap = {},
 }) {
   // Phase 6.6: Stale data detection — tick every second (hooks must be before early return)
@@ -633,6 +636,129 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
                     color: '#0f172a',
                     boxShadow: `0 0 10px ${alpha('#f59e0b', 0.35)}`,
                     '&:hover': { bgcolor: '#fbbf24', boxShadow: `0 0 14px ${alpha('#f59e0b', 0.5)}` },
+                    '&.Mui-disabled': {
+                      bgcolor: alpha('#334155', 0.4),
+                      color: alpha('#475569', 0.55),
+                      boxShadow: 'none',
+                    },
+                  }}
+                >
+                  GO
+                </Button>
+              </Box>
+
+              {/* ── INCREASE control row ───────────────────────────── */}
+              <Box
+                sx={{
+                  mt: 0.4,
+                  display: 'grid',
+                  gridTemplateColumns: '44px 1fr auto auto auto',
+                  gap: 0.6,
+                  alignItems: 'center',
+                  px: 0.5,
+                  py: 0.45,
+                  borderRadius: 1,
+                  border: `1px solid ${alpha('#10b981', selectedStrikesCount > 0 && increasePercent ? 0.4 : 0.18)}`,
+                  bgcolor: alpha('#10b981', selectedStrikesCount > 0 ? 0.07 : 0.03),
+                  transition: 'border-color 180ms ease, background-color 180ms ease',
+                }}
+              >
+                <Box sx={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  px: 0.55,
+                  py: 0.18,
+                  borderRadius: 0.6,
+                  bgcolor: alpha('#10b981', 0.15),
+                  border: `1px solid ${alpha('#10b981', 0.35)}`,
+                }}>
+                  <Typography sx={{
+                    color: '#10b981',
+                    fontSize: '0.62rem',
+                    fontWeight: 900,
+                    letterSpacing: '0.07em',
+                    fontFamily: MONO,
+                    lineHeight: 1,
+                  }}>
+                    ADD
+                  </Typography>
+                </Box>
+
+                <Typography sx={{
+                  fontSize: '0.61rem',
+                  color: selectedStrikesCount > 0 ? '#10b981' : alpha('#64748b', 0.9),
+                  fontFamily: MONO,
+                  letterSpacing: '0.03em',
+                  fontWeight: selectedStrikesCount > 0 ? 700 : 500,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {selectedStrikesCount > 0
+                    ? `${selectedStrikesCount} strike${selectedStrikesCount !== 1 ? 's' : ''} selected`
+                    : 'select strikes in table ↓'}
+                </Typography>
+
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.3 }}>
+                  <TextField
+                    size="small"
+                    type="number"
+                    value={increasePercent}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      if (onIncreasePercentChange && (v === '' || (Number(v) > 0 && Number(v) < 100))) {
+                        onIncreasePercentChange(v);
+                      }
+                    }}
+                    placeholder="0"
+                    inputProps={{ min: 1, max: 99, step: 1 }}
+                    sx={{
+                      width: 46,
+                      '& .MuiOutlinedInput-root': {
+                        fontSize: '0.78rem',
+                        fontWeight: 900,
+                        fontFamily: MONO,
+                        color: increasePercent ? '#10b981' : alpha('#94a3b8', 0.8),
+                        bgcolor: alpha('#10b981', increasePercent ? 0.08 : 0.03),
+                        '& fieldset': { borderColor: alpha('#10b981', increasePercent ? 0.5 : 0.22) },
+                        '&:hover fieldset': { borderColor: alpha('#10b981', 0.6) },
+                        '&.Mui-focused fieldset': { borderColor: '#10b981', borderWidth: 1.5 },
+                      },
+                      '& .MuiInputBase-input': { py: 0.28, px: 0.45, textAlign: 'center' },
+                      '& input[type=number]::-webkit-outer-spin-button, & input[type=number]::-webkit-inner-spin-button': { WebkitAppearance: 'none' },
+                    }}
+                  />
+                  <Typography sx={{
+                    fontSize: '0.7rem',
+                    color: increasePercent ? '#10b981' : alpha('#64748b', 0.7),
+                    fontWeight: 800,
+                    fontFamily: MONO,
+                  }}>%</Typography>
+                </Box>
+
+                <Button
+                  size="small"
+                  variant="contained"
+                  disabled={
+                    !increasePercent ||
+                    Number(increasePercent) <= 0 ||
+                    Number(increasePercent) >= 100 ||
+                    selectedStrikesCount === 0
+                  }
+                  onClick={onIncreaseSelected}
+                  sx={{
+                    fontSize: '0.65rem',
+                    py: 0.3,
+                    px: 1.1,
+                    minWidth: 0,
+                    fontWeight: 900,
+                    letterSpacing: '0.06em',
+                    fontFamily: MONO,
+                    bgcolor: '#10b981',
+                    color: '#0f172a',
+                    boxShadow: `0 0 10px ${alpha('#10b981', 0.35)}`,
+                    '&:hover': { bgcolor: '#34d399', boxShadow: `0 0 14px ${alpha('#10b981', 0.5)}` },
                     '&.Mui-disabled': {
                       bgcolor: alpha('#334155', 0.4),
                       color: alpha('#475569', 0.55),

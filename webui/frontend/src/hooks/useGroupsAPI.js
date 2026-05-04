@@ -50,7 +50,13 @@ export default function useGroupsAPI() {
         const res = await fetch(`${API_BASE}/`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const json = await res.json();
-        const serverData = json.data || {};
+        // Strip 'ALL' and composite keys — they are UI-only constructs that should never be
+        // stored server-side. If they end up in the DB (e.g. from a bad delete), they poison
+        // the activeExpiryData merge by returning an empty object when expiryGroupKey==='ALL'.
+        const rawData = json.data || {};
+        const serverData = Object.fromEntries(
+          Object.entries(rawData).filter(([k]) => k !== 'ALL' && !k.includes('|'))
+        );
         const serverHasData = Object.keys(serverData).length > 0;
 
         // Step 2: Migrate localStorage → server ONLY if server is completely empty.
@@ -85,7 +91,10 @@ export default function useGroupsAPI() {
                     const res2 = await fetch(`${API_BASE}/`);
                     if (res2.ok && !cancelled) {
                       const json2 = await res2.json();
-                      const data2 = json2.data || {};
+                      const raw2 = json2.data || {};
+                      const data2 = Object.fromEntries(
+                        Object.entries(raw2).filter(([k]) => k !== 'ALL' && !k.includes('|'))
+                      );
                       setAllExpiryGroupDataLocal(data2);
                       dataRef.current = data2;
                       setLoaded(true);
@@ -221,9 +230,27 @@ export default function useGroupsAPI() {
     apiCall('/meta', 'PUT', { expiry_key: expiryKey, ...meta });
   }, [apiCall]);
 
+  // Reload all group data from the server — call this when React state drifts out of sync.
+  const reloadFromServer = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/`);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const raw = json.data || {};
+      const serverData = Object.fromEntries(
+        Object.entries(raw).filter(([k]) => k !== 'ALL' && !k.includes('|'))
+      );
+      setAllExpiryGroupDataLocal(serverData);
+      dataRef.current = serverData;
+      console.log('[useGroupsAPI] Reloaded', Object.keys(serverData).length, 'expiry keys from server');
+      return serverData;
+    } catch (err) {
+      console.error('[useGroupsAPI] Reload failed:', err);
+      return null;
+    }
+  }, []);
+
   // Cleanup — only cancel pending debounce timer.
-  // The old flushToServer-on-unmount was removed: it called /bulk (DELETE ALL + reinsert)
-  // with whatever React state existed at unmount time, which could be stale/partial and wipe DB data.
   useEffect(() => {
     return () => {
       clearTimeout(saveTimerRef.current);
@@ -235,6 +262,7 @@ export default function useGroupsAPI() {
     setAllExpiryGroupData,
     loaded,
     error,
+    reloadFromServer,
     // Targeted operations for efficiency
     createGroupOnServer,
     deleteGroupOnServer,

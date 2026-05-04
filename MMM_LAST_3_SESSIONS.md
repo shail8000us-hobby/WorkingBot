@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-05-04 — P0 Fix: UnboundLocalError in _process_strike_shift (mmm04may26-1 crash)
+
+**Incident**: Session `mmm04may26-1` stopped at 07:19:41 IST with "Unrecoverable error: UnboundLocalError" while the arbiter was firing a Tier-1 defensive shift on PE (PE was at the 100/100 cap). Crash site: `mmm_monitor.py:6664` — `recompute_side_lots(_zero_side_state)` inside the `if lots <= 0:` freeze-rollback in `_process_strike_shift`.
+
+**Root cause**: A redundant `from .mmm_state import recompute_side_lots` inside the `if not self._running:` orphan-prevention block (line ~6694) made Python treat `recompute_side_lots` as a function-local for the WHOLE function, so the earlier reference at line 6664 raised UnboundLocalError instead of resolving against the module-level import at line 30. Same class as the 2026-04-17 `_pre_adj_trigger` bug.
+
+**Fix** (`mmm_monitor.py`): Removed the local from-import; left the module-level import as the single binding. AST audit of every other function in the file confirmed no other location has the same pattern (call before unaliased local from-import).
+
+**Sealed regression test** (`tests/test_sealed_audit_fixes.py::TestProcessStrikeShiftNoLocalRecomputeImport`): AST contract — fails if any unaliased `from ... import recompute_side_lots` reappears inside `_process_strike_shift`.
+
+**Side note — mmm04may26-2 hard-stop overshoot**: Same morning, mmm04may26-2 fired `max_loss` at -$105.07 on a $100 limit (5%); final realized after `auto_close_all` was -$122.65 (23%). Frontend screenshot showed -$2,128.46 — does NOT match either DB value, so this is a frontend display issue, not an algo control failure. No code fix this session — needs a fresh screenshot + WS payload snapshot for diagnosis.
+
+**Files**: `mmm_monitor.py`, `tests/test_sealed_audit_fixes.py` | **Tests**: 137 passed in audit_fixes (+1 new sealed)
+
+---
+
 ## 2026-05-03 — Core Design Fix: Remove OCS auto-stop, implement expiry-based graceful exit
 
 **Problem** (root cause of mmm03may26-3 and mmm03may26-2 unexplained stops):

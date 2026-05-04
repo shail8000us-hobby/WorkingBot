@@ -143,6 +143,7 @@ import RollManagerModal from './RollManagerModal';
 import AutoLoopBanner from './AutoLoopBanner';
 import ClosePositionDialog from './ClosePositionDialog';
 import ReducePositionDialog from './ReducePositionDialog';
+import IncreasePositionDialog from './IncreasePositionDialog';
 
 // Phase 3: Lazy load heavy components
 const OptionsPayoffDiagram = lazy(() => import('./OptionsPayoffDiagram'));
@@ -552,6 +553,7 @@ const OptionsPanel = () => {
   const {
     allExpiryGroupData, setAllExpiryGroupData,
     loaded: groupsLoaded,
+    reloadFromServer: reloadGroupsFromServer,
     createGroupOnServer, deleteGroupOnServer,
     assignSymbolOnServer, updateGroupOnServer, updateMetaOnServer,
   } = useGroupsAPI();
@@ -563,12 +565,12 @@ const OptionsPanel = () => {
   }, [selectedExpiries]);
 
   // Active slice for the current expiry.
-  // When expiryGroupKey is 'ALL' (no filter applied) and there is no data stored directly under
-  // 'ALL', build a merged view from individual per-expiry scopes whose groups contain symbols
-  // that are currently visible. This keeps groups visible even when the expiry filter is cleared.
+  // When expiryGroupKey is 'ALL' (no filter applied), always build a merged view from individual
+  // per-expiry slices — never short-circuit via the direct lookup, since an empty 'ALL' key in
+  // allExpiryGroupData (written by a bad delete op) would bypass the merge and show nothing.
   const activeExpiryData = useMemo(() => {
     const direct = allExpiryGroupData[expiryGroupKey];
-    if (direct) return direct;
+    if (direct && expiryGroupKey !== 'ALL') return direct;
 
     if (expiryGroupKey === 'ALL') {
       const visibleSymbols = new Set(positions.map((p) => p.product_symbol));
@@ -688,6 +690,9 @@ const OptionsPanel = () => {
   // Create a new group — uses setAllExpiryGroupData directly to avoid stale closure on expiryGroupKey
   const handleCreateGroup = useCallback((name) => {
     if (!name.trim()) return;
+    // Prevent creating groups in ALL/composite mode — groups must belong to a specific expiry.
+    // If no expiry is selected, the group would be stored under an invalid key.
+    if (expiryGroupKey === 'ALL' || expiryGroupKey.includes('|')) return;
     const id = Date.now().toString();
     const trimmedName = name.trim();
     setAllExpiryGroupData((prev) => {
@@ -716,18 +721,38 @@ const OptionsPanel = () => {
     });
   }, [expiryGroupKey, createGroupOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Delete a group (positions become ungrouped) — also removes from groupOrder
+  // Delete a group (positions become ungrouped) — also removes from groupOrder.
+  // Safeguard: after the optimistic local update, validate that all other expiry keys still
+  // have their data. If any key lost all its groups unexpectedly, reload from the server to
+  // prevent a cross-expiry wipe from causing permanent visible data loss.
   const handleDeleteGroup = useCallback((groupId) => {
     const actualKey = getGroupActualKey(groupId);
+    // Guard: if group not found in any per-expiry slice, getGroupActualKey returns 'ALL' as fallback.
+    // Writing an 'ALL' key into allExpiryGroupData poisons the merge logic — skip state update and
+    // reload to sync with server instead.
+    if (actualKey === 'ALL' || actualKey.includes('|')) {
+      console.warn('[handleDeleteGroup] actualKey is composite/ALL — reloading from server instead of mutating state');
+      setTimeout(() => reloadGroupsFromServer(), 100);
+      return;
+    }
     deleteGroupOnServer(actualKey, groupId);
     setAllExpiryGroupData((prev) => {
+      const keysBefore = Object.keys(prev).filter(k => Object.keys(prev[k]?.groups || {}).length > 0);
       const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [], groupOrder: [] };
       const nextGroups = { ...(slice.groups || {}) };
       delete nextGroups[groupId];
       const nextGroupOrder = (slice.groupOrder || []).filter((id) => id !== groupId);
-      return { ...prev, [actualKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
+      const next = { ...prev, [actualKey]: { ...slice, groups: nextGroups, groupOrder: nextGroupOrder } };
+      // Detect if any OTHER expiry key lost all groups — that means state drift, not intentional delete
+      const keysAfter = Object.keys(next).filter(k => Object.keys(next[k]?.groups || {}).length > 0);
+      const lostKeys = keysBefore.filter(k => k !== actualKey && !keysAfter.includes(k));
+      if (lostKeys.length > 0) {
+        console.warn('[handleDeleteGroup] Cross-expiry group loss detected for keys:', lostKeys, '— reloading from server');
+        setTimeout(() => reloadGroupsFromServer(), 100);
+      }
+      return next;
     });
-  }, [getGroupActualKey, deleteGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [getGroupActualKey, deleteGroupOnServer, reloadGroupsFromServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // @sealed v1.0.0 — handleAssignToGroup — drag-and-drop group assignment core logic
   // Contract: MUST NOT break drag-and-drop position-to-group assignment
@@ -739,6 +764,8 @@ const OptionsPanel = () => {
       Object.keys(positionGroups).find((id) => (positionGroups[id]?.symbols || []).includes(symbol)) || ''
     );
     const keyToUse = actualKey || expiryGroupKey;
+    // Guard: never write to ALL/composite keys — they are not real expiry storage keys
+    if (keyToUse === 'ALL' || keyToUse.includes('|')) return;
     assignSymbolOnServer(keyToUse, symbol, groupId || null);
     setAllExpiryGroupData((prev) => {
       const slice = prev[keyToUse] || { groups: {}, collapsed: {}, order: [] };
@@ -800,6 +827,7 @@ const OptionsPanel = () => {
   // Toggle collapse for a group
   const toggleGroupCollapse = useCallback((groupId) => {
     const actualKey = getGroupActualKey(groupId);
+    if (actualKey === 'ALL' || actualKey.includes('|')) return; // orphan group — skip
     setAllExpiryGroupData((prev) => {
       const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [] };
       const prevCollapsed = slice.collapsed || {};
@@ -821,6 +849,7 @@ const OptionsPanel = () => {
   // Persist note text into the group object for the current expiry
   const handleSaveGroupNote = useCallback((groupId, text) => {
     const actualKey = getGroupActualKey(groupId);
+    if (actualKey === 'ALL' || actualKey.includes('|')) return; // orphan group — skip
     updateGroupOnServer(actualKey, groupId, { note: text });
     setAllExpiryGroupData((prev) => {
       const slice = prev[actualKey] || { groups: {}, collapsed: {}, order: [] };
@@ -1025,6 +1054,10 @@ const OptionsPanel = () => {
   const [reduceDialog, setReduceDialog] = useState({ open: false, rows: [], pct: 0 });
   const [reduceExecuting, setReduceExecuting] = useState(false);
   const reduceInFlightRef = useRef(false); // sync guard — prevents double-fire before React re-renders
+  const [increasePercent, setIncreasePercent] = useState('10');
+  const [increaseDialog, setIncreaseDialog] = useState({ open: false, rows: [], pct: 0 });
+  const [increaseExecuting, setIncreaseExecuting] = useState(false);
+  const increaseInFlightRef = useRef(false); // sync guard — prevents double-fire before React re-renders
   const selectedStrikesCount = useMemo(
     () => Object.values(selectedStrikes).filter(Boolean).length,
     [selectedStrikes]
@@ -2253,7 +2286,7 @@ const OptionsPanel = () => {
     // window where the user could re-trigger while orders are in flight.
     setReduceExecuting(true);
     setReduceDialog({ open: false, rows: [], pct: 0 });
-    setReducePercent('');
+    setReducePercent('10');
     setSelectedStrikes({}); // deselect all rows so reduce can't fire again accidentally
 
     // Fire all reduce orders concurrently — same behaviour as the batch order button
@@ -2299,6 +2332,84 @@ const OptionsPanel = () => {
       } else {
         // Partial success — show both outcomes
         setOrderResult({ type: 'warning', message: `Reduced ${successCount}/${results.length} positions — ${failureCount} failed: ${firstError}` });
+        fetchDashboard();
+      }
+      setTimeout(() => setOrderResult(null), 5000);
+    }
+  };
+
+  const handleIncreaseSelected = () => {
+    const pct = parseFloat(increasePercent);
+    if (!pct || pct <= 0 || pct >= 100) return;
+    const selected = sortedPositions.filter(
+      (p) => selectedStrikes[p.product_symbol] && !p.is_closed
+    );
+    if (selected.length === 0) return;
+    const rows = selected.map((p) => {
+      const currentSize = Math.abs(p.size);
+      const lotsToAdd = Math.max(1, Math.ceil(currentSize * pct / 100));
+      return {
+        position: p,
+        currentSize,
+        lotsToAdd,
+        action: p.size < 0 ? 'SELL' : 'BUY',
+        newSize: currentSize + lotsToAdd,
+      };
+    });
+    setIncreaseDialog({ open: true, rows, pct });
+  };
+
+  const confirmIncreaseSelected = async () => {
+    if (increaseInFlightRef.current) return;
+    increaseInFlightRef.current = true;
+
+    const { rows } = increaseDialog;
+    const actionable = rows.filter((r) => r.lotsToAdd >= 1);
+
+    setIncreaseExecuting(true);
+    setIncreaseDialog({ open: false, rows: [], pct: 0 });
+    setIncreasePercent('10');
+    setSelectedStrikes({});
+
+    const results = await Promise.all(
+      actionable.map(async (r) => {
+        const midPrice = ((r.position.best_bid || 0) + (r.position.best_ask || 0)) / 2;
+        try {
+          const { data } = await api.post('/api/options/add', {
+            symbol: r.position.product_symbol,
+            size: r.lotsToAdd,
+            side: r.action === 'BUY' ? 'buy' : 'sell',
+            confirm: true,
+            order_preference: 'maker_first',
+            limit_price: midPrice > 0 ? midPrice : undefined,
+          });
+          if (data?.success) {
+            const execType = data.execution_type || 'unknown';
+            if (isOrderFilled(execType)) soundManager.playTradeFilled();
+            return { success: true };
+          }
+          return { success: false, error: data?.error || `Failed for ${r.position.product_symbol}` };
+        } catch (err) {
+          return { success: false, error: err.message };
+        }
+      })
+    );
+
+    const successCount = results.filter((r) => r.success).length;
+    const failureCount = results.length - successCount;
+    const firstError = results.find((r) => !r.success)?.error || null;
+
+    setIncreaseExecuting(false);
+    increaseInFlightRef.current = false;
+
+    if (successCount > 0 || failureCount > 0) {
+      if (failureCount === 0) {
+        setOrderResult({ type: 'success', message: `Increased ${successCount} position${successCount !== 1 ? 's' : ''} — limit orders placed at mid-price` });
+        fetchDashboard();
+      } else if (successCount === 0) {
+        setOrderResult({ type: 'error', message: firstError });
+      } else {
+        setOrderResult({ type: 'warning', message: `Increased ${successCount}/${results.length} positions — ${failureCount} failed: ${firstError}` });
         fetchDashboard();
       }
       setTimeout(() => setOrderResult(null), 5000);
@@ -3674,6 +3785,9 @@ const OptionsPanel = () => {
             onReducePercentChange={setReducePercent}
             selectedStrikesCount={selectedStrikesCount}
             onReduceSelected={handleReduceSelected}
+            increasePercent={increasePercent}
+            onIncreasePercentChange={setIncreasePercent}
+            onIncreaseSelected={handleIncreaseSelected}
             feesMap={feesMap}
           />
 
@@ -3717,6 +3831,12 @@ const OptionsPanel = () => {
                   ＋ Group
                 </Button>
               </Box>
+              {/* Reload groups from server — recovers if React state drifts out of sync with DB */}
+              <Tooltip title="Reload groups from server (restores if groups appear missing)">
+                <IconButton size="small" onClick={reloadGroupsFromServer} sx={{ color: '#64748b', p: 0.3, '&:hover': { color: '#60a5fa' } }}>
+                  <RefreshIcon sx={{ fontSize: 14 }} />
+                </IconButton>
+              </Tooltip>
             </Box>
           )}
 
@@ -4818,6 +4938,16 @@ const OptionsPanel = () => {
         executing={reduceExecuting}
         onClose={() => { if (!reduceExecuting) setReduceDialog({ open: false, rows: [], pct: 0 }); }}
         onConfirm={confirmReduceSelected}
+      />
+
+      {/* Increase by % dialog */}
+      <IncreasePositionDialog
+        open={increaseDialog.open}
+        rows={increaseDialog.rows}
+        pct={increaseDialog.pct}
+        executing={increaseExecuting}
+        onClose={() => { if (!increaseExecuting) setIncreaseDialog({ open: false, rows: [], pct: 0 }); }}
+        onConfirm={confirmIncreaseSelected}
       />
 
       <AddPositionDialog

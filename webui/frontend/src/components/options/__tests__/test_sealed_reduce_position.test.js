@@ -31,7 +31,7 @@
  *   RD13: API receives order_preference='maker_first' (never 'market_only')
  *   RD14: selectedStrikes cleared to {} before API calls start (one-shot guard)
  *   RD15: dialog closed (open=false) before API calls start
- *   RD16: reducePercent cleared ('') before API calls start
+ *   RD16: reducePercent reset to '10' (default) before API calls start
  *   RD17: double-fire guard — second call returns immediately without placing orders
  *   RD18: all N orders placed concurrently (Promise.all) — not sequentially
  *
@@ -214,7 +214,7 @@ describe('confirmReduceSelected execution contracts (RD12–RD17)', () => {
     // Cleared BEFORE API calls start
     onSetReduceExecuting(true);
     onSetReduceDialog({ open: false, rows: [], pct: 0 });
-    onSetReducePercent('');
+    onSetReducePercent('10');
     onSetSelectedStrikes({});
 
     // All orders placed concurrently (Promise.all)
@@ -320,10 +320,10 @@ describe('confirmReduceSelected execution contracts (RD12–RD17)', () => {
     expect(dialogCall.open).toBe(false);
   });
 
-  test('RD16: reducePercent cleared to empty string before first API await', async () => {
+  test('RD16: reducePercent reset to default \'10\' before first API await', async () => {
     const clearOrder = [];
     const apiPost = jest.fn(() => { clearOrder.push('api_called'); return Promise.resolve({ data: { success: true } }); });
-    const onSetReducePercent = jest.fn(() => { clearOrder.push('percent_cleared'); });
+    const onSetReducePercent = jest.fn(() => { clearOrder.push('percent_reset'); });
     const row = makeRow('P-BTC-75000-010526', -50, 0, 0, 10);
     await runConfirmReduce({
       rows: [row], apiPost, onSetReducePercent,
@@ -331,10 +331,10 @@ describe('confirmReduceSelected execution contracts (RD12–RD17)', () => {
       onSetSelectedStrikes: jest.fn(),
       inFlightRef: { current: false },
     });
-    const pctIdx = clearOrder.indexOf('percent_cleared');
+    const pctIdx = clearOrder.indexOf('percent_reset');
     const apiIdx = clearOrder.indexOf('api_called');
     expect(pctIdx).toBeLessThan(apiIdx);
-    expect(onSetReducePercent).toHaveBeenCalledWith('');
+    expect(onSetReducePercent).toHaveBeenCalledWith('10');
   });
 
   test('RD17: double-fire guard — second concurrent call places zero API calls', async () => {

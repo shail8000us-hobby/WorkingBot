@@ -2328,5 +2328,49 @@ class TestShiftLotsZeroUnfreeze(unittest.TestCase):
                          'active_lots must equal sum of restored positions at old_strike')
 
 
+class TestProcessStrikeShiftNoLocalRecomputeImport(unittest.TestCase):
+    """
+    Regression: 2026-05-04 P0 — session mmm04may26-1 crashed with
+    UnboundLocalError accessing 'recompute_side_lots' at line 6664 of
+    mmm_monitor.py (the lots=0 freeze rollback inside _process_strike_shift).
+
+    Root cause: `_process_strike_shift` had a local
+    `from .mmm_state import recompute_side_lots` inside the
+    `if not self._running:` orphan-prevention block (line ~6694). Python's
+    scoping rules make any name assigned anywhere in a function a local for
+    the WHOLE function — so the earlier reference at the lots=0 rollback
+    raised UnboundLocalError when the import statement had not yet executed.
+
+    Fix: rely on the module-level import (line 30); do NOT shadow it with a
+    local from-import inside _process_strike_shift.
+
+    This contract test asserts the function source contains no unaliased
+    `from ... import recompute_side_lots`, which is the exact condition that
+    triggered the crash.
+    """
+
+    @pytest.mark.sealed
+    def test_no_local_unaliased_recompute_import(self):
+        import ast, inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._process_strike_shift))
+        tree = ast.parse(src)
+        offenders = [
+            sub.lineno
+            for sub in ast.walk(tree)
+            if isinstance(sub, ast.ImportFrom)
+            and sub.module and 'mmm_state' in sub.module
+            for n in sub.names
+            if n.name == 'recompute_side_lots' and n.asname is None
+        ]
+        self.assertEqual(
+            offenders, [],
+            f'_process_strike_shift must not shadow module-level '
+            f'recompute_side_lots with a local from-import '
+            f'(offending lines, relative to function start: {offenders}). '
+            f'See incident mmm04may26-1.'
+        )
+
+
 if __name__ == '__main__':
     unittest.main()

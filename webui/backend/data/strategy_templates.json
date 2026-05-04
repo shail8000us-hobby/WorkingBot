@@ -1,5 +1,28 @@
 [
   {
+    "id": "1777867178331",
+    "name": "LTP 80.2 aggressive pe",
+    "underlying": "BTC",
+    "saved_spot": 80258.0987704,
+    "created_at": "2026-05-04T03:59:38.331Z",
+    "legs": [
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 79000,
+        "atm_offset": -1258.0987704
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 3,
+        "strike": 73000,
+        "atm_offset": -7258.0987704
+      }
+    ]
+  },
+  {
     "id": "1777834401671",
     "name": "aggressive 78k puy",
     "underlying": "BTC",
