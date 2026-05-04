@@ -91,11 +91,16 @@ class GuardianRiskDecisionEngine:
         self.event_store = event_store
         self.config = get_config()
         self.config_hash = self._calculate_config_hash()
-        
+        self._instance_mode: Optional[str] = None  # "LONG" or "SHORT" — set via set_instance_mode()
+
         # Components will be injected
         self.volatility_collector = None
         self.position_monitor = None
         self.rsi_collector = None
+
+        # RANGE mode regime detector (None when not in RANGE mode)
+        self._regime_detector = None
+        self._init_regime_detector()
         
         # Initialize health tracker for Layer 5
         self.health_tracker = SystemHealthTracker(config=self.config)
@@ -112,7 +117,68 @@ class GuardianRiskDecisionEngine:
         
         log.info("✅ Guardian Risk Decision Engine initialized")
         log.info(f"   Config hash: {self.config_hash}")
+
+    def set_instance_mode(self, instance_name: str):
+        """Call this after __init__ so the regime gate knows which zone this Guardian covers.
+
+        Args:
+            instance_name: e.g. "BTCUSD_LONG" or "BTCUSD_SHORT"
+        """
+        parts = instance_name.rsplit("_", 1)
+        if len(parts) == 2 and parts[1] in ("LONG", "SHORT"):
+            self._instance_mode = parts[1]
+            log.info(f"RANGE gate: instance_mode set to {self._instance_mode}")
     
+    def _init_regime_detector(self):
+        """Set up RegimeDetector if dual_mode is configured and enabled."""
+        try:
+            dual = getattr(self.config, "dual_mode", None)
+            if dual is None or not dual.enabled:
+                return
+            from bot.guardian.engine.regime_detector import RegimeDetector
+            self._regime_detector = RegimeDetector(
+                anchor=float(dual.anchor),
+                lower=float(dual.lower),
+                upper=float(dual.upper),
+                hysteresis=float(dual.hysteresis),
+            )
+            log.info(
+                f"RANGE mode active: anchor={dual.anchor}, lower={dual.lower}, "
+                f"upper={dual.upper}, hysteresis={dual.hysteresis}"
+            )
+        except Exception as e:
+            log.error(f"Failed to init RegimeDetector: {e}")
+
+    def _check_regime(self) -> Optional[Dict]:
+        """For RANGE mode: block trading when this instance's zone is not the active regime."""
+        try:
+            ltp = None
+            if self.position_monitor and hasattr(self.position_monitor, "get_current_price"):
+                ltp = self.position_monitor.get_current_price()
+            if ltp is None:
+                log.warning("RANGE regime check: LTP unavailable — allowing GO (fail-safe)")
+                return None
+
+            regime = self._regime_detector.update(ltp)
+
+            # Determine this instance's mode: prefer RSI collector (most reliable)
+            if self.rsi_collector and hasattr(self.rsi_collector, "bot_mode"):
+                instance_mode = self.rsi_collector.bot_mode.upper()
+            elif self._instance_mode:
+                instance_mode = self._instance_mode
+            else:
+                instance_mode = getattr(self.config.bot, "mode", "LONG").upper()
+
+            if regime != instance_mode:
+                return self._make_stop_signal(
+                    reason=f"RANGE mode: active regime is {regime}, this instance is {instance_mode}",
+                    details={"regime": regime, "instance_mode": instance_mode, "ltp": ltp},
+                )
+            return None
+        except Exception as e:
+            log.error(f"RANGE regime check error: {e}")
+            return None  # Fail-safe: allow GO on error
+
     def set_components(self, volatility_collector, position_monitor, liquidation_monitor=None, rsi_collector=None):
         """
         Inject dependencies (called by GuardianBot)
@@ -361,6 +427,12 @@ class GuardianRiskDecisionEngine:
                 details=self._get_rsi_details()
             )
         
+        # Check 7: RANGE mode regime gate (dual-zone LONG/SHORT)
+        if self._regime_detector is not None:
+            regime_stop = self._check_regime()
+            if regime_stop is not None:
+                return regime_stop
+
         # All clear! Green light 🟢
         return self._make_go_signal()
     

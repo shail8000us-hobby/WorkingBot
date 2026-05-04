@@ -49,17 +49,21 @@ def get_grid_mode():
 
 @grid_mode_bp.route('/api/bot/grid-mode', methods=['POST'])
 def toggle_grid_mode():
-    """Toggle between LONG and SHORT mode (with auto-restart)"""
+    """Set grid mode to LONG, SHORT, or RANGE (dual-zone)."""
     try:
         data = request.get_json()
         new_mode = data.get('mode', '').upper()
         auto_restart = data.get('auto_restart', True)  # Default: restart automatically
-        
-        if new_mode not in ['LONG', 'SHORT']:
+
+        if new_mode not in ['LONG', 'SHORT', 'RANGE']:
             return jsonify({
                 'success': False,
-                'error': 'Mode must be LONG or SHORT'
+                'error': 'Mode must be LONG, SHORT, or RANGE'
             }), 400
+
+        # RANGE mode: write dual_mode section and enable both instances
+        if new_mode == 'RANGE':
+            return _activate_range_mode(data, auto_restart)
         
         # Get current mode to check if actual change
         current_mode = get_config_value('grid.mode', 'GRIDBOT_GRID_MODE', 'LONG').upper()
@@ -142,4 +146,107 @@ def toggle_grid_mode():
         
     except Exception as e:
         log.error(f"Error toggling grid mode: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+def _activate_range_mode(data: dict, auto_restart: bool):
+    """Write dual_mode config and enable both LONG + SHORT instances for RANGE mode."""
+    try:
+        symbol = data.get('symbol', 'BTCUSD').upper()
+        anchor = float(data.get('anchor', 75000))
+        lower = float(data.get('lower', 73000))
+        upper = float(data.get('upper', 77000))
+        step = float(data.get('step', 500))
+        lot_size = int(data.get('lot_size', 5))
+        hysteresis = float(data.get('hysteresis', 200))
+        max_open = int(data.get('max_open_positions', 20))
+        product_id = int(data.get('product_id', 27))
+
+        if not (lower < anchor < upper):
+            return jsonify({'success': False, 'error': 'RANGE config invalid: lower < anchor < upper required'}), 400
+
+        with open(CONFIG_FILE, 'r') as f:
+            config_data = yaml.safe_load(f)
+
+        # Write dual_mode section
+        config_data['dual_mode'] = {
+            'enabled': True,
+            'symbol': symbol,
+            'anchor': anchor,
+            'lower': lower,
+            'upper': upper,
+            'step': step,
+            'lot_size': lot_size,
+            'hysteresis': hysteresis,
+            'max_open_positions': max_open,
+        }
+
+        # Enable both instances with zone-specific bounds, disable others for same symbol
+        long_name = f"{symbol}_LONG"
+        short_name = f"{symbol}_SHORT"
+
+        if 'instances' not in config_data:
+            config_data['instances'] = {}
+
+        ref_long = (lower + anchor) / 2
+        ref_short = (anchor + upper) / 2
+
+        for inst_name, ref, inst_lower, inst_upper in [
+            (long_name,  ref_long,  lower,  anchor),
+            (short_name, ref_short, anchor, upper),
+        ]:
+            if inst_name not in config_data['instances']:
+                config_data['instances'][inst_name] = {}
+            inst = config_data['instances'][inst_name]
+            inst['symbol'] = symbol
+            inst['mode'] = inst_name.split('_')[-1]
+            inst['enabled'] = True
+            inst['product_id'] = product_id
+            if 'grid' not in inst:
+                inst['grid'] = {}
+            inst['grid']['geometry'] = {
+                'reference': ref,
+                'lower': inst_lower,
+                'upper': inst_upper,
+                'step': step,
+            }
+            inst['grid'].setdefault('limits', {}).update({
+                'max_open_positions': max_open,
+                'lot_size': lot_size,
+                'max_open_orders': max_open,
+                'max_qty_per_order': lot_size,
+            })
+            inst['grid'].setdefault('behavior', {
+                'strict_grid': True,
+                'rung_snap_mode': 'below',
+                'tick_size': 0.5,
+                'dynamic_tick_size': True,
+                'seed_initial_count': 0,
+            })
+            inst.setdefault('safety', {
+                'max_account_loss_inr': 250000,
+                'min_liquidation_distance_pct': 50,
+                'rsi': {'enabled': False},
+            })
+
+        with open(CONFIG_FILE, 'w') as f:
+            yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
+
+        reload_config()
+        log.info(f"RANGE mode activated: anchor={anchor}, [{lower}, {upper}], H={hysteresis}")
+
+        return jsonify({
+            'success': True,
+            'mode': 'RANGE',
+            'changed': True,
+            'message': f'RANGE mode activated — {long_name} and {short_name} configured',
+            'anchor': anchor,
+            'lower': lower,
+            'upper': upper,
+            'hysteresis': hysteresis,
+            'warning': 'Restart both gridbot instances and their Guardian processes for RANGE mode to take effect',
+        })
+
+    except Exception as e:
+        log.error(f"Error activating RANGE mode: {e}")
         return jsonify({'success': False, 'error': str(e)}), 500

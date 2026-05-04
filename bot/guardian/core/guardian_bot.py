@@ -331,7 +331,11 @@ class GuardianBot:
         # Initialize Risk Decision Engine
         self.risk_decision_engine = GuardianRiskDecisionEngine(self.event_store)
         logger.info("✅ Guardian Risk Decision Engine initialized")
-        
+
+        # RANGE mode: tell engine which zone (LONG/SHORT) this Guardian instance covers
+        if self.instance_name:
+            self.risk_decision_engine.set_instance_mode(self.instance_name)
+
         # Inject data collectors into risk engine
         volatility_collector = self._get_volatility_collector()
         self.risk_decision_engine.set_components(

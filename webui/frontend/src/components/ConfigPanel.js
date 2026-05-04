@@ -727,10 +727,12 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
 
   // Compact renderer for Grid Geometry & Direction section
   const renderGridGeometry = (fields) => {
-    const gridMode = values['GRIDBOT_GRID_MODE'] || 'LONG';
-    const isLong = gridMode.toUpperCase() === 'LONG';
+    const gridMode = (values['GRIDBOT_GRID_MODE'] || 'LONG').toUpperCase();
+    const isLong = gridMode === 'LONG';
+    const isRange = gridMode === 'RANGE';
     const lower = parseFloat(values['GRIDBOT_LOWER']) || 0;
     const upper = parseFloat(values['GRIDBOT_UPPER']) || 0;
+    const anchor = parseFloat(values['GRIDBOT_ANCHOR']) || 0;
     const gridSpan = upper - lower;
 
     // Core fields (always visible)
@@ -861,7 +863,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           )}
         </Box>
 
-        {/* Grid Mode - Segmented Toggle */}
+        {/* Grid Mode - Segmented Toggle (LONG / SHORT / RANGE) */}
         <Box sx={{ mb: 2 }}>
           <Typography
             variant="caption"
@@ -899,18 +901,36 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             <ToggleButton
               value="SHORT"
               sx={{
-                bgcolor: !isLong ? '#f44336 !important' : 'rgba(255, 255, 255, 0.05)',
-                color: !isLong ? 'white !important' : 'text.secondary',
+                bgcolor: gridMode === 'SHORT' ? '#f44336 !important' : 'rgba(255, 255, 255, 0.05)',
+                color: gridMode === 'SHORT' ? 'white !important' : 'text.secondary',
                 fontWeight: 'bold',
-                borderRadius: '0 20px 20px 0',
-                boxShadow: !isLong ? '0 0 12px rgba(244, 67, 54, 0.4)' : 'none',
-                '&:hover': { bgcolor: !isLong ? '#e53935 !important' : 'rgba(244, 67, 54, 0.1)' },
+                borderRadius: 0,
+                boxShadow: gridMode === 'SHORT' ? '0 0 12px rgba(244, 67, 54, 0.4)' : 'none',
+                '&:hover': { bgcolor: gridMode === 'SHORT' ? '#e53935 !important' : 'rgba(244, 67, 54, 0.1)' },
               }}
             >
               <TrendingDownIcon sx={{ fontSize: 18, mr: 0.5 }} />
               SHORT
             </ToggleButton>
+            <ToggleButton
+              value="RANGE"
+              sx={{
+                bgcolor: isRange ? '#FF9800 !important' : 'rgba(255, 255, 255, 0.05)',
+                color: isRange ? 'white !important' : 'text.secondary',
+                fontWeight: 'bold',
+                borderRadius: '0 20px 20px 0',
+                boxShadow: isRange ? '0 0 12px rgba(255, 152, 0, 0.4)' : 'none',
+                '&:hover': { bgcolor: isRange ? '#F57C00 !important' : 'rgba(255, 152, 0, 0.1)' },
+              }}
+            >
+              ↕ RANGE
+            </ToggleButton>
           </ToggleButtonGroup>
+          {isRange && (
+            <Typography variant="caption" sx={{ color: '#FF9800', display: 'block', mt: 0.5 }}>
+              Auto-switches: LONG below anchor, SHORT above anchor
+            </Typography>
+          )}
         </Box>
 
         {/* Core Parameters - 2 Column Grid */}
@@ -933,7 +953,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
             {renderCompactField('GRIDBOT_UPPER', 'Upper Bound', 'USD', true)}
           </Grid>
 
-          {gridSpan > 0 && (
+          {gridSpan > 0 && !isRange && (
             <Grid item xs={12}>
               <Chip
                 label={`Grid Span: ${lower.toLocaleString()} → ${upper.toLocaleString()} (${gridSpan.toLocaleString()} USD)`}
@@ -943,6 +963,21 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
                   bgcolor: isLong ? 'rgba(76, 175, 80, 0.1)' : 'rgba(244, 67, 54, 0.1)',
                   color: isLong ? '#4CAF50' : '#f44336',
                   fontWeight: 600,
+                }}
+              />
+            </Grid>
+          )}
+          {isRange && anchor > 0 && lower > 0 && upper > 0 && (
+            <Grid item xs={12}>
+              <Chip
+                label={`LONG [${lower.toLocaleString()} → ${anchor.toLocaleString()}] | SHORT [${anchor.toLocaleString()} → ${upper.toLocaleString()}]`}
+                size="small"
+                sx={{
+                  width: '100%',
+                  bgcolor: 'rgba(255, 152, 0, 0.1)',
+                  color: '#FF9800',
+                  fontWeight: 600,
+                  fontSize: '0.7rem',
                 }}
               />
             </Grid>
@@ -962,6 +997,25 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           <Grid item xs={6}>
             {renderCompactField('GRIDBOT_MAX_OPEN', 'Max Open Positions', '', true)}
           </Grid>
+
+          {/* RANGE mode: Anchor + Hysteresis */}
+          {isRange && (
+            <>
+              <Grid item xs={12}>
+                <Chip
+                  label="RANGE Mode Parameters"
+                  size="small"
+                  sx={{ bgcolor: 'rgba(255,152,0,0.15)', color: '#FF9800', fontWeight: 600 }}
+                />
+              </Grid>
+              <Grid item xs={6}>
+                {renderCompactField('GRIDBOT_ANCHOR', 'Anchor Price', 'USD', true)}
+              </Grid>
+              <Grid item xs={6}>
+                {renderCompactField('GRIDBOT_HYSTERESIS', 'Hysteresis', 'USD', true)}
+              </Grid>
+            </>
+          )}
 
           {/* Advanced Options Toggle */}
           <Grid item xs={6}>

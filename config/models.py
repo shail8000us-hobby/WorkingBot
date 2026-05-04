@@ -24,6 +24,7 @@ class GridMode(str, Enum):
     LONG = "LONG"
     SHORT = "SHORT"
     BOTH = "BOTH"
+    RANGE = "RANGE"
 
 
 class PostOnlyMode(str, Enum):
@@ -1203,6 +1204,26 @@ class OptionsConfig(BaseModel):
     default_order_type: str = Field(default="maker_first", description="Default order type: maker_first, maker_only, market_only")
 
 
+class DualModeConfig(BaseModel):
+    """RANGE mode: dual-zone grid that auto-switches between LONG and SHORT.
+
+    Above the anchor → SHORT grid runs.
+    Below the anchor → LONG grid runs.
+    Outside [lower, upper] → both stop.
+
+    Hysteresis prevents rapid flipping at the anchor boundary.
+    """
+    enabled: bool = Field(False, description="Enable RANGE (dual-zone) mode")
+    symbol: str = Field("BTCUSD", description="Symbol to run RANGE mode on")
+    anchor: float = Field(75000, gt=0, description="Price dividing LONG and SHORT zones")
+    lower: float = Field(73000, gt=0, description="OOB floor — below this, both bots stop")
+    upper: float = Field(77000, gt=0, description="OOB ceiling — above this, both bots stop")
+    step: float = Field(500, gt=0, description="Grid step size for both zones")
+    lot_size: int = Field(5, gt=0, description="Lot size for both zones")
+    hysteresis: float = Field(200, gt=0, description="Price delta around anchor to trigger regime switch")
+    max_open_positions: int = Field(20, gt=0, description="Max open positions per zone")
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # ROOT CONFIGURATION
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1283,6 +1304,9 @@ class RootConfig(BaseModel):
     
     # Options trading module (Jan 4, 2026) - Separate from grid bot
     options: OptionsConfig = Field(default_factory=OptionsConfig, description="Options trading configuration")
+
+    # RANGE mode (May 2026) - Dual-zone grid that auto-switches between LONG and SHORT
+    dual_mode: Optional[DualModeConfig] = Field(default=None, description="RANGE mode: dual-zone LONG/SHORT grid")
     
     class Config:
         extra = "forbid"  # Reject unknown fields

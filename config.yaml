@@ -558,6 +558,16 @@ recovery:
   recovery_rate_limit: 0.5
 strategies: []
 active_strategies: []
+dual_mode:
+  enabled: false
+  symbol: BTCUSD
+  anchor: 75000
+  lower: 73000
+  upper: 77000
+  step: 500
+  lot_size: 5
+  hysteresis: 200
+  max_open_positions: 20
 exchange_maintenance:
   fill_monitor:
     enabled: true

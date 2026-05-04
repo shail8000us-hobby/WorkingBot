@@ -21,6 +21,10 @@ ENV_TO_YAML_MAPPING: Dict[str, str] = {
     'GRIDBOT_UPPER': 'grid.geometry.upper',
     'GRIDBOT_STEP': 'grid.geometry.step',
     'GRIDBOT_REF': 'grid.geometry.reference',
+
+    # RANGE mode (dual-zone)
+    'GRIDBOT_ANCHOR': 'dual_mode.anchor',
+    'GRIDBOT_HYSTERESIS': 'dual_mode.hysteresis',
     
     # Grid limits
     'GRIDBOT_MAX_OPEN': 'grid.limits.max_open_positions',
