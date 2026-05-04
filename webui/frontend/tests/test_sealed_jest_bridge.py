@@ -344,3 +344,38 @@ class TestJestSealedReducePosition:
             f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
             f"--testPathPattern=test_sealed_reduce_position"
         )
+
+
+class TestJestSealedHandleAssignToGroup:
+    """
+    @sealed — handleAssignToGroup (drag-and-drop group assignment) (entry #87)
+    Runs: webui/frontend/src/components/options/__tests__/test_sealed_handleAssignToGroup.test.js
+
+    Contracts HA1–HA8:
+      HA1:  Assign ungrouped position to existing group
+      HA2:  Remove symbol from old group when reassigning
+      HA3:  Assign to null ungroups position
+      HA4:  No duplicate symbols in group
+      HA5:  Preserves other symbols when assigning new one
+      HA6:  Group properties (name, color) preserved during assignment
+      HA7:  State updater does not mutate input state (immutability)
+      HA8:  Handle missing target group gracefully (no crash)
+    """
+
+    def test_all_handle_assign_to_group_contracts_pass(self):
+        """
+        CONTRACT: handleAssignToGroup state updater must pass all 8 Jest contract tests.
+        FAILURE = drag-and-drop group assignment is broken. Position won't move to groups.
+        """
+        result = _run_jest("test_sealed_handleAssignToGroup")
+        output = result.stdout + result.stderr
+
+        assert result.returncode == 0, (
+            f"\n\n❌ Jest sealed handleAssignToGroup tests FAILED.\n"
+            f"Exit code: {result.returncode}\n\n"
+            f"--- Jest output ---\n{output}\n"
+            f"------------------\n"
+            f"Fix the failing Jest tests before re-running.\n"
+            f"Run directly: cd webui/frontend && npm test -- --watchAll=false "
+            f"--testPathPattern=test_sealed_handleAssignToGroup"
+        )

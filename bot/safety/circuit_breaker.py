@@ -203,7 +203,7 @@ class CircuitBreaker:
         # ✅ FIX NOV 6: Check if error should be ignored
         error_str = str(error).lower()
         is_ignored = any(ignored in error_str for ignored in self.IGNORED_ERRORS)
-        
+
         if is_ignored:
             # Expected API state - don't count as failure
             self.total_ignored_errors += 1
@@ -211,21 +211,21 @@ class CircuitBreaker:
                 f"Circuit breaker '{self.name}': Ignored expected error - {error}"
             )
             return  # Don't increment failure count
-        
+
         # Real failure - count it
         self.total_failures += 1
         self.failure_count += 1
         self.last_failure_time = time.time()
-        
+
         log.warning(
             f"Circuit breaker '{self.name}': Call failed "
             f"({self.failure_count}/{self.failure_threshold}) - {error}"
         )
-        
+
         if self.state == CircuitState.HALF_OPEN:
             # Failure in HALF_OPEN = back to OPEN
             self._transition_to_open("Service still down")
-        
+
         elif self.state == CircuitState.CLOSED:
             # Check if we should open
             if self.failure_count >= self.failure_threshold:
@@ -271,7 +271,7 @@ class CircuitBreaker:
         self.success_count = 0
         self.failure_count = 0
         self.last_state_change = time.time()
-        
+
         log.info(
             f"Circuit breaker '{self.name}': {old_state.value} → HALF_OPEN "
             f"(timeout expired, testing recovery)"

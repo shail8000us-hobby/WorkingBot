@@ -410,7 +410,9 @@ def _get_positions_from_delta():
             # Use /v2/positions/margined to get ALL positions (futures + options)
             response = delta_client._req('GET', '/v2/positions/margined')
 
-            if not response.get('success'):
+            # Check for circuit breaker fallback: _req returns {"success": False, ...} when CB is open
+            # Normal API responses don't have 'success' field; only check explicit failure
+            if isinstance(response, dict) and response.get('success') == False:
                 raise Exception("Delta API returned unsuccessful response")
 
             return response
@@ -905,10 +907,12 @@ def get_pending_orders():
             delta_client = DeltaClient()
             # Get all open orders (no product_id filter = all products)
             response = delta_client._req('GET', '/v2/orders', params={'state': 'open'})
-            
-            if not response.get('success'):
+
+            # Check for circuit breaker fallback: _req returns {"success": False, ...} when CB is open
+            # Normal API responses don't have 'success' field; only check explicit failure
+            if isinstance(response, dict) and response.get('success') == False:
                 raise Exception("Delta API returned unsuccessful response")
-            
+
             return response
         
         # Call through circuit breaker

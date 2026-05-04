@@ -563,32 +563,25 @@ const OptionsPanel = () => {
   }, [selectedExpiries]);
 
   // Active slice for the current expiry.
-  // - Exact key match (single expiry or previously saved composite): use directly.
-  // - 'ALL' or composite key without a direct match: merge individual per-expiry slices
-  //   whose groups contain currently-visible symbols. This handles two cases:
-  //   (a) user clears the expiry filter → 'ALL'
-  //   (b) user selects multiple expiries → composite key like "010526|290526" that was
-  //       never stored directly; groups exist under each individual expiry key and must
-  //       be merged so they remain visible.
+  // When expiryGroupKey is 'ALL' (no filter applied) and there is no data stored directly under
+  // 'ALL', build a merged view from individual per-expiry scopes whose groups contain symbols
+  // that are currently visible. This keeps groups visible even when the expiry filter is cleared.
   const activeExpiryData = useMemo(() => {
     const direct = allExpiryGroupData[expiryGroupKey];
     if (direct) return direct;
 
-    const isComposite = expiryGroupKey.includes('|');
-
-    if (expiryGroupKey === 'ALL' || isComposite) {
-      const componentKeys = isComposite ? expiryGroupKey.split('|') : null;
+    if (expiryGroupKey === 'ALL') {
       const visibleSymbols = new Set(positions.map((p) => p.product_symbol));
       const merged = { groups: {}, collapsed: {}, order: [], groupOrder: [] };
+      let hadAny = false;
       Object.entries(allExpiryGroupData).forEach(([key, slice]) => {
         if (key.includes('|') || key === 'ALL') return; // skip composite/ALL keys
-        // For composite mode, only include slices that belong to one of the selected expiries
-        if (isComposite && !componentKeys.includes(key)) return;
         const groups = slice.groups || {};
         const hasVisible = Object.values(groups).some((g) =>
           (g.symbols || []).some((s) => visibleSymbols.has(s))
         );
         if (hasVisible) {
+          hadAny = true;
           Object.assign(merged.groups, groups);
           Object.assign(merged.collapsed, slice.collapsed || {});
           (slice.groupOrder || []).forEach((id) => {
@@ -596,7 +589,7 @@ const OptionsPanel = () => {
           });
         }
       });
-      if (Object.keys(merged.groups).length > 0) return merged;
+      if (hadAny) return merged;
     }
 
     return { groups: {}, collapsed: {}, order: [], groupOrder: [] };
@@ -736,7 +729,10 @@ const OptionsPanel = () => {
     });
   }, [getGroupActualKey, deleteGroupOnServer]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Assign a position symbol to a group (removes from any previous group first)
+  // @sealed v1.0.0 — handleAssignToGroup — drag-and-drop group assignment core logic
+  // Contract: MUST NOT break drag-and-drop position-to-group assignment
+  // Failure: Position not assigned, remains ungrouped, UI shows no change
+  // Test: webui/frontend/src/components/options/__tests__/test_sealed_handleAssignToGroup.test.js
   const handleAssignToGroup = useCallback((symbol, groupId) => {
     // In merged-ALL mode, find the actual key for the target group (or source group if unassigning)
     const actualKey = groupId ? getGroupActualKey(groupId) : getGroupActualKey(
@@ -756,9 +752,19 @@ const OptionsPanel = () => {
       }
 
       // Add symbol to target group if specified
-      if (groupId && groupsWithUpdatedSymbols[groupId]) {
-        const newSymbols = [...groupsWithUpdatedSymbols[groupId].symbols, symbol];
-        groupsWithUpdatedSymbols[groupId] = { ...groupsWithUpdatedSymbols[groupId], symbols: newSymbols };
+      if (groupId) {
+        // If group not in current slice, fetch from allExpiryGroupData
+        if (!groupsWithUpdatedSymbols[groupId]) {
+          const targetGroup = allExpiryGroupData[keyToUse]?.groups?.[groupId];
+          if (targetGroup) {
+            groupsWithUpdatedSymbols[groupId] = { ...targetGroup, symbols: [...(targetGroup.symbols || [])] };
+          }
+        }
+        // Add symbol to target group if it exists
+        if (groupsWithUpdatedSymbols[groupId]) {
+          const newSymbols = [...groupsWithUpdatedSymbols[groupId].symbols, symbol];
+          groupsWithUpdatedSymbols[groupId] = { ...groupsWithUpdatedSymbols[groupId], symbols: newSymbols };
+        }
       }
 
       // PASS 2: Recalculate colors based on final symbol sets
@@ -781,7 +787,7 @@ const OptionsPanel = () => {
 
       return { ...prev, [keyToUse]: { ...slice, groups: next } };
     });
-  }, [expiryGroupKey, getGroupActualKey, positionGroups, assignSymbolOnServer, getGroupType, getGroupColor]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [expiryGroupKey, getGroupActualKey, positionGroups, assignSymbolOnServer, getGroupType, getGroupColor, allExpiryGroupData]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get the groupId a symbol belongs to (or null)
   const getSymbolGroup = useCallback((symbol) => {
@@ -1100,6 +1106,8 @@ const OptionsPanel = () => {
     const overId = over.id;
     const activeId = active.id;
 
+    devLog('[handleDragEnd] activeId=', activeId, 'overId=', overId);
+
     // ── Case 0: GROUP-HEADER to GROUP-HEADER drag ─ reorder groups ────────
     // Both IDs start with GROUP_DROP_PREFIX but neither is UNGROUPED
     if (
@@ -1108,6 +1116,7 @@ const OptionsPanel = () => {
     ) {
       const activeGid = String(activeId).slice(GROUP_DROP_PREFIX.length);
       const overGid = String(overId).slice(GROUP_DROP_PREFIX.length);
+      devLog('[Case 0] Group reorder:', activeGid, '->', overGid);
       if (
         activeGid !== overGid &&
         activeGid !== 'UNGROUPED' &&
@@ -1131,7 +1140,9 @@ const OptionsPanel = () => {
       const rawId = String(overId).slice(GROUP_DROP_PREFIX.length);
       const targetGroupId = rawId === 'UNGROUPED' ? null : rawId;
       const currentGroupId = getSymbolGroup(activeId);
+      devLog('[Case 1] Position to group:', activeId, 'current=', currentGroupId, 'target=', targetGroupId);
       if (currentGroupId !== targetGroupId) {
+        devLog('[Case 1] Calling handleAssignToGroup');
         handleAssignToGroup(activeId, targetGroupId);
         devLog('[OptionsPanel] Drag-to-header: assigned', activeId, '->', targetGroupId);
       }

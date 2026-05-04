@@ -1,1 +1,76 @@
-[]
+[
+  {
+    "id": "1777834401671",
+    "name": "aggressive 78k puy",
+    "underlying": "BTC",
+    "saved_spot": 78723.62127863,
+    "created_at": "2026-05-03T18:53:21.671Z",
+    "legs": [
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 78000,
+        "atm_offset": -723.621278630002
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 2,
+        "strike": 73000,
+        "atm_offset": -5723.621278630002
+      }
+    ]
+  },
+  {
+    "id": "1777824273932",
+    "name": "June for may protection",
+    "underlying": "BTC",
+    "saved_spot": 78633.446435,
+    "created_at": "2026-05-03T16:04:33.932Z",
+    "legs": [
+      {
+        "type": "put",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 72000,
+        "atm_offset": -6633.446435000005
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 1,
+        "strike": 68000,
+        "atm_offset": -10633.446435000005
+      },
+      {
+        "type": "put",
+        "side": "sell",
+        "quantity": 1,
+        "strike": 64000,
+        "atm_offset": -14633.446435000005
+      },
+      {
+        "type": "call",
+        "side": "buy",
+        "quantity": 1,
+        "strike": 81000,
+        "atm_offset": 2366.5535649999947
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 1,
+        "strike": 85000,
+        "atm_offset": 6366.553564999995
+      },
+      {
+        "type": "call",
+        "side": "sell",
+        "quantity": 1,
+        "strike": 93000,
+        "atm_offset": 14366.553564999995
+      }
+    ]
+  }
+]
