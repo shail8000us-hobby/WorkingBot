@@ -1002,11 +1002,7 @@ function ConfigPanel({ config, meta = {}, onUpdate, loading }) {
           {isRange && (
             <>
               <Grid item xs={12}>
-                <Chip
-                  label="RANGE Mode Parameters"
-                  size="small"
-                  sx={{ bgcolor: 'rgba(255,152,0,0.15)', color: '#FF9800', fontWeight: 600 }}
-                />
+                <Divider sx={{ my: 0.5, opacity: 0.3 }} />
               </Grid>
               <Grid item xs={6}>
                 {renderCompactField('GRIDBOT_ANCHOR', 'Anchor Price', 'USD', true)}

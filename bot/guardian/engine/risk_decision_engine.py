@@ -124,13 +124,15 @@ class GuardianRiskDecisionEngine:
         Args:
             instance_name: e.g. "BTCUSD_LONG" or "BTCUSD_SHORT"
         """
-        parts = instance_name.rsplit("_", 1)
-        if len(parts) == 2 and parts[1] in ("LONG", "SHORT"):
-            self._instance_mode = parts[1]
+        from config.loader import parse_instance_name
+        _, mode = parse_instance_name(instance_name)
+        if mode:
+            self._instance_mode = mode
             log.info(f"RANGE gate: instance_mode set to {self._instance_mode}")
     
     def _init_regime_detector(self):
-        """Set up RegimeDetector if dual_mode is configured and enabled."""
+        """Set up RegimeDetector if dual_mode is configured and enabled. Safe to call on hot-reload."""
+        self._regime_detector = None  # always reset so toggling dual_mode off takes effect immediately
         try:
             dual = getattr(self.config, "dual_mode", None)
             if dual is None or not dual.enabled:
@@ -161,13 +163,8 @@ class GuardianRiskDecisionEngine:
 
             regime = self._regime_detector.update(ltp)
 
-            # Determine this instance's mode: prefer RSI collector (most reliable)
-            if self.rsi_collector and hasattr(self.rsi_collector, "bot_mode"):
-                instance_mode = self.rsi_collector.bot_mode.upper()
-            elif self._instance_mode:
-                instance_mode = self._instance_mode
-            else:
-                instance_mode = getattr(self.config.bot, "mode", "LONG").upper()
+            # _instance_mode is set from instance_name (same source as rsi_collector.bot_mode)
+            instance_mode = self._instance_mode or getattr(self.config.bot, "mode", "LONG").upper()
 
             if regime != instance_mode:
                 return self._make_stop_signal(
@@ -248,7 +245,10 @@ class GuardianRiskDecisionEngine:
                 from config.loader import reload_config
                 self.config = reload_config()
                 new_hash = self._calculate_config_hash()
-                
+
+                # HOT RELOAD: Re-init regime detector (handles dual_mode toggled on/off via WebUI)
+                self._init_regime_detector()
+
                 # HOT RELOAD: Update RSI collector thresholds
                 if self.rsi_collector:
                     try:

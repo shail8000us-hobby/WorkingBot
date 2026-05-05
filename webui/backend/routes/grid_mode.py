@@ -152,6 +152,8 @@ def toggle_grid_mode():
 def _activate_range_mode(data: dict, auto_restart: bool):
     """Write dual_mode config and enable both LONG + SHORT instances for RANGE mode."""
     try:
+        from config.loader import parse_instance_name
+
         symbol = data.get('symbol', 'BTCUSD').upper()
         anchor = float(data.get('anchor', 75000))
         lower = float(data.get('lower', 73000))
@@ -168,7 +170,6 @@ def _activate_range_mode(data: dict, auto_restart: bool):
         with open(CONFIG_FILE, 'r') as f:
             config_data = yaml.safe_load(f)
 
-        # Write dual_mode section
         config_data['dual_mode'] = {
             'enabled': True,
             'symbol': symbol,
@@ -181,10 +182,6 @@ def _activate_range_mode(data: dict, auto_restart: bool):
             'max_open_positions': max_open,
         }
 
-        # Enable both instances with zone-specific bounds, disable others for same symbol
-        long_name = f"{symbol}_LONG"
-        short_name = f"{symbol}_SHORT"
-
         if 'instances' not in config_data:
             config_data['instances'] = {}
 
@@ -192,16 +189,12 @@ def _activate_range_mode(data: dict, auto_restart: bool):
         ref_short = (anchor + upper) / 2
 
         for inst_name, ref, inst_lower, inst_upper in [
-            (long_name,  ref_long,  lower,  anchor),
-            (short_name, ref_short, anchor, upper),
+            (f"{symbol}_LONG",  ref_long,  lower,  anchor),
+            (f"{symbol}_SHORT", ref_short, anchor, upper),
         ]:
-            if inst_name not in config_data['instances']:
-                config_data['instances'][inst_name] = {}
-            inst = config_data['instances'][inst_name]
-            inst['symbol'] = symbol
-            inst['mode'] = inst_name.split('_')[-1]
-            inst['enabled'] = True
-            inst['product_id'] = product_id
+            _, mode = parse_instance_name(inst_name)
+            inst = config_data['instances'].setdefault(inst_name, {})
+            inst.update({'symbol': symbol, 'mode': mode, 'enabled': True, 'product_id': product_id})
             if 'grid' not in inst:
                 inst['grid'] = {}
             inst['grid']['geometry'] = {
@@ -216,13 +209,14 @@ def _activate_range_mode(data: dict, auto_restart: bool):
                 'max_open_orders': max_open,
                 'max_qty_per_order': lot_size,
             })
-            inst['grid'].setdefault('behavior', {
+            # Always write canonical RANGE behavior (don't preserve stale values)
+            inst['grid']['behavior'] = {
                 'strict_grid': True,
                 'rung_snap_mode': 'below',
                 'tick_size': 0.5,
                 'dynamic_tick_size': True,
                 'seed_initial_count': 0,
-            })
+            }
             inst.setdefault('safety', {
                 'max_account_loss_inr': 250000,
                 'min_liquidation_distance_pct': 50,
@@ -235,17 +229,44 @@ def _activate_range_mode(data: dict, auto_restart: bool):
         reload_config()
         log.info(f"RANGE mode activated: anchor={anchor}, [{lower}, {upper}], H={hysteresis}")
 
-        return jsonify({
+        long_name = f"{symbol}_LONG"
+        short_name = f"{symbol}_SHORT"
+        message = f'RANGE mode activated — {long_name} and {short_name} configured'
+        restart_status = None
+
+        if auto_restart:
+            try:
+                from webui.backend.utils.pm2_adapter import get_pm2_adapter, should_use_pm2
+                if should_use_pm2():
+                    pm2 = get_pm2_adapter()
+                    for pm2_name in [f'gridbot-{symbol.lower()}-long', f'gridbot-{symbol.lower()}-short']:
+                        success, msg = pm2.restart_process(pm2_name)
+                        log.info(f"PM2 restart {pm2_name}: {msg}")
+                    restart_status = {'success': True, 'message': 'Both instances restarted via PM2'}
+                else:
+                    restart_status = {'success': False, 'message': 'PM2 not enabled — restart both gridbot instances and their Guardians manually'}
+            except Exception as e:
+                log.error(f"PM2 restart failed: {e}")
+                restart_status = {'success': False, 'message': f'Restart failed: {e}'}
+
+        response = {
             'success': True,
             'mode': 'RANGE',
             'changed': True,
-            'message': f'RANGE mode activated — {long_name} and {short_name} configured',
+            'message': message,
             'anchor': anchor,
             'lower': lower,
             'upper': upper,
             'hysteresis': hysteresis,
-            'warning': 'Restart both gridbot instances and their Guardian processes for RANGE mode to take effect',
-        })
+        }
+        if restart_status:
+            response['restart'] = restart_status
+            if not restart_status['success']:
+                response['warning'] = restart_status['message']
+        else:
+            response['warning'] = 'Restart both gridbot instances and their Guardian processes for RANGE mode to take effect'
+
+        return jsonify(response)
 
     except Exception as e:
         log.error(f"Error activating RANGE mode: {e}")
