@@ -841,6 +841,13 @@ DEFAULT_PARAMS = {
     # Profit Ratchet — re-anchors trigger snapshots at profit milestones
     'profit_ratchet_enabled': False,     # Off by default; operator enables per-session
     'profit_ratchet_step_usd': 10.0,     # Re-anchor every $X of new cumulative profit
+    # Profit Ratchet Fresh-Reset (2026-05-06) — implements original "fresh algo" intent.
+    # Master switch is independent of profit_ratchet_enabled; both must be ON for reset to fire.
+    # Each tier is independently flag-gated so operator can enable/test one at a time.
+    'profit_ratchet_fresh_reset': False, # Master switch for cooldown/whipsaw/regime resets at each milestone
+    'ratchet_reset_cooldowns': True,     # Tier A: clear shift_starv, consecutive_*, gamma_blocked, etc.
+    'ratchet_reset_whipsaw': False,      # Tier B: clear _whipsaw_* and _smart_ws_* (preserves _smart_ws_series)
+    'ratchet_reset_regime_tier': False,  # Tier C: reset _trend_tier/regime/direction (preserves _trend_anchor_spot)
     # Profit Target Exit — hard close when net P&L hits a configured dollar target
     'profit_target_usd': 0.0,            # Dollar profit target. 0 = disabled.
     'profit_target_buffer_pct': 8.0,     # Buffer % above target to account for close slippage.
@@ -1011,6 +1018,8 @@ HOT_RELOAD_PARAMS = {
     'gamma_dte_ladder_far_mult', 'gamma_dte_ladder_multi_mult',
     # Profit Ratchet
     'profit_ratchet_enabled', 'profit_ratchet_step_usd',
+    'profit_ratchet_fresh_reset', 'ratchet_reset_cooldowns',
+    'ratchet_reset_whipsaw', 'ratchet_reset_regime_tier',
     # Profit Target Exit
     'profit_target_usd', 'profit_target_buffer_pct', 'profit_target_restart_enabled',
 }

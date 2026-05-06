@@ -242,10 +242,12 @@ ACTIVITY_TYPES = {
     'arbiter_gamma_close_exec':       'Arbiter Gamma Close',
     'arbiter_margin_recovery_exec':   'Arbiter Margin Recovery',
     'arbiter_suppressed_double_sell': 'Arbiter Suppressed (Double-Sell Guard)',
+    'arbiter_trend_emergency_override': 'Arbiter Trend Emergency Override',
     'regime_emergency_arbiter':       'Regime Emergency (Arbiter)',
 
     # Profit Ratchet
     'profit_ratchet': 'Profit Ratchet',
+    'profit_ratchet_fresh_reset': 'Profit Ratchet Fresh Reset',
 
     # Profit Target Exit
     'profit_target_hit': 'Profit Target Hit',
@@ -352,7 +354,7 @@ ACTIVITY_CATEGORIES = {
                     'fill_sync_confirmed', 'fill_sync_partial',
                     'worthless_expiry_closed',
                     'delta_engine',
-                    'profit_ratchet'},
+                    'profit_ratchet', 'profit_ratchet_fresh_reset'},
     'safety': {'safety_warning', 'safety_block', 'trigger_stale', 'max_loss_breach',
                 'capacity_full',
                 'safety', 'guardian_violation', 'guardian_auto_heal', 'god_correction',
@@ -373,7 +375,7 @@ ACTIVITY_CATEGORIES = {
                'reverse_disabled',
                'arbiter_tier1', 'arbiter_stale_signal', 'arbiter_defensive_shift_exec',
                'arbiter_gamma_close_exec', 'arbiter_margin_recovery_exec',
-               'arbiter_suppressed_double_sell',
+               'arbiter_suppressed_double_sell', 'arbiter_trend_emergency_override',
                'regime_emergency_arbiter',
                'profit_target_hit'},
     'system': {'session_created', 'session_initialized', 'session_starting', 'session_started',

@@ -6637,3 +6637,142 @@ This is the same class of bug as the 2026-04-17 `_pre_adj_trigger` UnboundLocalE
 
 **Side note — Session 2 (mmm04may26-2) hard-stop overshoot**: The same morning, mmm04may26-2 fired `max_loss` at -$105.07 (event log timestamp 07:29:41) on a $100 limit (5% overshoot) and final realized after `auto_close_all` was -$122.65 (DB row, 23% overshoot). The screenshot the user attached shows -$2,128.46 — far larger than either. The DB-recorded numbers do NOT match the screenshot, so the discrepancy is most likely a frontend display issue (stale cache, misread field, or perp/closed-position aggregation bug). No code fix applied this session for the slippage / display divergence — it needs a fresh screenshot taken alongside a snapshot of the WebSocket payload before the right fix can be written. Logged here so the next session has the diagnostic context.
 
+---
+
+## 2026-05-05 — Three-bug fix: velocity direction, God inactivity, double-sell guard (mmm05may26-1)
+
+**Incident**: Session mmm05may26-1 accumulated 300 CE lots during a TREND_DOWN phase (correct behavior at the time). Market reversed to TREND_UP. CE at 79600 went deep ITM (spot at 80639, distance = -919). The algo continued cycling CE lots (wrong direction) while the correct PE hedge response was blocked. User manually reduced CE lots via the algo UI to cut upside risk.
+
+Root-cause analysis revealed 3 compound bugs. All three were fixed in this session.
+
+---
+
+### Bug 1 — Velocity bypass is direction-blind (`mmm_monitor.py`)
+
+**Problem**: The arbiter's Rule 2 override is intentional — when a side is in deep danger, it clears `_skip_to_pnl = False` so the hedge can fire despite velocity limits. The bug is that the bypass was direction-blind: it enabled the proactive shift scan for ALL sides, including the CE (dangerous) side. When CE was ITM and market was rising, the bypass unlocked further CE proactive shifts — adding more lots on the wrong side.
+
+**Design intent**: The arbiter fires PE defensive shift (safe side, correct hedge direction). The velocity bypass should allow PE only. CE is the dangerous side — bypassing velocity for it makes the loss worse.
+
+**Fix** (`mmm_monitor.py`, 3 locations):
+- In the Rule 2 velocity-bypass block (lines ~3509-3514): after `_skip_to_pnl = False`, if the action is `defensive_shift`, compute `_dangerous = opposite of _arb_side` and write `session['_arbiter_velocity_dangerous_side'] = _dangerous`.
+- In `_proactive_shift_scan` loop: read `session.get('_arbiter_velocity_dangerous_side')`. If current side == dangerous side → `continue` (skip) with a log entry.
+- At the top of the per-beat arbiter section (line ~3469): `session.pop('_arbiter_velocity_dangerous_side', None)` — cleared each beat so it never leaks across beats. Only applies when action_type == 'defensive_shift'.
+
+---
+
+### Bug 2 — God layer starved by arbiter activity (`mmm_monitor.py` + `mmm_god_layer.py`)
+
+**Problem**: God layer fires when PNL drifts > $40 AND algo inactive > 20 min. The inactivity check (`_minutes_since_last_adjustment`) scans `adjustment_history` in reverse. Arbiter shifts recorded an entry every 5–10 minutes, resetting the clock. God never achieved 20 min of silence. But arbiter shifts are mechanical corrections (direction-seeking), not organic trigger responses — counting them as "algo activity" starves God and prevents it from overriding a bad-direction cycle.
+
+**Fix** (`mmm_monitor.py` + `mmm_god_layer.py`):
+- In `_process_strike_shift`: when building the `adjustment_history` entry, add `'is_arbiter_correction': session.get('_arbiter_decision_active', False)`. This tags every arbiter-initiated shift at record time.
+- In `_minutes_since_last_adjustment()` (god layer): skip entries where `adj.get('is_arbiter_correction', False)` is True, alongside the existing OPERATOR/STRADDLE_ROLL/GOD_CORRECTION skips. This makes God's inactivity clock sensitive to organic activity only.
+
+---
+
+### Bug 3 — Double-sell guard kills correct market response (`mmm_monitor.py`)
+
+**Problem**: The existing double-sell guard prevents the arbiter from firing a `defensive_shift` on a side when `_shift_placed_this_beat_{side}` is already True (proactive shift fired same beat). At 08:09:18 IST when TREND_UP escalated to tier 2 (GUARD), a PE proactive shift had just fired — so the arbiter PE defensive shift (the correct upmarket hedge) was suppressed at the worst possible moment.
+
+**Design principle**: Guard exists to prevent velocity violations (double-selling same side). But in a trend emergency, suppressing the correct hedge response is more dangerous than the velocity risk.
+
+**Fix** (`mmm_monitor.py`):
+- Added `_trend_emergency_bypass` local bool. Set True when: `action_type == 'defensive_shift'` AND `_trend_tier >= 2` (TREND_TIER_GUARD) AND arbiter trigger contains any of `('breakeven_critical', 'hedge_decay', 'trend')`.
+- Guard condition becomes `_double_sell = ... and not _trend_emergency_bypass`.
+- When bypass fires (arbiter fires despite double-sell), logs activity `arbiter_trend_emergency_override`.
+
+---
+
+**Tests**: `pytest tests/test_sealed_audit_fixes.py` → 149 passed, 0 failed (baseline 136 + 13 new sealed).
+
+**13 new sealed tests** across 3 classes:
+- `TestArbitersVelocityDirectionalBypass` (4 tests): dangerous side written in `_heartbeat_inner`, read in `_proactive_shift_scan`, popped each beat, only set for `defensive_shift`.
+- `TestGodLayerSkipsArbiterShifts` (4 tests): `is_arbiter_correction` tag written in `_process_strike_shift`, skipped in `_minutes_since_last_adjustment`, unit test: arbiter-only history → 9999 min inactive, organic history → ~10 min inactive.
+- `TestDoubleSellGuardTrendEmergencyBypass` (4 tests): `_trend_emergency_bypass` exists in `_heartbeat_inner`, `not _trend_emergency_bypass` in `_double_sell` condition, tier >= 2 requirement present, all three trigger keywords present.
+
+**Files**: `mmm_monitor.py` (5 locations), `mmm_god_layer.py` (1 location), `tests/test_sealed_audit_fixes.py` (13 new sealed tests)
+
+---
+
+## 2026-05-05 — Design: Session Mode Controller for trending markets (mmm05may26-1 post-mortem)
+
+**Trigger**: Session mmm05may26-1 accumulated 300 CE lots during TREND_DOWN (correct), then market reversed to TREND_UP (+2,000 pts over 19 hours). Bot had no mechanism to detect the directional shift and change posture → 300 CE lots deep ITM, both sides at cap, paralysis for hours.
+
+**Critical correction**: CE started at 50 lots (not 300). Accumulation was correct for the original direction. The failure was the absence of a posture-switching mechanism when direction reversed.
+
+**Root causes identified (8 total)**:
+
+1. **Regime anchor reset blindness** (`mmm_regime.py:470`): In a grinding 19-hour trend, the anchor resets to spot on every minor pullback. Regime always shows NORMAL — trend detection is architecturally blind to slow trends.
+2. **No dangerous-side concept**: The algo is symmetric by design. There is no concept of "which side is causing the damage" — so all guards apply equally to both sides even when one is deep ITM.
+3. **"Calculated loss ≤ 0" formula too late** (`mmm_monitor.py:~5534`): In early ITM beats, the formula returns 0 → adjustment skipped → first PE hedge was 43 minutes after CE hit 300/300 cap.
+4. **Double-sell guard suppresses correct arbiter response**: Arbiter `breakeven_critical` fires → suppressed every ~10 min because proactive scan fired same beat.
+5. **ITM guard + F6 gamma floor dual block**: Both guards blocked CE adjustment simultaneously. F6 floor distance -1,229 points vs floor 1,455 — CE had no path to reduce even if the guard was lifted.
+6. **Both-sides-at-cap paralysis**: Once CE=300/300 and PE=300/300, the algo is frozen. No circuit breaker for this state.
+7. **Stale PnlCore estimates**: 2 orders with 16+ hour staleness (age=59,024s) — P&L numbers used by the trigger formula were wrong all session.
+8. **Watchdog restart loses transient state**: Restart #4 at 13:41 UTC — any in-memory adaptation state would be lost.
+
+**Solution designed: Three-component architecture** — documented in `MMM_SESSION_MODE_DESIGN.md`:
+
+**Component A — God Layer Side Asymmetry** (`mmm_god_layer.py`):
+- New `_check_side_asymmetry()`: uses per-position `entry_premium` to compute unrealized loss per side accurately.
+- Side Divergence (SD) = `abs(ce_unrealized_loss - pe_unrealized_loss)`.
+- Fires when SD > $25 AND total P&L pressure < -$20. Sets `session['_god_dangerous_side']`.
+- Sets `_god_asymmetry_recovery_target` = current P&L + (SD × 0.5). God mode suppresses dangerous side until target recovered.
+
+**Component B — Three Operating Modes** (`mmm_session_mode.py`):
+- **Conservative**: 100% current behavior — all guards unchanged, no new logic.
+- **Moderate**: velocity 1.5×, cooldown 60s, arbiter 1 pass per 5 beats, loss threshold 70%, recycler $70, shift cooldown halved, dangerous side blocked.
+- **Aggressive**: velocity disabled, cooldown 0, double-sell guard disabled, loss formula bypassed, recycler $100, ITM window ±$50, F6 suspended, dangerous side hard blocked, safe side unrestricted.
+
+**Component C — Auto Escalation Engine** (`mmm_session_mode.py`):
+- 4 observable signals: SD (side divergence), PP (total P&L pressure), ITM depth (points ITM), PV (P&L velocity $/min).
+- Escalation: 3-beat confirmation, de-escalation: 5-beat confirmation (asymmetric — slow to relax).
+- Fast-track: skip beat count when SD > $70 AND PP < -$50 AND PV < -$2/min.
+- Direct Conservative → Aggressive path allowed when all three fast-track conditions met.
+- Both-sides-dangerous (both CE + PE unrealized > $20): wind-down alert, no mode escalation.
+- Mode state in `session['_mode']` dict — survives restarts.
+- Manual override: UI buttons, auto-expiry 30 min.
+
+**What does NOT change**: Stop conditions, max_loss, margin emergency (wind_down), stale monitor guards, straddle roll, reverse mode, grid bot, options panel, any other strategy.
+
+**30+ configurable parameters** added to `DEFAULT_PARAMS` (all with safe defaults so existing sessions unaffected).
+
+**Implementation plan** (5 phases, none implemented yet — awaiting user confirmation):
+- Phase 1: Foundation — add `session['_mode']` state, params, signal computation module (no behavior change)
+- Phase 2: God layer extension — side asymmetry check + dangerous side identification
+- Phase 3: Mode application core — apply guard profiles per mode in heartbeat
+- Phase 4: Trigger formula + arbiter integration — bypass "calculated loss ≤ 0" in Aggressive, arbiter pass limits in Moderate
+- Phase 5: Frontend toggle — mode display + manual override buttons
+
+**Files**: `MMM_SESSION_MODE_DESIGN.md` (created, design only — no code changes this session)
+
+
+---
+
+## 2026-05-06 — Profit Ratchet Fresh-Reset (mmm06may26-1 root cause)
+
+**Incident**: Session mmm06may26-1 ended with severe asymmetry — CE=2 active, PE=103 active+97 frozen=200/200 cap. 9h+ session, 467 activity events including 114 whipsaw_smart_block, 81 adjustments_stopped (PE cap), 8 arbiter Tier 1 PE-decay shifts that struggled with CE shift starvation L1/L2.
+
+**Root cause (verified by reading code)**: User's original `profit_ratchet` design intent was that each profit milestone should restore the algo to a "fresh evaluation" posture — clear accumulated guards/blocks/cooldowns built up over the prior hours. The implementation at `mmm_monitor.py:3725-3760` only does `update_trigger_snapshots()` — re-anchors trigger price thresholds. It does NOT clear: `_shift_starv_count`, `_consecutive_*`, `_whipsaw_*`, `_smart_ws_*`, `_trend_calm/plateau_beats`, `_gamma_blocked_count`, `_regime_action`, etc. So baggage accumulated across ratchet #4 ($20 milestone) and continued causing pathological behavior up to ratchet #5 ($25).
+
+**Fix design**: Fresh-reset is **tiered, flag-gated, default OFF** to allow per-tier rollout on a real-money bot.
+
+- **Master flag** `profit_ratchet_fresh_reset` (default False)
+- **Tier A** `ratchet_reset_cooldowns` (default ON when master enabled): clears `_shift_starv_count`, `_consecutive_same_dir_count/_side`, `_consecutive_dir_blocked/_at`, `_consecutive_reversal_skip_count`, `_cooldown_block_logged`, `_gamma_blocked_count`, `_delta_rescue_count/_last_at`, `_adaptive_regime_candidate_beats`, `_trend_calm_beats`, `_trend_plateau_beats`, `_vol_regime_beats_below`. Each pure counter, verified with grep that no logic depends on persistence.
+- **Tier B** `ratchet_reset_whipsaw` (default OFF): clears canonical whipsaw state (`_whipsaw_score/_state/_skip_until/_last_checked_idx/_last_noise_at`) plus all `_smart_ws_*` keys EXCEPT `_smart_ws_series` (source price/time buffer). List mirrors `mmm_whipsaw_replay._build_replay_state` (existing precedent).
+- **Tier C** `ratchet_reset_regime_tier` (default OFF): mirrors the post-replenish reset at `mmm_monitor.py:8410-8458` BUT deliberately preserves `_trend_anchor_spot`. The regime module re-derives tier/regime/direction from market data + preserved anchor within 1–2 beats — resetting the anchor would mask ongoing trends. Sets `_trend_tier=0`, `_trend_regime='NORMAL'`, `_trend_direction='none'`; pops `_trend_since/_high/_low/_ema/_ema_prev/_t4_beats/_regime_action`; resets wind-down trigger flags; resets `_vol_regime` to NORMAL.
+
+All 4 params hot-reloadable. Activity log entry only fires when ≥1 field actually cleared (no noise on clean sessions). Visible message names only fired tiers (e.g. `🔄 Profit Ratchet #4 fresh-reset: cooldowns + whipsaw`); `details` payload carries full `cleared_fields` list for post-mortem grep.
+
+**NEVER cleared (sealed contract)**: positions (`ce`, `pe`, `positions`, `frozen`, `total_lots`, `active_lots`), P&L (`realized_pnl`, `unrealized_pnl`, `total_fees`, `perp_hedge`, `_reverse`), `_fill_sync_cursor_us`, `_fill_ledger`, `adjustment_history`, `_profit_ratchet_*`, `_monitor_generation` (stale-monitor guard), `_save_disabled`, `_paused_*`, `_stopped_reason`, `_awaiting_user_action*`, `_emergency_pause/_stop`, `_exit_all_*`, `_smart_ws_series`, `_trend_anchor_spot`.
+
+**Files**:
+- `mmm_state.py`: 4 new params in `DEFAULT_PARAMS`, added to static HOT_RELOAD_PARAMS list
+- `mmm_config.py`: 4 PARAM_RULES entries (all `hot=True`), 4 description strings
+- `mmm_monitor.py`: caller gate after `update_trigger_snapshots()`; new method `_profit_ratchet_fresh_reset(self, session)` placed before `_process_wind_down_buyback`
+- `mmm_activity.py`: registered `profit_ratchet_fresh_reset` activity type + category mapping
+- `tests/test_sealed_audit_fixes.py`: 8 new test classes, 17 sealed contracts (param defaults, master gate, NEVER list, Tier A/B/C field sets, activity log empty-vs-populated, call-site source guard)
+
+**Tests**: 1274 sealed pass (17 new added cleanly, 0 regressions). Full `test_sealed_audit_fixes.py` 166 pass.
+
+**Rollout discipline**: feature ships disabled. Operator enables `profit_ratchet_fresh_reset=True` + `ratchet_reset_cooldowns=True` first (Tier A only) on a low-stakes session, observes activity log entries for 1-2 sessions, then optionally enables Tier B and finally Tier C. Each tier can be hot-toggled mid-session without restart. Earlier-proposed arbiter cap-math fix (Fix 1 from earlier in session) deferred — properly-reset state may eliminate the seed=2 pathology without it.

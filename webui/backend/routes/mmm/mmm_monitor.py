@@ -3335,6 +3335,12 @@ class MMMMonitor:
                         return True
             return session.get('adjustment_count', 0) > 0
         _straddle_adj_allow_proactive = _is_straddle_adj and _straddle_is_asymmetric()
+        # Reset _arbiter_decision_active HERE (before proactive scan) so that
+        # _process_strike_shift called from the proactive scan does NOT inherit
+        # the previous beat's arbiter True flag and mis-tag organic shifts as
+        # arbiter corrections. The arbiter section (Phase 3) re-sets it to True
+        # if the arbiter fires this beat.
+        session['_arbiter_decision_active'] = False
         if not _skip_to_pnl and (not _is_straddle_adj or _straddle_adj_allow_proactive) and session.get('params', {}).get('proactive_shift_enabled', True):
             session.pop('_proactive_shifted_ce', None)
             session.pop('_proactive_shifted_pe', None)
@@ -3466,7 +3472,6 @@ class MMMMonitor:
         # so it sees freshest state. Default mode: SHADOW — evaluates, logs,
         # sets coordination flags, but does NOT place orders directly.
         # `arbiter_live_execution=True` enables direct order placement (Phase 4+).
-        session['_arbiter_decision_active'] = False
         if params.get('arbiter_enabled', True):
             try:
                 from .mmm_arbiter import get_arbiter, ACTION_NOOP
@@ -3506,6 +3511,12 @@ class MMMMonitor:
                     # Clear _skip_to_pnl if any upstream block (whipsaw/safety/regime)
                     # set it — the operational pipeline must run so the existing
                     # adjustment engine can act on the relaxed gates.
+                    #
+                    # Dangerous-side protection (proactive shift) is handled inside
+                    # _proactive_shift_scan via _trend_direction — no session key needed
+                    # here. The proactive scan has already run this beat (Step 5.6 above);
+                    # clearing _skip_to_pnl here enables the downstream process_adjustment
+                    # gate at line ~3668, not the proactive scan.
                     if _skip_to_pnl:
                         log.info(
                             f'[{sid}] Arbiter Tier 1 override: clearing _skip_to_pnl '
@@ -3525,10 +3536,31 @@ class MMMMonitor:
                     # suppress it. (The cooldown bypass in _arbiter_execute_defensive_
                     # shift makes this otherwise impossible to catch via shift_cooldown.)
                     _arb_side = _arb_decision.side or ''
+                    # Bug 3 fix: trend-emergency exception to the double-sell guard.
+                    # The guard was designed to prevent the May-1 incident (two
+                    # independent paths selling the same side in one beat). That
+                    # protection is correct for flat/normal markets.
+                    # But in a TREND EMERGENCY (T2:GUARD+), the proactive shift for
+                    # a side and the arbiter's defensive shift for the SAME side serve
+                    # different purposes: proactive = premium maintenance, arbiter =
+                    # urgent trend hedge. Suppressing the arbiter here kills the ONE
+                    # correct market response at the worst possible moment.
+                    # Allow the arbiter through when:
+                    #   • trend tier is GUARD or higher (>=2), AND
+                    #   • the arbiter trigger is trend/breakeven/hedge-decay related
+                    # The shift logic's own cap and lot-count guards contain the risk.
+                    _arb_trigger = _arb_decision.trigger or ''
+                    _trend_emergency_bypass = (
+                        _arb_decision.action_type == 'defensive_shift'
+                        and session.get('_trend_tier', 0) >= 2  # TREND_TIER_GUARD
+                        and any(kw in _arb_trigger for kw in
+                                ('breakeven_critical', 'hedge_decay', 'trend'))
+                    )
                     _double_sell = (
                         _arb_decision.action_type == 'defensive_shift'
                         and _arb_side
                         and session.get(f'_shift_placed_this_beat_{_arb_side}')
+                        and not _trend_emergency_bypass
                     )
                     if _double_sell:
                         log.warning(
@@ -3543,6 +3575,21 @@ class MMMMonitor:
                             sid, 'warning',
                             {'side': _arb_side, 'trigger': _arb_decision.trigger,
                              'reason': 'proactive_shift_placed_same_beat'},
+                        )
+                    elif _trend_emergency_bypass and session.get(f'_shift_placed_this_beat_{_arb_side}'):
+                        log.warning(
+                            f'[{sid}] Arbiter defensive_shift on {_arb_side.upper()} '
+                            f'ALLOWED despite proactive shift this beat: trend emergency '
+                            f'(tier={session.get("_trend_tier")}, trigger={_arb_decision.trigger})'
+                        )
+                        log_activity(
+                            'arbiter_trend_emergency_override',
+                            f'[ARBITER] Trend emergency: {_arb_side.upper()} defensive shift '
+                            f'fires despite proactive shift this beat',
+                            sid, 'warning',
+                            {'side': _arb_side, 'trigger': _arb_decision.trigger,
+                             'trend_tier': session.get('_trend_tier'),
+                             'reason': 'trend_emergency_bypass'},
                         )
                     try:
                         if not _double_sell:
@@ -3711,6 +3758,10 @@ class MMMMonitor:
                      'ce_before': round(_pr_ce_snap, 2), 'ce_after': round(ce_now, 2),
                      'pe_before': round(_pr_pe_snap, 2), 'pe_after': round(pe_now, 2)},
                 )
+                # Fresh-algo reset (2026-05-06) — original profit_ratchet design intent.
+                # Master-flag-gated; sub-flags decide which tiers fire. No-op if disabled.
+                if params.get('profit_ratchet_fresh_reset', False):
+                    self._profit_ratchet_fresh_reset(session)
 
         # ── Skip trigger evaluation + adjustments when safety blocks ──
         # When trailing stop (or other stop_adjustments safety) fires,
@@ -4455,6 +4506,157 @@ class MMMMonitor:
     # =========================================================================
     # §5: Process Adjustment
     # =========================================================================
+
+    # =========================================================================
+    # Profit Ratchet Fresh-Reset (2026-05-06)
+    # =========================================================================
+    def _profit_ratchet_fresh_reset(self, session):
+        """
+        Original profit_ratchet design intent: at each profit milestone, the algo
+        should evaluate the next phase of the session without prejudice from the
+        prior hours of accumulated guards/blocks/cooldowns. The base ratchet only
+        re-anchors trigger snapshots; this method optionally clears stateful
+        baggage that built up during the prior profit run.
+
+        Three tiers, each independently flag-gated. Caller must have already
+        verified params['profit_ratchet_fresh_reset'] is True. No-ops cleanly
+        when no fields are present to clear (does not log an empty entry).
+
+        NEVER touched (positions/PnL/operational/safety state):
+          ce, pe, positions, frozen, total_lots, active_lots,
+          realized_pnl, unrealized_pnl, total_fees, perp_hedge, _reverse,
+          _fill_sync_cursor_us, _fill_ledger, adjustment_history,
+          _profit_ratchet_*, _monitor_generation, _save_disabled,
+          _paused_*, _stopped_reason, _awaiting_user_action*,
+          _emergency_pause, _emergency_stop, _exit_all_*,
+          ce.trigger_snapshot, pe.trigger_snapshot (already updated by caller).
+
+        Tier C deliberately preserves _trend_anchor_spot — the regime module
+        re-derives _trend_tier/regime/direction from market data + preserved
+        anchor within 1–2 beats, so a real trend snaps back to the correct tier
+        almost immediately. Resetting the anchor would mask ongoing trends.
+        """
+        from datetime import datetime, timezone
+        params = session.get('params', {})
+        sid = self.session_id
+        cleared_fields = []
+        tiers_active = []
+        tiers_skipped = []
+
+        # ── Tier A: cooldown / block counters ──────────────────────────────
+        # Each is a pure counter/timer with no dependent state. Most are
+        # already reset elsewhere on natural events (_shift_starv_count on
+        # successful shift, _consecutive_* on regime reset, etc.).
+        if params.get('ratchet_reset_cooldowns', True):
+            tiers_active.append('cooldowns')
+            for key in (
+                '_shift_starv_count',
+                '_consecutive_same_dir_count',
+                '_consecutive_same_dir_side',
+                '_consecutive_dir_blocked',
+                '_consecutive_dir_blocked_at',
+                '_consecutive_reversal_skip_count',
+                '_cooldown_block_logged',
+                '_gamma_blocked_count',
+                '_delta_rescue_count',
+                '_delta_rescue_last_at',
+                '_adaptive_regime_candidate_beats',
+                '_trend_calm_beats',
+                '_trend_plateau_beats',
+                '_vol_regime_beats_below',
+            ):
+                if key in session:
+                    cleared_fields.append(key)
+                    session.pop(key, None)
+        else:
+            tiers_skipped.append('cooldowns')
+
+        # ── Tier B: whipsaw engine state ───────────────────────────────────
+        # Canonical reset list mirrors mmm_whipsaw_replay._build_replay_state
+        # which clears these for fair-start replays. CRITICAL: preserve
+        # _smart_ws_series — it is the source price/time buffer, not state.
+        if params.get('ratchet_reset_whipsaw', False):
+            tiers_active.append('whipsaw')
+            for key in (
+                '_whipsaw_score',
+                '_whipsaw_state',
+                '_whipsaw_skip_until',
+                '_whipsaw_last_checked_idx',
+                '_whipsaw_last_noise_at',
+            ):
+                if key in session:
+                    cleared_fields.append(key)
+                    session.pop(key, None)
+            # All _smart_ws_* keys EXCEPT _smart_ws_series (source data buffer).
+            for key in [k for k in list(session.keys())
+                        if k.startswith('_smart_ws_') and k != '_smart_ws_series']:
+                cleared_fields.append(key)
+                session.pop(key, None)
+        else:
+            tiers_skipped.append('whipsaw')
+
+        # ── Tier C: regime / trend tier reset ──────────────────────────────
+        # Mirrors the post-replenish reset at lines ~8410-8458 BUT preserves
+        # _trend_anchor_spot deliberately (see method docstring for why).
+        if params.get('ratchet_reset_regime_tier', False):
+            tiers_active.append('regime_tier')
+            # Trend posture — re-derived next beat from market data + anchor
+            for key, default in (
+                ('_trend_regime', 'NORMAL'),
+                ('_trend_tier', 0),
+                ('_trend_direction', 'none'),
+            ):
+                if session.get(key) != default:
+                    cleared_fields.append(key)
+                    session[key] = default
+            for key in (
+                '_trend_since', '_trend_high', '_trend_low',
+                '_trend_ema', '_trend_ema_prev', '_trend_t4_beats',
+                '_regime_action',
+            ):
+                if key in session:
+                    cleared_fields.append(key)
+                    session.pop(key, None)
+            # Wind-down trigger flags — reset to False (not popped, they're
+            # checked with .get(..., False) but bool semantics matter).
+            for key in (
+                '_trend_wind_down_triggered',
+                '_vol_wind_down_triggered',
+                '_atm_wind_down_triggered',
+            ):
+                if session.get(key):
+                    cleared_fields.append(key)
+                    session[key] = False
+            # Vol regime re-derived next beat
+            if session.get('_vol_regime') and session.get('_vol_regime') != 'NORMAL':
+                cleared_fields.append('_vol_regime')
+                session['_vol_regime'] = 'NORMAL'
+        else:
+            tiers_skipped.append('regime_tier')
+
+        # ── Activity log: clean message, structured details ────────────────
+        # Skip log entry entirely when nothing was cleared (avoid noise).
+        if not cleared_fields:
+            return
+        try:
+            from .mmm_activity import log_activity
+        except Exception:
+            return
+        ratchet_count = session.get('_profit_ratchet_count', 0)
+        log_activity(
+            'profit_ratchet_fresh_reset',
+            f'🔄 Profit Ratchet #{ratchet_count} fresh-reset: '
+            f'{" + ".join(tiers_active) if tiers_active else "no tiers"}',
+            sid, 'info',
+            {
+                'ratchet_count': ratchet_count,
+                'tiers_active': tiers_active,
+                'tiers_skipped': tiers_skipped,
+                'cleared_fields': cleared_fields,
+                'total_cleared': len(cleared_fields),
+                'reset_at': datetime.now(timezone.utc).isoformat(),
+            },
+        )
 
     # =========================================================================
     # Wind-Down: Buy back aggressor instead of selling hedge
@@ -6043,10 +6245,30 @@ class MMMMonitor:
         params = session.get('params', {})
         shift_threshold = params.get('shift_threshold', 50.0)
 
+        # Dangerous side is determined by trend direction — the side losing real money.
+        # TREND_UP → CE goes ITM → CE is dangerous; proactive CE shifts are blocked.
+        # TREND_DOWN → PE goes ITM → PE is dangerous; proactive PE shifts are blocked.
+        # This is evaluated fresh each beat from _trend_direction (set by regime module
+        # before this function runs), so it requires no session key and has no lag.
+        _trend_dir = session.get('_trend_direction', 'none')
+        _trend_dangerous_side = (
+            'ce' if _trend_dir == 'up' else ('pe' if _trend_dir == 'down' else None)
+        )
+
         for side, premium in [('ce', ce_now), ('pe', pe_now)]:
             side_state = session.get(side, {})
             active_lots = side_state.get('active_lots', 0)
             if active_lots <= 0:
+                continue
+            # Block proactive shifts on the dangerous side during any active trend.
+            # The safe side (opposite) continues to shift and collect premium normally.
+            if _trend_dangerous_side and side == _trend_dangerous_side:
+                _safe = 'pe' if _trend_dangerous_side == 'ce' else 'ce'
+                log.info(
+                    f'[{sid}] Proactive shift {side.upper()} SKIPPED: '
+                    f'TREND_{_trend_dir.upper()} — {side.upper()} is the dangerous side, '
+                    f'proactive shifts focus on {_safe.upper()}'
+                )
                 continue
             # Only shift if premium is below threshold but above close-at-5
             close_threshold = params.get('close_at_threshold', 5.0)
@@ -6882,6 +7104,12 @@ class MMMMonitor:
                     'premium_collected': premium_collected,
                     'adjustment_number': session.get('adjustment_count', 0),
                     'spot': session.get('_regime_spot_price', 0),
+                    # Bug 2 fix: tag arbiter-driven shifts so God layer's inactivity
+                    # scan can skip them. Arbiter shifts are mechanical corrections —
+                    # they must not be counted as "organic algo activity" that resets
+                    # God's 20-min inactivity window. God fires when the organic system
+                    # hasn't responded, not when the arbiter is mechanically cycling.
+                    'is_arbiter_correction': session.get('_arbiter_decision_active', False),
                 })
                 if len(session['adjustment_history']) > 200:
                     session['adjustment_history'] = session['adjustment_history'][-200:]

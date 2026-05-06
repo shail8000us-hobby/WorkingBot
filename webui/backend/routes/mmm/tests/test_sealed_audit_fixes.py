@@ -1579,6 +1579,438 @@ class TestProfitRatchetSourcePresence(unittest.TestCase):
                         'Ratchet block must appear BEFORE the _skip_to_pnl guard in _heartbeat_inner()')
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Profit Ratchet Fresh-Reset — sealed contracts (2026-05-06)
+# Original profit_ratchet design intent: clear accumulated guards/blocks/
+# cooldowns at each profit milestone. Tiered, flag-gated, default OFF.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestProfitRatchetFreshResetParamDefaults(unittest.TestCase):
+    """Master + 3 tier flags must be present and default to safe values."""
+
+    def test_master_flag_default_off(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertFalse(
+            DEFAULT_PARAMS.get('profit_ratchet_fresh_reset', False),
+            'profit_ratchet_fresh_reset must default OFF — feature requires explicit opt-in'
+        )
+
+    def test_tier_a_default_on(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertTrue(
+            DEFAULT_PARAMS.get('ratchet_reset_cooldowns', False),
+            'ratchet_reset_cooldowns (Tier A) must default ON when master is enabled'
+        )
+
+    def test_tier_b_and_c_default_off(self):
+        from webui.backend.routes.mmm.mmm_state import DEFAULT_PARAMS
+        self.assertFalse(
+            DEFAULT_PARAMS.get('ratchet_reset_whipsaw', True),
+            'ratchet_reset_whipsaw (Tier B) must default OFF — explicit opt-in'
+        )
+        self.assertFalse(
+            DEFAULT_PARAMS.get('ratchet_reset_regime_tier', True),
+            'ratchet_reset_regime_tier (Tier C) must default OFF — explicit opt-in'
+        )
+
+    def test_all_four_flags_hot_reloadable(self):
+        from webui.backend.routes.mmm.mmm_state import HOT_RELOAD_PARAMS
+        for key in ('profit_ratchet_fresh_reset', 'ratchet_reset_cooldowns',
+                    'ratchet_reset_whipsaw', 'ratchet_reset_regime_tier'):
+            self.assertIn(key, HOT_RELOAD_PARAMS,
+                          f'{key} must be hot-reloadable so operator can toggle mid-session')
+
+    def test_param_rules_present(self):
+        from webui.backend.routes.mmm.mmm_config import PARAM_RULES
+        for key in ('profit_ratchet_fresh_reset', 'ratchet_reset_cooldowns',
+                    'ratchet_reset_whipsaw', 'ratchet_reset_regime_tier'):
+            self.assertIn(key, PARAM_RULES,
+                          f'{key} must have a PARAM_RULES entry')
+            self.assertEqual(PARAM_RULES[key]['type'], bool,
+                             f'{key} must be bool')
+            self.assertTrue(PARAM_RULES[key].get('hot'),
+                            f'{key} must be marked hot=True in PARAM_RULES')
+
+
+class TestProfitRatchetFreshResetMasterGate(unittest.TestCase):
+    """When master flag is OFF, _profit_ratchet_fresh_reset is a no-op
+    regardless of tier sub-flags. This is the critical safety contract:
+    today's behavior is preserved bit-for-bit when the feature is disabled."""
+
+    def _baseline_session(self):
+        return {
+            'id': 'test-master-off',
+            '_shift_starv_count': {'ce': 5, 'pe': 0},
+            '_consecutive_same_dir_count': 3,
+            '_consecutive_dir_blocked': True,
+            '_consecutive_reversal_skip_count': 2,
+            '_gamma_blocked_count': 7,
+            '_whipsaw_score': 99.0,
+            '_smart_ws_mode': 'DEFENSIVE',
+            '_smart_ws_series': [{'ts': 'a'}, {'ts': 'b'}],  # source data — must survive
+            '_trend_tier': 3,
+            '_trend_regime': 'TREND_DOWN',
+            '_trend_anchor_spot': 81500.0,
+            '_trend_calm_beats': 12,
+            'params': {
+                # Master OFF: tiers should not fire even though sub-flags are ON
+                'profit_ratchet_fresh_reset': False,
+                'ratchet_reset_cooldowns': True,
+                'ratchet_reset_whipsaw': True,
+                'ratchet_reset_regime_tier': True,
+            },
+        }
+
+    def test_master_off_no_change(self):
+        # Direct functional simulation: caller-side check must skip the call entirely.
+        # The reset method only fires after `if params.get('profit_ratchet_fresh_reset'):`
+        # so the sealed contract is the call-site gate AND the method itself.
+        # This test verifies the call-site gate via source inspection.
+        monitor_path = os.path.join(os.path.dirname(__file__), '..', 'mmm_monitor.py')
+        with open(monitor_path) as f:
+            src = f.read()
+        self.assertIn(
+            "params.get('profit_ratchet_fresh_reset', False)",
+            src,
+            'Caller must gate _profit_ratchet_fresh_reset() on master flag'
+        )
+        self.assertIn(
+            'self._profit_ratchet_fresh_reset(session)',
+            src,
+            'Caller must invoke _profit_ratchet_fresh_reset on session'
+        )
+
+
+class TestProfitRatchetFreshResetNeverList(unittest.TestCase):
+    """Position state, P&L, fill cursor, monitor generation, paused state,
+    awaiting state, emergency flags, adjustment_history must NEVER be cleared
+    even with all three tiers enabled. This is the hardest safety contract."""
+
+    NEVER_CLEAR_KEYS = [
+        # Position state
+        'ce', 'pe',
+        # P&L state
+        'realized_pnl', 'unrealized_pnl', 'total_fees', 'perp_hedge', '_reverse',
+        # Fill / ledger
+        '_fill_sync_cursor_us', '_fill_ledger',
+        # Audit
+        'adjustment_history',
+        # Profit ratchet's own state
+        '_profit_ratchet_hwm', '_profit_ratchet_count', '_profit_ratchet_last_pnl',
+        # Stale-monitor guard
+        '_monitor_generation',
+        # Operational
+        '_save_disabled', '_paused_reason', '_paused_at', '_stopped_reason',
+        '_awaiting_user_action', '_awaiting_user_action_reason',
+        '_awaiting_user_action_details',
+        # Emergency
+        '_emergency_pause', '_emergency_stop',
+        '_exit_all_completed_at', '_exit_all_partial',
+        # Whipsaw source data buffer (must survive Tier B)
+        '_smart_ws_series',
+        # Trend anchor (must survive Tier C — preserved by design)
+        '_trend_anchor_spot',
+    ]
+
+    def _populated_session(self):
+        sess = {
+            'id': 'test-never-list',
+            'params': {
+                'profit_ratchet_fresh_reset': True,
+                'ratchet_reset_cooldowns': True,
+                'ratchet_reset_whipsaw': True,
+                'ratchet_reset_regime_tier': True,
+            },
+            # Position state
+            'ce': {'active_strike': 81800, 'active_lots': 2,
+                   'positions': [{'strike': 81800, 'lots': 2, 'status': 'active'}]},
+            'pe': {'active_strike': 80800, 'active_lots': 103,
+                   'positions': [{'strike': 80800, 'lots': 103, 'status': 'active'}]},
+            'realized_pnl': 12.60, 'unrealized_pnl': 10.83,
+            'total_fees': 2.19, 'perp_hedge': {'lots': 0},
+            '_reverse': {'active': False, 'net_pnl': 0.0},
+            '_fill_sync_cursor_us': 1700000000000000,
+            '_fill_ledger': [{'order_id': 'x'}],
+            'adjustment_history': [{'aggressor': 'CE'}],
+            '_profit_ratchet_hwm': 20.0, '_profit_ratchet_count': 4,
+            '_profit_ratchet_last_pnl': 20.15,
+            '_monitor_generation': 7,
+            '_save_disabled': False,
+            '_paused_reason': None,
+            '_paused_at': None,
+            '_stopped_reason': None,
+            '_awaiting_user_action': False,
+            '_awaiting_user_action_reason': None,
+            '_awaiting_user_action_details': None,
+            '_emergency_pause': False,
+            '_emergency_stop': False,
+            '_exit_all_completed_at': None,
+            '_exit_all_partial': False,
+            '_smart_ws_series': [{'ts': 'a', 'spot': 81000}],
+            '_trend_anchor_spot': 81500.0,
+            # Add some baggage that SHOULD be cleared (separate sanity)
+            '_shift_starv_count': {'ce': 3},
+            '_whipsaw_score': 50.0,
+            '_trend_tier': 3,
+        }
+        return sess
+
+    def test_never_list_survives_all_tiers(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = self._populated_session()
+        snapshot = {k: sess.get(k) for k in self.NEVER_CLEAR_KEYS}
+
+        # Construct a minimal monitor stub to call the bound method
+        class _Stub:
+            session_id = 'test-never-list'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        for k in self.NEVER_CLEAR_KEYS:
+            self.assertIn(k, sess, f'{k} was deleted by fresh-reset (NEVER list violation)')
+            self.assertEqual(
+                sess[k], snapshot[k],
+                f'{k} was mutated by fresh-reset (NEVER list violation)'
+            )
+
+    def test_baggage_actually_cleared(self):
+        """Sanity: the populated_session fixture includes baggage; reset clears it.
+        Without this, test_never_list_survives could pass trivially with a no-op."""
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = self._populated_session()
+
+        class _Stub:
+            session_id = 'test-never-list'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        # Tier A baggage
+        self.assertNotIn('_shift_starv_count', sess, 'Tier A must clear _shift_starv_count')
+        # Tier B baggage
+        self.assertNotIn('_whipsaw_score', sess, 'Tier B must clear _whipsaw_score')
+        # Tier C
+        self.assertEqual(sess.get('_trend_tier'), 0, 'Tier C must reset _trend_tier to 0')
+
+
+class TestProfitRatchetFreshResetTierA(unittest.TestCase):
+    """Tier A clears the documented set of cooldown/block counters."""
+
+    TIER_A_KEYS = [
+        '_shift_starv_count', '_consecutive_same_dir_count',
+        '_consecutive_same_dir_side', '_consecutive_dir_blocked',
+        '_consecutive_dir_blocked_at', '_consecutive_reversal_skip_count',
+        '_cooldown_block_logged', '_gamma_blocked_count',
+        '_delta_rescue_count', '_delta_rescue_last_at',
+        '_adaptive_regime_candidate_beats',
+        '_trend_calm_beats', '_trend_plateau_beats',
+        '_vol_regime_beats_below',
+    ]
+
+    def test_tier_a_clears_documented_set(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': True,
+            'ratchet_reset_whipsaw': False,
+            'ratchet_reset_regime_tier': False,
+        }}
+        for k in self.TIER_A_KEYS:
+            sess[k] = {'ce': 5} if k == '_shift_starv_count' else 7
+
+        class _Stub:
+            session_id = 't'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        for k in self.TIER_A_KEYS:
+            self.assertNotIn(k, sess, f'Tier A must clear {k}')
+
+    def test_tier_a_disabled_preserves_fields(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': False,  # Tier A OFF
+            'ratchet_reset_whipsaw': False,
+            'ratchet_reset_regime_tier': False,
+        }, '_shift_starv_count': {'ce': 5}, '_gamma_blocked_count': 9}
+
+        class _Stub:
+            session_id = 't'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        self.assertEqual(sess['_shift_starv_count'], {'ce': 5},
+                         'Tier A OFF must preserve _shift_starv_count')
+        self.assertEqual(sess['_gamma_blocked_count'], 9,
+                         'Tier A OFF must preserve _gamma_blocked_count')
+
+
+class TestProfitRatchetFreshResetTierB(unittest.TestCase):
+    """Tier B clears whipsaw state EXCEPT _smart_ws_series."""
+
+    def test_tier_b_clears_whipsaw_preserves_series(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': False,
+            'ratchet_reset_whipsaw': True,
+            'ratchet_reset_regime_tier': False,
+        },
+            '_whipsaw_score': 99.0,
+            '_whipsaw_state': 'BLOCK',
+            '_whipsaw_skip_until': 'tomorrow',
+            '_whipsaw_last_checked_idx': 42,
+            '_whipsaw_last_noise_at': 'now',
+            '_smart_ws_score': 0.5,
+            '_smart_ws_mode': 'DEFENSIVE',
+            '_smart_ws_tokens': 3,
+            '_smart_ws_series': [{'ts': 'a'}, {'ts': 'b'}, {'ts': 'c'}],  # MUST SURVIVE
+        }
+
+        class _Stub:
+            session_id = 't'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        # Whipsaw state cleared
+        for k in ('_whipsaw_score', '_whipsaw_state', '_whipsaw_skip_until',
+                  '_whipsaw_last_checked_idx', '_whipsaw_last_noise_at',
+                  '_smart_ws_score', '_smart_ws_mode', '_smart_ws_tokens'):
+            self.assertNotIn(k, sess, f'Tier B must clear {k}')
+
+        # Source buffer survives
+        self.assertEqual(sess['_smart_ws_series'],
+                         [{'ts': 'a'}, {'ts': 'b'}, {'ts': 'c'}],
+                         '_smart_ws_series is source data — must survive Tier B')
+
+
+class TestProfitRatchetFreshResetTierC(unittest.TestCase):
+    """Tier C resets regime tier state but PRESERVES _trend_anchor_spot."""
+
+    def test_tier_c_clears_regime_preserves_anchor(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': False,
+            'ratchet_reset_whipsaw': False,
+            'ratchet_reset_regime_tier': True,
+        },
+            '_trend_tier': 3,
+            '_trend_regime': 'TREND_DOWN',
+            '_trend_direction': 'down',
+            '_trend_since': 'a', '_trend_high': 1, '_trend_low': 2,
+            '_trend_ema': 3.0, '_trend_ema_prev': 4.0, '_trend_t4_beats': 5,
+            '_regime_action': 'BLOCK_ALL_SELLS',
+            '_trend_wind_down_triggered': True,
+            '_vol_wind_down_triggered': True,
+            '_atm_wind_down_triggered': True,
+            '_vol_regime': 'HIGH',
+            '_trend_anchor_spot': 81500.0,  # MUST SURVIVE
+        }
+
+        class _Stub:
+            session_id = 't'
+        MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+
+        self.assertEqual(sess['_trend_tier'], 0)
+        self.assertEqual(sess['_trend_regime'], 'NORMAL')
+        self.assertEqual(sess['_trend_direction'], 'none')
+        for k in ('_trend_since', '_trend_high', '_trend_low',
+                  '_trend_ema', '_trend_ema_prev', '_trend_t4_beats',
+                  '_regime_action'):
+            self.assertNotIn(k, sess, f'Tier C must clear {k}')
+        self.assertFalse(sess['_trend_wind_down_triggered'])
+        self.assertFalse(sess['_vol_wind_down_triggered'])
+        self.assertFalse(sess['_atm_wind_down_triggered'])
+        self.assertEqual(sess['_vol_regime'], 'NORMAL')
+
+        # ANCHOR PRESERVATION — explicit design choice
+        self.assertEqual(sess['_trend_anchor_spot'], 81500.0,
+                         '_trend_anchor_spot MUST be preserved (regime re-derives '
+                         'tier/direction from market data + preserved anchor; '
+                         'resetting it would mask ongoing trends)')
+
+
+class TestProfitRatchetFreshResetActivityLog(unittest.TestCase):
+    """When fields are cleared, an activity log entry fires; when nothing
+    is cleared, NO log entry fires (avoid noise in clean sessions)."""
+
+    def test_empty_reset_logs_nothing(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        # Session with no baggage — Tier A enabled but nothing to clear
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': True,
+            'ratchet_reset_whipsaw': False,
+            'ratchet_reset_regime_tier': False,
+        }}
+
+        class _Stub:
+            session_id = 't'
+        with patch('webui.backend.routes.mmm.mmm_activity.log_activity') as mock_log:
+            MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+            # No fields to clear → no log entry
+            mock_log.assert_not_called()
+
+    def test_non_empty_reset_logs_with_structured_details(self):
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        sess = {'id': 't', 'params': {
+            'profit_ratchet_fresh_reset': True,
+            'ratchet_reset_cooldowns': True,
+            'ratchet_reset_whipsaw': False,
+            'ratchet_reset_regime_tier': False,
+        }, '_shift_starv_count': {'ce': 3}, '_profit_ratchet_count': 4}
+
+        class _Stub:
+            session_id = 't'
+        with patch('webui.backend.routes.mmm.mmm_activity.log_activity') as mock_log:
+            MMMMonitor._profit_ratchet_fresh_reset(_Stub(), sess)
+            self.assertEqual(mock_log.call_count, 1,
+                             'Expected exactly one log entry for non-empty reset')
+            call_args = mock_log.call_args
+            # First positional arg is activity type
+            self.assertEqual(call_args[0][0], 'profit_ratchet_fresh_reset')
+            # 4th positional arg is details dict
+            details = call_args[0][4]
+            self.assertIn('cleared_fields', details)
+            self.assertIn('tiers_active', details)
+            self.assertIn('tiers_skipped', details)
+            self.assertIn('total_cleared', details)
+            self.assertIn('cooldowns', details['tiers_active'])
+            self.assertIn('whipsaw', details['tiers_skipped'])
+            self.assertIn('regime_tier', details['tiers_skipped'])
+            self.assertIn('_shift_starv_count', details['cleared_fields'])
+
+
+class TestProfitRatchetFreshResetActivityTypeRegistered(unittest.TestCase):
+    """Activity type must be registered so the UI renders the entry."""
+
+    def test_activity_type_present(self):
+        from webui.backend.routes.mmm.mmm_activity import ACTIVITY_TYPES
+        self.assertIn('profit_ratchet_fresh_reset', ACTIVITY_TYPES,
+                      'profit_ratchet_fresh_reset must be a registered activity type')
+
+
+class TestProfitRatchetFreshResetCallSite(unittest.TestCase):
+    """Static source guard: caller must invoke fresh-reset only after
+    update_trigger_snapshots and only when master flag is True."""
+
+    def _src(self):
+        monitor_path = os.path.join(os.path.dirname(__file__), '..', 'mmm_monitor.py')
+        with open(monitor_path) as f:
+            return f.read()
+
+    def test_call_appears_after_trigger_snapshot_update(self):
+        src = self._src()
+        snap_pos = src.find('update_trigger_snapshots(session, ce_now, pe_now)')
+        # Find the call inside the ratchet block (search after snap_pos for the gate)
+        gate_pos = src.find("params.get('profit_ratchet_fresh_reset'", snap_pos)
+        self.assertNotEqual(gate_pos, -1, 'Master-flag gate must appear after snapshot update')
+        self.assertGreater(gate_pos, snap_pos,
+                           'Fresh-reset gate must appear AFTER update_trigger_snapshots '
+                           '(snapshot anchoring is the primary action; reset is secondary)')
+
+    def test_method_definition_present(self):
+        src = self._src()
+        self.assertIn('def _profit_ratchet_fresh_reset(self, session)', src,
+                      '_profit_ratchet_fresh_reset method definition missing')
+
+
 class TestArbiterFlagClearedOnLoad(unittest.TestCase):
     """_arbiter_decision_active must be removed from session when loaded from storage.
 
@@ -2370,6 +2802,205 @@ class TestProcessStrikeShiftNoLocalRecomputeImport(unittest.TestCase):
             f'(offending lines, relative to function start: {offenders}). '
             f'See incident mmm04may26-1.'
         )
+
+
+# =============================================================================
+# mmm05may26-1: Three-bug fix — velocity direction, God inactivity, double-sell
+# =============================================================================
+
+class TestArbitersVelocityDirectionalBypass(unittest.TestCase):
+    """
+    Bug 1 redesign: the dangerous side is the side losing real money, determined
+    by _trend_direction (set by the regime module each beat), not by which side
+    the arbiter happens to be firing on. _proactive_shift_scan reads _trend_direction
+    directly and skips the dangerous side every beat — no session key, no lag.
+
+    Also verifies Bug 2 timing fix: _arbiter_decision_active is reset BEFORE the
+    proactive scan so _process_strike_shift does not mis-tag organic proactive shifts
+    as arbiter corrections.
+    """
+
+    @pytest.mark.sealed
+    def test_proactive_shift_scan_reads_trend_direction(self):
+        """_proactive_shift_scan derives dangerous side from _trend_direction, not a session key."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._proactive_shift_scan))
+        self.assertIn('_trend_direction', src,
+                      '_proactive_shift_scan must read _trend_direction to determine '
+                      'the dangerous side (TREND_UP→CE dangerous, TREND_DOWN→PE dangerous)')
+        self.assertNotIn('_arbiter_velocity_dangerous_side', src,
+                         '_proactive_shift_scan must NOT use the old session-key approach '
+                         'which had a one-beat lag and an UnboundLocalError crash path')
+
+    @pytest.mark.sealed
+    def test_proactive_scan_dangerous_side_mapping(self):
+        """Source check: _proactive_shift_scan maps 'up'→CE dangerous, 'down'→PE dangerous."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._proactive_shift_scan))
+        self.assertIn("'up'", src,
+                      "TREND_UP ('up') mapping must appear in _proactive_shift_scan")
+        self.assertIn("'down'", src,
+                      "TREND_DOWN ('down') mapping must appear in _proactive_shift_scan")
+        # 'ce' must be identified as the dangerous side for TREND_UP
+        idx_up = src.find("'up'")
+        block = src[idx_up: idx_up + 200]
+        self.assertIn("'ce'", block,
+                      "CE must be identified as the dangerous side when trend direction is 'up'")
+
+    @pytest.mark.sealed
+    def test_arbiter_decision_active_reset_before_proactive_scan(self):
+        """_arbiter_decision_active is reset to False BEFORE _proactive_shift_scan runs."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        # The reset must appear BEFORE the call to _proactive_shift_scan
+        idx_reset = src.find("session['_arbiter_decision_active'] = False")
+        idx_scan = src.find('_proactive_shift_scan')
+        self.assertGreater(idx_reset, 0,
+                           "_arbiter_decision_active must be reset to False in _heartbeat_inner")
+        self.assertGreater(idx_scan, 0,
+                           "_proactive_shift_scan must be called in _heartbeat_inner")
+        self.assertLess(idx_reset, idx_scan,
+                        "_arbiter_decision_active reset must appear BEFORE _proactive_shift_scan "
+                        "call so organic proactive shifts are not mis-tagged as arbiter corrections")
+
+    @pytest.mark.sealed
+    def test_no_arbiter_velocity_dangerous_side_session_key(self):
+        """Old session-key approach is fully removed — no _arbiter_velocity_dangerous_side anywhere."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src_inner = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        src_scan = textwrap.dedent(inspect.getsource(MMMMonitor._proactive_shift_scan))
+        self.assertNotIn('_arbiter_velocity_dangerous_side', src_inner,
+                         '_heartbeat_inner must not use _arbiter_velocity_dangerous_side '
+                         '(replaced by _trend_direction in _proactive_shift_scan)')
+        self.assertNotIn('_arbiter_velocity_dangerous_side', src_scan,
+                         '_proactive_shift_scan must not use _arbiter_velocity_dangerous_side')
+
+
+class TestGodLayerSkipsArbiterShifts(unittest.TestCase):
+    """
+    Bug 2 fix: arbiter-driven strike shifts are tagged is_arbiter_correction=True
+    in adjustment_history. God layer's _minutes_since_last_adjustment skips them
+    so arbiter activity cannot starve God's inactivity signal.
+    """
+
+    @pytest.mark.sealed
+    def test_strike_shift_history_has_arbiter_flag(self):
+        """_process_strike_shift records is_arbiter_correction in adjustment_history."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._process_strike_shift))
+        self.assertIn('is_arbiter_correction', src,
+                      '_process_strike_shift adjustment_history entry must include '
+                      'is_arbiter_correction flag (Bug 2 fix)')
+
+    @pytest.mark.sealed
+    def test_god_layer_skips_arbiter_corrections(self):
+        """God layer _minutes_since_last_adjustment skips is_arbiter_correction entries."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_god_layer import StrategicIntegrityMonitor
+        src = textwrap.dedent(inspect.getsource(
+            StrategicIntegrityMonitor._minutes_since_last_adjustment))
+        self.assertIn('is_arbiter_correction', src,
+                      'God layer _minutes_since_last_adjustment must skip '
+                      'is_arbiter_correction entries so arbiter activity cannot '
+                      'prevent God from firing')
+
+    @pytest.mark.sealed
+    def test_god_inactivity_skips_arbiter_entry(self):
+        """Unit test: God sees 9999 inactivity when only arbiter shifts exist."""
+        from webui.backend.routes.mmm.mmm_god_layer import StrategicIntegrityMonitor
+        from datetime import datetime, timezone, timedelta
+        mon = StrategicIntegrityMonitor('test')
+        session = {
+            'adjustment_history': [
+                {
+                    'aggressor': 'CE',
+                    'type': 'strike_shift',
+                    'is_arbiter_correction': True,
+                    'timestamp': (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat(),
+                    'lots_sold': 85,
+                }
+            ]
+        }
+        minutes = mon._minutes_since_last_adjustment(session)
+        self.assertGreater(minutes, 9000,
+                           'When only arbiter shifts exist, inactivity must return '
+                           '9999 (God should see the algo as inactive)')
+
+    @pytest.mark.sealed
+    def test_god_inactivity_counts_organic_adjustment(self):
+        """Unit test: God counts non-arbiter adjustments normally."""
+        from webui.backend.routes.mmm.mmm_god_layer import StrategicIntegrityMonitor
+        from datetime import datetime, timezone, timedelta
+        mon = StrategicIntegrityMonitor('test')
+        session = {
+            'adjustment_history': [
+                {
+                    'aggressor': 'CE',
+                    'type': 'standard',
+                    'is_arbiter_correction': False,
+                    'timestamp': (datetime.now(timezone.utc) - timedelta(minutes=10)).isoformat(),
+                    'lots_sold': 25,
+                }
+            ]
+        }
+        minutes = mon._minutes_since_last_adjustment(session)
+        self.assertAlmostEqual(minutes, 10.0, delta=0.1,
+                               msg='Organic adjustments must reset God inactivity clock normally')
+
+
+class TestDoubleSellGuardTrendEmergencyBypass(unittest.TestCase):
+    """
+    Bug 3 fix: the double-sell guard must NOT suppress the arbiter's defensive
+    shift when a trend emergency is active (T2:GUARD+) and the trigger is
+    breakeven/hedge-decay related. The correct market response must never be killed.
+    """
+
+    @pytest.mark.sealed
+    def test_trend_emergency_bypass_present_in_source(self):
+        """_heartbeat_inner contains _trend_emergency_bypass guard for double-sell."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        self.assertIn('_trend_emergency_bypass', src,
+                      '_heartbeat_inner must define _trend_emergency_bypass to allow '
+                      'arbiter through double-sell guard during trend emergencies')
+
+    @pytest.mark.sealed
+    def test_double_sell_guard_checks_not_trend_emergency(self):
+        """_double_sell condition must include 'not _trend_emergency_bypass'."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        self.assertIn('not _trend_emergency_bypass', src,
+                      '_double_sell must be gated on not _trend_emergency_bypass')
+
+    @pytest.mark.sealed
+    def test_trend_emergency_requires_guard_tier_or_above(self):
+        """Bypass only activates at trend_tier >= 2 (GUARD), not at ALERT (1)."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        bypass_idx = src.find('_trend_emergency_bypass')
+        guard_check = '>= 2' in src[bypass_idx:bypass_idx + 300]
+        self.assertTrue(guard_check,
+                        '_trend_emergency_bypass must require trend_tier >= 2 '
+                        '(GUARD) so ALERT-only conditions do not bypass the guard')
+
+    @pytest.mark.sealed
+    def test_trend_emergency_trigger_keywords_present(self):
+        """Bypass checks for trend-related trigger keywords, not any trigger."""
+        import inspect, textwrap
+        from webui.backend.routes.mmm.mmm_monitor import MMMMonitor
+        src = textwrap.dedent(inspect.getsource(MMMMonitor._heartbeat_inner))
+        for kw in ('breakeven_critical', 'hedge_decay', 'trend'):
+            self.assertIn(kw, src,
+                          f'_trend_emergency_bypass must check for trigger keyword '
+                          f'"{kw}" to limit bypass to trend-related arbiter actions')
 
 
 if __name__ == '__main__':

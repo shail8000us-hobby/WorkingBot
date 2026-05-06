@@ -531,6 +531,18 @@ const PARAM_GROUPS = {
         header: 'Step Size',
         params: ['profit_ratchet_step_usd'],
       },
+      {
+        header: 'Fresh-Algo Reset (2026-05-06) — Master',
+        params: ['profit_ratchet_fresh_reset'],
+      },
+      {
+        header: 'Fresh-Algo Reset — Tier Selection',
+        params: [
+          'ratchet_reset_cooldowns',
+          'ratchet_reset_whipsaw',
+          'ratchet_reset_regime_tier',
+        ],
+      },
     ],
   },
   reverseMode: {
