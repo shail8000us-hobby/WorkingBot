@@ -109,12 +109,21 @@ class StrategicIntegrityMonitor:
 
     def _minutes_since_last_adjustment(self, session: Dict) -> float:
         """
-        Scan adjustment_history in reverse to find the most recent executed
-        hedge adjustment. Returns minutes since that adjustment, or 9999 if none.
-        Skips OPERATOR and STRADDLE_ROLL injections — those are not hedge responses.
+        Scan adjustment_history in reverse to find the most recent ORGANIC hedge
+        adjustment. Returns minutes since that adjustment, or 9999 if none.
+
+        Skips:
+        - OPERATOR / STRADDLE_ROLL / GOD_CORRECTION: injections, not hedge responses
+        - is_arbiter_correction=True: arbiter-driven mechanical shifts keep the algo
+          "busy" but do not represent the organic trigger system responding to PNL
+          drift. God must fire when the ORGANIC system is inactive — counting arbiter
+          shifts as "activity" starves God and prevents it from ever overriding a
+          bad-direction cycle.
         """
         for adj in reversed(session.get('adjustment_history', [])):
             if adj.get('aggressor', '') in ('OPERATOR', 'STRADDLE_ROLL', 'GOD_CORRECTION'):
+                continue
+            if adj.get('is_arbiter_correction', False):
                 continue
             ts = self._parse_iso(adj.get('timestamp', ''))
             if ts is not None:
