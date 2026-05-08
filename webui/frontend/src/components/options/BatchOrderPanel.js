@@ -65,6 +65,8 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   setAutoLoopEnabled,
   autoLoopRounds,
   setAutoLoopRounds,
+  autoLoopIntervalMinutes,
+  setAutoLoopIntervalMinutes,
   autoLoopRunning,
   autoLoopCurrentRound,
   autoLoopProgress,
@@ -72,6 +74,9 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
   expiryLoopState,
   anyExpiryLoopRunning,
   selectedExpiriesForLoop,
+  // Cancel-pending handlers (real-money button — confirms before cancelling open orders)
+  cancelPendingMainAutoLoop,
+  cancelPendingExpiryAutoLoop,
   // Batch confirm dialog
   batchConfirmDialog,
   setBatchConfirmDialog,
@@ -539,32 +544,87 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 500 }}>
                     rounds
                   </Typography>
+                  {/* Hybrid trigger cap (v1.1.0). 0 = pure fill-gated. */}
+                  <Tooltip title="Round-fire cap (minutes). 0 = wait until current round fully fills. >0 = fire next round at min(fill-complete, this many minutes after current round fired). Unfilled orders from earlier rounds stay on the exchange — useful for monthly / illiquid strikes.">
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.4, ml: 0.5 }}>
+                      <Typography variant="caption" sx={{ color: alpha('#fbbf24', 0.85), fontWeight: 600 }}>
+                        cap
+                      </Typography>
+                      <TextField
+                        type="number"
+                        value={autoLoopIntervalMinutes ?? 0}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value, 10);
+                          // Allow 0 (off) or 1+ (minutes). UI cap at 60 to prevent typos.
+                          setAutoLoopIntervalMinutes(isNaN(v) ? 0 : Math.max(0, Math.min(60, v)));
+                        }}
+                        size="small"
+                        disabled={autoLoopRunning}
+                        inputProps={{ min: 0, max: 60, style: { textAlign: 'center' } }}
+                        sx={{
+                          width: 54,
+                          '& .MuiInputBase-input': { py: 0.5, fontSize: '0.875rem', fontWeight: 'bold' },
+                          '& .MuiOutlinedInput-root': {
+                            borderRadius: 999,
+                            bgcolor: alpha('#020617', 0.55),
+                            '& fieldset': { borderColor: alpha(ACCENT_GOLD, 0.45) },
+                          },
+                        }}
+                      />
+                      <Typography variant="caption" sx={{ color: alpha('#fbbf24', 0.85), fontWeight: 500 }}>
+                        {(autoLoopIntervalMinutes || 0) > 0 ? 'min' : 'min (off)'}
+                      </Typography>
+                    </Box>
+                  </Tooltip>
                 </>
               )}
             </Box>
 
             {/* Execute or Auto-Loop Button */}
             {autoLoopRunning ? (
-              <Button
-                variant="contained"
-                color="error"
-                startIcon={<BlockIcon />}
-                onClick={stopAutoLoop}
-                sx={{
-                  minWidth: 160,
-                  fontWeight: 'bold',
-                  borderRadius: 999,
-                  bgcolor: alpha(ACCENT_RED, 0.95),
-                  '&:hover': { bgcolor: ACCENT_RED },
-                  animation: 'pulse 1.5s infinite',
-                  '@keyframes pulse': {
-                    '0%, 100%': { opacity: 1 },
-                    '50%': { opacity: 0.7 },
-                  },
-                }}
-              >
-                🛑 STOP Loop
-              </Button>
+              <Box sx={{ display: 'flex', gap: 0.75 }}>
+                <Tooltip title="Stop firing future rounds. Pending orders from already-fired rounds STAY on the exchange (use Cancel pending to remove them).">
+                  <Button
+                    variant="contained"
+                    color="error"
+                    startIcon={<BlockIcon />}
+                    onClick={stopAutoLoop}
+                    sx={{
+                      minWidth: 130,
+                      fontWeight: 'bold',
+                      borderRadius: 999,
+                      bgcolor: alpha(ACCENT_RED, 0.95),
+                      '&:hover': { bgcolor: ACCENT_RED },
+                      animation: 'pulse 1.5s infinite',
+                      '@keyframes pulse': {
+                        '0%, 100%': { opacity: 1 },
+                        '50%': { opacity: 0.7 },
+                      },
+                    }}
+                  >
+                    🛑 STOP firing
+                  </Button>
+                </Tooltip>
+                {cancelPendingMainAutoLoop && (
+                  <Tooltip title="Cancel every still-open order across all rounds, then stop the loop. Real-money button — confirms first.">
+                    <Button
+                      variant="outlined"
+                      color="error"
+                      onClick={cancelPendingMainAutoLoop}
+                      sx={{
+                        minWidth: 130,
+                        fontWeight: 'bold',
+                        borderRadius: 999,
+                        borderColor: ACCENT_RED,
+                        color: ACCENT_RED,
+                        '&:hover': { bgcolor: alpha(ACCENT_RED, 0.12), borderColor: ACCENT_RED },
+                      }}
+                    >
+                      ✖ CANCEL pending
+                    </Button>
+                  </Tooltip>
+                )}
+              </Box>
             ) : autoLoopEnabled ? (
               <Button
                 variant="contained"
@@ -695,8 +755,20 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   const strikeInfo = symbol.split('-');
                   const optType = strikeInfo[0] || '';
                   const strike = strikeInfo[2] || symbol;
-                  const statusIcon = progress.status === 'filled' ? '✅' : progress.status === 'pending' ? '⏳' : '📤';
-                  const statusText = progress.status === 'filled' ? 'Filled' : progress.status === 'pending' ? 'Waiting...' : 'Placing...';
+                  // v1.1.0 partial-fill awareness — derive a tri-state: filled / partial / pending.
+                  const target = progress.size || 0;
+                  const filledQty = progress.filled_size || 0;
+                  const isPartial = filledQty > 0 && filledQty < target;
+                  const isFilled = progress.status === 'filled' || (target > 0 && filledQty >= target);
+                  const hasPollError = !!progress.lastPollError;
+                  const statusIcon = isFilled ? '✅' : isPartial ? '🟡' : progress.status === 'pending' ? '⏳' : '📤';
+                  const statusText = isFilled
+                    ? 'Filled'
+                    : isPartial
+                      ? `${filledQty}/${target} filled`
+                      : progress.status === 'pending'
+                        ? 'On book'
+                        : 'Placing...';
 
                   return (
                     <Chip
@@ -706,21 +778,29 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                           <span>{statusIcon}</span>
                           <span style={{ fontWeight: 'bold' }}>{optType}{strike}</span>
-                          <span style={{ opacity: 0.7 }}>×{progress.size}</span>
+                          <span style={{ opacity: 0.7 }}>×{target}</span>
                           <span style={{ fontSize: '0.65rem' }}>{statusText}</span>
+                          {progress.placedPrice && !isFilled && (
+                            <span style={{ color: '#fbbf24', fontWeight: 600, fontSize: '0.65rem' }}>@{progress.placedPrice}</span>
+                          )}
                           {progress.fillPrice && (
                             <span style={{ color: '#10b981', fontWeight: 'bold' }}>@{progress.fillPrice}</span>
+                          )}
+                          {hasPollError && (
+                            <span style={{ color: '#f87171', fontSize: '0.65rem' }} title={progress.lastPollError}>⚠</span>
                           )}
                         </Box>
                       }
                       sx={{
-                        bgcolor: progress.status === 'filled'
+                        bgcolor: isFilled
                           ? 'rgba(16, 185, 129, 0.25)'
-                          : progress.status === 'pending'
-                            ? 'rgba(251, 191, 36, 0.25)'
-                            : 'rgba(59, 130, 246, 0.25)',
-                        border: `1px solid ${progress.status === 'filled' ? 'rgba(16, 185, 129, 0.5)' : progress.status === 'pending' ? 'rgba(251, 191, 36, 0.5)' : 'rgba(59, 130, 246, 0.5)'}`,
-                        color: progress.status === 'filled' ? '#10b981' : progress.status === 'pending' ? '#fbbf24' : '#60a5fa',
+                          : isPartial
+                            ? 'rgba(234, 179, 8, 0.30)'
+                            : progress.status === 'pending'
+                              ? 'rgba(251, 191, 36, 0.25)'
+                              : 'rgba(59, 130, 246, 0.25)',
+                        border: `1px solid ${isFilled ? 'rgba(16, 185, 129, 0.5)' : isPartial ? 'rgba(234, 179, 8, 0.6)' : progress.status === 'pending' ? 'rgba(251, 191, 36, 0.5)' : 'rgba(59, 130, 246, 0.5)'}`,
+                        color: isFilled ? '#10b981' : isPartial ? '#fde047' : progress.status === 'pending' ? '#fbbf24' : '#60a5fa',
                         fontWeight: 500,
                         fontSize: '0.75rem',
                         height: 'auto',
@@ -731,19 +811,35 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                   );
                 })}
               </Box>
-              {Object.keys(autoLoopProgress).length > 0 && (
-                <Box sx={{ mt: 1.5, display: 'flex', gap: 2 }}>
-                  <Typography variant="caption" sx={{ color: 'rgba(16, 185, 129, 0.9)' }}>
-                    ✅ Filled: {Object.values(autoLoopProgress).filter(p => p.status === 'filled').length}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'rgba(251, 191, 36, 0.9)' }}>
-                    ⏳ Pending: {Object.values(autoLoopProgress).filter(p => p.status === 'pending').length}
-                  </Typography>
-                  <Typography variant="caption" sx={{ color: 'rgba(59, 130, 246, 0.9)' }}>
-                    📤 Placing: {Object.values(autoLoopProgress).filter(p => p.status === 'placing').length}
-                  </Typography>
-                </Box>
-              )}
+              {Object.keys(autoLoopProgress).length > 0 && (() => {
+                const vals = Object.values(autoLoopProgress);
+                const isFullyFilled = (p) => (p.status === 'filled') || ((p.size || 0) > 0 && (p.filled_size || 0) >= (p.size || 0));
+                const isPartial = (p) => !isFullyFilled(p) && (p.filled_size || 0) > 0;
+                const filledCount = vals.filter(isFullyFilled).length;
+                const partialCount = vals.filter(isPartial).length;
+                const pendingCount = vals.filter(p => !isFullyFilled(p) && !isPartial(p) && p.status === 'pending').length;
+                const placingCount = vals.filter(p => p.status === 'placing').length;
+                return (
+                  <Box sx={{ mt: 1.5, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
+                    <Typography variant="caption" sx={{ color: 'rgba(16, 185, 129, 0.9)' }}>
+                      ✅ Filled: {filledCount}
+                    </Typography>
+                    {partialCount > 0 && (
+                      <Typography variant="caption" sx={{ color: 'rgba(253, 224, 71, 0.9)' }}>
+                        🟡 Partial: {partialCount}
+                      </Typography>
+                    )}
+                    <Typography variant="caption" sx={{ color: 'rgba(251, 191, 36, 0.9)' }}>
+                      ⏳ On book: {pendingCount}
+                    </Typography>
+                    {placingCount > 0 && (
+                      <Typography variant="caption" sx={{ color: 'rgba(59, 130, 246, 0.9)' }}>
+                        📤 Placing: {placingCount}
+                      </Typography>
+                    )}
+                  </Box>
+                );
+              })()}
             </Box>
           </Box>
         )}
@@ -844,15 +940,36 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                                 label={`R${loopState.currentRound}/${loopState.totalRounds}`}
                                 sx={{ bgcolor: 'rgba(251, 191, 36, 0.25)', color: '#fbbf24', fontWeight: 'bold' }}
                               />
-                              <Button
-                                variant="outlined"
-                                size="small"
-                                color="error"
-                                onClick={() => stopExpiryAutoLoop(expiry)}
-                                sx={{ minWidth: 60, fontSize: '0.7rem' }}
-                              >
-                                Stop
-                              </Button>
+                              <Tooltip title="Stop firing future rounds. Pending orders stay on the exchange.">
+                                <Button
+                                  variant="outlined"
+                                  size="small"
+                                  color="error"
+                                  onClick={() => stopExpiryAutoLoop(expiry)}
+                                  sx={{ minWidth: 60, fontSize: '0.7rem' }}
+                                >
+                                  Stop
+                                </Button>
+                              </Tooltip>
+                              {cancelPendingExpiryAutoLoop && (
+                                <Tooltip title="Cancel every still-open order across all rounds for this expiry. Confirms first.">
+                                  <Button
+                                    variant="outlined"
+                                    size="small"
+                                    onClick={() => cancelPendingExpiryAutoLoop(expiry)}
+                                    sx={{
+                                      minWidth: 60,
+                                      fontSize: '0.7rem',
+                                      color: '#fee2e2',
+                                      borderColor: 'rgba(239,68,68,0.6)',
+                                      bgcolor: 'rgba(239,68,68,0.15)',
+                                      '&:hover': { bgcolor: 'rgba(239,68,68,0.25)', borderColor: '#ef4444' },
+                                    }}
+                                  >
+                                    ✖ Cancel
+                                  </Button>
+                                </Tooltip>
+                              )}
                             </>
                           ) : (
                             <Button
@@ -882,20 +999,30 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
                           {hasError}
                         </Alert>
                       )}
-                      {/* Per-expiry progress */}
+                      {/* Per-expiry progress — partial-fill aware */}
                       {isRunning && Object.keys(loopState.progress || {}).length > 0 && (
                         <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                           {Object.entries(loopState.progress).map(([symbol, progress]) => {
                             const strike = symbol.split('-')[2] || symbol;
                             const optType = symbol.startsWith('C-') ? 'C' : 'P';
+                            const target = progress.size || 0;
+                            const filledQty = progress.filled_size || 0;
+                            const isFullyFilled = progress.filled || (target > 0 && filledQty >= target);
+                            const isPartial = !isFullyFilled && filledQty > 0;
+                            const icon = isFullyFilled ? '✅' : isPartial ? '🟡' : '⏳';
+                            const sizeLabel = isPartial ? ` ${filledQty}/${target}` : '';
                             return (
                               <Chip
                                 key={symbol}
                                 size="small"
-                                label={`${progress.filled ? '✅' : '⏳'} ${optType}${strike}`}
+                                label={`${icon} ${optType}${strike}${sizeLabel}`}
                                 sx={{
-                                  bgcolor: progress.filled ? 'rgba(16,185,129,0.2)' : 'rgba(251,191,36,0.2)',
-                                  color: progress.filled ? '#10b981' : '#fbbf24',
+                                  bgcolor: isFullyFilled
+                                    ? 'rgba(16,185,129,0.2)'
+                                    : isPartial
+                                      ? 'rgba(234,179,8,0.25)'
+                                      : 'rgba(251,191,36,0.2)',
+                                  color: isFullyFilled ? '#10b981' : isPartial ? '#fde047' : '#fbbf24',
                                   fontSize: '0.65rem',
                                   height: 20,
                                 }}
@@ -986,6 +1113,78 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             )}
           </Box>
         )}
+
+        {/* Running loops from OTHER expiries (not in current selection) — persist across expiry switch */}
+        {(() => {
+          const otherRunning = Object.keys(expiryLoopState).filter(
+            exp => expiryLoopState[exp]?.running && !selectedExpiriesForLoop.includes(exp)
+          );
+          if (otherRunning.length === 0) return null;
+          return (
+            <Box sx={{
+              mt: 2,
+              p: 1.5,
+              bgcolor: 'rgba(251, 191, 36, 0.06)',
+              borderRadius: '8px',
+              border: '1px solid rgba(251, 191, 36, 0.3)',
+            }}>
+              <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 'bold', display: 'block', mb: 1 }}>
+                🔁 Running loops (other expiries):
+              </Typography>
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75 }}>
+                {otherRunning.map(exp => {
+                  const ls = expiryLoopState[exp];
+                  return (
+                    <Box key={exp} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 'bold', minWidth: 60 }}>
+                          {exp}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.8)' }}>
+                          R{ls.currentRound || 0}/{ls.totalRounds || '?'}
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.5 }}>
+                        <Tooltip title="Stop firing future rounds. Pending orders stay on the exchange.">
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            color="error"
+                            onClick={() => stopExpiryAutoLoop(exp)}
+                            sx={{ minWidth: 50, fontSize: '0.65rem', py: 0.2, px: 0.75 }}
+                          >
+                            Stop
+                          </Button>
+                        </Tooltip>
+                        {cancelPendingExpiryAutoLoop && (
+                          <Tooltip title="Cancel every still-open order for this loop. Confirms first.">
+                            <Button
+                              variant="outlined"
+                              size="small"
+                              onClick={() => cancelPendingExpiryAutoLoop(exp)}
+                              sx={{
+                                minWidth: 50,
+                                fontSize: '0.65rem',
+                                py: 0.2,
+                                px: 0.75,
+                                color: '#fee2e2',
+                                borderColor: 'rgba(239,68,68,0.6)',
+                                bgcolor: 'rgba(239,68,68,0.1)',
+                                '&:hover': { bgcolor: 'rgba(239,68,68,0.2)', borderColor: '#ef4444' },
+                              }}
+                            >
+                              ✖ Cancel
+                            </Button>
+                          </Tooltip>
+                        )}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Box>
+            </Box>
+          );
+        })()}
 
         {/* Preview of orders */}
         {Object.keys(selectedStrikes).filter((k) => selectedStrikes[k]).length > 0 && (
@@ -1140,24 +1339,57 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
             </Box>
           </Box>
 
-          {/* Order list */}
-          <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)', display: 'block', mb: 1 }}>ORDERS PER ROUND</Typography>
-          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
-            {(autoLoopConfirmDialog?.orders || []).map((o, i) => (
-              <Chip
-                key={i}
-                size="small"
-                label={`${o.side?.toUpperCase()} ${o.size} × ${o.symbol}`}
-                sx={{
-                  bgcolor: o.side === 'buy' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
-                  color: o.side === 'buy' ? '#10b981' : '#ef4444',
-                  border: `1px solid ${o.side === 'buy' ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
-                  fontWeight: 600,
-                  fontSize: '0.7rem',
-                }}
-              />
-            ))}
-          </Box>
+          {/* Order list — grouped by expiry when usePerExpiry */}
+          {autoLoopConfirmDialog?.usePerExpiry ? (
+            <>
+              <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)', display: 'block', mb: 1 }}>
+                PARALLEL LOOPS — {autoLoopConfirmDialog?.expiryBreakdown?.length || 0} EXPIR{(autoLoopConfirmDialog?.expiryBreakdown?.length || 0) === 1 ? 'Y' : 'IES'} RUN INDEPENDENTLY
+              </Typography>
+              {(autoLoopConfirmDialog?.expiryBreakdown || []).map(e => (
+                <Box key={e.expiry} sx={{ mb: 1.5 }}>
+                  <Typography variant="caption" sx={{ color: '#fbbf24', fontWeight: 'bold', display: 'block', mb: 0.5 }}>
+                    {e.expiry} — {e.orders.length} orders/round
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {e.orders.map((o, i) => (
+                      <Chip
+                        key={i}
+                        size="small"
+                        label={`${o.side?.toUpperCase()} ${o.size} × ${o.symbol}`}
+                        sx={{
+                          bgcolor: o.side === 'buy' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                          color: o.side === 'buy' ? '#10b981' : '#ef4444',
+                          border: `1px solid ${o.side === 'buy' ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                          fontWeight: 600,
+                          fontSize: '0.7rem',
+                        }}
+                      />
+                    ))}
+                  </Box>
+                </Box>
+              ))}
+            </>
+          ) : (
+            <>
+              <Typography variant="caption" sx={{ color: 'rgba(148,163,184,0.6)', display: 'block', mb: 1 }}>ORDERS PER ROUND</Typography>
+              <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.75 }}>
+                {(autoLoopConfirmDialog?.orders || []).map((o, i) => (
+                  <Chip
+                    key={i}
+                    size="small"
+                    label={`${o.side?.toUpperCase()} ${o.size} × ${o.symbol}`}
+                    sx={{
+                      bgcolor: o.side === 'buy' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)',
+                      color: o.side === 'buy' ? '#10b981' : '#ef4444',
+                      border: `1px solid ${o.side === 'buy' ? 'rgba(16,185,129,0.4)' : 'rgba(239,68,68,0.4)'}`,
+                      fontWeight: 600,
+                      fontSize: '0.7rem',
+                    }}
+                  />
+                ))}
+              </Box>
+            </>
+          )}
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2, gap: 1, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           <Button
@@ -1169,15 +1401,21 @@ const BatchOrderPanel = React.memo(function BatchOrderPanel({
           </Button>
           <Button
             onClick={() => {
-              const { orders, totalRounds, orderPreference } = autoLoopConfirmDialog;
+              const { orders, totalRounds, orderPreference, usePerExpiry } = autoLoopConfirmDialog;
               setAutoLoopConfirmDialog(prev => ({ ...prev, open: false }));
-              doStartAutoLoop(orders, totalRounds, orderPreference);
+              if (usePerExpiry) {
+                startAllExpiryLoops();
+              } else {
+                doStartAutoLoop(orders, totalRounds, orderPreference);
+              }
             }}
             variant="contained"
             autoFocus
             sx={{ bgcolor: 'rgba(251,191,36,0.9)', color: '#000', fontWeight: 'bold', '&:hover': { bgcolor: '#fbbf24' } }}
           >
-            🚀 Start {autoLoopConfirmDialog?.totalRounds} Round{autoLoopConfirmDialog?.totalRounds !== 1 ? 's' : ''}
+            {autoLoopConfirmDialog?.usePerExpiry && (autoLoopConfirmDialog?.expiryBreakdown?.length || 0) > 1
+              ? `🚀 Start ${autoLoopConfirmDialog?.expiryBreakdown?.length} Parallel Loops × ${autoLoopConfirmDialog?.totalRounds} Rounds`
+              : `🚀 Start ${autoLoopConfirmDialog?.totalRounds} Round${autoLoopConfirmDialog?.totalRounds !== 1 ? 's' : ''}`}
           </Button>
         </DialogActions>
       </Dialog>

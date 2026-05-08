@@ -10,6 +10,7 @@
  * 
  * Created: January 31, 2026
  * Updated: February 1, 2026 - Added SensibullStyleAdjustmentPage
+ * Updated: May 7, 2026 - Added InlineAdjustmentWrapper for payoff graph inline adjustment
  */
 
 export { default as PositionAdjustmentPanel } from './PositionAdjustmentPanel';
@@ -20,5 +21,6 @@ export { default as AdjustmentMetricsPanel } from './AdjustmentMetricsPanel';
 export { default as ProposedTradesTable } from './ProposedTradesTable';
 export { default as AdjustmentReviewDialog } from './AdjustmentReviewDialog';
 export { default as AdjustmentExecutionProgress } from './AdjustmentExecutionProgress';
+export { default as InlineAdjustmentWrapper } from './InlineAdjustmentWrapper';
 export { usePayoffCalculation } from './hooks/usePayoffCalculation';
 export * from './utils/adjustmentPayoffEngine';

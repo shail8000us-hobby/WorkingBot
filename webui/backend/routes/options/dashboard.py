@@ -91,14 +91,19 @@ def calculate_portfolio_greeks(positions):
         per_contract_theta = float(pos_greeks.get('theta', 0))
         per_contract_vega = float(pos_greeks.get('vega', 0))
         
-        # Aggregate position Greeks.
-        # 1 lot = 0.001 BTC — API returns greeks per 1 BTC notional, so multiply by 0.001.
-        # Theta/vega already divide by 1000 (equivalent to × 0.001) for USD conversion.
-        LOT_MULT = 0.001
+        # Determine underlying and lot multiplier (0.01 for ETH, 0.001 for BTC)
+        symbol = pos.get('product_symbol', '')
+        parts = symbol.split('-')
+        underlying = parts[1] if len(parts) >= 2 else 'BTC'
+        LOT_MULT = 0.01 if underlying == 'ETH' else 0.001
+
+        # BUG FIX: Gamma and Vega are short when position is short. 
+        # Previously used abs(size), which incorrectly reported gross Gamma/Vega.
+        # Theta and Vega are scaled using LOT_MULT universally instead of hardcoded /1000.
         greeks['delta'] += per_contract_delta * size * LOT_MULT
-        greeks['gamma'] += per_contract_gamma * abs(size) * LOT_MULT
-        greeks['theta'] += (per_contract_theta / 1000) * size
-        greeks['vega'] += (per_contract_vega / 1000) * abs(size)
+        greeks['gamma'] += per_contract_gamma * size * LOT_MULT
+        greeks['theta'] += per_contract_theta * size * LOT_MULT
+        greeks['vega'] += per_contract_vega * size * LOT_MULT
         greeks['count'] += 1
 
         # Separate delta by underlying for futures equivalent

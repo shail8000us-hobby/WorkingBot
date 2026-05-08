@@ -400,7 +400,8 @@ export default function SlidingOptionsChainPanel({
   onRemoveTrade,
   selectedExpiry,
   onExpiryChange,
-  inline = false,  // NEW: Render inline without Drawer wrapper
+  onReviewExecute,  // Called when user clicks "Review & Execute" from the chain panel
+  inline = false,
 }) {
   // State
   const [expirations, setExpirations] = useState([]);
@@ -831,24 +832,37 @@ export default function SlidingOptionsChainPanel({
         </Button>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {proposedTrades.length > 0 && (
-            <Chip
-              label={`${proposedTrades.length} selected`}
+          {proposedTrades.length > 0 ? (
+            <Button
+              variant="contained"
               size="small"
-              sx={{ bgcolor: COLORS.primary, color: '#fff' }}
-            />
+              onClick={onReviewExecute || onClose}
+              sx={{
+                bgcolor: '#10b981',
+                fontWeight: 800,
+                fontSize: '0.72rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.04em',
+                '&:hover': { bgcolor: '#059669' },
+              }}
+            >
+              Review & Execute ({proposedTrades.length})
+            </Button>
+          ) : (
+            <Button
+              variant="outlined"
+              size="small"
+              onClick={onClose}
+              sx={{
+                color: '#94a3b8',
+                borderColor: 'rgba(71,85,105,0.4)',
+                fontSize: '0.72rem',
+                '&:hover': { borderColor: '#94a3b8' },
+              }}
+            >
+              Close
+            </Button>
           )}
-          <Button
-            variant="contained"
-            size="small"
-            onClick={onClose}
-            sx={{
-              bgcolor: COLORS.primary,
-              '&:hover': { bgcolor: '#2563eb' },
-            }}
-          >
-            Done
-          </Button>
         </Box>
       </Box>
     </Box>

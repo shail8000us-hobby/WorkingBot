@@ -2626,7 +2626,9 @@ def auto_loop_start():
         loop_id: str (default 'main'),
         orders: [{symbol, size, side}, ...],
         total_rounds: int,
-        order_preference: str ('maker_first' | 'market_only')
+        order_preference: str ('maker_first' | 'market_only' | 'ssr_*'),
+        interval_seconds: number | null  (optional — hybrid trigger cap;
+                                          omit/null for legacy fill-gated)
     }
     """
     try:
@@ -2635,6 +2637,16 @@ def auto_loop_start():
         orders = data.get('orders', [])
         total_rounds = int(data.get('total_rounds', 1))
         order_preference = data.get('order_preference', ORDER_TYPE_MAKER_FIRST)
+        raw_interval = data.get('interval_seconds')
+        interval_seconds = None
+        if raw_interval is not None:
+            try:
+                v = float(raw_interval)
+                if v > 0:
+                    # Clamp to a sane window: 30s minimum, 1h maximum
+                    interval_seconds = max(30.0, min(3600.0, v))
+            except (TypeError, ValueError):
+                interval_seconds = None
 
         if not orders:
             return jsonify({"success": False, "error": "No orders provided"}), 400
@@ -2652,13 +2664,33 @@ def auto_loop_start():
             return jsonify({"success": False, "error": f"Guardian signal is {signal}. Trading disabled."}), 403
 
         svc = _ensure_auto_loop_deps()
-        state = svc.start_loop(loop_id, orders, total_rounds, order_preference)
+        state = svc.start_loop(
+            loop_id, orders, total_rounds, order_preference,
+            interval_seconds=interval_seconds,
+        )
         return jsonify({"success": True, "loop": state})
 
     except ValueError as ve:
         return jsonify({"success": False, "error": str(ve)}), 409
     except Exception as e:
         log.error(f"auto-loop start error: {e}", exc_info=True)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@options_bp.route('/auto-loop/cancel-pending', methods=['POST'])
+def auto_loop_cancel_pending():
+    """Cancel every still-open order across all rounds for a loop and stop it.
+
+    Body: { "loop_id": str }
+    """
+    try:
+        data = request.get_json() or {}
+        loop_id = data.get('loop_id', 'main')
+        svc = _ensure_auto_loop_deps()
+        result = svc.cancel_pending(loop_id)
+        return jsonify({"success": True, **result})
+    except Exception as e:
+        log.error(f"auto-loop cancel-pending error: {e}", exc_info=True)
         return jsonify({"success": False, "error": str(e)}), 500
 
 

@@ -45,6 +45,7 @@ import {
   calculatePortfolioDelta,
   calculatePortfolioTheta,
   calculatePortfolioGamma,
+  getContractMultiplier,
 } from './payoffCalculator';
 import { useParsedPositions, useChartData } from './usePayoffData';
 import usePayoffAlerts from './usePayoffAlerts';
@@ -61,6 +62,8 @@ const OptionsPayoffDiagram = ({
   manualPnL = 0,
   onManualPnLChange,
   batchOrderSection = null,
+  adjustmentOverlay = null,
+  onAdjustmentClick = null,
 }) => {
   const [priceRangePercent, setPriceRangePercent] = useState(20);
   const [targetDaysFromNow, setTargetDaysFromNow] = useState(0); // Slider value in days (supports decimals for hours)
@@ -173,6 +176,49 @@ const OptionsPayoffDiagram = ({
       return pt;
     });
   }, [chartData, scenarioCompare, scenarioChartData]);
+
+  // Compute adjustment combined expiry line using the native at-expiry formula.
+  // This avoids the scale mismatch that occurred when using a separate payoff engine.
+  // Formula matches usePayoffData.js calcProjectedPayoff (remainingDays <= 0 branch).
+  const adjustmentEnrichedData = useMemo(() => {
+    const proposed = adjustmentOverlay?.proposedTrades;
+    if (!adjustmentOverlay || !proposed || proposed.length === 0) {
+      return enrichedData;
+    }
+
+    // Parse proposed trades into the minimal shape needed for at-expiry P&L
+    const parsedProposed = proposed.map(trade => {
+      const parts = (trade.symbol || '').split('-');
+      return {
+        type: parts[0] === 'C' ? 'call' : 'put',
+        strike: parseFloat(parts[2]) || trade.strike || 0,
+        size: trade.side === 'buy' ? (trade.quantity || 1) : -(trade.quantity || 1),
+        entryPrice: Math.abs(trade.ltp || trade.premium || 0),
+        multiplier: getContractMultiplier(trade.symbol || ''),
+      };
+    });
+
+    return enrichedData?.map(pt => {
+      // Compute proposed legs' incremental at-expiry P&L at this price point
+      let proposedDelta = 0;
+      for (const pos of parsedProposed) {
+        const intrinsic = pos.type === 'call'
+          ? Math.max(0, pt.price - pos.strike)
+          : Math.max(0, pos.strike - pt.price);
+        const absSize = Math.abs(pos.size);
+        const isShort = pos.size < 0;
+        proposedDelta += isShort
+          ? (pos.entryPrice - intrinsic) * absSize * pos.multiplier
+          : (intrinsic - pos.entryPrice) * absSize * pos.multiplier;
+      }
+      // Native chart's expiry value for current positions (already correct scale)
+      const nativeExpiry = pt.expiry ?? 0;
+      return {
+        ...pt,
+        adjustmentCombined: Math.round((nativeExpiry + proposedDelta) * 100) / 100,
+      };
+    }) || [];
+  }, [enrichedData, adjustmentOverlay]);
 
   // D3: Alert management via extracted hook (usePayoffAlerts.js)
   // Note: We keep inline state for now to avoid breaking changes, but the hook is ready
@@ -327,15 +373,15 @@ const OptionsPayoffDiagram = ({
     }
   }, [isZoomed, chartData, handleResetZoom]);
 
-  // Get filtered data based on zoom (uses enrichedData for scenario overlay)
+  // Get filtered data based on zoom (uses adjustmentEnrichedData for overlays)
   const displayData = useMemo(() => {
-    const sourceData = enrichedData || chartData?.data;
+    const sourceData = adjustmentEnrichedData || chartData?.data;
     if (!sourceData) return [];
     if (!isZoomed || !zoomDomain.left || !zoomDomain.right) {
       return sourceData;
     }
     return sourceData.filter((d) => d.price >= zoomDomain.left && d.price <= zoomDomain.right);
-  }, [enrichedData, chartData, isZoomed, zoomDomain]);
+  }, [adjustmentEnrichedData, chartData, isZoomed, zoomDomain]);
 
   // Apply manual PnL offset to all displayData points (display-only, no trading effect)
   const shiftedDisplayData = useMemo(() => {
@@ -354,6 +400,8 @@ const OptionsPayoffDiagram = ({
         ...(pt.target !== undefined ? { target: pt.target + manualPnL } : {}),
         ...(pt.today !== undefined ? { today: pt.today + manualPnL } : {}),
         ...(pt.mid !== undefined ? { mid: pt.mid + manualPnL } : {}),
+        ...(pt.adjustmentCurrent !== undefined ? { adjustmentCurrent: pt.adjustmentCurrent + manualPnL } : {}),
+        ...(pt.adjustmentCombined !== undefined ? { adjustmentCombined: pt.adjustmentCombined + manualPnL } : {}),
       };
     });
   }, [displayData, manualPnL]);
@@ -1265,6 +1313,35 @@ const OptionsPayoffDiagram = ({
         </Typography>
 
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+          {/* Inline Adjustment Trigger */}
+          {onAdjustmentClick && (
+            <Button
+              variant={adjustmentOverlay ? "contained" : "outlined"}
+              size="small"
+              onClick={onAdjustmentClick}
+              sx={{
+                borderRadius: 999,
+                fontWeight: 800,
+                fontSize: '0.7rem',
+                textTransform: 'uppercase',
+                letterSpacing: '0.05em',
+                px: 1.5,
+                py: 0.3,
+                minHeight: 24,
+                bgcolor: adjustmentOverlay ? alpha('#22d3ee', 0.15) : alpha('#0b1220', 0.35),
+                color: adjustmentOverlay ? '#22d3ee' : '#93c5fd',
+                border: `1px solid ${adjustmentOverlay ? alpha('#22d3ee', 0.5) : alpha('#60a5fa', 0.55)}`,
+                boxShadow: adjustmentOverlay ? `0 0 12px ${alpha('#22d3ee', 0.2)}` : 'none',
+                '&:hover': {
+                  bgcolor: adjustmentOverlay ? alpha('#22d3ee', 0.25) : alpha('#60a5fa', 0.12),
+                  borderColor: adjustmentOverlay ? '#22d3ee' : alpha('#60a5fa', 0.85),
+                }
+              }}
+            >
+              {adjustmentOverlay ? 'Exit Adjustment' : 'Adjustment'}
+            </Button>
+          )}
+
           {/* Legend */}
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
             <Box
@@ -1644,12 +1721,27 @@ const OptionsPayoffDiagram = ({
           <Line
             type="natural"
             dataKey="target"
-            stroke="#3b82f6"
-            strokeWidth={2.5}
+            stroke={adjustmentOverlay ? "#475569" : "#3b82f6"}
+            strokeWidth={adjustmentOverlay ? 1.5 : 2.5}
+            strokeDasharray={adjustmentOverlay ? "4 4" : "none"}
             dot={false}
-            name="On Target Date"
+            name="Current Target"
             isAnimationActive={false}
           />
+
+          {/* Adjustment Overlay Lines */}
+          {adjustmentOverlay && (
+            <Line
+              type="natural"
+              dataKey="adjustmentCombined"
+              stroke="#00e5ff"
+              strokeWidth={3}
+              dot={false}
+              name="After Adjustment"
+              isAnimationActive={false}
+              connectNulls={true}
+            />
+          )}
 
           {/* ── Multi-date overlay (E1): Today + Mid-expiry reference lines ── */}
           {/* "Today" line — only when slider moved so it's not hidden behind Target */}

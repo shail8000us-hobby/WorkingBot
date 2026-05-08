@@ -128,9 +128,9 @@ import FuturesPanel from '../futures/FuturesPanel';
 // JAN 23, 2026: Day 1 & 2 utilities for PoP calculation
 import { calculatePoP } from '../../utils/probabilityCalc';
 import { RISK_FREE_RATE, getContractMultiplier } from '../../utils/constants';
-// JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment system
+// JAN 31, 2026: Position Adjustment Panel - Sensibull-like position adjustment workflow
 // FEB 1, 2026: Updated to use SensibullStyleAdjustmentPage (full page layout)
-import { SensibullStyleAdjustmentPage } from '../positionAdjustment';
+import { SensibullStyleAdjustmentPage, InlineAdjustmentWrapper } from '../positionAdjustment';
 import PayoffErrorBoundary from './PayoffErrorBoundary';
 // ARCH-2: Extracted sub-components to reduce monolith size and enable per-component React.memo
 import PositionRow from './PositionRow';
@@ -1090,6 +1090,7 @@ const OptionsPanel = () => {
 
   // Position Adjustment Panel state (JAN 31, 2026 - Sensibull-like adjustment workflow)
   const [adjustmentPanelOpen, setAdjustmentPanelOpen] = useState(false);
+  const [inlineAdjustmentMode, setInlineAdjustmentMode] = useState(false);
 
   // Delta Hedge Modal state
   const [hedgeModalOpen, setHedgeModalOpen] = useState(false);
@@ -4765,14 +4766,28 @@ const OptionsPanel = () => {
             <Box sx={{ mt: 2 }}>
               <PayoffErrorBoundary>
                 <Suspense fallback={<Box sx={{ p: 2, textAlign: 'center' }}>Loading payoff diagram...</Box>}>
-                  <OptionsPayoffDiagram
-                    positions={sortedPositions}
-                    selectedPositions={selectedPositionsForPayoff}
-                    futuresPositions={visibleFuturesPositions}
-                    indexPrices={indexPrices}
-                    manualPnL={manualPnL}
-                    onManualPnLChange={setManualPnL}
-                    batchOrderSection={
+                  <InlineAdjustmentWrapper
+                    active={inlineAdjustmentMode}
+                    onClose={() => setInlineAdjustmentMode(false)}
+                    currentPositions={sortedPositions}
+                    spotPrice={btcPrice || ethPrice}
+                    underlying={sortedPositions[0]?.product_symbol?.split('-')[1] || positions[0]?.product_symbol?.split('-')[1] || 'BTC'}
+                    onExecuteComplete={() => {
+                      setInlineAdjustmentMode(false);
+                      handleRefresh();
+                    }}
+                  >
+                    {(adjustmentOverlay) => (
+                      <OptionsPayoffDiagram
+                        positions={sortedPositions}
+                        selectedPositions={selectedPositionsForPayoff}
+                        futuresPositions={visibleFuturesPositions}
+                        indexPrices={indexPrices}
+                        manualPnL={manualPnL}
+                        onManualPnLChange={setManualPnL}
+                        adjustmentOverlay={adjustmentOverlay}
+                        onAdjustmentClick={() => setInlineAdjustmentMode(prev => !prev)}
+                        batchOrderSection={
                       <BatchOrderPanel
                         positions={positions}
                         selectedStrikes={selectedStrikes}
@@ -4828,6 +4843,8 @@ const OptionsPanel = () => {
                       />
                     }
                   />
+                  )}
+                  </InlineAdjustmentWrapper>
                 </Suspense>
               </PayoffErrorBoundary>
             </Box>

@@ -42,6 +42,30 @@ const FILTER_TABS = [
   { label: 'System', value: 'system' },
 ];
 
+// Derive a single health object from monitorStatus + activeLimits.
+// Prefers the backend-computed health when available; falls back to client logic
+// so the banner still works if the backend hasn't restarted with the new field.
+function computeHealth(monitorStatus, activeLimits) {
+  if (!monitorStatus) return { level: 'stopped', reason: 'Monitor not initialised', color: '#ef4444', bg: 'rgba(239,68,68,0.2)' };
+
+  // Use backend-computed health when present (monitor was restarted with new code)
+  if (monitorStatus.health) {
+    const { level, reason } = monitorStatus.health;
+    const color = level === 'healthy' ? '#22c55e' : level === 'degraded' ? '#f59e0b' : '#ef4444';
+    const bg = level === 'healthy' ? 'rgba(34,197,94,0.2)' : level === 'degraded' ? 'rgba(245,158,11,0.2)' : 'rgba(239,68,68,0.2)';
+    return { level, reason, color, bg };
+  }
+
+  // Legacy fallback (backend not yet restarted)
+  const { running, eval_count, skipped_stale, secs_since_eval } = monitorStatus;
+  const hasLimits = (activeLimits?.strike || 0) + (activeLimits?.expiry || 0) > 0;
+  if (!running)       return { level: 'stopped',  reason: 'Monitor thread is not running',                  color: '#ef4444', bg: 'rgba(239,68,68,0.2)' };
+  if (!hasLimits)     return { level: 'healthy',  reason: 'No limits configured',                           color: '#22c55e', bg: 'rgba(34,197,94,0.2)' };
+  if (!eval_count)    return { level: 'degraded', reason: 'Running but no evaluations — cache may be stale', color: '#f59e0b', bg: 'rgba(245,158,11,0.2)' };
+  if (secs_since_eval > 30) return { level: 'degraded', reason: `Last eval ${secs_since_eval}s ago`,        color: '#f59e0b', bg: 'rgba(245,158,11,0.2)' };
+  return { level: 'healthy', reason: 'Checking every 5s', color: '#22c55e', bg: 'rgba(34,197,94,0.2)' };
+}
+
 export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
   const [activityData, setActivityData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -98,6 +122,7 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
       case 'closing':
         return <ErrorIcon sx={{ color: '#ef4444', fontSize: '1rem' }} />;
       case 'warning':
+      case 'pnl_fallback':
         return <WarningAmberIcon sx={{ color: '#f59e0b', fontSize: '1rem' }} />;
       case 'check_start':
       case 'position_check':
@@ -117,6 +142,7 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
       case 'closing':
         return '#ef4444';
       case 'warning':
+      case 'pnl_fallback':
         return '#f59e0b';
       case 'check_start':
       case 'position_check':
@@ -136,6 +162,7 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
       case 'closing':
         return 'rgba(239, 68, 68, 0.15)';
       case 'warning':
+      case 'pnl_fallback':
         return 'rgba(245, 158, 11, 0.15)';
       case 'check_start':
       case 'position_check':
@@ -146,28 +173,41 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
   };
 
   if (!expanded) {
+    const h = computeHealth(activityData?.monitorStatus, activityData?.activeLimits);
+    const secsAgo = activityData?.monitorStatus?.secs_since_eval;
     return (
-      <Paper sx={{ p: 1.5, bgcolor: 'rgba(15, 23, 42, 0.8)', border: '1px solid rgba(71, 85, 105, 0.3)' }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <Typography variant="subtitle2" sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 1 }}>
-            <MonitorHeartIcon sx={{ fontSize: '1rem' }} /> Monitoring Activity
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+      <Paper sx={{ p: 1.5, bgcolor: 'rgba(15, 23, 42, 0.8)', border: `1px solid ${h.level === 'stopped' ? 'rgba(239,68,68,0.5)' : h.level === 'degraded' ? 'rgba(245,158,11,0.4)' : 'rgba(34,197,94,0.3)'}` }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 0.5 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <MonitorHeartIcon sx={{ fontSize: '1rem', color: h.color }} />
+            <Typography variant="subtitle2" sx={{ color: h.color, fontWeight: 600, fontSize: '0.75rem' }}>
+              Max Loss Monitor
+            </Typography>
+            {activityData && (
+              <Chip
+                label={h.level === 'healthy' ? `✓ Healthy` : h.level === 'degraded' ? `⚠ Degraded` : `✗ Stopped`}
+                size="small"
+                sx={{ bgcolor: h.bg, color: h.color, fontWeight: 700, fontSize: '0.65rem' }}
+              />
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
             {activityData && (
               <>
+                {h.level !== 'healthy' && (
+                  <Typography variant="caption" sx={{ color: h.color, fontWeight: 600, fontSize: '0.65rem', maxWidth: 220 }}>
+                    {h.reason}
+                  </Typography>
+                )}
+                {secsAgo != null && (
+                  <Typography variant="caption" sx={{ color: '#64748b', fontSize: '0.62rem' }}>
+                    checked {secsAgo}s ago
+                  </Typography>
+                )}
                 <Chip
-                  label={activityData.monitorStatus?.running ? '🟢 Running' : '🔴 Stopped'}
+                  label={`${activityData.activeLimits?.strike || 0}S + ${activityData.activeLimits?.expiry || 0}E`}
                   size="small"
-                  sx={{
-                    bgcolor: activityData.monitorStatus?.running ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)',
-                    color: activityData.monitorStatus?.running ? '#22c55e' : '#ef4444',
-                    fontSize: '0.7rem'
-                  }}
-                />
-                <Chip
-                  label={`${activityData.activeLimits?.total || 0} Limits`}
-                  size="small"
-                  sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', fontSize: '0.7rem' }}
+                  sx={{ bgcolor: 'rgba(59, 130, 246, 0.2)', color: '#3b82f6', fontSize: '0.65rem' }}
                 />
               </>
             )}
@@ -215,35 +255,29 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
             bgcolor: 'rgba(30, 41, 59, 0.6)',
             border: '1px solid rgba(148, 163, 184, 0.2)'
           }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
               {(() => {
-                const s = activityData.monitorStatus || {};
-                const running = s.running;
-                const hasLimits = (activityData.activeLimits?.strike || 0) + (activityData.activeLimits?.expiry || 0) > 0;
-                const secsStale = s.secs_since_eval;
-                // Evaluations are stale if: limits exist but no eval in last 30s
-                const evalStale = hasLimits && s.eval_count > 0 && secsStale !== null && secsStale > 30;
-                // Evaluations never ran if: limits exist but eval_count is still 0
-                const evalNeverRan = hasLimits && (s.eval_count || 0) === 0;
-                const warn = evalStale || evalNeverRan;
-
-                const chipColor = !running ? '#ef4444' : warn ? '#f59e0b' : '#22c55e';
-                const chipBg = !running ? 'rgba(239,68,68,0.2)' : warn ? 'rgba(245,158,11,0.2)' : 'rgba(34,197,94,0.2)';
-                const chipLabel = !running ? 'Monitor Stopped'
-                  : evalNeverRan ? 'Running — Not Evaluating'
-                  : evalStale    ? 'Running — Evaluations Stalled'
-                  : 'Monitor Running';
-                const chipIcon = !running ? <ErrorIcon sx={{ color: `${chipColor} !important` }} />
-                  : warn ? <ErrorIcon sx={{ color: `${chipColor} !important` }} />
-                  : <PlayCircleIcon sx={{ color: `${chipColor} !important` }} />;
-
+                const h = computeHealth(activityData.monitorStatus, activityData.activeLimits);
+                const chipIcon = h.level === 'healthy'
+                  ? <PlayCircleIcon sx={{ color: `${h.color} !important` }} />
+                  : <ErrorIcon sx={{ color: `${h.color} !important` }} />;
+                const chipLabel = h.level === 'healthy' ? '✓ Healthy'
+                  : h.level === 'degraded' ? '⚠ Degraded'
+                  : '✗ Stopped';
                 return (
-                  <Chip
-                    icon={chipIcon}
-                    label={chipLabel}
-                    size="small"
-                    sx={{ bgcolor: chipBg, color: chipColor, fontWeight: 600 }}
-                  />
+                  <>
+                    <Chip
+                      icon={chipIcon}
+                      label={chipLabel}
+                      size="small"
+                      sx={{ bgcolor: h.bg, color: h.color, fontWeight: 700 }}
+                    />
+                    {h.level !== 'healthy' && (
+                      <Typography variant="caption" sx={{ color: h.color, fontWeight: 600 }}>
+                        {h.reason}
+                      </Typography>
+                    )}
+                  </>
                 );
               })()}
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>
@@ -255,11 +289,19 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
                 fontWeight: (activityData.monitorStatus?.eval_count || 0) === 0 && ((activityData.activeLimits?.strike || 0) + (activityData.activeLimits?.expiry || 0)) > 0
                   ? 700 : 400
               }}>
-                Evaluations: {activityData.monitorStatus?.eval_count || 0}
+                Evals: {activityData.monitorStatus?.eval_count || 0}
+                {activityData.monitorStatus?.secs_since_eval != null && (
+                  <span style={{ color: '#64748b', fontWeight: 400 }}> · last {activityData.monitorStatus.secs_since_eval}s ago</span>
+                )}
               </Typography>
               {(activityData.monitorStatus?.skipped_stale || 0) > 0 && (
                 <Typography variant="caption" sx={{ color: '#f59e0b', fontWeight: 700 }}>
                   ⚠️ Skipped (stale): {activityData.monitorStatus.skipped_stale}
+                </Typography>
+              )}
+              {(activityData.monitorStatus?.pnl_fallback_symbols?.length || 0) > 0 && (
+                <Typography variant="caption" sx={{ color: '#f59e0b', fontWeight: 700 }}>
+                  ⚠️ Fallback PnL: {activityData.monitorStatus.pnl_fallback_symbols.join(', ')}
                 </Typography>
               )}
               <Typography variant="caption" sx={{ color: '#94a3b8' }}>
@@ -418,7 +460,7 @@ export default function OptionsActivityPanel({ refreshTrigger = 0 }) {
                         variant="body2"
                         sx={{
                           color: getEventColor(event.type),
-                          fontWeight: event.type === 'breach' || event.type === 'warning' ? 600 : 400,
+                          fontWeight: event.type === 'breach' || event.type === 'warning' || event.type === 'pnl_fallback' ? 600 : 400,
                           wordBreak: 'break-word'
                         }}
                       >

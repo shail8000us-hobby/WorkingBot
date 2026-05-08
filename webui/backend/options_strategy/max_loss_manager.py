@@ -59,6 +59,7 @@ _EVENT_CATEGORY = {
     "roll": "trade",
     "hedge": "hedge",
     "alert": "alert",
+    "pnl_fallback": "alert",
     "error": "error",
     "monitor_start": "system",
     "check_start": "system",
@@ -701,6 +702,12 @@ class MaxLossMonitor:
         self._max_retries = config.get("max_retries", 3)
         self._retry_backoff_base = config.get("retry_backoff_base", 2)
         
+        # Symbols that used the fallback PnL formula in the most recent eval cycle.
+        # Cleared at the start of each _check_max_loss call and repopulated if the
+        # API returns unrealized_pnl=0. Exposed in get_status() so the frontend can
+        # show a visible "API PnL degraded" warning instead of silently mis-checking.
+        self._recent_fallback_symbols: set = set()
+
         # Metrics tracking
         self._metrics = {
             "total_checks": 0,
@@ -744,20 +751,45 @@ class MaxLossMonitor:
         logger.info("⏹️ MaxLossMonitor stopped")
     
     def get_status(self) -> Dict:
-        """Get monitor status"""
-        # How many seconds since the last real evaluation (not just loop heartbeat)
+        """Get monitor status including computed health level for the WebUI status banner."""
         secs_since_eval = (time.monotonic() - self._last_eval_time) if self._last_eval_time > 0 else None
+        fallback_syms = list(self._recent_fallback_symbols)
+
+        # Compute a single health level + human-readable reason.
+        # "stopped"  → thread is not running
+        # "degraded" → running but checks are being skipped or PnL is coming from fallback
+        # "healthy"  → running, recent eval, API PnL valid
+        if not self._running:
+            health = {"level": "stopped", "reason": "Monitor thread is not running"}
+        elif self._eval_count == 0:
+            if self._skipped_stale > 0:
+                health = {"level": "degraded",
+                          "reason": f"No positions obtained yet — cache stale, {self._skipped_stale} checks skipped"}
+            else:
+                health = {"level": "degraded",
+                          "reason": "Monitor running but no evaluations completed yet"}
+        elif secs_since_eval is not None and secs_since_eval > 30:
+            health = {"level": "degraded",
+                      "reason": f"Last evaluation {secs_since_eval:.0f}s ago — position data may be stale"}
+        elif fallback_syms:
+            health = {"level": "degraded",
+                      "reason": f"API returning unrealized_pnl=0 for {', '.join(fallback_syms)} — using computed fallback"}
+        else:
+            health = {"level": "healthy", "reason": "Checking every 5s — API PnL valid"}
+
         return {
             "running": self._running,
             "last_check": self._last_check,
-            "check_count": self._check_count,           # loop heartbeats
-            "eval_count": self._eval_count,             # actual position evaluations
-            "skipped_stale": self._skipped_stale,       # skipped: no position data
-            "skipped_no_limits": self._skipped_no_limits,  # skipped: no active limits
+            "check_count": self._check_count,
+            "eval_count": self._eval_count,
+            "skipped_stale": self._skipped_stale,
+            "skipped_no_limits": self._skipped_no_limits,
             "secs_since_eval": round(secs_since_eval, 1) if secs_since_eval is not None else None,
             "check_interval": self.check_interval,
             "warning_threshold": self.warning_threshold,
-            "mode": "real_time"
+            "mode": "real_time",
+            "health": health,
+            "pnl_fallback_symbols": fallback_syms,
         }
     
     def get_metrics(self) -> Dict:
@@ -982,6 +1014,10 @@ class MaxLossMonitor:
     def _check_max_loss(self):
         """Check all positions against max loss limits"""
         try:
+            # Reset per-cycle fallback tracker so get_status() always reflects the
+            # CURRENT eval cycle, not accumulation from previous cycles.
+            self._recent_fallback_symbols = set()
+
             # Increment check counter
             self._metrics["total_checks"] += 1
 
@@ -994,34 +1030,62 @@ class MaxLossMonitor:
                 positions = self._test_positions
                 logger.info(f"🧪 TEST MODE: Using {len(positions)} mock positions")
             else:
-                # Priority: WS cache → shared cache → direct REST fetch.
-                # WS cache has mark prices updated every ~500 ms from l1_orderbook;
-                # positions are refreshed on fills or the 60 s fallback timer.
+                # Priority: enriched cache → WS cache → direct REST fetch.
+                #
+                # SOURCE NOTES:
+                #   enriched cache — unrealized_pnl already in correct USD via
+                #     calculate_unrealized_pnl() (mark/entry/size * 0.001). Use first.
+                #   WS cache      — raw exchange unrealized_pnl is NOT in USD for
+                #     BTC options (exchange returns a different unit). Must recompute
+                #     unrealized_pnl using (mark - entry) * size * 0.001 when used.
+                #   direct fetch  — same raw issue as WS cache; recompute after fetch.
+                #
+                # BUG HISTORY: 2026-05-08 — WS cache was incorrectly used as primary
+                # source after a prior "fix" removed the recalculation. The exchange API
+                # returns unrealized_pnl in a non-USD unit (~1/444 of correct USD), so
+                # the monitor saw $0.03 when the actual loss was $13.34. Fixed by
+                # using the enriched options_control cache (which has correct USD PnL)
+                # as the primary source, and recomputing when falling back to raw sources.
                 positions = None
+                _pnl_needs_usd_conversion = False  # True when source has raw exchange PnL
 
-                # 1. WS cache (zero REST cost in steady state)
+                # 1. Enriched options_control cache — unrealized_pnl is correct USD
                 try:
-                    from webui.backend.routes.options.options_ws_cache import get_ws_cache
-                    ws_cache = get_ws_cache()
-                    if ws_cache.is_healthy:
-                        cached = ws_cache.get_positions()
-                        if cached:
-                            positions = cached
-                except Exception as wse:
-                    logger.debug(f"Max-loss: WS cache unavailable: {wse}")
+                    from webui.backend.routes.options.options_control import get_cached_positions
+                    positions = get_cached_positions(max_age=30)
+                except Exception:
+                    pass
 
-                # 2. Shared options_control cache (fresh REST fetch done by frontend)
+                # 2. WS cache — raw exchange unrealized_pnl (needs USD conversion)
                 if positions is None:
                     try:
-                        from webui.backend.routes.options.options_control import get_cached_positions
-                        positions = get_cached_positions(max_age=15)
-                    except Exception:
-                        pass
+                        from webui.backend.routes.options.options_ws_cache import get_ws_cache
+                        ws_cache = get_ws_cache()
+                        if ws_cache.is_healthy:
+                            cached = ws_cache.get_positions()
+                            if cached:
+                                positions = cached
+                                _pnl_needs_usd_conversion = True
+                    except Exception as wse:
+                        logger.debug(f"Max-loss: WS cache unavailable: {wse}")
 
-                # 3. Direct REST fetch via isolated async client
+                # 3. Direct REST fetch via isolated async client (also raw)
                 if positions is None:
                     logger.warning("⚠️ Max-loss: positions cache is stale — fetching directly")
                     positions = self._fetch_positions_direct()
+                    if positions is not None:
+                        _pnl_needs_usd_conversion = True
+
+                # Convert raw exchange unrealized_pnl to USD for non-enriched sources.
+                # BTC options: 1 contract = 0.001 BTC; formula: (mark - entry) * size * 0.001
+                if _pnl_needs_usd_conversion and positions:
+                    _CONTRACT_VALUE = 0.001
+                    for _p in positions:
+                        _mark = float(_p.get("mark_price", 0) or 0)
+                        _entry = float(_p.get("entry_price", 0) or 0)
+                        _size = float(_p.get("size", 0) or 0)
+                        if _mark and _entry and _size:
+                            _p["unrealized_pnl"] = (_mark - _entry) * _size * _CONTRACT_VALUE
 
                 if positions is None:
                     logger.warning("⚠️ Max-loss: could not obtain positions — skipping this check")
@@ -1067,8 +1131,34 @@ class MaxLossMonitor:
 
             for pos in positions:
                 symbol = pos.get("product_symbol")
-                pnl = pos.get("unrealized_pnl", 0)
+                pnl = float(pos.get("unrealized_pnl", 0) or 0)
                 size = pos.get("size", 0)
+
+                # Delta Exchange sometimes returns unrealized_pnl=0 for options positions
+                # (observed on short puts/calls after rolls or size changes). Fall back to
+                # computing PnL from entry/mark prices — same logic as options_control.py.
+                # Use the WS cache mark price as the freshest source when available.
+                # NOTE: 0.001 multiplier is required — BTC options: 1 contract = 0.001 BTC.
+                if pnl == 0 and symbol and size:
+                    entry = float(pos.get("entry_price", 0) or 0)
+                    # Prefer WS cache mark price (updated every ~500ms) over REST position mark
+                    mark = 0.0
+                    try:
+                        from webui.backend.routes.options.options_ws_cache import get_ws_cache
+                        ws_mark = get_ws_cache().get_mark_price(symbol)
+                        if ws_mark:
+                            mark = ws_mark
+                    except Exception:
+                        pass
+                    if not mark:
+                        mark = float(pos.get("mark_price", 0) or 0)
+                    if entry and mark:
+                        pnl = (mark - entry) * size * 0.001
+                        self._recent_fallback_symbols.add(symbol)
+                        add_activity_event("pnl_fallback",
+                            f"⚠️ {symbol}: API returned unrealized_pnl=0, computed ${pnl:.2f} from entry/mark",
+                            {"symbol": symbol, "entry": entry, "mark": mark,
+                             "size": size, "computed_pnl": round(pnl, 4)})
 
                 logger.debug(f"Checking position: {symbol} | PnL: ${pnl:.4f} | Size: {size}")
 
@@ -1210,12 +1300,25 @@ class MaxLossMonitor:
                     parts = symbol.split("-")
                     if len(parts) >= 4:
                         expiry_code = parts[3]
-                        pnl = pos.get("unrealized_pnl", 0)
-                        
+                        pnl = float(pos.get("unrealized_pnl", 0) or 0)
+                        pos_size = pos.get("size", 0)
+                        if pnl == 0 and pos_size:
+                            entry = float(pos.get("entry_price", 0) or 0)
+                            mark = float(pos.get("mark_price", 0) or 0)
+                            try:
+                                from webui.backend.routes.options.options_ws_cache import get_ws_cache
+                                ws_mark = get_ws_cache().get_mark_price(symbol)
+                                if ws_mark:
+                                    mark = ws_mark
+                            except Exception:
+                                pass
+                            if entry and mark:
+                                pnl = (mark - entry) * pos_size * 0.001
+
                         if expiry_code not in expiry_pnl:
                             expiry_pnl[expiry_code] = 0
                             expiry_positions[expiry_code] = []
-                        
+
                         expiry_pnl[expiry_code] += pnl
                         expiry_positions[expiry_code].append(pos)
                 

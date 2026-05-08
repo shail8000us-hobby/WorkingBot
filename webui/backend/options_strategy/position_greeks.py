@@ -149,9 +149,9 @@ def enrich_positions_with_greeks(
         {
           dte:   int,
           delta: float,   # position delta = per-contract * size (signed)
-          gamma: float,   # position gamma = per-contract * |size|
-          theta: float,   # position theta $/day = per-contract * size (signed)
-          vega:  float,   # position vega = per-contract * |size|
+          gamma: float,   # position gamma = per-contract * size (signed; negative for short)
+          theta: float,   # position theta $/day = per-contract * size (signed; positive for short)
+          vega:  float,   # position vega = per-contract * size (signed; negative for short)
         }
 
     Args:
@@ -191,13 +191,14 @@ def enrich_positions_with_greeks(
         if strike > 0 and iv > 0 and spot_price > 0:
             cg = bs_greeks(spot_price, strike, T, RISK_FREE_RATE, iv, opt_type)
 
-            # Scale to position: delta/theta signed by size; gamma/vega by |size|
+            # Scale to position: All Greeks should use signed size.
+            # Short positions (size < 0) are short Delta, Gamma, and Vega, but earn Theta.
             pos_greeks = {
                 "dte": dte,
                 "delta": round(cg["delta"] * size * multiplier, 6),
-                "gamma": round(cg["gamma"] * abs(size) * multiplier, 8),
+                "gamma": round(cg["gamma"] * size * multiplier, 8),
                 "theta": round(cg["theta"] * size * multiplier, 4),
-                "vega": round(cg["vega"] * abs(size) * multiplier, 4),
+                "vega": round(cg["vega"] * size * multiplier, 4),
             }
 
         pos["pos_greeks"] = pos_greeks

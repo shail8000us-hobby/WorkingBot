@@ -41,6 +41,7 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
   onIncreasePercentChange,
   onIncreaseSelected,
   feesMap = {},
+  onDeltaNeutralCalc,
 }) {
   // Phase 6.6: Stale data detection — tick every second (hooks must be before early return)
   const [dataAgeSec, setDataAgeSec] = useState(0);
@@ -790,11 +791,34 @@ const PortfolioSummaryStrip = React.memo(function PortfolioSummaryStrip({
           {hasGreeks ? (
             <>
               <Tooltip title={`Portfolio delta (≈ ${deltaExposureStr} directional exposure)`} arrow>
-                <Box sx={metricRowSx}>
+                <Box sx={{ ...metricRowSx, alignItems: 'center' }}>
                   <Typography sx={metricLabelSx}>Delta</Typography>
-                  <Typography sx={metricValueSx(delta >= 0 ? '#4ade80' : '#f87171')}>
-                    {delta >= 0 ? '+' : ''}{delta.toFixed(4)}
-                  </Typography>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Typography sx={metricValueSx(delta >= 0 ? '#4ade80' : '#f87171')}>
+                      {delta >= 0 ? '+' : ''}{delta.toFixed(4)}
+                    </Typography>
+                    {onDeltaNeutralCalc && (
+                      <Tooltip title="Open Delta Neutral Calculator — compute lots to sell to reach Δ=0" arrow>
+                        <Button
+                          size="small"
+                          onClick={(e) => { e.stopPropagation(); onDeltaNeutralCalc(); }}
+                          sx={{
+                            minWidth: 0, px: 0.6, py: 0, height: 18,
+                            fontSize: '0.55rem', fontWeight: 800, lineHeight: 1,
+                            letterSpacing: '0.04em',
+                            bgcolor: 'rgba(96,165,250,0.12)',
+                            color: '#60a5fa',
+                            border: '1px solid rgba(96,165,250,0.3)',
+                            borderRadius: '4px',
+                            textTransform: 'none',
+                            '&:hover': { bgcolor: 'rgba(96,165,250,0.22)', borderColor: '#60a5fa' },
+                          }}
+                        >
+                          ∑ Calc
+                        </Button>
+                      </Tooltip>
+                    )}
+                  </Box>
                 </Box>
               </Tooltip>
 

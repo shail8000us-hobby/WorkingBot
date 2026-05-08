@@ -6013,6 +6013,24 @@ class MMMMonitor:
         except Exception as e:
             log.warning(f"[{sid}] Failed to fetch greek gamma for projection check: {e}")
 
+        # Layer 4 stale-monitor guard: if watchdog stopped this monitor between the
+        # start of this heartbeat and now, do NOT place any order. The H-4 save-block
+        # prevents the fill from being persisted, but the order would still land on the
+        # exchange and create an untracked ghost position (root cause of mmm08may26-2).
+        if not self._running or self._stop_event.is_set():
+            log.warning(
+                f"[{sid}] Monitor stopped mid-heartbeat — aborting order placement "
+                f"to prevent ghost position (stale thread guard)"
+            )
+            log_activity('stale_monitor_order_block',
+                        f'🛑 Order blocked: monitor stopped mid-heartbeat before placement '
+                        f'({hedge.upper()} {lots} lots @ {hedge_strike}). '
+                        f'Stale thread guard prevented ghost position.',
+                        sid, 'critical',
+                        {'side': hedge.upper(), 'lots': lots, 'strike': hedge_strike,
+                         'adj_type': adj_type})
+            return
+
         result = await self._engine.execute_adjustment(
             session, hedge, hedge_strike, lots,
             ce_now, pe_now, adj_type,
@@ -7366,6 +7384,14 @@ class MMMMonitor:
                                 {'hedge': side.upper(), 'strike': hedge_strike,
                                  'spot': spot_price, 'context': 'shift_fallback'})
                     return
+
+        # Layer 4 stale-monitor guard (same as _process_adjustment).
+        if not self._running or self._stop_event.is_set():
+            log.warning(
+                f"[{sid}] Monitor stopped mid-heartbeat — aborting shift_fallback order "
+                f"to prevent ghost position (stale thread guard)"
+            )
+            return
 
         result = await self._engine.execute_adjustment(
             session, side, hedge_strike, lots,

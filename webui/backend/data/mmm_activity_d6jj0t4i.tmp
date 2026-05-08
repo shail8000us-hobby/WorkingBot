@@ -1,0 +1,253 @@
+{
+  "activities": [
+    {
+      "id": "act_20260507_042245_168099",
+      "timestamp": "2026-05-07T04:22:45.598621+00:00",
+      "type": "order_placing",
+      "type_label": "Placing Order",
+      "category": "orders",
+      "message": "BUY 8 lot(s) P-BTC-80000-070526 \u2014 fetching prices...",
+      "session_id": "mmm07may26-1",
+      "severity": "progress",
+      "details": {
+        "symbol": "P-BTC-80000-070526",
+        "side": "buy",
+        "size": 8
+      }
+    },
+    {
+      "id": "act_20260507_042246_168100",
+      "timestamp": "2026-05-07T04:22:46.051771+00:00",
+      "type": "order_cancelled",
+      "type_label": "Order Cancelled",
+      "category": "orders",
+      "message": "Initial placement aborted \u2014 premium $21.00 > cap $20.00 (threshold guard)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "symbol": "P-BTC-80000-070526",
+        "mid_price": 21.0,
+        "max_buy_price": 20.0
+      }
+    },
+    {
+      "id": "act_20260507_042246_168101",
+      "timestamp": "2026-05-07T04:22:46.764064+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.275)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.274711
+      }
+    },
+    {
+      "id": "act_20260507_042248_168102",
+      "timestamp": "2026-05-07T04:22:48.754775+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.274)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.273575
+      }
+    },
+    {
+      "id": "act_20260507_042248_168103",
+      "timestamp": "2026-05-07T04:22:48.866300+00:00",
+      "type": "safety",
+      "type_label": "Safety Alert",
+      "category": "safety",
+      "message": "\u26a0\ufe0f AUTO-RECON MISMATCH @ beat 600: P&L delta=$0.0000 | position discrepancies=2",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "pnl_delta": 0.0,
+        "position_discrepancies": [
+          {
+            "side": "PE",
+            "strike": 80000,
+            "audit_open_qty": 8,
+            "session_lots": 58,
+            "delta": -50
+          },
+          {
+            "side": "CE",
+            "strike": 83400,
+            "audit_open_qty": -50,
+            "session_lots": 0,
+            "delta": -50
+          }
+        ],
+        "auto_recon_beat": 600
+      }
+    },
+    {
+      "id": "act_20260507_042337_168104",
+      "timestamp": "2026-05-07T04:23:37.267768+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE frozen @ 80000: session=58 vs exchange=8.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 80000: session=58 vs exchange=8.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+        "symbol": "P-BTC-80000-070526",
+        "session_lots": 58,
+        "exchange_size": 8.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260507_042339_168105",
+      "timestamp": "2026-05-07T04:23:39.342323+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.274)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.273557
+      }
+    },
+    {
+      "id": "act_20260507_042419_168106",
+      "timestamp": "2026-05-07T04:24:19.891590+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.268)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.267613
+      }
+    },
+    {
+      "id": "act_20260507_042503_168107",
+      "timestamp": "2026-05-07T04:25:03.773080+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.273)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.272729
+      }
+    },
+    {
+      "id": "act_20260507_042548_168108",
+      "timestamp": "2026-05-07T04:25:48.824398+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.272)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.271888
+      }
+    },
+    {
+      "id": "act_20260507_042631_168109",
+      "timestamp": "2026-05-07T04:26:31.400345+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.250)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.250354
+      }
+    },
+    {
+      "id": "act_20260507_042722_168110",
+      "timestamp": "2026-05-07T04:27:22.428338+00:00",
+      "type": "reconciliation_warning",
+      "type_label": "Reconciliation Warning",
+      "category": "safety",
+      "message": "Position reconciliation: \u26a0\ufe0f MISMATCH \u2014 PE frozen @ 80000: session=58 vs exchange=8.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "side": "PE",
+        "type": "FROZEN_MISMATCH",
+        "detail": "PE frozen @ 80000: session=58 vs exchange=8.0 \u2014 NOT auto-corrected (count comparison unreliable)",
+        "symbol": "P-BTC-80000-070526",
+        "session_lots": 58,
+        "exchange_size": 8.0,
+        "auto_corrected": false
+      }
+    },
+    {
+      "id": "act_20260507_042724_168111",
+      "timestamp": "2026-05-07T04:27:24.488103+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.254)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.25395
+      }
+    },
+    {
+      "id": "act_20260507_042758_168112",
+      "timestamp": "2026-05-07T04:27:58.053424+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.262)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.262124
+      }
+    },
+    {
+      "id": "act_20260507_042848_168113",
+      "timestamp": "2026-05-07T04:28:48.865428+00:00",
+      "type": "whipsaw_smart_block",
+      "type_label": "Smart Whipsaw Block",
+      "category": "safety",
+      "message": "Smart whipsaw engine blocked adjustments: NORMAL (score=0.256)",
+      "session_id": "mmm07may26-1",
+      "severity": "warning",
+      "details": {
+        "engine": "SMART",
+        "mode": "NORMAL",
+        "score": 0.255641
+      }
+    },
+    {
+      "id": "act_20260507_042928_168114",
+      
